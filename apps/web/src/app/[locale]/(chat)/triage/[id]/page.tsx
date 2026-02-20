@@ -7,6 +7,8 @@ import ChatSidebar, { ActiveTicket } from '@/components/ChatSidebar';
 import ChatMessage, { Message } from '@/components/ChatMessage';
 import ChatInput from '@/components/ChatInput';
 import PlaybookPanel from '@/components/PlaybookPanel';
+import ResizableLayout from '@/components/ResizableLayout';
+import { useRouter } from '@/i18n/routing';
 
 interface SessionData {
   session: { id: string; ticket_id: string; status: string };
@@ -22,6 +24,7 @@ export default function SessionDetail({
   params: { id: string };
 }) {
   const t = useTranslations('ChatSession');
+  const router = useRouter();
   const [data, setData] = useState<SessionData | null>(null);
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -43,6 +46,10 @@ export default function SessionDetail({
     hasValidation?: boolean;
     hasPlaybook?: boolean;
   }>({});
+
+  // Add state for real tickets
+  const [sidebarTickets, setSidebarTickets] = useState<ActiveTicket[]>([]);
+  const [isLoadingTickets, setIsLoadingTickets] = useState(true);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -131,6 +138,28 @@ export default function SessionDetail({
     return () => clearInterval(interval);
   }, [params.id]);
 
+  // Fetch tickets from email ingestion processed tickets table
+  useEffect(() => {
+    const fetchTickets = async () => {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+        const res = await fetch(`${apiUrl}/email-ingestion/list`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success) setSidebarTickets(json.data);
+        }
+      } catch (err) {
+        console.error('Failed to load tickets', err);
+      } finally {
+        setIsLoadingTickets(false);
+      }
+    };
+
+    fetchTickets();
+    const interval = setInterval(fetchTickets, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleSendMessage = (message: string) => {
     setMessages((prev) => [
       ...prev,
@@ -157,114 +186,113 @@ export default function SessionDetail({
     }, 500);
   };
 
-  const mockTickets: ActiveTicket[] = data
-    ? [
-      {
-        id: data.session.id,
-        ticket_id:
-          data.session.ticket_id || `Ticket-${params.id.substring(0, 8)}`,
-        status:
-          playbookReady ? 'completed'
-            : loading ? 'pending'
-              : 'processing',
-      },
-    ]
-    : [];
+  // Ensure current ticket is visible in case it's not in the DB yet, or just display the current DB list
+  const currentMock: ActiveTicket | null = data
+    ? {
+      id: data.session.id,
+      ticket_id: data.session.ticket_id || `Ticket-${params.id.substring(0, 8)}`,
+      status: playbookReady ? 'completed' : loading ? 'pending' : 'processing',
+    }
+    : null;
+
+  const displayTickets = [...sidebarTickets];
+  if (currentMock && !displayTickets.find(t => t.id === currentMock.id)) {
+    displayTickets.unshift(currentMock);
+  }
 
   const ticketLabel = data?.session.ticket_id || `Ticket-${params.id.substring(0, 8)}`;
 
   return (
-    <div className="flex h-screen" style={{ background: 'var(--bg-root)' }}>
-      {/* Sidebar */}
-      <ChatSidebar
-        tickets={mockTickets}
-        currentTicketId={params.id}
-        isLoading={loading}
-      />
-
-      {/* Chat Area */}
-      <div
-        className="flex flex-col flex-1"
-        style={{ background: 'var(--bg-chat)', minWidth: 0 }}
-      >
-        {/* Chat header */}
-        <div
-          className="px-5 py-3 flex items-center gap-3 flex-shrink-0"
-          style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}
-        >
-          <div
-            style={{
-              width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
-              background: playbookReady ? 'var(--green)' : loading ? '#EAB308' : 'var(--accent)',
-              boxShadow: loading || !playbookReady ? `0 0 6px ${loading ? '#EAB308' : 'var(--accent)'}` : undefined,
-            }}
+    <ResizableLayout
+      sidebarContent={
+        <ChatSidebar
+          tickets={displayTickets}
+          currentTicketId={params.id}
+          isLoading={isLoadingTickets || loading}
+          onSelectTicket={(id) => router.push(`/triage/${id}`)}
+        />
+      }
+      rightContent={
+        playbookReady ? (
+          <PlaybookPanel
+            content={data?.playbook?.content_md || null}
+            status={playbookStatus}
           />
-          <p style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', flex: 1 }}>
-            {ticketLabel}
-          </p>
-          {playbookReady && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 600, color: 'var(--green)', background: 'var(--green-muted)', border: '1px solid var(--green-border)' }}>
-              <svg width="8" height="8" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              {t('statusPlaybookReady')}
-            </span>
-          )}
-          <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-jetbrains-mono)', marginLeft: playbookReady ? '0' : 'auto' }}>
-            {playbookReady ? '' : loading ? t('statusInitializing') : t('statusProcessing')}
-          </span>
-        </div>
-
-        {/* Messages Container */}
-        <div className="flex-1 overflow-y-auto px-6 pt-5 pb-2">
-          {error && (
+        ) : undefined
+      }
+      mainContent={
+        <div className="flex-1 flex flex-col" style={{ background: 'var(--bg-root)', minWidth: 0, height: '100%' }}>
+          {/* Header */}
+          <div
+            className="px-5 py-3 flex items-center gap-3 flex-shrink-0"
+            style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}
+          >
             <div
-              className="rounded-xl p-4 mb-4 text-sm"
               style={{
-                background: 'rgba(248,81,73,0.08)',
-                border: '1px solid rgba(248,81,73,0.2)',
-                color: '#fca5a5',
-              }}
-            >
-              <p className="font-semibold mb-0.5">{t('connectionError')}</p>
-              <p style={{ color: '#f87171', opacity: 0.85 }}>{error}</p>
-            </div>
-          )}
-
-          {messages.map((msg) => (
-            <ChatMessage key={msg.id} message={msg} />
-          ))}
-
-          {loading && messages.length === 1 && (
-            <ChatMessage
-              key="loading-message"
-              message={{
-                id: 'loading',
-                role: 'system',
-                content: t('initializingSession'),
-                timestamp: new Date(),
-                type: 'status',
+                width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                background: playbookReady ? 'var(--green)' : loading ? '#EAB308' : 'var(--accent)',
+                boxShadow: loading || !playbookReady ? `0 0 6px ${loading ? '#EAB308' : 'var(--accent)'}` : undefined,
               }}
             />
-          )}
+            <p style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', flex: 1 }}>
+              {ticketLabel}
+            </p>
+            {playbookReady && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 600, color: 'var(--green)', background: 'var(--green-muted)', border: '1px solid var(--green-border)' }}>
+                <svg width="8" height="8" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                {t('statusPlaybookReady')}
+              </span>
+            )}
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-jetbrains-mono)', marginLeft: playbookReady ? '0' : 'auto' }}>
+              {playbookReady ? '' : loading ? t('statusInitializing') : t('statusProcessing')}
+            </span>
+          </div>
 
-          <div ref={messagesEndRef} />
+          {/* Messages Container */}
+          <div className="flex-1 overflow-y-auto px-6 pt-5 pb-2">
+            {error && (
+              <div
+                className="rounded-xl p-4 mb-4 text-sm"
+                style={{
+                  background: 'rgba(248,81,73,0.08)',
+                  border: '1px solid rgba(248,81,73,0.2)',
+                  color: '#fca5a5',
+                }}
+              >
+                <p className="font-semibold mb-0.5">{t('connectionError')}</p>
+                <p style={{ color: '#f87171', opacity: 0.85 }}>{error}</p>
+              </div>
+            )}
+
+            {messages.map((msg) => (
+              <ChatMessage key={msg.id} message={msg} />
+            ))}
+
+            {loading && messages.length === 1 && (
+              <ChatMessage
+                key="loading-message"
+                message={{
+                  id: 'loading',
+                  role: 'system',
+                  content: t('initializingSession'),
+                  timestamp: new Date(),
+                  type: 'status',
+                }}
+              />
+            )}
+
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Chat Input */}
+          <ChatInput
+            onSubmit={handleSendMessage}
+            placeholder={t('placeholder')}
+            disabled={loading}
+            isLoading={false}
+          />
         </div>
-
-        {/* Chat Input */}
-        <ChatInput
-          onSubmit={handleSendMessage}
-          placeholder={t('placeholder')}
-          disabled={loading}
-          isLoading={false}
-        />
-      </div>
-
-      {/* Playbook Panel — slides in from right when ready */}
-      {playbookReady && (
-        <PlaybookPanel
-          content={data?.playbook?.content_md || null}
-          status={playbookStatus}
-        />
-      )}
-    </div>
+      }
+    />
   );
 }

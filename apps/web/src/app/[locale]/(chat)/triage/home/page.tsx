@@ -2,15 +2,18 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
-import ChatSidebar from '@/components/ChatSidebar';
+import ChatSidebar, { type ActiveTicket } from '@/components/ChatSidebar';
 import ChatMessage, { type Message } from '@/components/ChatMessage';
 import ChatInput from '@/components/ChatInput';
 import ResizableLayout from '@/components/ResizableLayout';
+
+import { useRouter } from '@/i18n/routing';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export default function HomePage() {
   const t = useTranslations('ChatHome');
+  const router = useRouter();
 
   const WELCOME_MESSAGE: Message = {
     id: 'welcome',
@@ -29,11 +32,37 @@ export default function HomePage() {
 
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Custom states for tickets from backend
+  const [sidebarTickets, setSidebarTickets] = useState<ActiveTicket[]>([]);
+  const [isLoadingTickets, setIsLoadingTickets] = useState(true);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Fetch tickets from email ingestion processed tickets table
+  useEffect(() => {
+    const fetchTickets = async () => {
+      try {
+        const res = await fetch(`${API}/email-ingestion/list`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success) setSidebarTickets(json.data);
+        }
+      } catch (err) {
+        console.error('Failed to load tickets', err);
+      } finally {
+        setIsLoadingTickets(false);
+      }
+    };
+
+    fetchTickets();
+    const interval = setInterval(fetchTickets, 10000); // refresh every 10s
+    return () => clearInterval(interval);
+  }, []);
 
   const handleSend = async (text: string) => {
     const userMsg: Message = {
@@ -94,7 +123,7 @@ export default function HomePage() {
 
   return (
     <ResizableLayout
-      sidebarContent={<ChatSidebar tickets={[]} isLoading={false} />}
+      sidebarContent={<ChatSidebar tickets={sidebarTickets} isLoading={isLoadingTickets} onSelectTicket={(id) => router.push(`/triage/${id}`)} />}
       mainContent={
         <div className="flex-1 flex flex-col" style={{ background: 'var(--bg-root)', minWidth: 0, height: '100%' }}>
           {/* Header */}

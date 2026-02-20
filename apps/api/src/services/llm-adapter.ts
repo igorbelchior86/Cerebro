@@ -34,7 +34,7 @@ class GroqRateLimiter {
   private inFlight = 0;
   private lastStart = 0;
   private readonly maxConcurrent = 1;
-  private readonly minSpacingMs = 400;
+  private readonly minSpacingMs = 1000; // 1 req/sec for Free Tier
 
   async acquire(): Promise<void> {
     return new Promise(resolve => {
@@ -77,8 +77,8 @@ class GroqProvider implements LLMProvider {
 
   /** Exponential backoff with jitter — retries only on 429 / 413. */
   private async withRetry<T>(fn: () => Promise<T>): Promise<T> {
-    const MAX_RETRIES = 4;
-    const BASE_MS = 600;
+    const MAX_RETRIES = 5;
+    const BASE_MS = 1000;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
         return await fn();
@@ -97,7 +97,7 @@ class GroqProvider implements LLMProvider {
 
   async complete(prompt: string, messages?: Message[], options?: LLMOptions): Promise<LLMResponse> {
     const messageList: Message[] = messages ?? [{ role: 'user', content: prompt }];
-    const maxTokens = options?.maxTokens ?? 2000;
+    const maxTokens = options?.maxTokens ?? 1200; // Reduced from 2000 to lower pressure
     const temperature = options?.temperature ?? 0.7;
 
     await groqLimiter.acquire();

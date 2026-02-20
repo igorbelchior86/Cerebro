@@ -58,34 +58,80 @@ export class PrepareContextService {
     const startTime = Date.now();
     const missingData: Array<{ field: string; why: string }> = [];
 
-    // ─── Coleta do Autotask ──────────────────────────────────────
+    // ─── Coleta de Dados (Autotask ou Email Ingestion) ───────────
     let ticket = null;
     let signals: Signal[] = [];
 
-    try {
-      const ticketIdNum = parseInt(input.ticketId, 10);
-      ticket = await this.autotaskClient.getTicket(ticketIdNum);
-      console.log(`[PrepareContext] Got Autotask ticket ${input.ticketId}`);
+    // Check if it's an email-ingested ticket (starts with T)
+    const isEmailTicket = input.ticketId.startsWith('T');
 
-      // Coleta notas (signals)
-      const notes = await this.autotaskClient.getTicketNotes(ticketIdNum);
-      signals = notes.map((note, idx) => ({
-        id: `autotask-note-${idx}`,
-        source: 'autotask' as const,
-        timestamp: note.createDate,
-        type: 'ticket_note',
-        summary: note.noteText?.substring(0, 200) || '',
-        raw_ref: note,
-      }));
-    } catch (error) {
-      missingData.push({
-        field: 'autotask_ticket',
-        why: `Failed to fetch Autotask ticket: ${(error as Error).message}`,
-      });
+    if (isEmailTicket) {
+      console.log(`[PrepareContext] Detected email-ingested ticket: ${input.ticketId}`);
+      try {
+        const emailTicket = await queryOne<any>(
+          `SELECT id, title, description, requester, status, updates, created_at 
+           FROM tickets_processed WHERE id = $1`,
+          [input.ticketId]
+        );
+
+        if (emailTicket) {
+          ticket = {
+            id: emailTicket.id,
+            ticketNumber: emailTicket.id,
+            title: emailTicket.title,
+            description: emailTicket.description,
+            createDate: emailTicket.created_at,
+            priority: 3, // Default normal
+            queueName: 'Email Ingestion',
+          };
+          console.log(`[PrepareContext] Successfully fetched email ticket data from DB`);
+
+          // Process signals from updates
+          const updates = emailTicket.updates || [];
+          signals = updates.map((update: any, idx: number) => ({
+            id: `email-update-${idx}`,
+            source: 'email' as const,
+            timestamp: update.timestamp,
+            type: 'ticket_note',
+            summary: update.content?.substring(0, 200) || '',
+            raw_ref: update,
+          }));
+        } else {
+          console.warn(`[PrepareContext] Email ticket ${input.ticketId} not found in DB`);
+        }
+      } catch (err) {
+        console.error(`[PrepareContext] Error fetching email ticket:`, err);
+      }
+    } else {
+      // Original Autotask Flow
+      try {
+        const ticketIdNum = parseInt(input.ticketId, 10);
+        if (isNaN(ticketIdNum)) {
+          throw new Error(`Invalid numeric ticket ID: ${input.ticketId}`);
+        }
+        ticket = await this.autotaskClient.getTicket(ticketIdNum);
+        console.log(`[PrepareContext] Got Autotask ticket ${input.ticketId}`);
+
+        // Coleta notas (signals)
+        const notes = await this.autotaskClient.getTicketNotes(ticketIdNum);
+        signals = notes.map((note, idx) => ({
+          id: `autotask-note-${idx}`,
+          source: 'autotask' as const,
+          timestamp: note.createDate,
+          type: 'ticket_note',
+          summary: note.noteText?.substring(0, 200) || '',
+          raw_ref: note,
+        }));
+      } catch (error) {
+        missingData.push({
+          field: 'autotask_ticket',
+          why: `Failed to fetch Autotask ticket: ${(error as Error).message}`,
+        });
+      }
     }
 
     if (!ticket) {
-      throw new Error(`Cannot prepare context without valid ticket from Autotask`);
+      throw new Error(`Cannot prepare context without valid ticket from Autotask or Database`);
     }
 
     // ─── Coleta do NinjaOne ──────────────────────────────────────
@@ -264,15 +310,20 @@ export class PrepareContextService {
  */
 export async function persistEvidencePack(sessionId: string, pack: EvidencePack): Promise<void> {
   try {
-    await execute(
-      `
-      INSERT INTO evidence_packs (session_id, payload, created_at)
-      VALUES ($1, $2, NOW())
-      ON CONFLICT (session_id) DO UPDATE
-      SET payload = $2, created_at = NOW()
-      `,
-      [sessionId, JSON.stringify(pack)]
-    );
+    // Check if it exists first because we don't have a unique constraint on session_id
+    const existing = await queryOne(`SELECT id FROM evidence_packs WHERE session_id = $1`, [sessionId]);
+
+    if (existing) {
+      await execute(
+        `UPDATE evidence_packs SET payload = $1, created_at = NOW() WHERE session_id = $2`,
+        [JSON.stringify(pack), sessionId]
+      );
+    } else {
+      await execute(
+        `INSERT INTO evidence_packs (session_id, payload, created_at) VALUES ($1, $2, NOW())`,
+        [sessionId, JSON.stringify(pack)]
+      );
+    }
     console.log(`[DB] Persisted EvidencePack for session ${sessionId}`);
   } catch (error) {
     console.error('[DB] Failed to persist EvidencePack:', error);

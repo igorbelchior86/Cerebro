@@ -3,28 +3,33 @@ import { ConfidentialClientApplication } from '@azure/msal-node';
 import 'isomorphic-fetch';
 
 export class GraphClient {
-    private msalClient: ConfidentialClientApplication;
+    private msalClient: ConfidentialClientApplication | null = null;
 
-    constructor() {
-        const clientId = process.env.GRAPH_CLIENT_ID;
-        const clientSecret = process.env.GRAPH_CLIENT_SECRET;
-        const tenantId = process.env.GRAPH_TENANT_ID;
+    constructor() { }
 
-        if (!clientId || !clientSecret || !tenantId) {
-            console.warn('[GraphClient] Missing Graph API credentials in environment variables.');
+    private getMsalClient(): ConfidentialClientApplication {
+        if (!this.msalClient) {
+            const clientId = process.env.GRAPH_CLIENT_ID;
+            const clientSecret = process.env.GRAPH_CLIENT_SECRET;
+            const tenantId = process.env.GRAPH_TENANT_ID;
+
+            if (!clientId || !clientSecret || !tenantId) {
+                console.warn('[GraphClient] Missing Graph API credentials in environment variables.');
+            }
+
+            this.msalClient = new ConfidentialClientApplication({
+                auth: {
+                    clientId: clientId || '',
+                    clientSecret: clientSecret || '',
+                    authority: `https://login.microsoftonline.com/${tenantId}`,
+                },
+            });
         }
-
-        this.msalClient = new ConfidentialClientApplication({
-            auth: {
-                clientId: clientId || '',
-                clientSecret: clientSecret || '',
-                authority: `https://login.microsoftonline.com/${tenantId}`,
-            },
-        });
+        return this.msalClient;
     }
 
     private async getAccessToken(): Promise<string> {
-        const response = await this.msalClient.acquireTokenByClientCredential({
+        const response = await this.getMsalClient().acquireTokenByClientCredential({
             scopes: ['https://graph.microsoft.com/.default'],
         });
 
@@ -53,12 +58,15 @@ export class GraphClient {
         try {
             const client = await this.getClient();
 
-            // Filter for emails from support and containing 'TICKET #' in subject
+            const twoDaysAgo = new Date();
+            twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+            const dateStr = twoDaysAgo.toISOString();
+
+            // Filter for emails containing 'TICKET' in subject received in the last 2 days
             // In production, we assume application permissions `Mail.Read` allowing access to specific user's mail
-            // We also look for unread messages (isRead eq false)
             const response = await client
                 .api(`/users/${mailboxAddress}/messages`)
-                .filter(`from/emailAddress/address eq 'help@refreshtech.com' and contains(subject, 'TICKET #') and isRead eq false`)
+                .filter(`contains(subject, 'TICKET') and receivedDateTime ge ${dateStr}`)
                 .select('id,subject,bodyPreview,body,from,receivedDateTime')
                 .top(50)
                 .get();

@@ -204,14 +204,14 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
             return (
               <button key={ticket.id} onClick={() => onSelectTicket?.(ticket.id)}
                 className="animate-fadeIn"
-                style={{ position: 'relative', padding: '12px 14px', borderRadius: '9px', cursor: 'pointer', background: isActive ? 'var(--bg-card-active)' : 'var(--bg-card)', border: `1px solid ${isActive ? 'var(--border-accent)' : 'var(--border)'}`, boxShadow: 'var(--shadow-card)', textAlign: 'left', overflow: 'hidden', width: '100%', animationDelay: `${idx * 0.05}s` }}
+                style={{ position: 'relative', padding: '12px 14px', borderRadius: '9px', cursor: 'pointer', background: isActive ? 'var(--bg-card-active)' : 'var(--bg-card)', border: `1px solid ${isActive ? 'var(--border-accent)' : 'var(--border)'}`, boxShadow: 'var(--shadow-card)', textAlign: 'left', overflow: 'hidden', width: '100%', animationDelay: `${idx * 0.05}s`, display: 'flex', flexDirection: 'column', alignItems: 'stretch', flexShrink: 0 }}
                 onMouseEnter={(e) => { if (!isActive) { (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card-hover)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-strong)'; } }}
                 onMouseLeave={(e) => { if (!isActive) { (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; } }}
               >
                 {isActive && <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 0% 50%, rgba(91,127,255,0.18) 0%, transparent 70%)', pointerEvents: 'none' }} />}
                 <div style={{ position: 'absolute', left: 0, top: '18%', bottom: '18%', width: '2px', borderRadius: '0 2px 2px 0', background: PRIORITY_COLOR[priority] ?? '#5B7FFF', opacity: isActive ? 1 : 0.45 }} />
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '7px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '7px', width: '100%' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                     <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', fontWeight: 700, color: PRIORITY_COLOR[priority] ?? '#5B7FFF', letterSpacing: '0.05em' }}>{priority}</span>
                     <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-muted)', letterSpacing: '0.03em' }}>{ticket.ticket_id}</span>
@@ -227,13 +227,13 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                   </span>
                 </div>
 
-                <p style={{ fontSize: '12.5px', fontWeight: 500, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', lineHeight: 1.4, letterSpacing: '-0.01em', marginBottom: '5px' }}>
-                  {ticket.title ?? t('defaultIssue')}
+                <p style={{ fontSize: '12.5px', fontWeight: 500, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', lineHeight: 1.4, letterSpacing: '-0.01em', marginBottom: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>
+                  {ticket.title && ticket.title.trim() !== '' ? ticket.title : t('defaultIssue')}
                 </p>
-                <p style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginBottom: '9px' }}>
-                  {ticket.org ?? t('unknownOrg')}{ticket.site ? <><span style={{ margin: '0 4px', opacity: 0.4 }}>·</span>{ticket.site}</> : null}
+                <p style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginBottom: '9px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>
+                  {(ticket.org && ticket.org.trim() !== '') ? ticket.org : t('unknownOrg')}{ticket.site ? <><span style={{ margin: '0 4px', opacity: 0.4 }}>·</span>{ticket.site}</> : null}
                 </p>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                   <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-faint)' }}>
                     {ticket.age ?? (ticket.created_at ? new Date(ticket.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : t('justNow'))}
                   </span>

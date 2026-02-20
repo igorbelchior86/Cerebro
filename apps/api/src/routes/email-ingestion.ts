@@ -35,7 +35,11 @@ router.post('/ingest', async (req: Request, res: Response) => {
                     await pgStore.saveProcessedTicket(parsed);
 
                     // 4. Mark as read
-                    await graphClient.markEmailAsRead(mailbox, messageId);
+                    try {
+                        await graphClient.markEmailAsRead(mailbox, messageId);
+                    } catch (markErr: any) {
+                        console.warn(`[EmailIngestion] Could not mark as read: ${markErr.message}`);
+                    }
 
                     processedCount++;
                 }
@@ -50,6 +54,35 @@ router.post('/ingest', async (req: Request, res: Response) => {
     } catch (error: any) {
         console.error('[EmailIngestion] Ingestion failed:', error);
         return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    }
+});
+
+router.get('/list', async (req: Request, res: Response) => {
+    try {
+        // Fetch from pgStore
+        const { query } = await import('../db/index.js');
+        const results = await query(
+            `SELECT id, title, description, requester, status, is_reply, updates, created_at, last_updated_at
+             FROM tickets_processed
+             ORDER BY last_updated_at DESC
+             LIMIT 50`
+        );
+
+        // Map to ChatSidebar expected format
+        const mapped = (results as any[]).map(ticket => ({
+            id: ticket.id,
+            ticket_id: ticket.id,
+            status: ticket.status === 'completed' ? 'completed' : 'pending',
+            priority: 'P3', // Default priority for emails
+            title: ticket.title || 'Untitled Ticket',
+            org: ticket.requester || 'Unknown User',
+            created_at: ticket.created_at,
+        }));
+
+        res.json({ success: true, data: mapped });
+    } catch (error: any) {
+        console.error('[EmailIngestion] List failed:', error);
+        res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
 });
 

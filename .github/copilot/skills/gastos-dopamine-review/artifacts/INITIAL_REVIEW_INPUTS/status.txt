@@ -1,0 +1,18 @@
+## git status
+ M GastosSwiftUI/BiometricEnrollmentManager.swift
+ M GastosSwiftUI/Views/Tabs/HomeTabRoot.swift
+ M Packages/GastosDesign/Sources/GastosDesign/Components/YearGridContentView.swift
+ D skills/gastos-initial-review.zip
+?? skills/gastos-dopamine-review/
+
+## branch
+main
+
+## diff --stat (staged)
+
+## diff --stat (unstaged)
+ GastosSwiftUI/BiometricEnrollmentManager.swift     | 170 ++++++-------
+ GastosSwiftUI/Views/Tabs/HomeTabRoot.swift         | 273 ++++++++++++---------
+ .../Components/YearGridContentView.swift           | 220 +++++++++--------
+ skills/gastos-initial-review.zip                   | Bin 42169 -> 0 bytes
+ 4 files changed, 360 insertions(+), 303 deletions(-)

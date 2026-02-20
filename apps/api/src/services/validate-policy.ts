@@ -1,0 +1,209 @@
+// ─────────────────────────────────────────────────────────────
+// Validate & Policy Service — Safety Gates & Policy Enforcement
+// ─────────────────────────────────────────────────────────────
+
+import type {
+  DiagnosisOutput,
+  ValidationOutput,
+  Violation,
+  EvidencePack,
+} from '@playbook-brain/types';
+
+export interface ValidationConfig {
+  minHypothesisConfidence: number; // Minimum confidence to accept (default: 0.6)
+  maxHighRiskActions: number; // Maximum high-risk actions allowed (default: 2)
+  requireEvidencePerClaim: boolean; // Each hypothesis needs evidence (default: true)
+  requireTestsPerAction: boolean; // Each hypothesis should have tests (default: true)
+}
+
+export class ValidatePolicyService {
+  private config: ValidationConfig;
+
+  constructor(config: Partial<ValidationConfig> = {}) {
+    this.config = {
+      minHypothesisConfidence: config.minHypothesisConfidence ?? 0.6,
+      maxHighRiskActions: config.maxHighRiskActions ?? 2,
+      requireEvidencePerClaim: config.requireEvidencePerClaim ?? true,
+      requireTestsPerAction: config.requireTestsPerAction ?? true,
+    };
+  }
+
+  /**
+   * Validate diagnosis output against safety policies
+   */
+  validate(
+    diagnosis: DiagnosisOutput,
+    pack: EvidencePack
+  ): ValidationOutput {
+    const violations: Violation[] = [];
+    const requiredQuestions: Set<string> = new Set();
+    const requiredFixes: Set<string> = new Set();
+
+    // ─── Check hypothesis quality ─────────────────────────────────
+    const lowConfidenceHypotheses = diagnosis.top_hypotheses.filter(
+      (h) => h.confidence < this.config.minHypothesisConfidence
+    );
+
+    if (lowConfidenceHypotheses.length > 0) {
+      violations.push({
+        type: 'coherence',
+        detail: `${lowConfidenceHypotheses.length} hypothesis(es) below confidence threshold (${this.config.minHypothesisConfidence})`,
+      });
+      lowConfidenceHypotheses.forEach((h) => {
+        requiredQuestions.add(`Validate hypothesis: ${h.hypothesis}`);
+      });
+    }
+
+    // ─── Check evidence support ───────────────────────────────────
+    if (this.config.requireEvidencePerClaim) {
+      const unsupportedHypotheses = diagnosis.top_hypotheses.filter(
+        (h) => !h.evidence || h.evidence.length === 0
+      );
+
+      if (unsupportedHypotheses.length > 0) {
+        violations.push({
+          type: 'no_evidence',
+          detail: `${unsupportedHypotheses.length} hypothesis(es) lack supporting evidence`,
+        });
+        unsupportedHypotheses.forEach((h) => {
+          requiredFixes.add(
+            `Provide evidence for: "${h.hypothesis}"`
+          );
+        });
+      }
+    }
+
+    // ─── Check test coverage ─────────────────────────────────────
+    if (this.config.requireTestsPerAction) {
+      const untestablePlan = diagnosis.top_hypotheses.filter(
+        (h) => !h.tests || h.tests.length === 0
+      );
+
+      if (untestablePlan.length > 0) {
+        violations.push({
+          type: 'coherence',
+          detail: `${untestablePlan.length} hypothesis(es) lack validation tests`,
+        });
+        untestablePlan.forEach((h) => {
+          requiredFixes.add(
+            `Add confirmation tests for: "${h.hypothesis}"`
+          );
+        });
+      }
+    }
+
+    // ─── Check risk gates ─────────────────────────────────────────
+    const highRiskActions = diagnosis.recommended_actions.filter(
+      (a) => a.risk === 'high'
+    );
+
+    if (highRiskActions.length > this.config.maxHighRiskActions) {
+      violations.push({
+        type: 'risk_gate',
+        detail: `Too many high-risk actions (${highRiskActions.length} > ${this.config.maxHighRiskActions}). Requires escalation.`,
+      });
+      requiredFixes.add(
+        `Review and justify ${highRiskActions.length} high-risk actions`
+      );
+    }
+
+    // ─── Check destructive action warnings ──────────────────────
+    const destructivePatterns = [
+      /delete|drop|truncate|format|wipe|erase|clear.*database/i,
+      /restart.*production|reboot.*prod/i,
+      /disable.*auth|disable.*firewall/i,
+      /bypass.*policy|override.*security/i,
+      /modify.*critical.*system|alter.*core/i,
+    ];
+
+    const destructiveActions = diagnosis.recommended_actions.filter((a) =>
+      destructivePatterns.some((p) => p.test(a.action))
+    );
+
+    if (destructiveActions.length > 0 && pack.ticket.priority === 'Critical') {
+      violations.push({
+        type: 'risk_gate',
+        detail: 'Destructive actions proposed on CRITICAL ticket',
+      });
+      destructiveActions.forEach((a) => {
+        requiredFixes.add(
+          `Critical ticket: Destructive action needs manual approval: "${a.action}"`
+        );
+      });
+    }
+
+    // ─── Check do_not_do compliance ───────────────────────────────
+    const doNotDoList = diagnosis.do_not_do || [];
+    if (doNotDoList.length === 0) {
+      violations.push({
+        type: 'coherence',
+        detail: 'No safety constraints defined (do_not_do list is empty)',
+      });
+      requiredFixes.add('Define explicit safety constraints');
+    }
+
+    // ─── Check missing data severity ──────────────────────────────
+    const criticalDataMissing = pack.missing_data?.filter(
+      (m) => m.field === 'device' || m.field === 'user' || m.field === 'external_status'
+    ) || [];
+
+    if (
+      criticalDataMissing.length > 0 &&
+      (pack.ticket.priority === 'Critical' ||
+        pack.ticket.priority === 'High')
+    ) {
+      violations.push({
+        type: 'missing_checklist',
+        detail: `Critical data missing on ${pack.ticket.priority} ticket:${criticalDataMissing.map((m) => ` ${m.field}`).join(',')}`,
+      });
+      criticalDataMissing.forEach((m) => {
+        requiredQuestions.add(`Obtain missing critical data: ${m.field}`);
+      });
+    }
+
+    // ─── Determine overall status ──────────────────────────────────
+    let status: 'approved' | 'needs_more_info' | 'blocked' = 'approved';
+
+    if (violations.some((v) => v.type === 'risk_gate')) {
+      status = 'blocked';
+    } else if (violations.some((v) => v.type === 'no_evidence')) {
+      status = 'needs_more_info';
+    } else if (violations.length > 0) {
+      status = 'needs_more_info';
+    }
+
+    const safeToGenerate =
+      status === 'approved' && diagnosis.top_hypotheses.length > 0;
+
+    return {
+      status,
+      violations,
+      required_questions: Array.from(requiredQuestions),
+      required_fixes: Array.from(requiredFixes),
+      safe_to_generate_playbook: safeToGenerate,
+    };
+  }
+}
+
+/**
+ * Validate diagnosis against policies
+ */
+export async function validateDiagnosis(
+  diagnosis: DiagnosisOutput,
+  pack: EvidencePack,
+  config?: Partial<ValidationConfig>
+): Promise<ValidationOutput> {
+  const service = new ValidatePolicyService(config);
+  return service.validate(diagnosis, pack);
+}
+
+/**
+ * Quick safety check before proceeding to playbook generation
+ */
+export function isSafeToGenerate(validation: ValidationOutput): boolean {
+  return (
+    validation.safe_to_generate_playbook &&
+    validation.status !== 'blocked' &&
+    validation.violations.filter((v) => v.type === 'risk_gate').length === 0
+  );
+}

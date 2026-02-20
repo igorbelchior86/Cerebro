@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+
+# Next.js
+.next/
+out/
+
+# Build outputs
+build/
+dist/
+*.tsbuildinfo
+
+# Production
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Misc
+.vercel
+.vscode/
+.idea/
+*.resolved
+build.log
+new.html
+MVP.md
+implementation_plan.md*
+task.md*
+walkthrough.md*
+debug-api.ts
+gitignore
+test-llm.ts
+run-migration.js

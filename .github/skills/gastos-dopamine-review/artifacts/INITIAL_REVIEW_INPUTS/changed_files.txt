@@ -1,0 +1,4 @@
+GastosSwiftUI/BiometricEnrollmentManager.swift
+GastosSwiftUI/Views/Tabs/HomeTabRoot.swift
+Packages/GastosDesign/Sources/GastosDesign/Components/YearGridContentView.swift
+skills/gastos-initial-review.zip

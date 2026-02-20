@@ -1,0 +1,50 @@
+## git status
+ M GastosSwiftUI.xcodeproj/project.pbxproj
+ M GastosSwiftUI/ContentView.swift
+ M GastosSwiftUI/DateFormatters.swift
+ M GastosSwiftUI/Services/YearViewCache.swift
+ M GastosSwiftUI/ViewModels/HomeViewModel.swift
+ M GastosSwiftUI/Views/Tabs/HomeTabRoot.swift
+ M Packages/GastosCore/Sources/GastosCore/Utils/DatePolicy.swift
+ M Packages/GastosDesign/.swiftpm/xcode/xcuserdata/igorbelchior.xcuserdatad/xcschemes/xcschememanagement.plist
+ M Packages/GastosDesign/Sources/GastosDesign/Components/TransactionRow.swift
+ M Packages/GastosDesign/Sources/GastosDesign/Components/YearGridContentView.swift
+ M Packages/GastosDesign/Sources/GastosDesign/Utils/DesignFormatters.swift
+ M skills/gastos-diff-review/artifacts/DIFF.patch
+ M skills/gastos-diff-review/artifacts/DIFF.stat
+?? analyze_json.py
+
+## diff --stat (staged)
+
+## diff --stat (unstaged)
+ GastosSwiftUI.xcodeproj/project.pbxproj            |   16 +-
+ GastosSwiftUI/ContentView.swift                    |    3 +-
+ GastosSwiftUI/DateFormatters.swift                 |   48 +-
+ GastosSwiftUI/Services/YearViewCache.swift         |   12 +
+ GastosSwiftUI/ViewModels/HomeViewModel.swift       |   11 +-
+ GastosSwiftUI/Views/Tabs/HomeTabRoot.swift         |  409 +-
+ .../Sources/GastosCore/Utils/DatePolicy.swift      |   33 +-
+ .../xcschemes/xcschememanagement.plist             |    2 +-
+ .../GastosDesign/Components/TransactionRow.swift   |    4 +-
+ .../Components/YearGridContentView.swift           |   12 +-
+ .../GastosDesign/Utils/DesignFormatters.swift      |   12 +-
+ skills/gastos-diff-review/artifacts/DIFF.patch     | 7318 ++++++++++++--------
+ skills/gastos-diff-review/artifacts/DIFF.stat      |   27 +-
+ 13 files changed, 4711 insertions(+), 3196 deletions(-)
+
+## numstat (staged)
+
+## numstat (unstaged)
+8	8	GastosSwiftUI.xcodeproj/project.pbxproj
+2	1	GastosSwiftUI/ContentView.swift
+24	24	GastosSwiftUI/DateFormatters.swift
+12	0	GastosSwiftUI/Services/YearViewCache.swift
+9	2	GastosSwiftUI/ViewModels/HomeViewModel.swift
+50	359	GastosSwiftUI/Views/Tabs/HomeTabRoot.swift
+27	6	Packages/GastosCore/Sources/GastosCore/Utils/DatePolicy.swift
+1	1	Packages/GastosDesign/.swiftpm/xcode/xcuserdata/igorbelchior.xcuserdatad/xcschemes/xcschememanagement.plist
+3	1	Packages/GastosDesign/Sources/GastosDesign/Components/TransactionRow.swift
+7	5	Packages/GastosDesign/Sources/GastosDesign/Components/YearGridContentView.swift
+6	6	Packages/GastosDesign/Sources/GastosDesign/Utils/DesignFormatters.swift
+4553	2765	skills/gastos-diff-review/artifacts/DIFF.patch
+22	13	skills/gastos-diff-review/artifacts/DIFF.stat

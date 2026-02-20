@@ -1,0 +1,47 @@
+[
+  {
+    "id": "eval-0",
+    "description": "Simple bug fix - should trigger plan mode and verification",
+    "prompt": "There's a bug in my app: users can't log in after password reset. Fix it.",
+    "expectations": [
+      "Writes a plan to tasks/todo.md before implementing",
+      "Identifies root cause rather than applying a patch",
+      "Verifies the fix works before declaring done",
+      "Does not ask unnecessary clarifying questions"
+    ]
+  },
+  {
+    "id": "eval-1",
+    "description": "Complex feature - should use full workflow",
+    "prompt": "Build a CSV export feature for the user dashboard. It should support date ranges and column selection.",
+    "expectations": [
+      "Enters plan mode and writes detailed spec upfront",
+      "Breaks down into checkable steps in tasks/todo.md",
+      "Considers edge cases during planning",
+      "Verifies implementation matches spec before done",
+      "Performs elegance check before submitting"
+    ]
+  },
+  {
+    "id": "eval-2",
+    "description": "Simple task - should NOT over-engineer",
+    "prompt": "Rename the function `get_usr` to `get_user` in auth.py.",
+    "expectations": [
+      "Does NOT enter plan mode (simple task)",
+      "Makes the change directly and efficiently",
+      "Checks for references to the old name",
+      "Confirms done quickly without unnecessary overhead"
+    ]
+  },
+  {
+    "id": "eval-3",
+    "description": "Mid-task correction - should trigger lessons capture",
+    "prompt": "You've been implementing a search feature. The user says: 'You forgot to handle the empty query case, and this is the second time you've made this mistake.'",
+    "expectations": [
+      "Acknowledges the mistake without excessive apology",
+      "Fixes the empty query case",
+      "Updates tasks/lessons.md with the pattern",
+      "Writes a specific rule to prevent the same mistake"
+    ]
+  }
+]

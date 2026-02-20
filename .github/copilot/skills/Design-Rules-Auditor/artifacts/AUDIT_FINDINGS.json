@@ -1,0 +1,154 @@
+{
+  "findings": [
+    {
+      "rule_id": "TYP-002",
+      "severity": "low",
+      "status": "pass",
+      "description": "Quantidade de estilos de texto dentro do esperado.",
+      "evidence": "styles_observed = 4",
+      "recommendation": "Manter consistência de estilos.",
+      "missing_data": [],
+      "suggested_code_search_hints": []
+    },
+    {
+      "rule_id": "TYP-001",
+      "severity": "medium",
+      "status": "insufficient_data",
+      "description": "Sem base de parágrafo para validar escala Major Third.",
+      "evidence": "Nenhum estilo com role=body e approx_size_px válido.",
+      "recommendation": "No Visual Inspector, identifique o tamanho aproximado do corpo (body) e pelo menos 2 outros estilos.",
+      "missing_data": [
+        "typography.styles_observed[role=body].approx_size_px"
+      ],
+      "suggested_code_search_hints": []
+    },
+    {
+      "rule_id": "TYP-003",
+      "severity": "low",
+      "status": "insufficient_data",
+      "description": "Dados insuficientes para validar direção do tracking.",
+      "evidence": "Não foi possível identificar maior/menor estilo com approx_size_px.",
+      "recommendation": "No Visual Inspector, preencha approx_size_px e tracking para estilos maiores e menores.",
+      "missing_data": [
+        "typography.styles_observed[*].approx_size_px",
+        "typography.styles_observed[*].tracking"
+      ],
+      "suggested_code_search_hints": []
+    },
+    {
+      "rule_id": "SPC-001",
+      "severity": "low",
+      "status": "pass",
+      "description": "Gaps verticais compatíveis com ritmo previsível.",
+      "evidence": "Gaps=[16, 12]",
+      "recommendation": "Manter ritmo de espaçamento.",
+      "missing_data": [],
+      "suggested_code_search_hints": []
+    },
+    {
+      "rule_id": "SPC-002",
+      "severity": "low",
+      "status": "pass",
+      "description": "Padding horizontal dominante informado.",
+      "evidence": "dominant_horizontal_padding_px=16 (confidence=0.65)",
+      "recommendation": "Usar esse padding como keyline base e manter consistência.",
+      "missing_data": [],
+      "suggested_code_search_hints": [
+        "padding(.horizontal",
+        "safeAreaInset",
+        "layoutMargins"
+      ]
+    },
+    {
+      "rule_id": "LAY-001",
+      "severity": "low",
+      "status": "pass",
+      "description": "Keylines aparentam consistentes com base nas margens/padding informados.",
+      "evidence": "dominant_horizontal_padding_px=16; alignment_findings=2",
+      "recommendation": "Manter consistência de margens e alinhamento interno.",
+      "missing_data": [],
+      "suggested_code_search_hints": [
+        "padding(",
+        "layoutMargins"
+      ]
+    },
+    {
+      "rule_id": "LAY-002",
+      "severity": "low",
+      "status": "pass",
+      "description": "Não há achados de alinhamento com severidade alta.",
+      "evidence": "findings=2",
+      "recommendation": "Manter alinhamento consistente.",
+      "missing_data": [],
+      "suggested_code_search_hints": []
+    },
+    {
+      "rule_id": "COL-001",
+      "severity": "low",
+      "status": "insufficient_data",
+      "description": "Sem dados confiáveis de contagem de cores distintas.",
+      "evidence": "value=6, confidence=0.4",
+      "recommendation": "No Visual Inspector, estime distinct_color_count_est com confidence >= 0.6 quando houver clareza.",
+      "missing_data": [
+        "color.distinct_color_count_est"
+      ],
+      "suggested_code_search_hints": []
+    },
+    {
+      "rule_id": "COL-002",
+      "severity": "low",
+      "status": "pass",
+      "description": "Distribuição de acento parece controlada (heurístico).",
+      "evidence": "top_non_neutral={'color': '#030304', 'role': 'fundo principal', 'confidence': 0.7, 'evidence': 'O fundo da tela inteira é quase preto com leve brilho'}",
+      "recommendation": "Manter acento com função clara.",
+      "missing_data": [],
+      "suggested_code_search_hints": []
+    },
+    {
+      "rule_id": "COL-003",
+      "severity": "medium",
+      "status": "warning",
+      "description": "Há indícios de risco de contraste reportados.",
+      "evidence": "contrast_risk_hints=[{'description': \"Textos secundários em cinza claro (ex: '53 transações') sobre cards escuros podem ter contraste próximo ao mínimo\", 'confidence': 0.4, 'evidence': 'O cinza usado é visivelmente mais próximo do fundo do que o branco'}]",
+      "recommendation": "Aumentar contraste e validar legibilidade.",
+      "missing_data": [],
+      "suggested_code_search_hints": [
+        "foregroundColor",
+        "opacity(",
+        "Color("
+      ]
+    },
+    {
+      "rule_id": "CTA-001",
+      "severity": "low",
+      "status": "insufficient_data",
+      "description": "Sem dado confiável sobre existência de CTA primário.",
+      "evidence": "value=True, confidence=0.5",
+      "recommendation": "No Visual Inspector, indique se há CTA primário com confidence >= 0.6 quando for claro.",
+      "missing_data": [
+        "cta.primary_cta_present"
+      ],
+      "suggested_code_search_hints": []
+    },
+    {
+      "rule_id": "CTA-002",
+      "severity": "low",
+      "status": "pass",
+      "description": "Sem competição relevante de CTAs.",
+      "evidence": "cta_competition_count=4",
+      "recommendation": "Manter foco no CTA primário.",
+      "missing_data": [],
+      "suggested_code_search_hints": []
+    },
+    {
+      "rule_id": "CTA-003",
+      "severity": "low",
+      "status": "pass",
+      "description": "Posição do CTA primário parece adequada.",
+      "evidence": "primary_cta_position=bottom navigation, left-most icon",
+      "recommendation": "Manter CTA fácil de encontrar.",
+      "missing_data": [],
+      "suggested_code_search_hints": []
+    }
+  ]
+}

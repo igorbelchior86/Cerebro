@@ -1,0 +1,2 @@
+skills/gastos-initial-review/artifacts/INITIAL_REVIEW_INPUTS/changed_files.txt
+skills/gastos-initial-review/artifacts/INITIAL_REVIEW_INPUTS/status.txt

@@ -1,0 +1,550 @@
+## Package.swift files
+/Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosApp/Package.swift
+/Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosCore/Package.swift
+/Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosSync/Package.swift
+/Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosData/Package.swift
+/Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosDesign/Package.swift
+/Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosJSBridge/Package.swift
+
+## swift package describe (best effort)
+
+### /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosApp
+Name: GastosApp
+Manifest display name: GastosApp
+Path: /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosApp
+Tools version: 5.9
+Dependencies:
+    Type:
+        fileSystem
+    Identity:
+        gastoscore
+    Path:
+        /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosCore
+
+    Type:
+        fileSystem
+    Identity:
+        gastosdata
+    Path:
+        /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosData
+
+    Type:
+        fileSystem
+    Identity:
+        gastosdesign
+    Path:
+        /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosDesign
+
+    Type:
+        sourceControl
+    Identity:
+        firebase-ios-sdk
+    Url: https://github.com/firebase/firebase-ios-sdk.git
+    Requirement:
+        Range:
+            Lower bound:
+                11.0.0
+            Upper bound:
+                12.0.0
+
+Platforms:
+    Name: ios
+    Version: 17.0
+
+    Name: macos
+    Version: 14.0
+
+Products:
+    Name: GastosApp
+    Type:
+        Library:
+            automatic
+    Targets:
+        GastosApp
+
+Targets:
+    Name: GastosAppTests
+    Type: test
+    C99name: GastosAppTests
+    Module type: SwiftTarget
+    Path: Tests/GastosAppTests
+    Sources:
+        BudgetReconciliationTests.swift
+        GoldenSnapshotTests.swift
+        PlannedViewModelTests.swift
+        SyncErrorReproductionTests.swift
+        TransactionFilteringServiceTests.swift
+        WidgetSyncCoordinatorTests.swift
+    Resources:
+        Rule:
+            Process:
+        Path:
+            /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosApp/Tests/GastosAppTests/Resources/expected_core.json
+        Rule:
+            Process:
+        Path:
+            /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosApp/Tests/GastosAppTests/Resources/expected_deep.json
+        Rule:
+            Process:
+        Path:
+            /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosApp/Tests/GastosAppTests/Resources/expected_smoke.json
+        Rule:
+            Process:
+        Path:
+            /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosApp/Tests/GastosAppTests/Resources/fixture_base.json
+        Rule:
+            Process:
+        Path:
+            /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosApp/Tests/GastosAppTests/Resources/report_core.md
+        Rule:
+            Process:
+        Path:
+            /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosApp/Tests/GastosAppTests/Resources/report_deep.md
+        Rule:
+            Process:
+        Path:
+            /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosApp/Tests/GastosAppTests/Resources/report_smoke.md
+    Target dependencies:
+        GastosApp
+    Product dependencies:
+        GastosCore
+        GastosData
+
+    Name: GastosApp
+    Type: library
+    C99name: GastosApp
+    Module type: SwiftTarget
+    Path: Sources/GastosApp
+    Sources:
+        AppContainer.swift
+        CardInput.swift
+        Models/InviteDisplay.swift
+        Services/AIEducationService.swift
+        Services/AccountDeletionService.swift
+        Services/AppAuthSession.swift
+        Services/AppEnvironment.swift
+        Services/BootstrapCoordinator.swift
+        Services/BudgetCalculationService.swift
+        Services/BudgetReconciliationService.swift
+        Services/FirebaseBootstrapper.swift
+        Services/GastosDataAliases.swift
+        Services/NotificationManager.swift
+        Services/OfflineBootstrapCache.swift
+        Services/OfflineQueueMaintenance.swift
+        Services/ProfilePreferencesService.swift
+        Services/PushCoordinator.swift
+        Services/RealtimeServiceCoordinator.swift
+        Services/RecurrenceService.swift
+        Services/ResponseCacheService.swift
+        Services/TransactionFilteringService.swift
+        Services/UserSessionService.swift
+        Services/WidgetSyncCoordinator.swift
+        Services/WidgetSyncService.swift
+        Stores/AppStore.swift
+        Stores/BudgetCycleSnapshotsStore.swift
+        Stores/BudgetsStore.swift
+        Stores/CardsStore.swift
+        Stores/ConnectivityStore.swift
+        Stores/InvitesStore.swift
+        Stores/MonthSnapshotsStore.swift
+        Stores/OfflineCardQueueing.swift
+        Stores/OfflineTransactionQueueing.swift
+        Stores/TransactionsStore.swift
+        Stores/UserMetaStore.swift
+        ViewModels/PlannedViewModel.swift
+    Product dependencies:
+        GastosCore
+        GastosData
+        GastosDesign
+        FirebaseFunctions
+    Product memberships:
+        GastosApp
+
+
+
+### /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosCore
+Name: GastosCore
+Manifest display name: GastosCore
+Path: /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosCore
+Tools version: 5.9
+Dependencies:
+Platforms:
+    Name: ios
+    Version: 17.0
+
+Products:
+    Name: GastosCore
+    Type:
+        Library:
+            automatic
+    Targets:
+        GastosCore
+
+Targets:
+    Name: GastosCoreTests
+    Type: test
+    C99name: GastosCoreTests
+    Module type: SwiftTarget
+    Path: Tests/GastosCoreTests
+    Sources:
+        BudgetEngineTests.swift
+        BudgetMaterializationTests.swift
+        BudgetSpentInvariantTests.swift
+        CardPostDateInvariantTests.swift
+        DailyBalanceGoldenTests.swift
+        DailyBalancesInvariantTests.swift
+        HomeTabRootProjectionBugTests.swift
+        MonthRangeInvariantTests.swift
+        MonthlyDailyConsistencyTests.swift
+        PlannedTransactionsTests.swift
+        ProjectionMonotonicityInvariantTests.swift
+        PropertyBasedMonthlyDailyConsistencyTests.swift
+        RecurrenceConsistencyTests.swift
+        RecurrenceEngineVerificationTests.swift
+        TransactionSanitizeTests.swift
+        UnifiedEngineGoldenTests.swift
+        WidgetConsistencyTests.swift
+        YearMonthlyProjectionGoldenTests.swift
+    Resources:
+        Rule:
+            Process:
+        Path:
+            /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosCore/Tests/GastosCoreTests/Resources/budget_materialization_golden.json
+        Rule:
+            Process:
+        Path:
+            /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosCore/Tests/GastosCoreTests/Resources/daily_balance_golden.json
+        Rule:
+            Process:
+        Path:
+            /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosCore/Tests/GastosCoreTests/Resources/transaction_sanitize_golden.json
+        Rule:
+            Process:
+        Path:
+            /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosCore/Tests/GastosCoreTests/Resources/year_monthly_projection_golden.json
+    Target dependencies:
+        GastosCore
+
+    Name: GastosCore
+    Type: library
+    C99name: GastosCore
+    Module type: SwiftTarget
+    Path: Sources/GastosCore
+    Sources:
+        Budgets/BudgetCalculationService.swift
+        Budgets/BudgetCalculations.swift
+        Budgets/BudgetMaterialization.swift
+        Engine/BudgetEngine.swift
+        Engine/OccurrenceResolver.swift
+        Engine/RecurrenceExpander.swift
+        Engine/UnifiedBalanceEngine.swift
+        Models/AppBootstrapState.swift
+        Models/Budget.swift
+        Models/BudgetCycleSnapshot.swift
+        Models/Card.swift
+        Models/DailyBalance.swift
+        Models/MonthSnapshot.swift
+        Models/RecurrenceRule.swift
+        Models/Transaction.swift
+        Models/WidgetBalanceTodaySnapshot.swift
+        Models/WidgetCashflow7dSnapshot.swift
+        Models/WidgetCommitmentsSnapshot.swift
+        Utils/AppLocales.swift
+        Utils/BudgetTagFormatter.swift
+        Utils/Calendars.swift
+        Utils/Currency.swift
+        Utils/CurrencyProfiles.swift
+        Utils/DailyBalances.swift
+        Utils/DatePolicy.swift
+        Utils/DateSupport.swift
+        Utils/DateUtils.swift
+        Utils/DebugLogger.swift
+        Utils/RecurrenceInterval.swift
+        Utils/TagParser.swift
+        Utils/TimezoneHelpers.swift
+        Utils/TransactionSanitize.swift
+    Product memberships:
+        GastosCore
+
+
+
+### /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosSync
+(swift package describe failed)
+
+### /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosData
+Name: GastosData
+Manifest display name: GastosData
+Path: /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosData
+Tools version: 5.9
+Dependencies:
+    Type:
+        sourceControl
+    Identity:
+        firebase-ios-sdk
+    Url: https://github.com/firebase/firebase-ios-sdk.git
+    Requirement:
+        Range:
+            Lower bound:
+                11.0.0
+            Upper bound:
+                12.0.0
+
+    Type:
+        sourceControl
+    Identity:
+        googlesignin-ios
+    Url: https://github.com/google/GoogleSignIn-iOS
+    Requirement:
+        Range:
+            Lower bound:
+                8.0.0
+            Upper bound:
+                9.0.0
+
+    Type:
+        fileSystem
+    Identity:
+        gastoscore
+    Path:
+        /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosCore
+
+Platforms:
+    Name: ios
+    Version: 17.0
+
+    Name: macos
+    Version: 14.0
+
+Products:
+    Name: GastosData
+    Type:
+        Library:
+            automatic
+    Targets:
+        GastosData
+
+Targets:
+    Name: GastosData
+    Type: library
+    C99name: GastosData
+    Module type: SwiftTarget
+    Path: Sources/GastosData
+    Sources:
+        Accounts/AccountDeletionService.swift
+        Accounts/AccountMergeService.swift
+        Auth/AppleSignInService.swift
+        Auth/AuthSession.swift
+        Auth/FirebaseAuthSession.swift
+        Auth/GoogleSignInService.swift
+        DTOs/PublicProfileDTO.swift
+        Firebase/FirebaseConfig.swift
+        Firebase/FirebaseRESTClient.swift
+        Firebase/FirebaseResponseCache.swift
+        Firebase/FirebaseSession.swift
+        Notifications/NotificationManager.swift
+        Notifications/PushCoordinator.swift
+        Realtime/AppBootstrapRepository.swift
+        Realtime/BudgetCycleSnapshotDTO.swift
+        Realtime/BudgetCycleSnapshotsRepository.swift
+        Realtime/BudgetRecordDTO.swift
+        Realtime/BudgetsRepository.swift
+        Realtime/BudgetsWriter.swift
+        Realtime/CardRecordDTO.swift
+        Realtime/CardsRepository.swift
+        Realtime/FirebaseRealtimeService.swift
+        Realtime/FullResyncReason.swift
+        Realtime/InsightRepository.swift
+        Realtime/InviteDTO.swift
+        Realtime/InvitesRepository.swift
+        Realtime/LocalSnapshotCache.swift
+        Realtime/MonthSnapshotDTO.swift
+        Realtime/MonthSnapshotsRepository.swift
+        Realtime/OfflineCardQueue.swift
+        Realtime/OfflineTransactionQueue.swift
+        Realtime/PublicProfileRepository.swift
+        Realtime/RealtimeServiceProtocol.swift
+        Realtime/RealtimeState.swift
+        Realtime/RealtimeSyncer.swift
+        Realtime/RemoteInsightDTO.swift
+        Realtime/SyncDiagnostics.swift
+        Realtime/SyncLogger.swift
+        Realtime/SyncTelemetry.swift
+        Realtime/TransactionRecordDTO.swift
+        Realtime/TransactionsRepository.swift
+        Realtime/TransactionsWriter.swift
+        Realtime/UserMetaDTO.swift
+        Realtime/UserMetaRepository.swift
+        Realtime/UserPreferencesRepository.swift
+        Utils/CacheIntegrity.swift
+        Utils/JSONCoders.swift
+    Product dependencies:
+        FirebaseAuth
+        FirebaseDatabase
+        FirebaseMessaging
+        FirebaseFunctions
+        GoogleSignIn
+        GastosCore
+    Product memberships:
+        GastosData
+
+
+
+### /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosDesign
+Name: GastosDesign
+Manifest display name: GastosDesign
+Path: /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosDesign
+Tools version: 5.9
+Dependencies:
+    Type:
+        fileSystem
+    Identity:
+        gastoscore
+    Path:
+        /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosCore
+
+Platforms:
+    Name: ios
+    Version: 17.0
+
+    Name: macos
+    Version: 14.0
+
+Products:
+    Name: GastosDesign
+    Type:
+        Library:
+            automatic
+    Targets:
+        GastosDesign
+
+Targets:
+    Name: GastosDesignTests
+    Type: test
+    C99name: GastosDesignTests
+    Module type: SwiftTarget
+    Path: Tests/GastosDesignTests
+    Sources:
+        ContextualSwipeRowTests.swift
+    Target dependencies:
+        GastosDesign
+
+    Name: GastosDesign
+    Type: library
+    C99name: GastosDesign
+    Module type: SwiftTarget
+    Path: Sources/GastosDesign
+    Sources:
+        Components/AccordionDayRow.swift
+        Components/AccordionMonthSection.swift
+        Components/AccordionPrefetchCache.swift
+        Components/AccordionScrollCoordinator.swift
+        Components/AccordionView.swift
+        Components/AppHeader.swift
+        Components/BudgetCardView.swift
+        Components/DSCircularActionButton.swift
+        Components/DSGlassCard.swift
+        Components/DayContext.swift
+        Components/DayDetailView.swift
+        Components/DayRowAnchorPreferenceKey.swift
+        Components/DeleteConfirmationSheet.swift
+        Components/ExpandableMonthCard.swift
+        Components/LiquidGlassBackdrop.swift
+        Components/LiquidGlassRepair.swift
+        Components/MonthAnchorPreferenceKey.swift
+        Components/MonthCard.swift
+        Components/MonthContext.swift
+        Components/MonthDetailView.swift
+        Components/PlannedCalendarView.swift
+        Components/ReactionMenuContainer.swift
+        Components/ResponsiveModal.swift
+        Components/SheetPrimaryButtonStyle.swift
+        Components/SheetSecondaryButtonStyle.swift
+        Components/StickyMonthOverlay.swift
+        Components/StreakBadge.swift
+        Components/TransactionCardView.swift
+        Components/TransactionRow.swift
+        Components/YearGridContentView.swift
+        Components/YearGridSkeletonView.swift
+        Components/YearGridView.swift
+        DesignTokens.swift
+        Modifiers/DSGlass.swift
+        Modifiers/DSShadows.swift
+        Modifiers/GastosSheetModifier.swift
+        Styles/LiquidGlassStyle.swift
+        Styles/NoHighlightButtonStyle.swift
+        Theme.swift
+        Tokens/DSTokens.swift
+        Utils/DayLabelFormatter.swift
+        Utils/DesignFormatters.swift
+        Utils/HapticFeedback.swift
+        Utils/HeroNamespaceEnvironment.swift
+        Utils/HeroSourceModifier.swift
+        Utils/MotionManager.swift
+        Utils/ScrollOffsetObserver.swift
+        Utils/ThrottledAsyncImage.swift
+    Product dependencies:
+        GastosCore
+    Product memberships:
+        GastosDesign
+
+
+
+### /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosJSBridge
+Name: GastosJSBridge
+Manifest display name: GastosJSBridge
+Path: /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosJSBridge
+Tools version: 5.9
+Dependencies:
+Platforms:
+    Name: ios
+    Version: 17.0
+
+Products:
+    Name: GastosJSBridge
+    Type:
+        Library:
+            automatic
+    Targets:
+        GastosJSBridge
+
+Targets:
+    Name: GastosJSBridgeTests
+    Type: test
+    C99name: GastosJSBridgeTests
+    Module type: SwiftTarget
+    Path: Tests/GastosJSBridgeTests
+    Sources:
+        BudgetCalculationsTests.swift
+    Resources:
+        Rule:
+            Process:
+        Path:
+            /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosJSBridge/Tests/GastosJSBridgeTests/Fixtures/block1-basic.json
+        Rule:
+            Process:
+        Path:
+            /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosJSBridge/Tests/GastosJSBridgeTests/Fixtures/block1-recurring.json
+    Target dependencies:
+        GastosJSBridge
+
+    Name: GastosJSBridge
+    Type: library
+    C99name: GastosJSBridge
+    Module type: SwiftTarget
+    Path: Sources/GastosJSBridge
+    Sources:
+        JSEngine+Currency.swift
+        JSEngine+Daily.swift
+        JSEngine+Dates.swift
+        JSEngine+Sanitize.swift
+        JSEngine.swift
+        Models/JSTypes.swift
+    Resources:
+        Rule:
+            Process:
+        Path:
+            /Users/igorbelchior/Documents/Github/Gastos+/Packages/GastosJSBridge/Sources/GastosJSBridge/Resources/gastos.js
+    Product memberships:
+        GastosJSBridge
+
+

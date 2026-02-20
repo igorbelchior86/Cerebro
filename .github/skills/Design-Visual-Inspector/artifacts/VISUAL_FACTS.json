@@ -1,0 +1,190 @@
+{
+  "meta": {
+    "screen_name": "Home Dashboard 2026",
+    "platform": "iOS",
+    "device": "iPhone com Dynamic Island (~iPhone 15 Pro)",
+    "mode": "dark",
+    "images": [
+      {
+        "file": "user screenshot 1 (dashboard overview)"
+      },
+      {
+        "file": "user screenshot 2 (month-detail expansion)"
+      }
+    ]
+  },
+  "typography": {
+    "styles_observed": [
+      {
+        "description": "Topo com 'Gastos+' e '2026' usa peso semi-bold/medium e tamanho ~18-20pt para hierarquia imediata",
+        "confidence": 0.65,
+        "evidence": "Somente esses textos estão alinhados na barra superior e aparecem maiores que o restante"
+      },
+      {
+        "description": "Cabeçalhos dos cards (ex: 'Este mês', 'Janeiro', 'Saldo projetado:') usam peso regular/bold legível em ~16-18pt, alinhados à esquerda",
+        "confidence": 0.6,
+        "evidence": "Quem observa os dois prints nota repetição do mesmo estilo nos títulos dos cards"
+      },
+      {
+        "description": "Valores (Entradas, Saídas, saldos projetados) usam cifra e peso mais forte com cerca de 22-24pt para chamar atenção",
+        "confidence": 0.6,
+        "evidence": "As cifras em verde/vermelho ocupam espaço central nos cards e têm peso visivelmente maior"
+      },
+      {
+        "description": "Textos auxiliares (ex: '53 transações', dias da semana) são menores (~12-14pt) e de cor cinza clara",
+        "confidence": 0.6,
+        "evidence": "Estes textos ficam abaixo/ao lado dos cabeçalhos com contraste mais brando contra o fundo escuro"
+      }
+    ],
+    "notes": [
+      {
+        "description": "A maioria dos textos parece alinhada à esquerda dentro das cards, mantendo consistência tipográfica por seção",
+        "confidence": 0.6,
+        "evidence": "Todos os meses listados mantêm alinhamento à esquerda dos textos principais"
+      }
+    ]
+  },
+  "spacing": {
+    "dominant_horizontal_padding_px": {
+      "value": 16,
+      "confidence": 0.65,
+      "evidence": "Os cards respeitam uma margem lateral visível antes das bordas da tela e do botão inferior"
+    },
+    "dominant_vertical_gaps_px": [
+      {
+        "value": 16,
+        "confidence": 0.5,
+        "evidence": "Espaço entre o card de gauge e o primeiro card mensal parece constante (~16px)"
+      },
+      {
+        "value": 12,
+        "confidence": 0.45,
+        "evidence": "Gap entre linhas internas de mês (ex: data e valor) é menor e mais compacto"
+      }
+    ],
+    "density": {
+      "value": "comfortable",
+      "confidence": 0.55,
+      "evidence": "Cards empilhados com espaço suficiente entre eles e grande padding interno, sem parecer apertado"
+    }
+  },
+  "layout": {
+    "grid_hypothesis": {
+      "columns": 1,
+      "confidence": 0.7,
+      "evidence": "Todos os elementos principais (cartões, barra inferior) ocupam uma única coluna ampla"
+    },
+    "alignment_findings": [
+      {
+        "description": "Textos principais e valores dentro de cada card seguem alinhamento à esquerda, com os valores mais à direita para contraste",
+        "confidence": 0.6,
+        "evidence": "Mesmos deslocamentos visuais observados em Janeiro/Março/Abril"
+      },
+      {
+        "description": "Barra inferior com navegação e indicando 12 dias no verde está centralizada horizontalmente e parece usar padding igual entre botões",
+        "confidence": 0.55,
+        "evidence": "Todos os ícones na barra inferior têm espaço igual entre eles"
+      }
+    ]
+  },
+  "color": {
+    "dominant_colors": [
+      {
+        "color": "#030304",
+        "role": "fundo principal",
+        "confidence": 0.7,
+        "evidence": "O fundo da tela inteira é quase preto com leve brilho"
+      },
+      {
+        "color": "#1D1F23",
+        "role": "cartões/superfícies",
+        "confidence": 0.65,
+        "evidence": "Todos os painéis têm superfície escura (cinza antracite) distinta do fundo"
+      },
+      {
+        "color": "#FFFFFF",
+        "role": "texto primário",
+        "confidence": 0.7,
+        "evidence": "Textos como 'Este mês', 'Saldo projetado:' e valores principais estão em branco puro"
+      },
+      {
+        "color": "#78F39D",
+        "role": "accento positivo",
+        "confidence": 0.7,
+        "evidence": "Entradas e o icone/indicador de status usam verde brilhante"
+      },
+      {
+        "color": "#F15A5A",
+        "role": "accento negativo",
+        "confidence": 0.65,
+        "evidence": "Saídas e o botão circular vermelho compartilham essa cor"
+      },
+      {
+        "color": "#FFB347",
+        "role": "gradiente do gauge",
+        "confidence": 0.55,
+        "evidence": "O arco do indicador usa amarelo-laranja no meio da escala"
+      }
+    ],
+    "distinct_color_count_est": {
+      "value": 6,
+      "confidence": 0.4,
+      "evidence": "Identificadas cerca de seis cores recorrentes (pretos, cinzas, branco, verde, vermelho, amarelo)"
+    },
+    "contrast_risk_hints": [
+      {
+        "description": "Textos secundários em cinza claro (ex: '53 transações') sobre cards escuros podem ter contraste próximo ao mínimo",
+        "confidence": 0.4,
+        "evidence": "O cinza usado é visivelmente mais próximo do fundo do que o branco"
+      }
+    ]
+  },
+  "cta": {
+    "primary_cta_present": {
+      "value": true,
+      "confidence": 0.5,
+      "evidence": "Ícone da casa preenchido em verde na barra inferior destaca-se como o botão ativo da navegação"
+    },
+    "primary_cta_position": {
+      "value": "bottom navigation, left-most icon",
+      "confidence": 0.6,
+      "evidence": "O botão verde da casa aparece no canto inferior esquerdo, separado dos demais butões"
+    },
+    "cta_competition_count": {
+      "value": 4,
+      "confidence": 0.45,
+      "evidence": "A barra inferior mostra quatro ícones (casa, gráfico, engrenagem e lupa) que competem pelo foco"
+    }
+  },
+  "components": {
+    "repeated_patterns": [
+      {
+        "description": "Cartões arredondados para cada mês com título, número de transações e saldo projetado",
+        "confidence": 0.7,
+        "evidence": "Janeiro, Fevereiro, Março e Abril têm visual idêntico de card"
+      },
+      {
+        "description": "Badges circulares com dia (01, 02, 03...) e abreviação do dia da semana em cima das linhas expandida",
+        "confidence": 0.6,
+        "evidence": "Tela complementar mostra blocos repetidos para cada dia em Janeiro"
+      },
+      {
+        "description": "Barra inferior com ícone ativo destacado e botões circulares para ações rápidas (seta vermelha/verde)",
+        "confidence": 0.55,
+        "evidence": "Barra mostra o mesmo padrão e estilo de ícones em ambas capturas"
+      }
+    ]
+  },
+  "hypotheses_for_code_validation": [
+    {
+      "statement": "Os nomes dos meses (Janeiro, Fevereiro, etc.) estão hardcoded ou em localization PT e podem ser buscados por esses literais no código",
+      "confidence": 0.45,
+      "evidence": "Os textos aparecem exatamente como strings fixas na UI"
+    },
+    {
+      "statement": "O componente de gauge/color gradient no card 'Este mês' pode ser uma view customizada que define o arco e as cores verde/amarelo/vermelho",
+      "confidence": 0.4,
+      "evidence": "O arco segue três segmentos coloridos iguais em todas as capturas"
+    }
+  ]
+}

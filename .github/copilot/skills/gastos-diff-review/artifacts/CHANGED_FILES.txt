@@ -1,0 +1,14 @@
+GastosSwiftUI.xcodeproj/project.pbxproj
+GastosSwiftUI/ContentView.swift
+GastosSwiftUI/DateFormatters.swift
+GastosSwiftUI/Services/YearViewCache.swift
+GastosSwiftUI/ViewModels/HomeViewModel.swift
+GastosSwiftUI/Views/Tabs/HomeTabRoot.swift
+Packages/GastosCore/Sources/GastosCore/Utils/DatePolicy.swift
+Packages/GastosDesign/.swiftpm/xcode/xcuserdata/igorbelchior.xcuserdatad/xcschemes/xcschememanagement.plist
+Packages/GastosDesign/Sources/GastosDesign/Components/TransactionRow.swift
+Packages/GastosDesign/Sources/GastosDesign/Components/YearGridContentView.swift
+Packages/GastosDesign/Sources/GastosDesign/Utils/DesignFormatters.swift
+skills/gastos-diff-review/artifacts/CHANGED_FILES.txt
+skills/gastos-diff-review/artifacts/DIFF.patch
+skills/gastos-diff-review/artifacts/DIFF.stat

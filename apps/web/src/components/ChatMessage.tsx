@@ -16,10 +16,10 @@ interface ChatMessageProps {
 }
 
 const SOURCE_CONFIG: Record<string, { icon: string; label: string }> = {
-  evidence:   { icon: '⚡', label: 'PrepareContext' },
-  diagnosis:  { icon: '🧠', label: 'LLM Diagnose' },
+  evidence: { icon: '⚡', label: 'PrepareContext' },
+  diagnosis: { icon: '🧠', label: 'LLM Diagnose' },
   validation: { icon: '🛡', label: 'ValidateAndPolicy' },
-  text:       { icon: '📋', label: 'PlaybookWriter' },
+  text: { icon: '📋', label: 'PlaybookWriter' },
 };
 
 function MsgTag({ children, color, bg }: { children: ReactNode; color?: string; bg?: string }) {
@@ -61,8 +61,7 @@ export default function ChatMessage({ message, children }: ChatMessageProps) {
     );
   }
 
-  const src = SOURCE_CONFIG[message.type ?? 'text'] ?? SOURCE_CONFIG.text;
-
+  const src = SOURCE_CONFIG[message.type ?? 'text'] ?? { icon: '📋', label: 'PlaybookWriter' };
   return (
     <div className="animate-msgIn" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '10px' }}>
       <div style={{ width: '26px', height: '26px', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '12px', border: '1px solid var(--border)', background: 'var(--bg-card)' }}>

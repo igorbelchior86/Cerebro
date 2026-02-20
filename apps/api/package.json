@@ -16,6 +16,8 @@
     "seed:admin": "tsx src/db/seed-admin.ts"
   },
   "dependencies": {
+    "@azure/msal-node": "^5.0.4",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
     "@playbook-brain/types": "workspace:*",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",

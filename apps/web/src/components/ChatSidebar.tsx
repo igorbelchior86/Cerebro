@@ -6,6 +6,7 @@ import UserProfileDropdown from './UserProfileDropdown';
 import ProfileModal from './ProfileModal';
 import ThemeToggle from './ThemeToggle';
 import { useAuth } from '@/hooks/useAuth';
+import { useTranslations } from 'next-intl';
 
 export interface ActiveTicket {
   id: string;
@@ -35,20 +36,21 @@ const PRIORITY_COLOR: Record<string, string> = {
 };
 
 const STATUS_CONFIG = {
-  completed: { color: '#1DB98A', bg: 'rgba(29,185,138,0.09)', border: 'rgba(29,185,138,0.2)', dot: '#1DB98A', label: 'Done', pulse: false },
-  processing: { color: '#5B7FFF', bg: 'rgba(91,127,255,0.10)', border: 'rgba(91,127,255,0.22)', dot: '#5B7FFF', label: 'Processing', pulse: true },
-  pending: { color: 'rgba(228,234,248,0.28)', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.055)', dot: 'rgba(228,234,248,0.14)', label: 'Pending', pulse: false },
-  failed: { color: '#F87171', bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.18)', dot: '#F87171', label: 'Failed', pulse: false },
+  completed: { color: '#1DB98A', bg: 'rgba(29,185,138,0.09)', border: 'rgba(29,185,138,0.2)', dot: '#1DB98A', localeKey: 'statusDone', pulse: false },
+  processing: { color: '#5B7FFF', bg: 'rgba(91,127,255,0.10)', border: 'rgba(91,127,255,0.22)', dot: '#5B7FFF', localeKey: 'statusProcessing', pulse: true },
+  pending: { color: 'rgba(228,234,248,0.28)', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.055)', dot: 'rgba(228,234,248,0.14)', localeKey: 'statusPending', pulse: false },
+  failed: { color: '#F87171', bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.18)', dot: '#F87171', localeKey: 'statusFailed', pulse: false },
 };
 
 const FILTERS = [
-  { id: 'all', label: 'All' },
-  { id: 'processing', label: 'Active' },
-  { id: 'completed', label: 'Done' },
-  { id: 'failed', label: 'Failed' },
+  { id: 'all', localeKey: 'filterAll' },
+  { id: 'processing', localeKey: 'filterActive' },
+  { id: 'completed', localeKey: 'statusDone' },
+  { id: 'failed', localeKey: 'statusFailed' },
 ];
 
 export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, isLoading }: ChatSidebarProps) {
+  const t = useTranslations('ChatSidebar');
   const { user, updateProfile } = useAuth();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -59,7 +61,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   // Fallback defaults
   const userName = user?.name || "John Technician";
   const userInitials = userName.substring(0, 2).toUpperCase();
-  const jobTitle = user?.preferences?.jobTitle || (user?.role === 'owner' ? 'Owner' : user?.role === 'admin' ? 'Admin' : 'L2 Engineer');
+  const jobTitle = user?.preferences?.jobTitle || (user?.role === 'owner' ? t('roleOwner') : user?.role === 'admin' ? t('roleAdmin') : t('roleL2'));
   const avatar = user?.avatar || undefined;
 
   // Sync with local storage on mount to prevent clobbering
@@ -148,8 +150,8 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
               <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M7 2l5 5-5 5" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.025em' }}>Playbook Brain</div>
-              <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8.5px', color: 'var(--text-muted)', letterSpacing: '0.09em', textTransform: 'uppercase', marginTop: '2px' }}>Triage Copilot</div>
+              <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.025em' }}>{t('appName')}</div>
+              <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8.5px', color: 'var(--text-muted)', letterSpacing: '0.09em', textTransform: 'uppercase', marginTop: '2px' }}>{t('appSubtitle')}</div>
             </div>
             {/* Clock + Theme toggle */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
@@ -162,16 +164,16 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
               <span className="animate-ping" style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: '#1DB98A', opacity: 0.4 }} />
               <span style={{ position: 'relative', width: '8px', height: '8px', borderRadius: '50%', background: '#1DB98A' }} />
             </span>
-            <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-muted)', letterSpacing: '0.03em' }}>Listening for Autotask tickets...</span>
+            <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-muted)', letterSpacing: '0.03em' }}>{t('listeningAutotask')}</span>
           </div>
         </div>
 
         {/* Stats */}
         <div style={{ display: 'flex', padding: '9px 15px', borderBottom: '1px solid var(--border)', position: 'relative', zIndex: 1 }}>
           {[
-            { val: processing, label: 'Active', color: 'var(--accent)' },
-            { val: completed, label: 'Done today', color: 'var(--green)' },
-            { val: tickets.length > 0 ? '4m' : '—', label: 'Avg time', color: 'var(--text-muted)' },
+            { val: processing, label: t('statActive'), color: 'var(--accent)' },
+            { val: completed, label: t('statDoneToday'), color: 'var(--green)' },
+            { val: tickets.length > 0 ? '4m' : '—', label: t('statAvgTime'), color: 'var(--text-muted)' },
           ].map((s) => (
             <div key={s.label} style={{ flex: 1, textAlign: 'center', padding: '3px 0' }}>
               <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '15px', fontWeight: 700, letterSpacing: '-0.04em', marginBottom: '3px', color: s.color }}>{s.val}</div>
@@ -184,7 +186,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
         <div style={{ display: 'flex', gap: '2px', padding: '12px 12px 8px', position: 'relative', zIndex: 1 }}>
           {FILTERS.map((f) => (
             <button key={f.id} onClick={() => setFilter(f.id)} style={{ flex: 1, padding: '5px 0', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '9.5px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', background: filter === f.id ? 'rgba(91,127,255,0.10)' : 'transparent', color: filter === f.id ? 'var(--accent)' : 'var(--text-muted)', transition: 'var(--transition)' }}>
-              {f.label}
+              {t(f.localeKey as any)}
             </button>
           ))}
         </div>
@@ -194,7 +196,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
           {isLoading && tickets.length === 0 ? (
             [1, 2].map((i) => <div key={i} style={{ height: '80px', borderRadius: '9px', background: 'var(--bg-card)', border: '1px solid var(--border)', opacity: 0.6 }} />)
           ) : visible.length === 0 ? (
-            <p style={{ marginTop: '20px', fontSize: '11px', color: 'var(--text-faint)', textAlign: 'center' }}>No tickets in this view</p>
+            <p style={{ marginTop: '20px', fontSize: '11px', color: 'var(--text-faint)', textAlign: 'center' }}>{t('noTickets')}</p>
           ) : visible.map((ticket, idx) => {
             const cfg = STATUS_CONFIG[ticket.status] ?? STATUS_CONFIG.pending;
             const priority = ticket.priority ?? 'P3';
@@ -221,19 +223,19 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                         <span style={{ position: 'relative', width: '7px', height: '7px', borderRadius: '50%', background: cfg.dot }} />
                       </span>
                     ) : <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: cfg.dot, flexShrink: 0 }} />}
-                    {cfg.label}
+                    {t(cfg.localeKey as any)}
                   </span>
                 </div>
 
                 <p style={{ fontSize: '12.5px', fontWeight: 500, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', lineHeight: 1.4, letterSpacing: '-0.01em', marginBottom: '5px' }}>
-                  {ticket.title ?? 'Network issue'}
+                  {ticket.title ?? t('defaultIssue')}
                 </p>
                 <p style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginBottom: '9px' }}>
-                  {ticket.org ?? 'Unknown org'}{ticket.site ? <><span style={{ margin: '0 4px', opacity: 0.4 }}>·</span>{ticket.site}</> : null}
+                  {ticket.org ?? t('unknownOrg')}{ticket.site ? <><span style={{ margin: '0 4px', opacity: 0.4 }}>·</span>{ticket.site}</> : null}
                 </p>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-faint)' }}>
-                    {ticket.age ?? (ticket.created_at ? new Date(ticket.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'just now')}
+                    {ticket.age ?? (ticket.created_at ? new Date(ticket.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : t('justNow'))}
                   </span>
                   {ticket.meta && <span style={{ fontSize: '9.5px', fontWeight: 600, color: cfg.color }}>{ticket.meta}</span>}
                 </div>

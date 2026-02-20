@@ -1,0 +1,97 @@
+{
+  "Settings": {
+    "title": "Settings",
+    "theme": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "logout": "Log out"
+  },
+  "Login": {
+    "signIn": "Sign in",
+    "credentialsDesc": "Enter your credentials to continue",
+    "emailLabel": "Email",
+    "emailPlaceholder": "you@yourcompany.com",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "••••••••••••",
+    "mfaTitle": "Two-factor authentication",
+    "mfaDesc": "Enter the 6-digit code from your authenticator app (Google Authenticator / Authy)",
+    "mfaCodeLabel": "Authentication code",
+    "verifyBtn": "Verify",
+    "backToSignIn": "← Back to sign in",
+    "pleaseWait": "Please wait…",
+    "networkError": "Network error",
+    "networkErrorApi": "Network error — is the API running?",
+    "loginFailed": "Login failed",
+    "invalidCode": "Invalid code",
+    "copilot": "IT Automation Copilot"
+  },
+  "ChatSidebar": {
+    "statusDone": "Done",
+    "statusProcessing": "Processing",
+    "statusPending": "Pending",
+    "statusFailed": "Failed",
+    "filterAll": "All",
+    "filterActive": "Active",
+    "roleOwner": "Owner",
+    "roleAdmin": "Admin",
+    "roleL2": "L2 Engineer",
+    "appName": "Playbook Brain",
+    "appSubtitle": "Triage Copilot",
+    "listeningAutotask": "Listening for Autotask tickets...",
+    "statActive": "Active",
+    "statDoneToday": "Done today",
+    "statAvgTime": "Avg time",
+    "noTickets": "No tickets in this view",
+    "defaultIssue": "Network issue",
+    "unknownOrg": "Unknown org",
+    "justNow": "just now"
+  },
+  "ProfileModal": {
+    "title": "Edit Profile",
+    "uploadPhoto": "Upload Photo",
+    "photoHint": "Recommended: Square JPG or PNG, max 2MB.",
+    "displayName": "Display Name",
+    "jobTitle": "Job Title",
+    "jobTitlePlaceholder": "e.g. L2 Engineer",
+    "cancel": "Cancel",
+    "save": "Save Changes"
+  },
+  "UserProfileDropdown": {
+    "settings": "Settings",
+    "logout": "Logout",
+    "logoutFailed": "Logout failed"
+  },
+  "ChatHome": {
+    "welcome": "Hello! I am Playbook Brain. I can check your integrations, query data from IT Glue, NinjaOne and Autotask, or help diagnose issues. How can I help?",
+    "hintStatus": "Check integrations status",
+    "hintItGlue": "Is IT Glue connected?",
+    "hintOrgs": "List IT Glue orgs",
+    "hintWhatCanYouDo": "What can you do?",
+    "assistant": "Assistant",
+    "online": "online",
+    "processing": "Processing...",
+    "placeholder": "Ask something about your integrations, tickets or devices..."
+  },
+  "ChatSession": {
+    "startingAnalysis": "Starting analysis — collecting evidence from Autotask, NinjaOne and IT Glue...",
+    "evidenceCollected": "Data collected from Autotask, NinjaOne and IT Glue.",
+    "diagnosisGenerated": "Ranked hypotheses generated with evidence citations.",
+    "validationCleared": "Solution cleared — no destructive actions without gating.",
+    "playbookReady": "Playbook ready. Review the step-by-step guide on the right.",
+    "processingRequest": "Processing your request...",
+    "statusPlaybookReady": "Playbook ready",
+    "statusInitializing": "Initializing...",
+    "statusProcessing": "Processing pipeline",
+    "connectionError": "Connection error",
+    "initializingSession": "Initializing session...",
+    "placeholder": "Ask for more details or feedback on the playbook..."
+  },
+  "ChatInput": {
+    "hintReanalyze": "Reanalyze with new info",
+    "hintQuestions": "Generate user questions",
+    "hintSummarize": "Summarize for ticket",
+    "hintEscalate": "Escalate to L3",
+    "processing": "Processing..."
+  }
+}

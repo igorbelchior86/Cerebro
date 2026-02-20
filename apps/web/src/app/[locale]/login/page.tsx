@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from '@/i18n/routing';
+import { useTranslations } from 'next-intl';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export default function LoginPage() {
   const router = useRouter();
+  const t = useTranslations('Login');
   const [step, setStep] = useState<'credentials' | 'mfa'>('credentials');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,7 +29,7 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error || 'Login failed'); return; }
+      if (!res.ok) { setError(data.error || t('loginFailed')); return; }
 
       if (data.mfaRequired) {
         setTempToken(data.tempToken);
@@ -36,7 +38,7 @@ export default function LoginPage() {
         router.replace('/');
       }
     } catch {
-      setError('Network error — is the API running?');
+      setError(t('networkErrorApi'));
     } finally {
       setLoading(false);
     }
@@ -54,10 +56,10 @@ export default function LoginPage() {
         body: JSON.stringify({ tempToken, code }),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error || 'Invalid code'); return; }
+      if (!res.ok) { setError(data.error || t('invalidCode')); return; }
       router.replace('/');
     } catch {
-      setError('Network error');
+      setError(t('networkError'));
     } finally {
       setLoading(false);
     }
@@ -101,36 +103,36 @@ export default function LoginPage() {
             <p style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
               Playbook Brain
             </p>
-            <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>IT Automation Copilot</p>
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>{t('copilot')}</p>
           </div>
         </div>
 
         {step === 'credentials' ? (
           <>
             <p style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '6px' }}>
-              Sign in
+              {t('signIn')}
             </p>
             <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '20px' }}>
-              Enter your credentials to continue
+              {t('credentialsDesc')}
             </p>
             <form onSubmit={handleCredentials} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="you@yourcompany.com" />
-              <Field label="Password" type="password" value={password} onChange={setPassword} placeholder="••••••••••••" />
+              <Field label={t('emailLabel')} type="email" value={email} onChange={setEmail} placeholder={t('emailPlaceholder')} />
+              <Field label={t('passwordLabel')} type="password" value={password} onChange={setPassword} placeholder={t('passwordPlaceholder')} />
               {error && <ErrorBanner message={error} />}
-              <SubmitButton loading={loading} label="Sign in" />
+              <SubmitButton loading={loading} label={t('signIn')} tWait={t('pleaseWait')} />
             </form>
           </>
         ) : (
           <>
             <p style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '6px' }}>
-              Two-factor authentication
+              {t('mfaTitle')}
             </p>
             <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '20px' }}>
-              Enter the 6-digit code from your authenticator app (Google Authenticator / Authy)
+              {t('mfaDesc')}
             </p>
             <form onSubmit={handleMfa} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <Field
-                label="Authentication code"
+                label={t('mfaCodeLabel')}
                 type="text"
                 value={code}
                 onChange={setCode}
@@ -140,13 +142,13 @@ export default function LoginPage() {
                 autoFocus
               />
               {error && <ErrorBanner message={error} />}
-              <SubmitButton loading={loading} label="Verify" />
+              <SubmitButton loading={loading} label={t('verifyBtn')} tWait={t('pleaseWait')} />
               <button
                 type="button"
                 onClick={() => { setStep('credentials'); setError(''); setCode(''); }}
                 style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '12px', cursor: 'pointer', padding: '4px 0' }}
               >
-                ← Back to sign in
+                {t('backToSignIn')}
               </button>
             </form>
           </>
@@ -197,7 +199,7 @@ function ErrorBanner({ message }: { message: string }) {
   );
 }
 
-function SubmitButton({ loading, label }: { loading: boolean; label: string }) {
+function SubmitButton({ loading, label, tWait }: { loading: boolean; label: string; tWait?: string }) {
   return (
     <button
       type="submit"
@@ -209,7 +211,7 @@ function SubmitButton({ loading, label }: { loading: boolean; label: string }) {
         transition: 'opacity 0.15s', marginTop: '4px',
       }}
     >
-      {loading ? 'Please wait…' : label}
+      {loading ? (tWait || 'Please wait…') : label}
     </button>
   );
 }

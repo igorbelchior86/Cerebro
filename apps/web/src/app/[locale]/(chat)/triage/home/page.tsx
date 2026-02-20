@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import ChatSidebar from '@/components/ChatSidebar';
 import ChatMessage, { type Message } from '@/components/ChatMessage';
 import ChatInput from '@/components/ChatInput';
@@ -8,22 +9,24 @@ import ResizableLayout from '@/components/ResizableLayout';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
-const WELCOME_MESSAGE: Message = {
-  id: 'welcome',
-  role: 'assistant',
-  content: 'Olá! Sou o Playbook Brain. Posso verificar suas integrações, consultar dados do IT Glue, NinjaOne e Autotask, ou ajudar a diagnosticar problemas. Como posso ajudar?',
-  timestamp: new Date(),
-  type: 'text',
-};
-
-const HINTS = [
-  'Verificar status das integrações',
-  'IT Glue está conectado?',
-  'Listar orgs do IT Glue',
-  'O que você consegue fazer?',
-];
-
 export default function HomePage() {
+  const t = useTranslations('ChatHome');
+
+  const WELCOME_MESSAGE: Message = {
+    id: 'welcome',
+    role: 'assistant',
+    content: t('welcome'),
+    timestamp: new Date(),
+    type: 'text',
+  };
+
+  const HINTS = [
+    t('hintStatus'),
+    t('hintItGlue'),
+    t('hintOrgs'),
+    t('hintWhatCanYouDo'),
+  ];
+
   const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -52,6 +55,7 @@ export default function HomePage() {
       const res = await fetch(`${API}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ message: text, history }),
       });
 
@@ -119,7 +123,7 @@ export default function HomePage() {
                 Playbook Brain
               </span>
               <span style={{ marginLeft: '8px', fontSize: '10px', color: 'var(--text-muted)' }}>
-                Assistant
+                {t('assistant')}
               </span>
             </div>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -127,7 +131,7 @@ export default function HomePage() {
                 style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-2)', display: 'inline-block' }}
                 className="animate-pulse"
               />
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>online</span>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('online')}</span>
             </div>
           </div>
 
@@ -146,7 +150,7 @@ export default function HomePage() {
             ))}
             {isLoading && (
               <ChatMessage
-                message={{ id: 'typing', role: 'system', content: 'Processando...', type: 'status' }}
+                message={{ id: 'typing', role: 'system', content: t('processing'), type: 'status' }}
               />
             )}
             <div ref={messagesEndRef} />
@@ -157,7 +161,7 @@ export default function HomePage() {
             onSubmit={handleSend}
             isLoading={isLoading}
             disabled={isLoading}
-            placeholder="Pergunte algo sobre suas integrações, tickets ou dispositivos..."
+            placeholder={t('placeholder')}
             hints={HINTS}
           />
         </div>

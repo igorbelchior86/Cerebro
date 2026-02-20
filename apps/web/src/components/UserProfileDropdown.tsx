@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from '@/i18n/routing';
+import { useTranslations } from 'next-intl';
 
 interface UserProfileDropdownProps {
     userName: string;
@@ -23,6 +24,7 @@ export default function UserProfileDropdown({
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
+    const t = useTranslations('UserProfileDropdown');
 
     // Close when clicking outside
     useEffect(() => {
@@ -42,7 +44,7 @@ export default function UserProfileDropdown({
             document.cookie = 'pb_session=; Max-Age=0; path=/; domain=' + window.location.hostname;
             router.push('/login');
         } catch (err) {
-            console.error('Logout failed', err);
+            console.error(t('logoutFailed'), err);
             router.push('/login');
         }
     };
@@ -142,11 +144,11 @@ export default function UserProfileDropdown({
                         </div>
                     </button>
 
-                    <MenuItem icon={<IconSettings />} label="Settings" onClick={() => { setIsOpen(false); onOpenSettings(); }} />
+                    <MenuItem icon={<IconSettings />} label={t('settings')} onClick={() => { setIsOpen(false); onOpenSettings(); }} />
 
                     <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
 
-                    <MenuItem icon={<IconLogout />} label="Logout" onClick={handleLogout} />
+                    <MenuItem icon={<IconLogout />} label={t('logout')} onClick={handleLogout} />
                 </div>
             )}
         </div>

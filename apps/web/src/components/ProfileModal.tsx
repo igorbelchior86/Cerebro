@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 
 interface ProfileModalProps {
     open: boolean;
@@ -12,6 +13,7 @@ interface ProfileModalProps {
 }
 
 export default function ProfileModal({ open, onClose, currentName, currentJobTitle = '', currentAvatar, onSave }: ProfileModalProps) {
+    const t = useTranslations('ProfileModal');
     const [name, setName] = useState(currentName);
     const [jobTitle, setJobTitle] = useState(currentJobTitle);
     const [file, setFile] = useState<File | null>(null);
@@ -41,7 +43,7 @@ export default function ProfileModal({ open, onClose, currentName, currentJobTit
 
             <div className="animate-fadeIn" style={{ position: 'relative', width: '100%', maxWidth: '400px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', overflow: 'hidden' }}>
                 <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <h2 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>Edit Profile</h2>
+                    <h2 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>{t('title')}</h2>
                     <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', padding: '4px' }}>✕</button>
                 </div>
 
@@ -54,16 +56,16 @@ export default function ProfileModal({ open, onClose, currentName, currentJobTit
                         </div>
                         <div>
                             <label style={{ cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: 'var(--accent)', background: 'rgba(91,127,255,0.1)', padding: '6px 12px', borderRadius: '6px' }}>
-                                Upload Photo
+                                {t('uploadPhoto')}
                                 <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
                             </label>
-                            <p style={{ fontSize: '11px', color: 'var(--text-faint)', margin: '6px 0 0' }}>Recommended: Square JPG or PNG, max 2MB.</p>
+                            <p style={{ fontSize: '11px', color: 'var(--text-faint)', margin: '6px 0 0' }}>{t('photoHint')}</p>
                         </div>
                     </div>
 
                     {/* Name input */}
                     <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>Display Name</label>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>{t('displayName')}</label>
                         <input
                             type="text"
                             value={name}
@@ -74,20 +76,20 @@ export default function ProfileModal({ open, onClose, currentName, currentJobTit
 
                     {/* Job Title input */}
                     <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>Job Title</label>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>{t('jobTitle')}</label>
                         <input
                             type="text"
                             value={jobTitle}
                             onChange={(e) => setJobTitle(e.target.value)}
-                            placeholder="e.g. L2 Engineer"
+                            placeholder={t('jobTitlePlaceholder')}
                             style={{ width: '100%', padding: '10px 12px', background: 'var(--bg-root)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-primary)', fontSize: '14px', outline: 'none' }}
                         />
                     </div>
                 </div>
 
                 <div style={{ padding: '16px 20px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: '10px', background: 'var(--bg-sidebar)' }}>
-                    <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', fontSize: '13px', cursor: 'pointer' }}>Cancel</button>
-                    <button onClick={handleSave} style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: 'white', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>Save Changes</button>
+                    <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', fontSize: '13px', cursor: 'pointer' }}>{t('cancel')}</button>
+                    <button onClick={handleSave} style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: 'white', fontSize: '13px', fontWeight: 500, cursor: 'pointer' }}>{t('save')}</button>
                 </div>
             </div>
         </div>

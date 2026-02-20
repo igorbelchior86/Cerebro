@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, KeyboardEvent, useState } from 'react';
+import { useTranslations } from 'next-intl';
 
 interface ChatInputProps {
   onSubmit: (message: string) => void | Promise<void>;
@@ -10,22 +11,23 @@ interface ChatInputProps {
   hints?: string[];
 }
 
-const DEFAULT_HINTS = [
-  'Reanalisar com nova info',
-  'Gerar perguntas ao usuário',
-  'Resumir para ticket',
-  'Escalar para L3',
-];
-
 export default function ChatInput({
   onSubmit,
   placeholder = 'Refine analysis, ask questions, add context...',
   disabled = false,
   isLoading = false,
-  hints = DEFAULT_HINTS,
+  hints,
 }: ChatInputProps) {
+  const t = useTranslations('ChatInput');
   const [input, setInput] = useState('');
   const [focused, setFocused] = useState(false);
+
+  const activeHints = hints || [
+    t('hintReanalyze'),
+    t('hintQuestions'),
+    t('hintSummarize'),
+    t('hintEscalate'),
+  ];
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -53,7 +55,7 @@ export default function ChatInput({
             onKeyDown={handleKeyDown}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
-            placeholder={disabled ? 'Processing...' : placeholder}
+            placeholder={disabled ? t('processing') : placeholder}
             disabled={disabled || isLoading}
             style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontFamily: 'var(--font-dm-sans, sans-serif)', fontSize: '12.5px', color: 'var(--text-primary)', letterSpacing: '-0.01em' }}
           />
@@ -66,15 +68,15 @@ export default function ChatInput({
               <span style={{ width: '10px', height: '10px', borderRadius: '50%', border: '1.5px solid rgba(255,255,255,0.3)', borderTopColor: 'white', display: 'inline-block' }} />
             ) : (
               <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                <path d="M2 10L10 6 2 2v3.5l5 .5-5 .5V10z" fill="white"/>
+                <path d="M2 10L10 6 2 2v3.5l5 .5-5 .5V10z" fill="white" />
               </svg>
             )}
           </button>
         </div>
       </form>
-      {hints.length > 0 && (
+      {activeHints.length > 0 && (
         <div style={{ display: 'flex', gap: '5px', marginTop: '8px', flexWrap: 'wrap' }}>
-          {hints.map((h) => (
+          {activeHints.map((h) => (
             <button key={h} type="button" onClick={() => setInput(h)}
               style={{ padding: '3px 9px', borderRadius: '5px', fontSize: '10.5px', color: 'var(--text-muted)', background: 'var(--bg-card)', border: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'var(--font-dm-sans, sans-serif)', transition: 'var(--transition)' }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-accent)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)'; }}

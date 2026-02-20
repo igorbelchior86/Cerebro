@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
+import { useTranslations } from 'next-intl';
 import axios from 'axios';
 import ChatSidebar, { ActiveTicket } from '@/components/ChatSidebar';
 import ChatMessage, { Message } from '@/components/ChatMessage';
@@ -20,12 +21,13 @@ export default function SessionDetail({
 }: {
   params: { id: string };
 }) {
+  const t = useTranslations('ChatSession');
   const [data, setData] = useState<SessionData | null>(null);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '0',
       role: 'assistant',
-      content: 'Starting analysis — collecting evidence from Autotask, NinjaOne and IT Glue...',
+      content: t('startingAnalysis'),
       timestamp: new Date(),
       type: 'text',
     },
@@ -56,6 +58,7 @@ export default function SessionDetail({
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
         const res = await axios.get(`${apiUrl}/playbook/full-flow`, {
           params: { sessionId: params.id },
+          withCredentials: true,
         });
 
         const flowData = res.data.data;
@@ -72,7 +75,7 @@ export default function SessionDetail({
           newMessages.push({
             id: `msg-evidence-${Date.now()}`,
             role: 'assistant',
-            content: 'Data collected from Autotask, NinjaOne and IT Glue.',
+            content: t('evidenceCollected'),
             timestamp: new Date(),
             type: 'evidence',
           });
@@ -83,7 +86,7 @@ export default function SessionDetail({
           newMessages.push({
             id: `msg-diagnosis-${Date.now()}`,
             role: 'assistant',
-            content: 'Ranked hypotheses generated with evidence citations.',
+            content: t('diagnosisGenerated'),
             timestamp: new Date(),
             type: 'diagnosis',
           });
@@ -94,7 +97,7 @@ export default function SessionDetail({
           newMessages.push({
             id: `msg-validation-${Date.now()}`,
             role: 'assistant',
-            content: 'Solution cleared — no destructive actions without gating.',
+            content: t('validationCleared'),
             timestamp: new Date(),
             type: 'validation',
           });
@@ -105,7 +108,7 @@ export default function SessionDetail({
           newMessages.push({
             id: `msg-playbook-${Date.now()}`,
             role: 'assistant',
-            content: 'Playbook ready. Review the step-by-step guide on the right.',
+            content: t('playbookReady'),
             timestamp: new Date(),
             type: 'text',
           });
@@ -146,7 +149,7 @@ export default function SessionDetail({
         {
           id: `msg-auto-${Date.now()}`,
           role: 'assistant',
-          content: 'Processing your request...',
+          content: t('processingRequest'),
           timestamp: new Date(),
           type: 'text',
         },
@@ -156,16 +159,16 @@ export default function SessionDetail({
 
   const mockTickets: ActiveTicket[] = data
     ? [
-        {
-          id: data.session.id,
-          ticket_id:
-            data.session.ticket_id || `Ticket-${params.id.substring(0, 8)}`,
-          status:
-            playbookReady ? 'completed'
+      {
+        id: data.session.id,
+        ticket_id:
+          data.session.ticket_id || `Ticket-${params.id.substring(0, 8)}`,
+        status:
+          playbookReady ? 'completed'
             : loading ? 'pending'
-            : 'processing',
-        },
-      ]
+              : 'processing',
+      },
+    ]
     : [];
 
   const ticketLabel = data?.session.ticket_id || `Ticket-${params.id.substring(0, 8)}`;
@@ -201,12 +204,12 @@ export default function SessionDetail({
           </p>
           {playbookReady && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 600, color: 'var(--green)', background: 'var(--green-muted)', border: '1px solid var(--green-border)' }}>
-              <svg width="8" height="8" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              Playbook ready
+              <svg width="8" height="8" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              {t('statusPlaybookReady')}
             </span>
           )}
           <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-jetbrains-mono)', marginLeft: playbookReady ? '0' : 'auto' }}>
-            {playbookReady ? '' : loading ? 'Initializing...' : 'Processing pipeline'}
+            {playbookReady ? '' : loading ? t('statusInitializing') : t('statusProcessing')}
           </span>
         </div>
 
@@ -221,7 +224,7 @@ export default function SessionDetail({
                 color: '#fca5a5',
               }}
             >
-              <p className="font-semibold mb-0.5">Connection error</p>
+              <p className="font-semibold mb-0.5">{t('connectionError')}</p>
               <p style={{ color: '#f87171', opacity: 0.85 }}>{error}</p>
             </div>
           )}
@@ -236,7 +239,7 @@ export default function SessionDetail({
               message={{
                 id: 'loading',
                 role: 'system',
-                content: 'Initializing session...',
+                content: t('initializingSession'),
                 timestamp: new Date(),
                 type: 'status',
               }}
@@ -249,7 +252,7 @@ export default function SessionDetail({
         {/* Chat Input */}
         <ChatInput
           onSubmit={handleSendMessage}
-          placeholder="Ask for more details or feedback on the playbook..."
+          placeholder={t('placeholder')}
           disabled={loading}
           isLoading={false}
         />

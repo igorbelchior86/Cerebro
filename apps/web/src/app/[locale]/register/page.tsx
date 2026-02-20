@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from '@/i18n/routing';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 

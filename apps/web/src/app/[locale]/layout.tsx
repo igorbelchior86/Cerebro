@@ -1,3 +1,8 @@
+import { NextIntlClientProvider } from 'next-intl';
+import { getMessages } from 'next-intl/server';
+import { notFound } from 'next/navigation';
+import { routing } from '@/i18n/routing';
+
 import '@/styles/globals.css';
 import { GeistMono } from 'geist/font/mono';
 import { DM_Sans, JetBrains_Mono } from 'next/font/google';
@@ -21,9 +26,24 @@ export const metadata: Metadata = {
   description: 'Intelligent playbook generation for IT support',
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({
+  children,
+  params: { locale }
+}: {
+  children: ReactNode;
+  params: { locale: string };
+}) {
+  // Ensure that the incoming `locale` is valid
+  if (!routing.locales.includes(locale as any)) {
+    notFound();
+  }
+
+  // Providing all messages to the client
+  // side is the easiest way to get started
+  const messages = await getMessages();
+
   return (
-    <html lang="en" data-theme="dark" className={`${dmSans.variable} ${jetbrainsMono.variable} ${GeistMono.variable}`}>
+    <html lang={locale} data-theme="dark" className={`${dmSans.variable} ${jetbrainsMono.variable} ${GeistMono.variable}`}>
       <head>
         {/* Anti-FOUC: read saved theme from localStorage before first paint */}
         <script
@@ -33,7 +53,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         />
       </head>
       <body className={dmSans.className} style={{ background: 'var(--bg-root)' }}>
-        {children}
+        <NextIntlClientProvider messages={messages}>
+          {children}
+        </NextIntlClientProvider>
       </body>
     </html>
   );

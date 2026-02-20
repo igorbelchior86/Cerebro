@@ -6,7 +6,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp?: Date;
-  type?: 'text' | 'status' | 'evidence' | 'diagnosis' | 'validation';
+  type?: 'text' | 'status' | 'autotask' | 'evidence' | 'diagnosis' | 'validation';
   steps?: { label: string; status: 'done' | 'running' | 'idle' }[];
 }
 
@@ -16,6 +16,7 @@ interface ChatMessageProps {
 }
 
 const SOURCE_CONFIG: Record<string, { icon: string; label: string }> = {
+  autotask: { icon: '🎟', label: 'Autotask' },
   evidence: { icon: '⚡', label: 'PrepareContext' },
   diagnosis: { icon: '🧠', label: 'LLM Diagnose' },
   validation: { icon: '🛡', label: 'ValidateAndPolicy' },

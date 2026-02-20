@@ -1,27 +1,27 @@
-# Task: Ensure card title uses ticket Title (not Description)
+# Task: Eliminate UI lift/fall jitter while switching tickets
 **Status**: completed
 **Started**: 2026-02-20
 
 ## Plan
-- [x] Step 1: Reproduce wrong title extraction path.
-- [x] Step 2: Fix backend parser to capture `Title` field with proper delimiters.
-- [x] Step 3: Add frontend defensive normalization to strip accidental `Description:` suffix.
-- [x] Step 4: Verify with typecheck.
-- [x] Step 5: Update wiki + lessons.
+- [x] Step 1: Stop continuous timeline re-creation on every polling tick.
+- [x] Step 2: Use deterministic timestamps per selected ticket timeline.
+- [x] Step 3: Prevent automatic smooth scroll on each message refresh.
+- [x] Step 4: Verify type safety.
+- [x] Step 5: Update wiki and lessons.
 
 ## Open Questions
 - None.
 
 ## Progress Notes
-- Updated parser regex with lookahead so `Title` stops before `Description` / other field markers.
-- Updated fallback subject cleanup to remove ticket-prefix noise.
-- Added UI defensive sanitizer for unexpected residual `Description:` in title payload.
+- Added timeline signature guard to only update messages when pipeline content truly changes.
+- Replaced dynamic `new Date()` timeline timestamps with deterministic offsets from ticket created time.
+- Removed auto `scrollIntoView` behavior that was causing repeated vertical motion.
+- Decoupled flow polling effect from sidebar polling updates using `sidebarTicketsRef`.
 
 ## Review
 - What worked:
-  - Backend parser fix addresses root cause at data source.
-  - Frontend sanitizer provides safety for already-ingested noisy records.
+  - Removing unnecessary message resets/pseudo-changes significantly reduces visual jump.
 - What was tricky:
-  - Email templates vary in line breaks/HTML, requiring field-boundary extraction rather than line-only extraction.
+  - Keeping ticket context data available without tying timeline effect to sidebar fetch cadence.
 - Time taken:
   - ~15 minutes

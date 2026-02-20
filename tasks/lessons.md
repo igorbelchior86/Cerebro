@@ -27,3 +27,33 @@
 **Root cause**: Parser title regex stopped at newline only, but some templates place `Description:` on same line/HTML flow.
 **Rule**: Parse structured email fields with explicit marker boundaries, not only newline boundaries.
 **Pattern**: `Title` extraction must stop at next known marker (`Description`, `Created by`, etc.).
+
+## Lesson: 2026-02-20 (middle-column parity)
+**Mistake**: Session timeline was too generic and lacked pipeline granularity from mock/template.
+**Root cause**: UI was driven by short translation strings instead of stage-oriented message composition.
+**Rule**: For pipeline UIs, represent each processing stage explicitly and include sub-steps where available.
+**Pattern**: Build deterministic timeline from flow sections (`evidence`, `diagnosis`, `validation`, `playbook`) and keep user messages appended.
+
+## Lesson: 2026-02-20 (explicit parity fields)
+**Mistake**: Timeline first item remained generic and did not preserve source-specific narrative required by mockup.
+**Root cause**: Stage generator lacked ticket-context interpolation (title/requester/org/site/priority).
+**Rule**: For parity-driven UI fixes, reproduce required fields literally before expanding to broader improvements.
+**Pattern**: Header and first pipeline event must always include concrete ticket identity + issue narrative.
+
+## Lesson: 2026-02-20 (description noise)
+**Mistake**: Raw ticket descriptions still included signatures/disclaimers/reply tails after basic normalization.
+**Root cause**: Normalization handled formatting noise but not semantic noise blocks common in email flows.
+**Rule**: Email-derived description fields require block-level cleanup (reply/disclaimer/signature) plus safety fallback.
+**Pattern**: Apply deterministic text-cleaning pipeline at ingestion, not only at UI render time.
+
+## Lesson: 2026-02-20 (layout jitter)
+**Mistake**: UI still shifted vertically/horizontally during ticket switches despite state persistence fixes.
+**Root cause**: Conditional mount/unmount of right panel and variable header row geometry.
+**Rule**: For master-detail navigation, keep core columns mounted and reserve header control space to avoid reflow.
+**Pattern**: Prefer `visibility:hidden` for optional badges and ellipsis-constrained titles in fixed-height headers.
+
+## Lesson: 2026-02-20 (polling jitter)
+**Mistake**: Even with layout stabilization, polling still rebuilt timeline with fresh timestamps, causing visual movement.
+**Root cause**: Message array changed every polling cycle due to new Date timestamps and unconditional setMessages.
+**Rule**: In polling UIs, update message timelines only on semantic state changes, not on polling ticks.
+**Pattern**: Use deterministic timestamps + content signature guard + no auto-scroll on periodic refresh.

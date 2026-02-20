@@ -18,6 +18,67 @@ export class EmailParser {
             .replace(/^[,\s]+|[,\s]+$/g, '')
             .trim();
     }
+
+    private cleanDescription(value: string): string {
+        const original = value || '';
+        let text = original
+            .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+            .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/&nbsp;/gi, ' ')
+            .replace(/&amp;/gi, '&')
+            .replace(/&lt;/gi, '<')
+            .replace(/&gt;/gi, '>')
+            .replace(/&quot;/gi, '"')
+            .replace(/&#39;/gi, "'")
+            .replace(/\r/g, '');
+
+        // Trim quoted replies/forwards.
+        const replyMarkers = [
+            /^\s*On .+wrote:\s*$/im,
+            /^\s*From:\s.+$/im,
+            /^\s*-----Original Message-----\s*$/im,
+            /^\s*---+\s*Forwarded message\s*---+\s*$/im,
+        ];
+        for (const marker of replyMarkers) {
+            const m = text.match(marker);
+            if (m && typeof m.index === 'number') {
+                text = text.slice(0, m.index);
+            }
+        }
+
+        // Cut automated footer/disclaimer blocks.
+        const footerMarkers = [
+            /^\s*This email was sent to .+$/im,
+            /^\s*This e-?mail and any attachments?.+$/im,
+            /^\s*The information contained in this (e-?mail|message).+$/im,
+            /^\s*Confidentiality Notice[:\s].+$/im,
+        ];
+        for (const marker of footerMarkers) {
+            const m = text.match(marker);
+            if (m && typeof m.index === 'number') {
+                text = text.slice(0, m.index);
+            }
+        }
+
+        // Remove common sign-off/signature tails when they appear near the end.
+        text = text
+            .replace(/\n\s*(best regards|kind regards|regards|thanks|thank you),?\s*\n[\s\S]*$/i, '\n')
+            .replace(/\n\s*sent from my (iphone|ipad|android).*/i, '\n');
+
+        text = text
+            .replace(/^\s*Description\s*:\s*/i, '')
+            .replace(/[ \t]+/g, ' ')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+
+        // Safety fallback: if cleanup over-pruned, keep normalized original.
+        if (text.length < 30 && original.length > 80) {
+            return this.cleanInlineField(original);
+        }
+
+        return text;
+    }
     /**
      * Parses the raw email body and subject to extract ticket information.
      *
@@ -60,10 +121,10 @@ export class EmailParser {
         let description = '';
         const descMatch = bodyText.match(/Description:\s*([\s\S]*?)(?=Created by:|$)/i);
         if (descMatch?.[1]) {
-            description = descMatch[1].trim();
+            description = this.cleanDescription(descMatch[1]);
         } else {
             // Fallback: use body preview or first chunk of body
-            description = bodyText.substring(0, 500).trim();
+            description = this.cleanDescription(bodyText.substring(0, 500));
         }
 
         // Extract Requester

@@ -128,6 +128,7 @@ router.get('/list', async (_req: Request, res: Response) => {
             status: ticket.pipeline_status === 'approved' ? 'completed' : 'pending',
             priority: 'P3',
             title: ticket.title || 'Untitled Ticket',
+            description: ticket.description || '',
             company: 'Unknown org',
             requester: ticket.requester || 'Unknown requester',
             org: 'Unknown org',

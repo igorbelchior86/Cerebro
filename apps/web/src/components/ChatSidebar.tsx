@@ -15,6 +15,7 @@ export interface ActiveTicket {
   status: 'pending' | 'processing' | 'completed' | 'failed';
   priority?: 'P1' | 'P2' | 'P3' | 'P4';
   title?: string;
+  description?: string;
   company?: string;
   requester?: string;
   org?: string;

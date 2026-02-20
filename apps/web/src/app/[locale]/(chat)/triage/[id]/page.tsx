@@ -40,25 +40,57 @@ export default function SessionDetail({
   const [error, setError] = useState('');
   const [playbookReady, setPlaybookReady] = useState(false);
   const [playbookStatus, setPlaybookStatus] = useState<'loading' | 'ready' | 'error'>('ready');
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const lastSeenState = useRef<{
-    hasEvidence?: boolean;
-    hasDiagnosis?: boolean;
-    hasValidation?: boolean;
-    hasPlaybook?: boolean;
-  }>({});
+  const timelineSignatureRef = useRef('');
+  const sidebarTicketsRef = useRef<ActiveTicket[]>([]);
 
   // Add state for real tickets
   const [sidebarTickets, setSidebarTickets] = useState<ActiveTicket[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(true);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const cleanTitle = (value?: string) =>
+    (value || '')
+      .replace(/\s+Description\s*:\s*.*$/i, '')
+      .trim();
+
+  const normalizePlainText = (value?: string, fallback = '') => {
+    const raw = (value || '').trim();
+    if (!raw) return fallback;
+    const withoutTags = raw
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ');
+    const decoded = withoutTags
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'");
+    return decoded
+      .replace(/^\s*Description\s*:\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .trim() || fallback;
+  };
+
+  const parseDate = (value?: string) => {
+    if (!value) return new Date();
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? new Date() : d;
+  };
+
+  const getTicketContextMeta = (ticket?: ActiveTicket) => {
+    if (!ticket) return selectedTicketId;
+    const parts = [
+      ticket.ticket_id || ticket.id,
+      ticket.company || ticket.org,
+      ticket.requester || ticket.site,
+    ].filter(Boolean) as string[];
+    return parts.length > 0 ? parts.join(' · ') : selectedTicketId;
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    sidebarTicketsRef.current = sidebarTickets;
+  }, [sidebarTickets]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -76,59 +108,94 @@ export default function SessionDetail({
         };
 
         setData(newData);
+        const currentTicket = sidebarTicketsRef.current.find((t) => t.id === selectedTicketId);
+        const ticketId = newData.session.ticket_id || currentTicket?.ticket_id || selectedTicketId;
+        const subject = normalizePlainText(cleanTitle(currentTicket?.title), 'Untitled ticket');
+        const problemDescription = normalizePlainText(currentTicket?.description, subject);
+        const requester = normalizePlainText(currentTicket?.requester || currentTicket?.site, 'Unknown user');
+        const org = normalizePlainText(currentTicket?.company || currentTicket?.org, 'Unknown org');
+        const site = normalizePlainText(currentTicket?.site, 'Unknown site');
+        const priority = currentTicket?.priority || 'P3';
+        const priorityLabel = priority === 'P1' ? 'P1 Critical' : priority;
+        const firstEventTime = parseDate(currentTicket?.created_at);
+        const ts = (offsetSec: number) => new Date(firstEventTime.getTime() + offsetSec * 1000);
 
-        const newMessages: Message[] = [];
-
-        if (newData.evidence_pack && !lastSeenState.current.hasEvidence) {
-          newMessages.push({
-            id: `msg-evidence-${Date.now()}`,
+        const timeline: Message[] = [
+          {
+            id: `autotask-${selectedTicketId}`,
             role: 'assistant',
-            content: t('evidenceCollected'),
-            timestamp: new Date(),
+            type: 'autotask',
+            timestamp: ts(0),
+            content: `New ticket detected: \`${ticketId}\` — "${problemDescription}" from ${requester} at ${org}, ${site}. Priority: **${priorityLabel}**. Starting context collection.`,
+          },
+        ];
+
+        if (newData.evidence_pack) {
+          timeline.push({
+            id: `evidence-${selectedTicketId}`,
+            role: 'assistant',
             type: 'evidence',
+            timestamp: ts(1),
+            content: 'Pulling data from 3 sources simultaneously.',
+            steps: [
+              { label: 'Autotask — ticket, org, contact, related cases', status: 'done' },
+              { label: 'NinjaOne — device snapshot and active alerts', status: 'done' },
+              { label: 'IT Glue — network stack and runbook context', status: 'done' },
+              { label: 'External — status providers and regional checks', status: 'done' },
+            ],
           });
-          lastSeenState.current.hasEvidence = true;
         }
 
-        if (newData.diagnosis && !lastSeenState.current.hasDiagnosis) {
-          newMessages.push({
-            id: `msg-diagnosis-${Date.now()}`,
+        if (newData.diagnosis) {
+          timeline.push({
+            id: `diagnosis-${selectedTicketId}`,
             role: 'assistant',
-            content: t('diagnosisGenerated'),
-            timestamp: new Date(),
             type: 'diagnosis',
+            timestamp: ts(3),
+            content: 'Evidence pack processed. Ranked hypotheses generated with supporting citations.',
           });
-          lastSeenState.current.hasDiagnosis = true;
         }
 
-        if (newData.validation && !lastSeenState.current.hasValidation) {
-          newMessages.push({
-            id: `msg-validation-${Date.now()}`,
+        if (newData.validation) {
+          timeline.push({
+            id: `validation-${selectedTicketId}`,
             role: 'assistant',
-            content: t('validationCleared'),
-            timestamp: new Date(),
             type: 'validation',
+            timestamp: ts(4),
+            content: 'Validation completed with evidence checks and safety gates.',
           });
-          lastSeenState.current.hasValidation = true;
         }
 
-        if (newData.playbook && !lastSeenState.current.hasPlaybook) {
-          newMessages.push({
-            id: `msg-playbook-${Date.now()}`,
+        if (newData.playbook) {
+          timeline.push({
+            id: `playbook-${selectedTicketId}`,
             role: 'assistant',
-            content: t('playbookReady'),
-            timestamp: new Date(),
             type: 'text',
+            timestamp: ts(5),
+            content: 'Playbook generated. Review and refine using the right panel.',
           });
-          lastSeenState.current.hasPlaybook = true;
-          setPlaybookReady(true);
+        }
+        const signature = JSON.stringify(
+          timeline.map((m) => ({
+            id: m.id,
+            type: m.type,
+            content: m.content,
+            steps: m.steps?.map((s) => `${s.label}:${s.status}`) ?? [],
+          }))
+        );
+        if (signature !== timelineSignatureRef.current) {
+          timelineSignatureRef.current = signature;
+          setMessages((prev) => {
+            const userOnly = prev.filter((m) => m.role === 'user');
+            return [...timeline, ...userOnly];
+          });
         }
 
-        if (newMessages.length > 0) {
-          setMessages((prev) => [...prev, ...newMessages]);
-        }
+        setPlaybookReady(Boolean(newData.playbook));
+        setPlaybookStatus(newData.playbook ? 'ready' : 'loading');
       } catch (err) {
         setError(axios.isAxiosError(err) ? err.message : String(err));
+        setPlaybookStatus('error');
       } finally {
         setLoading(false);
       }
@@ -138,6 +205,23 @@ export default function SessionDetail({
     const interval = setInterval(fetchData, 3000);
     return () => clearInterval(interval);
   }, [selectedTicketId]);
+
+  useEffect(() => {
+    setLoading(true);
+    setError('');
+    setPlaybookReady(false);
+    setPlaybookStatus('loading');
+    timelineSignatureRef.current = '';
+    setMessages([
+      {
+        id: `init-${selectedTicketId}`,
+        role: 'assistant',
+        content: t('startingAnalysis'),
+        timestamp: new Date(),
+        type: 'status',
+      },
+    ]);
+  }, [selectedTicketId, t]);
 
   // Fetch tickets from email ingestion processed tickets table
   useEffect(() => {
@@ -201,7 +285,11 @@ export default function SessionDetail({
     displayTickets.unshift(currentMock);
   }
 
-  const ticketLabel = data?.session.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`;
+  const selectedTicket = displayTickets.find((t) => t.id === selectedTicketId);
+  const ticketTitle = cleanTitle(selectedTicket?.title) || 'Untitled ticket';
+  const ticketNumber = data?.session.ticket_id || selectedTicket?.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`;
+  const ticketLabel = `${ticketNumber} — ${ticketTitle}`;
+  const ticketMetaLabel = getTicketContextMeta(selectedTicket);
 
   return (
     <ResizableLayout
@@ -219,12 +307,10 @@ export default function SessionDetail({
         />
       }
       rightContent={
-        playbookReady ? (
-          <PlaybookPanel
-            content={data?.playbook?.content_md || null}
-            status={playbookStatus}
-          />
-        ) : undefined
+        <PlaybookPanel
+          content={data?.playbook?.content_md || null}
+          status={playbookStatus}
+        />
       }
       mainContent={
         <div className="flex-1 flex flex-col" style={{ background: 'var(--bg-root)', minWidth: 0, height: '100%' }}>
@@ -240,18 +326,21 @@ export default function SessionDetail({
                 boxShadow: loading || !playbookReady ? `0 0 6px ${loading ? '#EAB308' : 'var(--accent)'}` : undefined,
               }}
             />
-            <p style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', flex: 1 }}>
+            <p style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {ticketLabel}
             </p>
-            {playbookReady && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 600, color: 'var(--green)', background: 'var(--green-muted)', border: '1px solid var(--green-border)' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 600, color: 'var(--green)', background: 'var(--green-muted)', border: '1px solid var(--green-border)', visibility: playbookReady ? 'visible' : 'hidden' }}>
                 <svg width="8" height="8" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                 {t('statusPlaybookReady')}
-              </span>
-            )}
+            </span>
             <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-jetbrains-mono)', marginLeft: playbookReady ? '0' : 'auto' }}>
               {playbookReady ? '' : loading ? t('statusInitializing') : t('statusProcessing')}
             </span>
+          </div>
+          <div className="px-5 pb-2" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+            <p style={{ fontFamily: 'var(--font-jetbrains-mono)', fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.03em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {ticketMetaLabel}
+            </p>
           </div>
 
           {/* Messages Container */}
@@ -286,8 +375,6 @@ export default function SessionDetail({
                 }}
               />
             )}
-
-            <div ref={messagesEndRef} />
           </div>
 
           {/* Chat Input */}
@@ -296,6 +383,12 @@ export default function SessionDetail({
             placeholder={t('placeholder')}
             disabled={loading}
             isLoading={false}
+            hints={[
+              'Reanalyze with new info',
+              'Generate user questions',
+              'Summarize for ticket',
+              'Escalate to L3',
+            ]}
           />
         </div>
       }

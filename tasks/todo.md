@@ -36,7 +36,9 @@
 - Built the `graphClient`, `emailParser`.
 - Removed `firebaseStore` and creating Postgres tables and repository instead for simplicity.
 - Added a `POST /email-ingestion/ingest` endpoint to run the pipeline manually.
-- Completed DB Migrations. Awaiting user to test.
+- Completed DB Migrations.
+- Fixed missing `isomorphic-fetch` runtime dependency for MS Graph.
+- Awaiting user to test.
 
 ## Review
 (filled after completion)

@@ -17,7 +17,8 @@ function applyIfPresent(envKey: string, value: unknown) {
 
 export function applyWorkspaceRuntimeSettings(settings: WorkspaceSettings): void {
   // LLM provider/model
-  applyIfPresent('LLM_PROVIDER', settings.llmProvider);
+  const llmProvider = asString(settings.llmProvider);
+  process.env.LLM_PROVIDER = llmProvider || 'gemini';
   applyIfPresent('GEMINI_MODEL', settings.llmModel);
   applyIfPresent('LLM_FALLBACK_PROVIDER', settings.llmFallbackProvider);
   applyIfPresent('LLM_FALLBACK_MODEL', settings.llmFallbackModel);
@@ -25,6 +26,7 @@ export function applyWorkspaceRuntimeSettings(settings: WorkspaceSettings): void
   // Generation controls
   applyIfPresent('LLM_MAX_TOKENS', settings.llmMaxTokens);
   applyIfPresent('LLM_TEMPERATURE', settings.llmTemperature);
+  applyIfPresent('TRIAGE_GATING_PROFILE', settings.triageGatingProfile ?? settings.pipelineGatingProfile);
 
   // Gemini quota controls (temporary free-tier protection)
   applyIfPresent('GEMINI_LIMIT_RPM', settings.geminiLimitRpm);

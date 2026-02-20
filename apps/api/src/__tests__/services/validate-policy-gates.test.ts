@@ -127,8 +127,8 @@ function buildPack(): EvidencePack {
 }
 
 describe('validate policy quality gates', () => {
-  it('blocks playbook generation when actor is unresolved', () => {
-    const service = new ValidatePolicyService();
+  it('strict profile blocks playbook generation when actor is unresolved', () => {
+    const service = new ValidatePolicyService({ profile: 'strict' });
     const pack = buildPack();
     pack.entity_resolution = {
       extracted_entities: pack.entity_resolution!.extracted_entities,
@@ -143,8 +143,8 @@ describe('validate policy quality gates', () => {
     expect(result.blocking_reasons).toContain('named_entity_unresolved');
   });
 
-  it('blocks capability tickets when verification is incomplete', () => {
-    const service = new ValidatePolicyService();
+  it('strict profile blocks capability tickets when verification is incomplete', () => {
+    const service = new ValidatePolicyService({ profile: 'strict' });
     const pack = buildPack();
     pack.capability_verification = {
       required: true,
@@ -159,12 +159,68 @@ describe('validate policy quality gates', () => {
     expect(result.blocking_reasons).toContain('capability_verification_incomplete');
   });
 
+  it('standard profile allows generation with unresolved actor when ticket has person+contact hints', () => {
+    const service = new ValidatePolicyService({ profile: 'standard' });
+    const pack = buildPack();
+    pack.entity_resolution = {
+      extracted_entities: {
+        ...pack.entity_resolution!.extracted_entities,
+        person: ['John Example'],
+        email: ['john@example.com'],
+      },
+      status: 'ambiguous',
+      actor_candidates: [{ id: 'c-1', name: 'John Example', score: 0.6, score_breakdown: { exact_name: 0.4, email: 0.2, phone: 0, company_normalized: 0 } }],
+    };
+
+    const result = service.validate(buildDiagnosis(), pack);
+    expect(result.safe_to_generate_playbook).toBe(true);
+    expect(result.blocking_reasons).not.toContain('named_entity_unresolved');
+  });
+
+  it('standard profile allows guided generation when capability verification is incomplete', () => {
+    const service = new ValidatePolicyService({ profile: 'standard' });
+    const pack = buildPack();
+    pack.capability_verification = {
+      required: true,
+      device_match_strong: false,
+      model_spec_confirmed: false,
+      device_match_reason: 'device not resolved',
+    };
+    const result = service.validate(buildDiagnosis(), pack);
+    expect(result.safe_to_generate_playbook).toBe(true);
+    expect(result.blocking_reasons).not.toContain('capability_verification_incomplete');
+  });
+
   it('approves when quality gates and coverage pass', () => {
-    const service = new ValidatePolicyService();
+    const service = new ValidatePolicyService({ profile: 'strict' });
     const result = service.validate(buildDiagnosis(), buildPack());
 
     expect(result.status).toBe('approved');
     expect(result.safe_to_generate_playbook).toBe(true);
     expect(result.violations.find((v) => v.type === 'quality_gate')).toBeUndefined();
+  });
+
+  it('blocks safe generation when rejected evidence contains invalid_source_scope', () => {
+    const service = new ValidatePolicyService({ profile: 'standard' });
+    const pack = buildPack();
+    pack.evidence_digest = {
+      ...pack.evidence_digest!,
+      rejected_evidence: [
+        {
+          id: 'doc:foreign',
+          source: 'itglue',
+          reason: 'invalid_source_scope',
+          summary: 'foreign org evidence while target org unresolved',
+          tenant_id: 'tenant-1',
+          org_id: 'org-999',
+          source_workspace: 'tenant:tenant-1',
+          evidence_score: 0,
+        },
+      ],
+    };
+
+    const result = service.validate(buildDiagnosis(), pack);
+    expect(result.safe_to_generate_playbook).toBe(false);
+    expect(result.blocking_reasons).toContain('cross_tenant_candidate_detected');
   });
 });

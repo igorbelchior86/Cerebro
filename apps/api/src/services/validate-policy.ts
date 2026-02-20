@@ -9,23 +9,70 @@ import type {
   EvidencePack,
 } from '@playbook-brain/types';
 
+export type GatingProfile = 'strict' | 'standard' | 'lenient';
+
+interface CoverageThresholds {
+  entity_coverage: number;
+  tech_coverage: number;
+  signal_coverage: number;
+  asset_coverage: number;
+}
+
 export interface ValidationConfig {
   minHypothesisConfidence: number; // Minimum confidence to accept (default: 0.6)
   maxHighRiskActions: number; // Maximum high-risk actions allowed (default: 2)
   requireEvidencePerClaim: boolean; // Each hypothesis needs evidence (default: true)
   requireTestsPerAction: boolean; // Each hypothesis should have tests (default: true)
+  profile: GatingProfile;
+  coverageThresholds: CoverageThresholds;
 }
+
+const PROFILE_DEFAULTS: Record<GatingProfile, Pick<ValidationConfig, 'minHypothesisConfidence' | 'coverageThresholds'>> = {
+  strict: {
+    minHypothesisConfidence: 0.6,
+    coverageThresholds: {
+      entity_coverage: 0.6,
+      tech_coverage: 0.6,
+      signal_coverage: 0.6,
+      asset_coverage: 0.6,
+    },
+  },
+  standard: {
+    minHypothesisConfidence: 0.45,
+    coverageThresholds: {
+      entity_coverage: 0.35,
+      tech_coverage: 0.5,
+      signal_coverage: 0,
+      asset_coverage: 0,
+    },
+  },
+  lenient: {
+    minHypothesisConfidence: 0.35,
+    coverageThresholds: {
+      entity_coverage: 0.2,
+      tech_coverage: 0.35,
+      signal_coverage: 0,
+      asset_coverage: 0,
+    },
+  },
+};
 
 export class ValidatePolicyService {
   private config: ValidationConfig;
+  private profile: GatingProfile;
 
   constructor(config: Partial<ValidationConfig> = {}) {
+    const profile = this.resolveProfile(config.profile);
+    const defaults = PROFILE_DEFAULTS[profile];
     this.config = {
-      minHypothesisConfidence: config.minHypothesisConfidence ?? 0.6,
+      minHypothesisConfidence: config.minHypothesisConfidence ?? defaults.minHypothesisConfidence,
       maxHighRiskActions: config.maxHighRiskActions ?? 2,
       requireEvidencePerClaim: config.requireEvidencePerClaim ?? true,
       requireTestsPerAction: config.requireTestsPerAction ?? true,
+      profile,
+      coverageThresholds: config.coverageThresholds ?? defaults.coverageThresholds,
     };
+    this.profile = profile;
   }
 
   /**
@@ -44,13 +91,17 @@ export class ValidatePolicyService {
     const qualityGates = {
       cross_tenant_candidate_detected: Boolean(
         (digest?.rejected_evidence || pack.rejected_evidence || []).some(
-          (item) => item.reason === 'org_mismatch' || item.reason === 'tenant_mismatch'
+          (item) =>
+            item.reason === 'org_mismatch' ||
+            item.reason === 'tenant_mismatch' ||
+            item.reason === 'invalid_source_scope'
         )
       ),
       named_entity_unresolved: (pack.entity_resolution?.status || 'unresolved') !== 'resolved',
       domain_required_source_missing: this.hasDomainRequiredSourceMissing(pack),
       capability_verification_incomplete: this.isCapabilityVerificationIncomplete(pack),
     };
+    const hasTicketActorContactHints = this.hasTicketActorContactHints(pack);
 
     const coverageScores = this.computeCoverageScores(pack);
 
@@ -165,7 +216,11 @@ export class ValidatePolicyService {
       blockingReasons.push('cross_tenant_candidate_detected');
     }
 
-    if (qualityGates.named_entity_unresolved) {
+    const shouldBlockNamedEntity =
+      qualityGates.named_entity_unresolved &&
+      (this.profile === 'strict' || !hasTicketActorContactHints);
+
+    if (shouldBlockNamedEntity) {
       violations.push({
         type: 'quality_gate',
         detail: 'named_entity_unresolved: actor was not strongly resolved in org scope',
@@ -175,6 +230,11 @@ export class ValidatePolicyService {
           'Confirm exact affected actor (name/email/phone) inside ticket org scope'
       );
       blockingReasons.push('named_entity_unresolved');
+    } else if (qualityGates.named_entity_unresolved) {
+      requiredQuestions.add(
+        pack.entity_resolution?.disambiguation_question ||
+          'Confirm actor identity (name/email/phone) before closure'
+      );
     }
 
     if (qualityGates.domain_required_source_missing) {
@@ -186,7 +246,9 @@ export class ValidatePolicyService {
       blockingReasons.push('domain_required_source_missing');
     }
 
-    if (qualityGates.capability_verification_incomplete) {
+    const shouldBlockCapabilityIncomplete =
+      qualityGates.capability_verification_incomplete && this.profile === 'strict';
+    if (shouldBlockCapabilityIncomplete) {
       violations.push({
         type: 'quality_gate',
         detail:
@@ -196,37 +258,44 @@ export class ValidatePolicyService {
         'Provide device model/serial and confirm official vendor compatibility source URL'
       );
       blockingReasons.push('capability_verification_incomplete');
+    } else if (qualityGates.capability_verification_incomplete) {
+      requiredQuestions.add(
+        'Capability check incomplete: collect device model/serial and official vendor spec URL before final closure'
+      );
+      requiredFixes.add(
+        'Generate guided collection playbook only (avoid definitive compatibility conclusion)'
+      );
     }
 
-    const coverageThreshold = 0.6;
-    if (coverageScores.entity_coverage < coverageThreshold) {
+    const coverageThreshold = this.config.coverageThresholds;
+    if (coverageScores.entity_coverage < coverageThreshold.entity_coverage) {
       violations.push({
         type: 'coverage_gate',
-        detail: `entity_coverage below threshold (${coverageScores.entity_coverage.toFixed(2)} < ${coverageThreshold})`,
+        detail: `entity_coverage below threshold (${coverageScores.entity_coverage.toFixed(2)} < ${coverageThreshold.entity_coverage})`,
       });
       requiredQuestions.add('Collect stronger actor evidence (exact name/email/phone) in org scope');
       blockingReasons.push('entity_coverage');
     }
-    if (coverageScores.tech_coverage < coverageThreshold) {
+    if (coverageScores.tech_coverage < coverageThreshold.tech_coverage) {
       violations.push({
         type: 'coverage_gate',
-        detail: `tech_coverage below threshold (${coverageScores.tech_coverage.toFixed(2)} < ${coverageThreshold})`,
+        detail: `tech_coverage below threshold (${coverageScores.tech_coverage.toFixed(2)} < ${coverageThreshold.tech_coverage})`,
       });
       requiredFixes.add('Consult technology-specific sources based on detected tech context');
       blockingReasons.push('tech_coverage');
     }
-    if (coverageScores.signal_coverage < coverageThreshold) {
+    if (coverageScores.signal_coverage < coverageThreshold.signal_coverage) {
       violations.push({
         type: 'coverage_gate',
-        detail: `signal_coverage below threshold (${coverageScores.signal_coverage.toFixed(2)} < ${coverageThreshold})`,
+        detail: `signal_coverage below threshold (${coverageScores.signal_coverage.toFixed(2)} < ${coverageThreshold.signal_coverage})`,
       });
       requiredQuestions.add('Collect at least one direct signal/alert supporting the diagnosis');
       blockingReasons.push('signal_coverage');
     }
-    if (coverageScores.asset_coverage < coverageThreshold) {
+    if (coverageScores.asset_coverage < coverageThreshold.asset_coverage) {
       violations.push({
         type: 'coverage_gate',
-        detail: `asset_coverage below threshold (${coverageScores.asset_coverage.toFixed(2)} < ${coverageThreshold})`,
+        detail: `asset_coverage below threshold (${coverageScores.asset_coverage.toFixed(2)} < ${coverageThreshold.asset_coverage})`,
       });
       requiredFixes.add('Collect asset/device capability evidence before final recommendation');
       blockingReasons.push('asset_coverage');
@@ -276,7 +345,18 @@ export class ValidatePolicyService {
       status = 'needs_more_info';
     }
 
-    const safeToGenerate = status === 'approved' && diagnosis.top_hypotheses.length > 0;
+    const hasRiskGate = violations.some((v) => v.type === 'risk_gate');
+    const hasNoEvidence = violations.some((v) => v.type === 'no_evidence');
+    const hasHardQualityStop =
+      blockingReasons.includes('cross_tenant_candidate_detected') ||
+      blockingReasons.includes('domain_required_source_missing');
+
+    const safeToGenerate =
+      diagnosis.top_hypotheses.length > 0 &&
+      !hasRiskGate &&
+      !hasNoEvidence &&
+      !hasHardQualityStop &&
+      (this.profile === 'strict' ? status === 'approved' : true);
 
     return {
       status,
@@ -286,8 +366,29 @@ export class ValidatePolicyService {
       safe_to_generate_playbook: safeToGenerate,
       quality_gates: qualityGates,
       coverage_scores: coverageScores,
-      blocking_reasons: [...new Set(blockingReasons)],
+      blocking_reasons: [...new Set(blockingReasons.concat([`profile:${this.profile}`]))],
     };
+  }
+
+  private resolveProfile(profile?: GatingProfile): GatingProfile {
+    if (profile) return profile;
+    const envProfile = String(
+      process.env.TRIAGE_GATING_PROFILE ||
+      process.env.PIPELINE_GATING_PROFILE ||
+      'standard'
+    ).toLowerCase();
+    if (envProfile === 'strict' || envProfile === 'lenient') {
+      return envProfile;
+    }
+    return 'standard';
+  }
+
+  private hasTicketActorContactHints(pack: EvidencePack): boolean {
+    const extracted = pack.entity_resolution?.extracted_entities;
+    if (!extracted) return false;
+    const hasPerson = extracted.person.length > 0;
+    const hasDirectContact = extracted.email.length > 0 || extracted.phone.length > 0;
+    return hasPerson && hasDirectContact;
   }
 
   private hasDomainRequiredSourceMissing(pack: EvidencePack): boolean {
@@ -323,10 +424,14 @@ export class ValidatePolicyService {
     const entityStatus = pack.entity_resolution?.status || 'unresolved';
     const entityCoverage =
       entityStatus === 'resolved'
-        ? 1
+        ? pack.entity_resolution?.resolved_actor?.confidence === 'medium'
+          ? 0.7
+          : 1
         : pack.entity_resolution?.actor_candidates?.length
-          ? 0.5
-          : 0;
+          ? 0.45
+          : this.hasTicketActorContactHints(pack)
+            ? 0.35
+            : 0;
 
     const techDetected = pack.evidence_digest?.tech_context_detected || [];
     const consultedSourcesCount = new Set(
@@ -337,14 +442,22 @@ export class ValidatePolicyService {
         ? 1
         : Math.min(1, consultedSourcesCount / Math.max(1, techDetected.length));
 
-    const signalCoverage = pack.signals.length > 0 ? 1 : 0;
+    const signalCoverage =
+      pack.signals.length > 0
+        ? 1
+        : pack.docs.length > 0 || pack.related_cases.length > 0
+          ? 0.35
+          : 0;
 
     const capability = pack.capability_verification || pack.evidence_digest?.capability_verification;
     const assetCoverage =
       capability?.required
-        ? capability.device_match_strong && capability.model_spec_confirmed
-          ? 1
-          : 0
+        ? Number(
+            (
+              (capability.device_match_strong ? 0.5 : 0) +
+              (capability.model_spec_confirmed ? 0.5 : 0)
+            ).toFixed(2)
+          )
         : 1;
 
     return {

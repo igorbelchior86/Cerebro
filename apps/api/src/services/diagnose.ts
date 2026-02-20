@@ -68,6 +68,17 @@ export class DiagnoseService {
     const title = pack.ticket.title || 'Reported issue';
     const desc = pack.ticket.description || 'No description provided';
     const evidence = [title, desc].filter(Boolean).slice(0, 3);
+    const digestActions = pack.evidence_digest?.candidate_actions || [];
+    const recommendedActions =
+      digestActions.length > 0
+        ? digestActions.slice(0, 4).map((item) => ({
+            action: item.action,
+            risk: 'low' as const,
+          }))
+        : [
+            { action: 'Collect missing context from ticket requester and confirm exact failure mode', risk: 'low' as const },
+            { action: 'Run standard service/device connectivity checks based on environment baseline', risk: 'low' as const },
+          ];
     return {
       summary: `Deterministic fallback diagnosis generated from ticket context for ${pack.ticket.id}.`,
       top_hypotheses: [
@@ -81,10 +92,7 @@ export class DiagnoseService {
         },
       ],
       missing_data: pack.missing_data || [],
-      recommended_actions: [
-        { action: 'Collect missing context from ticket requester and confirm exact failure mode', risk: 'low' },
-        { action: 'Run standard service/device connectivity checks based on environment baseline', risk: 'low' },
-      ],
+      recommended_actions: recommendedActions,
       do_not_do: ['Do not apply destructive changes before confirming scope and root cause'],
       meta: {
         model: 'rules-fallback',

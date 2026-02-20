@@ -12,6 +12,18 @@ import type {
 import { createLLMProvider, getDefaultLLMProvider } from './llm-adapter.js';
 import { shouldDowngradePlaybookToFallback } from './evidence-guardrails.js';
 
+const INTERNAL_LEAK_PATTERNS: RegExp[] = [
+  /\bllm\b/i,
+  /\bjson response\b/i,
+  /\bprompt\b/i,
+  /\bmodel output\b/i,
+  /\bchain of thought\b/i,
+  /\bsystem instruction\b/i,
+  /\bdebug\b/i,
+  /\bparse(?:r|)\s+json\b/i,
+  /\bapi response\b/i,
+];
+
 export class PlaybookWriterService {
   /**
    * Generate a playbook from diagnosis and validation
@@ -95,13 +107,28 @@ export class PlaybookWriterService {
         },
       };
     }
+    if (this.hasInternalLeakage(playbookMarkdown)) {
+      const fallbackContent = this.buildDeterministicPlaybook(diagnosis, pack);
+      return {
+        content_md: fallbackContent,
+        meta: {
+          model: `${modelName}-contamination-fallback`,
+          input_tokens: response.inputTokens,
+          output_tokens: response.outputTokens,
+          cost_usd: response.costUsd,
+          latency_ms: latencyMs,
+        },
+      };
+    }
+
+    const sanitizedPlaybook = this.sanitizePlaybook(playbookMarkdown);
 
     // ─── Validate playbook structure ────────────────────────────
-    this.validatePlaybookStructure(playbookMarkdown);
+    this.validatePlaybookStructure(sanitizedPlaybook);
 
     // ─── Build output ──────────────────────────────────────────
     const playbook: PlaybookOutput = {
-      content_md: playbookMarkdown,
+      content_md: sanitizedPlaybook,
       meta: {
         model: modelName,
         input_tokens: response.inputTokens,
@@ -289,12 +316,23 @@ ${pack.docs
 7. Do not introduce security-compromise narratives unless directly evidenced in this ticket/signals/docs
 8. Do not include any remediation step without at least one valid evidence reference from evidence digest
 9. If capability verification is required and incomplete, output only directed data-collection steps (no final compatibility conclusion)
+10. NEVER include internal-engine instructions or meta-steps (forbidden examples: "check LLM JSON response", "review prompt", "inspect model output", "parse JSON")
 
 ## OUTPUT
 
 Return ONLY the Markdown content. No explanation, no code fences wrapping the markdown itself.
 
 Start with the title and continue with the sections above.`;
+  }
+
+  private hasInternalLeakage(markdown: string): boolean {
+    return INTERNAL_LEAK_PATTERNS.some((pattern) => pattern.test(markdown));
+  }
+
+  private sanitizePlaybook(markdown: string): string {
+    const lines = markdown.split('\n');
+    const cleaned = lines.filter((line) => !INTERNAL_LEAK_PATTERNS.some((pattern) => pattern.test(line)));
+    return cleaned.join('\n').trim();
   }
 
   /**

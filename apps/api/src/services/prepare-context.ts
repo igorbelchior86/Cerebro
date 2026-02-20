@@ -41,6 +41,8 @@ type TicketLike = {
   description?: string;
   company?: string;
   requester?: string;
+  rawBody?: string;
+  updates?: Array<{ timestamp?: string; content?: string }>;
   createDate?: string;
   priority?: number;
   queueName?: string;
@@ -65,6 +67,7 @@ interface DeviceResolutionResult {
   loggedInUser: string;
   reason: string;
   strongMatch: boolean;
+  score: number;
   details?: any | null;
 }
 
@@ -292,7 +295,7 @@ export class PrepareContextService {
       try {
         const includeCompany = await this.hasCompanyColumn();
         const emailTicket = await queryOne<any>(
-          `SELECT id, title, description, ${includeCompany ? 'company' : `''::text as company`}, requester, status, updates, created_at 
+          `SELECT id, title, description, ${includeCompany ? 'company' : `''::text as company`}, requester, raw_body, status, updates, created_at 
            FROM tickets_processed WHERE id = $1`,
           [input.ticketId]
         );
@@ -305,6 +308,8 @@ export class PrepareContextService {
             description: emailTicket.description,
             company: emailTicket.company || '',
             requester: emailTicket.requester || '',
+            rawBody: emailTicket.raw_body || '',
+            updates: Array.isArray(emailTicket.updates) ? emailTicket.updates : [],
             createDate: emailTicket.created_at,
             priority: 3, // Default normal
             queueName: 'Email Ingestion',
@@ -349,6 +354,7 @@ export class PrepareContextService {
                 description: parsed.description,
                 company: parsed.company || '',
                 requester: parsed.requester || '',
+                rawBody: parsed.rawBody || '',
                 createDate: parsed.createdAt,
                 priority: 3,
                 queueName: 'Email Ingestion',
@@ -394,13 +400,17 @@ export class PrepareContextService {
     if (!ticket) {
       throw new Error(`Cannot prepare context without valid ticket from Autotask or Database`);
     }
+    const ticketNarrative = this.buildTicketNarrative(ticket);
 
-    const companyName = this.normalizeName(ticket.company || '');
+    const inferredCompany = this.inferCompanyNameFromTicketText(
+      ticketNarrative
+    );
+    const companyName = this.normalizeName(ticket.company || inferredCompany || '');
     const requesterName = this.normalizeName(ticket.requester || '');
     const sourceFindings: SourceFinding[] = [];
     const rejectedEvidence: RejectedEvidence[] = [];
     const facetContext = this.detectFacetContext(
-      `${ticket.title || ''} ${ticket.description || ''} ${ticket.requester || ''}`
+      ticketNarrative
     );
     const scopeMeta: ScopeMeta = {
       tenant_id: tenantId,
@@ -430,7 +440,7 @@ export class PrepareContextService {
         itglueOrgMatch = await this.resolveITGlueOrg(
           itglueClient,
           companyName,
-          `${ticket.title || ''}\n${ticket.description || ''}\n${ticket.requester || ''}`
+          ticketNarrative
         );
       }
 
@@ -567,7 +577,7 @@ export class PrepareContextService {
 
       const resolvedDevice = await this.resolveDeviceDeterministically({
         devices: ninjaOrgDevices,
-        ticketText: `${ticket.title || ''} ${ticket.description || ''}`,
+        ticketText: ticketNarrative,
         requesterName,
         itglueConfigs,
         ninjaoneClient,
@@ -603,6 +613,12 @@ export class PrepareContextService {
         org_id: ninjaOrgMatch ? String(ninjaOrgMatch.id) : null,
         source_workspace: sourceWorkspace,
       });
+      if (!device) {
+        missingData.push({
+          field: 'device_unresolved',
+          why: `NinjaOne lookup did not produce a reliable device correlation (score=${resolvedDevice.score.toFixed(2)})`,
+        });
+      }
     } catch (error) {
       missingData.push({
         field: 'ninjaone_device',
@@ -623,10 +639,39 @@ export class PrepareContextService {
       });
     }
 
+    const inferredPhoneProvider = this.inferPhoneProvider({
+      ticketText: ticketNarrative,
+      docs,
+      itglueConfigs,
+      itgluePasswords,
+      signals: [...signals, ...ninjaChecks],
+    });
+    if (inferredPhoneProvider) {
+      sourceFindings.push({
+        source: 'external',
+        round: 1,
+        facet: 'telephony',
+        queried: true,
+        matched: true,
+        summary: `phone provider inferred as ${inferredPhoneProvider}`,
+        details: ['inferred from ticket + org-scoped docs/configs/passwords/signals'],
+        why_selected: ['deterministic provider keyword matching before diagnosis/playbook generation'],
+        tenant_id: tenantId,
+        org_id: input.orgId || itglueOrgMatch?.id || (ninjaOrgMatch ? String(ninjaOrgMatch.id) : null) || null,
+        source_workspace: sourceWorkspace,
+      });
+    } else if (facetContext.symptom.includes('telephony') || facetContext.technology.includes('goto')) {
+      missingData.push({
+        field: 'phone_provider',
+        why: 'Telephony context detected but no provider signal found in ticket/docs/configs/passwords',
+      });
+    }
+
     // ROUND 2: ... -> AT history with refined terms
     const historyTerms = [
       ticket.title || '',
       ticket.description || '',
+      ticketNarrative,
       requesterName,
       loggedInUser,
       String(device?.hostname || ''),
@@ -758,9 +803,15 @@ export class PrepareContextService {
       itglueOrgMatch?.id ||
       (ninjaOrgMatch ? String(ninjaOrgMatch.id) : null);
     scopeMeta.org_id = resolvedOrgId || null;
+    if (!resolvedOrgId) {
+      missingData.push({
+        field: 'org_scope_unresolved',
+        why: 'Could not deterministically resolve organization scope from ticket/company/domain signals',
+      });
+    }
 
     const entityResolution = this.resolveEntityScope({
-      ticketText: `${ticket.title || ''}\n${ticket.description || ''}`,
+      ticketText: ticketNarrative,
       requesterName,
       companyName,
       contacts: itglueContacts,
@@ -782,7 +833,7 @@ export class PrepareContextService {
       required: facetContext.requiresCapabilityVerification,
       device,
       deviceDetails,
-      ticketText: `${ticket.title || ''} ${ticket.description || ''}`,
+      ticketText: ticketNarrative,
       itglueAssets,
       sourceWorkspace,
       tenantId,
@@ -855,6 +906,7 @@ export class PrepareContextService {
       device,
       loggedInUser,
       requesterName,
+      inferredPhoneProvider,
     });
 
     // ─── Monta EvidencePack ──────────────────────────────────────
@@ -972,6 +1024,7 @@ export class PrepareContextService {
         loggedInUser: '',
         reason: 'no devices available in org scope',
         strongMatch: false,
+        score: 0,
       };
     }
 
@@ -1010,8 +1063,21 @@ export class PrepareContextService {
         loggedInUser: '',
         reason: 'no scored device candidates in org scope',
         strongMatch: false,
+        score: 0,
       };
     }
+    const MIN_DEVICE_SELECTION_SCORE = 0.2;
+    if (winner.score < MIN_DEVICE_SELECTION_SCORE) {
+      return {
+        device: null,
+        checks: [],
+        loggedInUser: '',
+        reason: `no reliable device match; top score=${winner.score.toFixed(2)}`,
+        strongMatch: false,
+        score: winner.score,
+      };
+    }
+
     const strongMatch = winner.score >= 0.65;
     const selectedDevice = winner.device;
 
@@ -1049,6 +1115,7 @@ export class PrepareContextService {
       loggedInUser,
       reason,
       strongMatch,
+      score: winner.score,
       details,
     };
   }
@@ -1063,6 +1130,13 @@ export class PrepareContextService {
     sourceWorkspace: string;
   }): EntityResolution {
     const text = input.ticketText;
+    const firstNameLabel = text.match(/(?:first\s*name|firstname)\s*[:\-]\s*([a-zA-Z]+)\b/i)?.[1];
+    const lastNameLabel = text.match(/(?:last\s*name|lastname)\s*[:\-]\s*([a-zA-Z]+)\b/i)?.[1];
+    const labeledFullName =
+      firstNameLabel && lastNameLabel
+        ? `${this.capitalize(firstNameLabel)} ${this.capitalize(lastNameLabel)}`
+        : null;
+
     const emailMatches = [
       ...new Set((text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []).map((e) => e.toLowerCase())),
     ];
@@ -1086,7 +1160,7 @@ export class PrepareContextService {
     const properNames = text.match(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+/g) || [];
     const personCandidates = [
       ...new Set(
-        [input.requesterName, ...properNames].filter(
+        [labeledFullName || '', input.requesterName, ...properNames].filter(
           (value): value is string => Boolean(value && value.trim())
         )
       ),
@@ -1105,10 +1179,16 @@ export class PrepareContextService {
         );
         const email = String(attrs.primary_email || '').toLowerCase();
         const phone = String(attrs.primary_phone || '');
+        const normalizedContactCompany = this.normalizeName(
+          String(attrs.organization_name || attrs.company_name || attrs.organization || '')
+        ).toLowerCase();
         const exactName = normalizedRequester && name.toLowerCase() === normalizedRequester ? 0.4 : 0;
         const emailScore = emailMatches.includes(email) && email ? 0.3 : 0;
         const phoneScore = phoneMatches.some((p) => phone.includes(p) || p.includes(phone)) && phone ? 0.2 : 0;
-        const companyScore = normalizedCompany ? 0.1 : 0;
+        const companyScore =
+          normalizedCompany && normalizedContactCompany && this.fuzzyMatch(normalizedCompany, normalizedContactCompany)
+            ? 0.1
+            : 0;
         const score = Number((exactName + emailScore + phoneScore + companyScore).toFixed(3));
         return {
           id: String(contact.id || `contact-${name}`),
@@ -1169,6 +1249,36 @@ export class PrepareContextService {
           .map((c) => `${c.name}${c.email ? ` <${c.email}>` : ''}`)
           .join(' | ')}`,
         status: 'ambiguous',
+      };
+    }
+
+    const hasTicketContact =
+      personCandidates.length > 0 &&
+      (emailMatches.length > 0 || phoneMatches.length > 0);
+    if (hasTicketContact) {
+      const name = personCandidates[0] || 'Ticket Contact';
+      const contactKey = (emailMatches[0] || phoneMatches[0] || name)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      const resolvedActor: EntityResolution['resolved_actor'] = {
+        id: `ticket-actor-${contactKey || 'unknown'}`,
+        name,
+        confidence: 'medium',
+        ...(emailMatches[0] ? { email: emailMatches[0] } : {}),
+        ...(phoneMatches[0] ? { phone: phoneMatches[0] } : {}),
+      };
+      return {
+        extracted_entities: {
+          person: personCandidates,
+          company: companyCandidates,
+          phone: phoneMatches,
+          email: emailMatches,
+          location: locationMatches,
+          product_or_domain: productMatches,
+        },
+        resolved_actor: resolvedActor,
+        status: 'resolved',
       };
     }
 
@@ -1277,6 +1387,21 @@ export class PrepareContextService {
     summary: string;
     scopeMeta: ScopeMeta;
   }): { accepted: boolean; rejected?: RejectedEvidence } {
+    if (!input.targetOrgId && input.itemOrgId) {
+      return {
+        accepted: false,
+        rejected: {
+          id: input.itemId,
+          source: input.source,
+          reason: 'invalid_source_scope',
+          summary: `${input.summary} (target org unresolved)`,
+          tenant_id: input.scopeMeta.tenant_id,
+          org_id: input.itemOrgId,
+          source_workspace: input.scopeMeta.source_workspace,
+          evidence_score: 0,
+        },
+      };
+    }
     if (!input.itemOrgId || !input.targetOrgId || input.itemOrgId === input.targetOrgId) {
       return { accepted: true };
     }
@@ -1311,6 +1436,7 @@ export class PrepareContextService {
     device: any;
     loggedInUser: string;
     requesterName: string;
+    inferredPhoneProvider: string | null;
   }): EvidenceDigest {
     const factsConfirmed: DigestFact[] = [];
     const factsConflicted: DigestFact[] = [];
@@ -1359,6 +1485,19 @@ export class PrepareContextService {
         evidence_score: input.capabilityVerification.device_match_strong ? 0.9 : 0.55,
         evidence_refs: [`device:${String(input.device.id)}`],
         source: 'ninjaone',
+        tenant_id: input.scopeMeta.tenant_id,
+        org_id: input.scopeMeta.org_id,
+        source_workspace: input.scopeMeta.source_workspace,
+      });
+    }
+
+    if (input.inferredPhoneProvider) {
+      factsConfirmed.push({
+        id: `fact-provider-${input.inferredPhoneProvider.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+        fact: `Detected telephony provider: ${input.inferredPhoneProvider}`,
+        evidence_score: 0.75,
+        evidence_refs: ['provider:telephony'],
+        source: 'provider_inference',
         tenant_id: input.scopeMeta.tenant_id,
         org_id: input.scopeMeta.org_id,
         source_workspace: input.scopeMeta.source_workspace,
@@ -1429,7 +1568,13 @@ export class PrepareContextService {
       facts_conflicted: factsConflicted,
       missing_critical: missingCritical,
       candidate_actions: candidateActions,
-      tech_context_detected: [...new Set(input.facetContext.technology)],
+      tech_context_detected: [
+        ...new Set(
+          input.facetContext.technology.concat(
+            input.inferredPhoneProvider ? [`telephony_provider:${input.inferredPhoneProvider.toLowerCase()}`] : []
+          )
+        ),
+      ],
       sources_consulted_by_facet: sourcesByFacet,
       rejected_evidence: input.rejectedEvidence,
       capability_verification: input.capabilityVerification,
@@ -1554,6 +1699,108 @@ export class PrepareContextService {
 
   private normalizeName(value: string): string {
     return (value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  private capitalize(value: string): string {
+    if (!value) return value;
+    return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+  }
+
+  private inferCompanyNameFromTicketText(text: string): string {
+    const domains = this.extractEmailDomains(text || '');
+    if (!domains.length) return '';
+
+    const domain = String(domains[0] || '').toLowerCase();
+    const root = domain.split('.')[0] || '';
+    if (!root) return '';
+
+    // Split common business suffixes when domain is concatenated (e.g. stintinomanagement)
+    const suffixes = [
+      'management',
+      'homes',
+      'technologies',
+      'technology',
+      'solutions',
+      'support',
+      'services',
+      'group',
+      'partners',
+      'consulting',
+      'systems',
+      'security',
+      'health',
+      'care',
+      'logistics',
+      'holdings',
+      'capital',
+    ];
+
+    let normalized = root.replace(/[-_]+/g, ' ');
+    for (const suffix of suffixes) {
+      const idx = normalized.indexOf(suffix);
+      if (idx > 0) {
+        normalized = `${normalized.slice(0, idx)} ${suffix}`;
+        break;
+      }
+    }
+
+    normalized = normalized.replace(/\s+/g, ' ').trim();
+    if (!normalized) return '';
+
+    return normalized
+      .split(' ')
+      .filter(Boolean)
+      .map((part) => this.capitalize(part))
+      .join(' ');
+  }
+
+  private buildTicketNarrative(ticket: TicketLike): string {
+    const updatesText = (ticket.updates || [])
+      .map((u) => String(u?.content || '').trim())
+      .filter(Boolean)
+      .slice(0, 6)
+      .join('\n');
+    return [
+      ticket.title || '',
+      ticket.description || '',
+      ticket.company || '',
+      ticket.requester || '',
+      ticket.rawBody || '',
+      updatesText,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  private inferPhoneProvider(input: {
+    ticketText: string;
+    docs: Doc[];
+    itglueConfigs: any[];
+    itgluePasswords: any[];
+    signals: Signal[];
+  }): string | null {
+    const sourceText = [
+      input.ticketText,
+      ...input.docs.map((d) => `${d.title} ${d.snippet}`),
+      ...input.itglueConfigs.map((c: any) => JSON.stringify(c?.attributes || {})),
+      ...input.itgluePasswords.map((p: any) => JSON.stringify(p?.attributes || {})),
+      ...input.signals.map((s) => `${s.source} ${s.type} ${s.summary}`),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    const providerMatchers: Array<{ name: string; pattern: RegExp }> = [
+      { name: 'GoTo Connect', pattern: /\bgoto(\s?connect)?\b|\bgotoconnect\b/ },
+      { name: 'RingCentral', pattern: /\bring\s?central\b/ },
+      { name: '8x8', pattern: /\b8x8\b/ },
+      { name: 'Zoom Phone', pattern: /\bzoom\s?phone\b/ },
+      { name: 'Microsoft Teams Phone', pattern: /\bteams\s?phone\b|\bmicrosoft\s?teams\b/ },
+      { name: 'Vonage', pattern: /\bvonage\b/ },
+      { name: 'Dialpad', pattern: /\bdialpad\b/ },
+    ];
+    const found = providerMatchers.find((m) => m.pattern.test(sourceText));
+    return found ? found.name : null;
   }
 
   private buildRequesterTokens(value: string): string[] {

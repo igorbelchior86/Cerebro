@@ -129,3 +129,30 @@
 **Root cause**: Single-call failure in one IT Glue capability (`/documents`) was mapped to whole-stage failure.
 **Rule**: Integration collection must degrade gracefully per capability (runbooks/docs/configs/contacts), not fail-all on one endpoint.
 **Pattern**: classify endpoint-specific errors, continue with remaining data sources, and emit granular `source_findings` instead of broad `missing_data` failure.
+## Lesson: 2026-02-20 (tooling freeze on direct shell DB path)
+**Mistake**: Attempted operational DB cleanup using `psql` + `source .env`, which failed/hung in this environment.
+**Root cause**: Assumed `psql` availability and `.env` shell-safe formatting; both assumptions were false.
+**Rule**: For this repo, prefer project-native Node/TS scripts (`tsx` + existing DB module) over direct shell DB tooling unless availability is confirmed first.
+**Pattern**: Before DB ops, validate tool availability (`which psql`) or skip directly to app-native query path.
+## Lesson: 2026-02-20 (zero-score device fallback contamination)
+**Mistake**: Device resolver accepted `ninjaOrgDevices[0]` even when correlation score was zero.
+**Root cause**: Fallback policy optimized for continuity, not evidentiary correctness.
+**Rule**: Candidate resolution must never promote a zero-confidence fallback into confirmed evidence.
+**Pattern**: If top score < minimum threshold, persist explicit unresolved state (`missing_data`) and stop propagation to digest/playbook.
+## Lesson: 2026-02-20 (do not ask for confirmation when user reports concrete bug)
+**Mistake**: I offered "if you want, I can fix now" after a direct bug report.
+**Root cause**: Communication default slipped into optional mode instead of autonomous execution mode.
+**Rule**: When user reports a concrete defect, execute fix immediately and only report progress/outcome.
+**Pattern**: Bug report -> root cause -> patch -> verify -> report. No confirmation prompt in-between.
+
+## Lesson: 2026-02-20 (manual reprocess without env causes fallback homogenization)
+**Mistake**: Reprocessed tickets with a standalone script that did not load `.env`, forcing diagnose/playbook to `rules-fallback` and producing near-identical outputs.
+**Root cause**: Operational script bypassed API bootstrap/runtime environment loading assumptions.
+**Rule**: Any manual/offline reprocess path must explicitly load production-equivalent env and record model provenance per step.
+**Pattern**: If multiple tickets suddenly share generic playbooks, verify `llm_outputs.model` before analyzing prompt quality.
+
+## Lesson: 2026-02-20 (provider contract must be explicit during manual reprocess)
+**Mistake**: Reprocessed tickets with provider drift (Groq) while operational expectation was Gemini.
+**Root cause**: Manual script relied on ambient env/default provider instead of explicit provider override per run.
+**Rule**: For manual ticket reprocessing, always force `LLM_PROVIDER` explicitly and verify persisted `llm_outputs.model` afterward.
+**Pattern**: Any mismatch between expected and observed playbook style should trigger immediate provider provenance check.

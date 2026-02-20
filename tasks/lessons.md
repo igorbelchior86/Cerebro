@@ -156,3 +156,9 @@
 **Root cause**: Manual script relied on ambient env/default provider instead of explicit provider override per run.
 **Rule**: For manual ticket reprocessing, always force `LLM_PROVIDER` explicitly and verify persisted `llm_outputs.model` afterward.
 **Pattern**: Any mismatch between expected and observed playbook style should trigger immediate provider provenance check.
+
+## Lesson: 2026-02-20 (target file precision under user pressure)
+**Mistake**: Validei paridade no `new.html` em vez do componente real do projeto (`apps/web`).
+**Root cause**: Assumi o arquivo citado anteriormente como fonte de verdade sem reconfirmar o alvo de implementação no app.
+**Rule**: Em tarefas de paridade visual, sempre validar primeiro o componente renderizado na rota real antes de usar arquivos de referência estáticos.
+**Pattern**: "mock/reference file" != "runtime component"; localizar binding real (`page` -> `component`) antes de concluir análise.

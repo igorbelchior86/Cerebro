@@ -13,8 +13,8 @@ import { usePathname } from 'next/navigation';
 interface SessionData {
   session: { id: string; ticket_id: string; status: string };
   evidence_pack?: any;
-  diagnosis?: unknown;
-  validation?: unknown;
+  diagnosis?: any;
+  validation?: any;
   playbook?: { content_md: string };
 }
 
@@ -101,10 +101,11 @@ export default function SessionDetail({
           withCredentials: true,
         });
 
-        const flowData = res.data.data;
+        const flowData = res.data.data || {};
         const newData = {
           session: { id: selectedTicketId, ticket_id: '', status: 'active' },
           ...flowData,
+          evidence_pack: flowData.evidence_pack ?? flowData.pack ?? null,
         };
 
         setData(newData);
@@ -313,6 +314,31 @@ export default function SessionDetail({
   const ticketNumber = data?.session.ticket_id || selectedTicket?.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`;
   const ticketLabel = `${ticketNumber} — ${ticketTitle}`;
   const ticketMetaLabel = getTicketContextMeta(selectedTicket);
+  const playbookPanelData = data
+    ? {
+        ticketId: ticketNumber,
+        context: [
+          { key: 'Org', val: selectedTicket?.company || selectedTicket?.org || 'Unknown org' },
+          { key: 'Site', val: selectedTicket?.site || 'Unknown site' },
+          {
+            key: 'ISP',
+            val: data.evidence_pack?.external_status?.[0]?.provider || 'Unknown',
+            ...(data.evidence_pack?.external_status?.[0]?.status ? { highlight: '#F97316' } : {}),
+          },
+          { key: 'Firewall', val: data.evidence_pack?.config?.firewall || 'Unknown' },
+          { key: 'User device', val: data.evidence_pack?.device?.hostname || selectedTicket?.requester || 'Unknown' },
+          { key: 'SLA', val: selectedTicket?.priority || 'Standard', highlight: 'var(--accent)' },
+        ],
+        hypotheses: Array.isArray(data.diagnosis?.top_hypotheses)
+          ? data.diagnosis.top_hypotheses.slice(0, 3).map((h: any, i: number) => ({
+              rank: Number(h?.rank) || i + 1,
+              hypothesis: String(h?.hypothesis || 'Hypothesis'),
+              confidence: Number(h?.confidence) || 0,
+              evidence: Array.isArray(h?.evidence) ? h.evidence.slice(0, 3).map((e: any) => String(e)) : [],
+            }))
+          : [],
+      }
+    : undefined;
 
   return (
     <ResizableLayout
@@ -333,6 +359,7 @@ export default function SessionDetail({
         <PlaybookPanel
           content={data?.playbook?.content_md || null}
           status={playbookStatus}
+          {...(playbookPanelData ? { data: playbookPanelData } : {})}
         />
       }
       mainContent={

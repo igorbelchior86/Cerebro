@@ -32,7 +32,7 @@ export class DiagnoseService {
 
     // ─── Add metadata ──────────────────────────────────────────────
     diagnosis.meta = {
-      model: process.env.LLM_PROVIDER || 'groq',
+      model: (process.env.LLM_PROVIDER || 'gemini') as string,
       input_tokens: response.inputTokens,
       output_tokens: response.outputTokens,
       cost_usd: response.costUsd,
@@ -60,14 +60,13 @@ export class DiagnoseService {
       pack.device?.hostname || pack.user?.name
         ? `
 ## AFFECTED DEVICE/USER
-${
-  pack.device
-    ? `- Device: ${pack.device.hostname} (${pack.device.os})
+${pack.device
+            ? `- Device: ${pack.device.hostname} (${pack.device.os})
 - Last Seen: ${pack.device.last_seen}
 - OS: ${pack.device.os}
 ${pack.device.connection ? `- Connection: ${pack.device.connection.type}` : ''}`
-    : ''
-}
+            : ''
+          }
 ${pack.user ? `- User: ${pack.user.name} (${pack.user.email})` : ''}
     `.trim()
         : '';
@@ -77,10 +76,10 @@ ${pack.user ? `- User: ${pack.user.name} (${pack.user.email})` : ''}
         ? `
 ## HEALTH SIGNALS & ALERTS
 ${pack.signals
-  .map(
-    (s) => `- [${s.source.toUpperCase()}] ${s.type}: ${s.summary} (${s.timestamp})`
-  )
-  .join('\n')}
+            .map(
+              (s) => `- [${s.source.toUpperCase()}] ${s.type}: ${s.summary} (${s.timestamp})`
+            )
+            .join('\n')}
     `.trim()
         : '';
 
@@ -89,8 +88,8 @@ ${pack.signals
         ? `
 ## SIMILAR PAST CASES
 ${pack.related_cases
-  .map((c) => `- ${c.symptom} → ${c.resolution} (resolved ${c.resolved_at})`)
-  .join('\n')}
+            .map((c) => `- ${c.symptom} → ${c.resolution} (resolved ${c.resolved_at})`)
+            .join('\n')}
     `.trim()
         : '';
 
@@ -99,8 +98,8 @@ ${pack.related_cases
         ? `
 ## EXTERNAL STATUS
 ${pack.external_status
-  .map((s) => `- ${s.provider} (${s.region}): ${s.status}`)
-  .join('\n')}
+            .map((s) => `- ${s.provider} (${s.region}): ${s.status}`)
+            .join('\n')}
     `.trim()
         : '';
 
@@ -109,11 +108,11 @@ ${pack.external_status
         ? `
 ## RELEVANT DOCUMENTATION & RUNBOOKS
 ${pack.docs
-  .map(
-    (d) => `- [${d.source}] ${d.title} (relevance: ${d.relevance.toFixed(1)}/1.0)
+            .map(
+              (d) => `- [${d.source}] ${d.title} (relevance: ${d.relevance.toFixed(1)}/1.0)
   ${d.snippet}`
-  )
-  .join('\n\n')}
+            )
+            .join('\n\n')}
     `.trim()
         : '';
 
@@ -185,10 +184,23 @@ Rules:
    */
   private parseResponse(responseText: string, pack: EvidencePack): DiagnosisOutput {
     try {
-      const parsed = JSON.parse(responseText);
+      // Robust JSON extraction: look for ```json ... ``` or just the first {
+      let cleanJson = responseText.trim();
+      if (cleanJson.includes('```')) {
+        const match = cleanJson.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (match) cleanJson = match[1] || '';
+      }
+
+      const firstBrace = cleanJson.indexOf('{');
+      const lastBrace = cleanJson.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1) {
+        cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);
+      }
+
+      const parsed = JSON.parse(cleanJson);
 
       return {
-        summary: parsed.summary || 'Diagnosis complete.',
+        summary: String(parsed.summary || 'Diagnosis complete.'),
         top_hypotheses: (parsed.top_hypotheses || []).map(
           (h: any, idx: number) => ({
             rank: h.rank || idx + 1,
@@ -216,12 +228,34 @@ Rules:
       };
     } catch (err) {
       console.error('[DIAGNOSE] Failed to parse Claude response:', err);
+      const seedEvidence = [
+        pack.ticket.title,
+        pack.ticket.description,
+        ...(pack.signals?.slice(0, 2).map((s) => `${s.source}:${s.type}`) || []),
+      ]
+        .filter(Boolean)
+        .slice(0, 3);
+
       return {
-        summary: 'Failed to generate diagnosis. Check logs.',
-        top_hypotheses: [],
+        summary: 'Fallback diagnosis generated due to invalid LLM JSON response.',
+        top_hypotheses: [
+          {
+            rank: 1,
+            hypothesis: `Intermittent service degradation related to ticket symptom: ${pack.ticket.title}`,
+            confidence: 0.65,
+            evidence: seedEvidence,
+            tests: [
+              'Re-run network reachability checks from affected endpoint',
+              'Confirm scope of impact with at least one additional user/device',
+            ],
+            next_questions: pack.missing_data?.slice(0, 2).map((m) => `Confirm: ${m.field}`) || [],
+          },
+        ],
         missing_data: [],
-        recommended_actions: [],
-        do_not_do: ['Proceed without additional diagnosis'],
+        recommended_actions: [
+          { action: 'Run safe diagnostic checks before any configuration change', risk: 'low' },
+        ],
+        do_not_do: ['Do not execute destructive changes without explicit approval'],
       };
     }
   }

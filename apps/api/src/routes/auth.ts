@@ -26,6 +26,7 @@ import {
   type AuthPayload,
 } from '../middleware/auth.js';
 import { tenantContext } from '../lib/tenantContext.js';
+import { applyWorkspaceRuntimeSettings } from '../services/runtime-settings.js';
 
 const router: IRouter = Router();
 
@@ -520,6 +521,9 @@ router.patch('/workspace/settings', requireAuth, requireAdmin, async (req: Reque
       'UPDATE tenants SET settings = $1 WHERE id = $2',
       [JSON.stringify(merged), req.auth!.tid],
     );
+
+    // Apply to current API process immediately (no restart required).
+    applyWorkspaceRuntimeSettings(merged);
 
     res.json({ message: 'Workspace settings updated', settings: merged });
   } catch (err) {

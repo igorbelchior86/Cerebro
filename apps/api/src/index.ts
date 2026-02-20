@@ -20,6 +20,9 @@ import emailIngestionRoutes from './routes/email-ingestion.js';
 import authRoutes from './routes/auth.js';
 import { requireAuth } from './middleware/auth.js';
 import { autoSeedAdmin } from './db/seed-admin.js';
+import { autotaskPollingService } from './services/autotask-polling.js';
+import { emailIngestionPollingService } from './services/email-ingestion-polling.js';
+import { bootstrapWorkspaceRuntimeSettings } from './services/runtime-settings.js';
 
 // Load environment variables — look for .env at monorepo root (../../../ relative to dist/)
 const __filename = fileURLToPath(import.meta.url);
@@ -122,6 +125,13 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log(`[API] ✓ Health check: http://localhost:${PORT}/health`);
   console.log(`[API] ✓ Auth: JWT + httpOnly cookie + TOTP MFA`);
   await autoSeedAdmin();
+  await bootstrapWorkspaceRuntimeSettings();
+
+  // Start Autotask Polling Service
+  autotaskPollingService.start();
+  // Start Email Ingestion Polling Service (fallback path when Autotask admin is unavailable)
+  emailIngestionPollingService.start();
+
   console.log(`[API] ✓ Ready\n`);
 });
 

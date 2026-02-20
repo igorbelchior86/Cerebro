@@ -568,24 +568,38 @@ function SectionLLM() {
       <p className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
         LLM settings apply to all workspace members. {!canEdit && 'Only admins can change these.'}
       </p>
-      <Row label="Model" description="LLM used for diagnosis and playbook generation">
-        <SelectPill value={settings.llmModel || 'Groq · llama-3.3-70b'} disabled={!canEdit}
-          onChange={(val) => handleSave('llmModel', val)}
-          options={['Groq · llama-3.3-70b', 'OpenAI · gpt-4o-mini', 'Anthropic · claude-3.5-sonnet']}
+      <Row label="Provider" description="Primary LLM provider">
+        <SelectPill value={settings.llmProvider || 'gemini'} disabled={!canEdit}
+          onChange={(val) => handleSave('llmProvider', val)}
+          options={['gemini', 'groq', 'anthropic', 'minimax']}
         />
       </Row>
       <Divider />
-      <Row label="Fallback model" description="Used when primary is unavailable">
-        <SelectPill value={settings.llmFallback || 'OpenAI · gpt-4o-mini'} disabled={!canEdit}
-          onChange={(val) => handleSave('llmFallback', val)}
-          options={['OpenAI · gpt-4o-mini', 'Groq · llama-3.3-70b', 'Anthropic · claude-3.5-sonnet']}
+      <Row label="Model" description="LLM used for diagnosis and playbook generation">
+        <SelectPill value={settings.llmModel || 'gemini-2.5-flash'} disabled={!canEdit}
+          onChange={(val) => handleSave('llmModel', val)}
+          options={['gemini-2.5-flash', 'gemini-2.5-pro', 'gemma-3-27b-it']}
+        />
+      </Row>
+      <Divider />
+      <Row label="Fallback provider" description="Used if primary provider throttles/fails">
+        <SelectPill value={settings.llmFallbackProvider || 'groq'} disabled={!canEdit}
+          onChange={(val) => handleSave('llmFallbackProvider', val)}
+          options={['groq', 'gemini', 'anthropic', 'minimax']}
+        />
+      </Row>
+      <Divider />
+      <Row label="Fallback model" description="Used if primary model is unavailable">
+        <SelectPill value={settings.llmFallbackModel || 'llama-3.1-8b-instant'} disabled={!canEdit}
+          onChange={(val) => handleSave('llmFallbackModel', val)}
+          options={['llama-3.1-8b-instant', 'gemini-2.5-flash', 'claude-3-5-sonnet-20241022']}
         />
       </Row>
       <Divider />
       <Row label="Max tokens" description="Maximum tokens per LLM response">
-        <SelectPill value={settings.llmMaxTokens || '4 096'} disabled={!canEdit}
+        <SelectPill value={settings.llmMaxTokens || '3000'} disabled={!canEdit}
           onChange={(val) => handleSave('llmMaxTokens', val)}
-          options={['2 048', '4 096', '8 192', '16 384']}
+          options={['1200', '2000', '3000', '4096', '8192']}
         />
       </Row>
       <Divider />
@@ -600,6 +614,34 @@ function SectionLLM() {
         <SelectPill value={settings.pollingInterval || '30 seconds'} disabled={!canEdit}
           onChange={(val) => handleSave('pollingInterval', val)}
           options={['10 seconds', '30 seconds', '60 seconds', '5 minutes']}
+        />
+      </Row>
+      <Divider />
+      <Row label="Gemini RPM limit" description="Requests per minute cap (free-tier guardrail)">
+        <SelectPill value={settings.geminiLimitRpm || '5'} disabled={!canEdit}
+          onChange={(val) => handleSave('geminiLimitRpm', val)}
+          options={['3', '5', '10', '20']}
+        />
+      </Row>
+      <Divider />
+      <Row label="Gemini RPD limit" description="Requests per day cap (free-tier guardrail)">
+        <SelectPill value={settings.geminiLimitRpd || '20'} disabled={!canEdit}
+          onChange={(val) => handleSave('geminiLimitRpd', val)}
+          options={['20', '50', '100', '500']}
+        />
+      </Row>
+      <Divider />
+      <Row label="Gemini TPM limit" description="Input tokens per minute cap">
+        <SelectPill value={settings.geminiLimitTpm || '250000'} disabled={!canEdit}
+          onChange={(val) => handleSave('geminiLimitTpm', val)}
+          options={['50000', '100000', '250000', '500000']}
+        />
+      </Row>
+      <Divider />
+      <Row label="Gemini retry max" description="Retries on 429 before failing ticket">
+        <SelectPill value={settings.geminiRetryMax || '2'} disabled={!canEdit}
+          onChange={(val) => handleSave('geminiRetryMax', val)}
+          options={['0', '1', '2', '3', '5']}
         />
       </Row>
       {saving && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Saving…</p>}

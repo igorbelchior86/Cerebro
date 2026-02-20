@@ -47,7 +47,7 @@ export class PlaybookWriterService {
     const playbook: PlaybookOutput = {
       content_md: playbookMarkdown,
       meta: {
-        model: process.env.LLM_PROVIDER || 'groq',
+        model: process.env.LLM_PROVIDER || 'gemini',
         input_tokens: response.inputTokens,
         output_tokens: response.outputTokens,
         cost_usd: response.costUsd,

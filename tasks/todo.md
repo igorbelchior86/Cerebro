@@ -1,44 +1,32 @@
-# Task: Debugging Authentication Error in Playbook Brain
-**Status**: planning
-**Started**: 2026-02-19
+# Task: Corrigir pipeline automático de geração de playbook
+**Status**: completed
+**Started**: 2026-02-20
 
 ## Plan
-- [x] Step 1: Initialize workflow orchestrator files
-- [x] Step 2: Search codebase to locate source of 'Authentication required'
-- [x] Step 3: Identify why the Playbook Brain chat request is returning 401
-- [x] Step 4: Fix the auth header / token issue in frontend or backend
-- [ ] Step 5: Verify Playbook Brain chat works properly
+- [x] Step 1: Reproduzir fluxo e identificar quebra (trigger -> orchestrator -> playbook)
+- [x] Step 2: Corrigir causa raiz com mínima mudança
+- [x] Step 3: Validar geração automática / status de falha transparente
+- [x] Step 4: Documentar resultado e comandos operacionais
+
+## Open Questions
+- Quota atual do Gemini no projeto pode bloquear geração contínua (429 RESOURCE_EXHAUSTED).
 
 ## Progress Notes
-- Initialized.
-- 'Authentication required' comes from `apps/api/src/middleware/auth.ts`, it means missing or invalid `pb_session` cookie or Bearer token.
+- Corrigido orquestrador para schema real do banco (`llm_outputs`, `validation_results`, `playbooks`).
+- Adicionado polling automático de ingestão de e-mail no startup da API.
+- Adicionado backfill automático de tickets já existentes sem playbook.
+- Corrigido `/playbook/full-flow` para ler conteúdo final da tabela `playbooks` (não apenas metadado em `llm_outputs`).
+- Ajustado reprocessamento de sessão `approved` sem playbook.
+- Corrigido diagnóstico fallback para evitar estado inválido `approved + safe=false` por parse quebrado.
+- Provider Gemini parametrizado por env (`GEMINI_MODEL`) com default `gemini-1.5-flash`.
 
 ## Review
-(filled after completion)
-
----
-
-# Task: Implement Email Ingestion for Tickets (Autotask Alternative)
-**Status**: implementing
-**Started**: 2026-02-19
-
-## Plan
-- [x] Step 1: Initialize Microsoft Graph API OAuth & fetch logic.
-- [x] Step 2: Implement smart filter for `help@refreshtech.com` and `TICKET #`.
-- [x] Step 3: Implement email parser (Title, Description, Requester, ID).
-- [x] Step 4: Handle ticket updates (`RE: TICKET #`).
-- [x] Step 5: Setup PostgreSQL to store `tickets_raw` and `tickets_processed` in new tables.
-- [x] Step 6: Create an endpoint or worker to trigger the ingestion.
-- [x] Step 7: Verify end-to-end ingestion flow with a test email.
-
-## Progress Notes
-- Wrote implementation plan in the brain artifact directory for user review.
-- Built the `graphClient`, `emailParser`.
-- Removed `firebaseStore` and creating Postgres tables and repository instead for simplicity.
-- Added a `POST /email-ingestion/ingest` endpoint to run the pipeline manually.
-- Completed DB Migrations.
-- Fixed missing `isomorphic-fetch` runtime dependency for MS Graph.
-- Awaiting user to test.
-
-## Review
-(filled after completion)
+- What worked:
+  - Pipeline automático passou a ser disparado por polling/backfill sem ação manual.
+  - Sessões inconsistentes agora entram em reprocessamento automático.
+  - Falhas de LLM agora marcam sessão como `failed` de forma explícita.
+- What was tricky:
+  - Parte do código estava desalinhada com o schema atual do DB, gerando falhas silenciosas no fluxo automático.
+  - Limite de quota do Gemini (429) impede geração contínua independentemente da correção de código.
+- Time taken:
+  - ~55 minutos

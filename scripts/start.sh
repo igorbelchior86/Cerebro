@@ -29,6 +29,36 @@ log_error() {
     echo -e "${RED}✗ $1${NC}"
 }
 
+FAST_MODE=true
+FORCE_INSTALL=false
+SKIP_PORT_KILL=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --install)
+            FORCE_INSTALL=true
+            ;;
+        --full)
+            FAST_MODE=false
+            ;;
+        --no-port-kill)
+            SKIP_PORT_KILL=true
+            ;;
+        *)
+            ;;
+    esac
+done
+
+# Select compose command once
+if command -v docker-compose &> /dev/null; then
+    COMPOSE_CMD=(docker-compose)
+elif docker compose version &> /dev/null; then
+    COMPOSE_CMD=(docker compose)
+else
+    log_error "Neither docker-compose nor docker compose is available"
+    exit 1
+fi
+
 # Get script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -46,14 +76,18 @@ fi
 log_success "pnpm found"
 
 # Check ports
-log_info "Checking for port conflicts (3000, 3001)..."
-for port in 3000 3001; do
-    PID=$(lsof -t -i:$port || true)
-    if [ ! -z "$PID" ]; then
-        log_warning "Port $port is in use by PID $PID. Killing it..."
-        kill -9 $PID || true
-    fi
-done
+if [ "$SKIP_PORT_KILL" = false ]; then
+    log_info "Checking for port conflicts (3000, 3001)..."
+    for port in 3000 3001; do
+        PID=$(lsof -t -i:$port || true)
+        if [ -n "$PID" ]; then
+            log_warning "Port $port is in use by PID $PID. Killing it..."
+            kill -9 $PID || true
+        fi
+    done
+else
+    log_info "Skipping port cleanup (--no-port-kill)"
+fi
 
 if ! command -v docker &> /dev/null; then
     log_error "Docker is not installed"
@@ -61,19 +95,17 @@ if ! command -v docker &> /dev/null; then
 fi
 log_success "Docker found"
 
-if ! command -v docker-compose &> /dev/null; then
-    log_warning "docker-compose is not installed, attempting with 'docker compose'"
-fi
-
 # Change to project root
 cd "$PROJECT_ROOT"
 
 # Step 1: Install dependencies
 log_info "Syncing environment variables..."
-cp .env apps/api/.env || true
-cp .env apps/web/.env || true
+if [ -f ".env" ]; then
+    cp .env apps/api/.env || true
+    cp .env apps/web/.env || true
+fi
 
-if [ ! -d "node_modules" ] || [[ "$*" == *"--install"* ]]; then
+if [ ! -d "node_modules" ] || [ "$FORCE_INSTALL" = true ]; then
     log_info "Installing dependencies..."
     pnpm install
     log_success "Dependencies installed"
@@ -83,7 +115,7 @@ fi
 
 # Step 2: Start Docker services (PostgreSQL + Redis)
 log_info "Starting Docker services (PostgreSQL + Redis)..."
-docker-compose up -d postgres redis
+"${COMPOSE_CMD[@]}" up -d postgres redis
 
 if [ $? -eq 0 ]; then
     log_success "Docker services started"
@@ -95,27 +127,49 @@ fi
 # Step 3: Wait for services to be healthy
 log_info "Waiting for services to be ready..."
 RETRY_COUNT=0
-MAX_RETRIES=30
+if [ "$FAST_MODE" = true ]; then
+    MAX_RETRIES=12
+else
+    MAX_RETRIES=30
+fi
+
+POSTGRES_ID=$("${COMPOSE_CMD[@]}" ps -q postgres)
+REDIS_ID=$("${COMPOSE_CMD[@]}" ps -q redis)
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if docker-compose exec -T postgres pg_isready -U playbook &> /dev/null && \
-       docker-compose exec -T redis redis-cli ping &> /dev/null; then
+    PG_HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' "$POSTGRES_ID" 2>/dev/null || echo "unknown")
+    REDIS_HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}unknown{{end}}' "$REDIS_ID" 2>/dev/null || echo "unknown")
+
+    if [ "$PG_HEALTH" = "healthy" ] && [ "$REDIS_HEALTH" = "healthy" ]; then
         log_success "All services are healthy"
         break
     fi
     
     RETRY_COUNT=$((RETRY_COUNT + 1))
     if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-        echo -ne "\rWaiting... ($RETRY_COUNT/$MAX_RETRIES attempts)"
+        echo -ne "\rWaiting... ($RETRY_COUNT/$MAX_RETRIES attempts) postgres=$PG_HEALTH redis=$REDIS_HEALTH"
         sleep 1
     fi
 done
 
 if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-    log_error "Services failed to be ready after ${MAX_RETRIES}s"
-    exit 1
+    if [ "$FAST_MODE" = true ]; then
+        log_warning "Fast mode timeout reached (${MAX_RETRIES}s). Continuing startup anyway. Use --full for strict wait."
+    else
+        log_error "Services failed to be ready after ${MAX_RETRIES}s"
+        exit 1
+    fi
 fi
-echo ""
+
+if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+    echo ""
+fi
+
+if [ "$FAST_MODE" = true ]; then
+    log_info "Fast mode enabled (default). Use --full for strict startup checks."
+else
+    log_info "Full mode enabled (strict checks)."
+fi
 
 # Step 4: Print configuration
 echo ""
@@ -145,7 +199,7 @@ if ! mdutil -s "$PROJECT_ROOT" 2>/dev/null | grep -q "disabled"; then
 fi
 
 # We optionally leave Docker services running for faster subsequent boots.
-# Use docker-compose down manually to stop them.
+# Use docker compose down manually to stop them.
 trap 'log_info "Shutting down dev server (Docker services left running in background)..."' INT TERM EXIT
 
 pnpm dev

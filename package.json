@@ -10,13 +10,23 @@
   ],
   "scripts": {
     "dev": "pnpm --parallel --filter './apps/*' dev",
+    "dev:detached": "./scripts/stack.sh up",
+    "dev:stop": "./scripts/stack.sh down",
+    "dev:status": "./scripts/stack.sh status",
+    "dev:logs": "./scripts/stack.sh logs",
     "build": "pnpm --recursive build",
     "test": "pnpm --recursive test",
     "lint": "pnpm --recursive lint",
     "typecheck": "pnpm --recursive typecheck",
     "db:up": "docker-compose up -d postgres redis",
     "db:migrate": "pnpm --filter api db:migrate",
-    "db:seed": "pnpm --filter api db:seed"
+    "db:seed": "pnpm --filter api db:seed",
+    "stack": "./scripts/stack.sh",
+    "stack:up": "./scripts/stack.sh up",
+    "stack:down": "./scripts/stack.sh down",
+    "stack:status": "./scripts/stack.sh status",
+    "stack:logs": "./scripts/stack.sh logs",
+    "stack:restart": "./scripts/stack.sh restart"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",

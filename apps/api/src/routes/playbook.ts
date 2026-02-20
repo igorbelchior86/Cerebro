@@ -74,12 +74,12 @@ router.get('/full-flow', async (req, res) => {
     console.log('[FULL-FLOW] Fetching Evidence Pack...');
     let pack = await getEvidencePack(sessionId);
     if (!pack) {
-      const result = await queryOne<{ payload: string }>(
+      const result = await queryOne<{ payload: any }>(
         'SELECT payload FROM evidence_packs WHERE session_id = $1',
         [sessionId]
       );
       if (result) {
-        pack = JSON.parse(result.payload);
+        pack = result.payload;
       }
     }
 
@@ -90,23 +90,45 @@ router.get('/full-flow', async (req, res) => {
       console.log(`[FULL-FLOW] Evidence pack found, status: ✅`);
     }
 
-    const diagResult = await queryOne<{ payload: string }>(
+    const diagResult = await queryOne<{ payload: any }>(
       `SELECT payload FROM llm_outputs WHERE session_id = $1 AND step = 'diagnose'`,
       [sessionId]
     );
-    const diagnosis = diagResult ? JSON.parse(diagResult.payload) : null;
+    const diagnosis = diagResult ? diagResult.payload : null;
 
-    const valResult = await queryOne<{ payload: string }>(
-      `SELECT payload FROM llm_outputs WHERE session_id = $1 AND step = 'validation'`,
+    const valResult = await queryOne<{
+      status: string;
+      violations: any;
+      required_fixes: any;
+      req_questions: any;
+      safe_to_proceed: boolean;
+    }>(
+      `SELECT status, violations, required_fixes, req_questions, safe_to_proceed FROM validation_results WHERE session_id = $1`,
       [sessionId]
     );
-    const validation = valResult ? JSON.parse(valResult.payload) : null;
+    const validation = valResult ? {
+      status: valResult.status as any,
+      violations: valResult.violations,
+      required_fixes: valResult.required_fixes,
+      required_questions: valResult.req_questions,
+      safe_to_generate_playbook: valResult.safe_to_proceed
+    } : null;
 
-    const playbookResult = await queryOne<{ payload: string }>(
+    const playbookRow = await queryOne<{ content_md: string; content_json: any }>(
+      `SELECT content_md, content_json
+       FROM playbooks
+       WHERE session_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [sessionId]
+    );
+    const playbookResult = await queryOne<{ payload: any }>(
       `SELECT payload FROM llm_outputs WHERE session_id = $1 AND step = 'playbook'`,
       [sessionId]
     );
-    const playbook = playbookResult ? JSON.parse(playbookResult.payload) : null;
+    const playbook = playbookRow
+      ? { content_md: playbookRow.content_md, ...(playbookRow.content_json || {}) }
+      : (playbookResult ? playbookResult.payload : null);
 
     // ─── Trigger Background Processing ────────────────────────────
     /**
@@ -131,36 +153,101 @@ router.get('/full-flow', async (req, res) => {
         if (!currentDiagnosis && currentPack) {
           console.log(`[FULL-FLOW] Background: Generating Diagnosis for ${sessionId}`);
           currentDiagnosis = await diagnoseEvidencePack(currentPack);
-          await execute(
-            `INSERT INTO llm_outputs (session_id, step, payload, created_at)
-             VALUES ($1, $2, $3, NOW())
-             ON CONFLICT (session_id, step) DO UPDATE SET payload = $3, created_at = NOW()`,
-            [sessionId, 'diagnose', JSON.stringify(currentDiagnosis)]
+
+          const existing = await queryOne<{ id: string }>(
+            `SELECT id FROM llm_outputs WHERE session_id = $1 AND step = $2`,
+            [sessionId, 'diagnose']
           );
+
+          if (existing) {
+            await execute(
+              `UPDATE llm_outputs SET payload = $1, created_at = NOW() WHERE id = $2`,
+              [JSON.stringify(currentDiagnosis), existing.id]
+            );
+          } else {
+            await execute(
+              `INSERT INTO llm_outputs (session_id, step, model, payload, created_at)
+               VALUES ($1, $2, $3, $4, NOW())`,
+              [sessionId, 'diagnose', currentDiagnosis.meta?.model || 'groq', JSON.stringify(currentDiagnosis)]
+            );
+          }
         }
 
         // 3. Validation
         if (!currentValidation && currentDiagnosis && currentPack) {
           console.log(`[FULL-FLOW] Background: Validating Diagnosis for ${sessionId}`);
           currentValidation = await validateDiagnosis(currentDiagnosis, currentPack);
-          await execute(
-            `INSERT INTO llm_outputs (session_id, step, payload, created_at)
-             VALUES ($1, $2, $3, NOW())
-             ON CONFLICT (session_id, step) DO UPDATE SET payload = $3, created_at = NOW()`,
-            [sessionId, 'validation', JSON.stringify(currentValidation)]
+
+          const existing = await queryOne<{ id: string }>(
+            `SELECT id FROM validation_results WHERE session_id = $1`,
+            [sessionId]
           );
+
+          if (existing) {
+            await execute(
+              `UPDATE validation_results SET status = $1, violations = $2, required_fixes = $3, req_questions = $4, safe_to_proceed = $5, created_at = NOW() WHERE id = $6`,
+              [
+                currentValidation.status,
+                JSON.stringify(currentValidation.violations),
+                JSON.stringify(currentValidation.required_fixes),
+                JSON.stringify(currentValidation.required_questions),
+                currentValidation.safe_to_generate_playbook,
+                existing.id
+              ]
+            );
+          } else {
+            await execute(
+              `INSERT INTO validation_results (session_id, status, violations, required_fixes, req_questions, safe_to_proceed, created_at)
+               VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+              [
+                sessionId,
+                currentValidation.status,
+                JSON.stringify(currentValidation.violations),
+                JSON.stringify(currentValidation.required_fixes),
+                JSON.stringify(currentValidation.required_questions),
+                currentValidation.safe_to_generate_playbook
+              ]
+            );
+          }
         }
 
         // 4. Playbook
         if (!playbook && currentValidation?.safe_to_generate_playbook && currentDiagnosis && currentPack) {
           console.log(`[FULL-FLOW] Background: Generating Playbook for ${sessionId}`);
           const generatedPlaybook = await generatePlaybook(currentDiagnosis, currentValidation, currentPack);
-          await execute(
-            `INSERT INTO llm_outputs (session_id, step, payload, created_at)
-             VALUES ($1, $2, $3, NOW())
-             ON CONFLICT (session_id, step) DO UPDATE SET payload = $3, created_at = NOW()`,
-            [sessionId, 'playbook', JSON.stringify(generatedPlaybook)]
+
+          const existing = await queryOne<{ id: string }>(
+            `SELECT id FROM llm_outputs WHERE session_id = $1 AND step = $2`,
+            [sessionId, 'playbook']
           );
+
+          if (existing) {
+            await execute(
+              `UPDATE llm_outputs SET payload = $1, created_at = NOW() WHERE id = $2`,
+              [JSON.stringify(generatedPlaybook), existing.id]
+            );
+          } else {
+            await execute(
+              `INSERT INTO llm_outputs (session_id, step, model, payload, created_at)
+               VALUES ($1, $2, $3, $4, NOW())`,
+              [sessionId, 'playbook', generatedPlaybook.meta?.model || 'groq', JSON.stringify(generatedPlaybook)]
+            );
+          }
+
+          // Also save in 'playbooks' table for final display
+          const existingPlaybook = await queryOne<{ id: string }>(`SELECT id FROM playbooks WHERE session_id = $1`, [sessionId]);
+          if (existingPlaybook) {
+            await execute(
+              `UPDATE playbooks SET content_md = $1, content_json = $2, created_at = NOW() WHERE id = $3`,
+              [generatedPlaybook.content_md, JSON.stringify(generatedPlaybook), existingPlaybook.id]
+            );
+          } else {
+            await execute(
+              `INSERT INTO playbooks (session_id, content_md, content_json, created_at)
+               VALUES ($1, $2, $3, NOW())`,
+              [sessionId, generatedPlaybook.content_md, JSON.stringify(generatedPlaybook)]
+            );
+          }
 
           // Update session status to approved since it's an automated flow
           await execute(

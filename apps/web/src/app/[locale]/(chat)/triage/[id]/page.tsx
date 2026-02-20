@@ -8,7 +8,7 @@ import ChatMessage, { Message } from '@/components/ChatMessage';
 import ChatInput from '@/components/ChatInput';
 import PlaybookPanel from '@/components/PlaybookPanel';
 import ResizableLayout from '@/components/ResizableLayout';
-import { useRouter } from '@/i18n/routing';
+import { usePathname } from 'next/navigation';
 
 interface SessionData {
   session: { id: string; ticket_id: string; status: string };
@@ -24,7 +24,8 @@ export default function SessionDetail({
   params: { id: string };
 }) {
   const t = useTranslations('ChatSession');
-  const router = useRouter();
+  const pathname = usePathname();
+  const [selectedTicketId, setSelectedTicketId] = useState(params.id);
   const [data, setData] = useState<SessionData | null>(null);
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -64,13 +65,13 @@ export default function SessionDetail({
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
         const res = await axios.get(`${apiUrl}/playbook/full-flow`, {
-          params: { sessionId: params.id },
+          params: { sessionId: selectedTicketId },
           withCredentials: true,
         });
 
         const flowData = res.data.data;
         const newData = {
-          session: { id: params.id, ticket_id: '', status: 'active' },
+          session: { id: selectedTicketId, ticket_id: '', status: 'active' },
           ...flowData,
         };
 
@@ -136,7 +137,7 @@ export default function SessionDetail({
     fetchData();
     const interval = setInterval(fetchData, 3000);
     return () => clearInterval(interval);
-  }, [params.id]);
+  }, [selectedTicketId]);
 
   // Fetch tickets from email ingestion processed tickets table
   useEffect(() => {
@@ -190,7 +191,7 @@ export default function SessionDetail({
   const currentMock: ActiveTicket | null = data
     ? {
       id: data.session.id,
-      ticket_id: data.session.ticket_id || `Ticket-${params.id.substring(0, 8)}`,
+      ticket_id: data.session.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`,
       status: playbookReady ? 'completed' : loading ? 'pending' : 'processing',
     }
     : null;
@@ -200,16 +201,21 @@ export default function SessionDetail({
     displayTickets.unshift(currentMock);
   }
 
-  const ticketLabel = data?.session.ticket_id || `Ticket-${params.id.substring(0, 8)}`;
+  const ticketLabel = data?.session.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`;
 
   return (
     <ResizableLayout
       sidebarContent={
         <ChatSidebar
           tickets={displayTickets}
-          currentTicketId={params.id}
+          currentTicketId={selectedTicketId}
           isLoading={isLoadingTickets || loading}
-          onSelectTicket={(id) => router.push(`/triage/${id}`)}
+          onSelectTicket={(id) => {
+            if (id === selectedTicketId) return;
+            setSelectedTicketId(id);
+            const nextPath = pathname.replace(/\/triage\/[^/]+$/, `/triage/${id}`);
+            window.history.replaceState(null, '', `${nextPath}${window.location.search}`);
+          }}
         />
       }
       rightContent={

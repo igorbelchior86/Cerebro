@@ -48,14 +48,15 @@ export class PgStore {
                 // Create new ticket record or overwrite if not a reply (e.g. reprocessing)
                 await execute(
                     `INSERT INTO tickets_processed (
-            id, title, description, requester, source, status, raw_body, is_reply, updates
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            id, title, description, requester, source, status, raw_body, is_reply, updates, created_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
           ON CONFLICT (id) DO UPDATE SET
             title = EXCLUDED.title,
             description = EXCLUDED.description,
             requester = EXCLUDED.requester,
             status = EXCLUDED.status,
             raw_body = EXCLUDED.raw_body,
+            created_at = EXCLUDED.created_at,
             last_updated_at = CURRENT_TIMESTAMP`,
                     [
                         ticket.id,
@@ -67,6 +68,7 @@ export class PgStore {
                         ticket.rawBody,
                         ticket.isReply,
                         JSON.stringify([]), // initial empty updates array
+                        ticket.createdAt ?? new Date().toISOString(),
                     ]
                 );
             }

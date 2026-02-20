@@ -26,7 +26,7 @@ export async function ingestSupportMailboxOnce(mailbox?: string): Promise<{ proc
 
             await pgStore.saveRawEmail(messageId, email);
 
-            const parsed = emailParser.parseEmail(subject, bodyContent);
+            const parsed = emailParser.parseEmail(subject, bodyContent, email.receivedDateTime);
             if (!parsed) continue;
 
             await pgStore.saveProcessedTicket(parsed);
@@ -65,7 +65,7 @@ export async function backfillPendingEmailTickets(limit = 20): Promise<{ process
          LEFT JOIN playbooks p ON p.session_id = latest_session.id
          WHERE p.id IS NULL
            AND (latest_session.id IS NULL OR latest_session.status IN ('pending', 'failed', 'needs_more_info', 'blocked'))
-         ORDER BY tp.last_updated_at DESC
+         ORDER BY tp.created_at DESC
          LIMIT $1`,
         [limit]
     );
@@ -118,7 +118,7 @@ router.get('/list', async (_req: Request, res: Response) => {
                ORDER BY ts.created_at DESC
                LIMIT 1
              ) ts ON true
-             ORDER BY tp.last_updated_at DESC
+             ORDER BY tp.created_at DESC
              LIMIT 50`
         );
 
@@ -128,7 +128,10 @@ router.get('/list', async (_req: Request, res: Response) => {
             status: ticket.pipeline_status === 'approved' ? 'completed' : 'pending',
             priority: 'P3',
             title: ticket.title || 'Untitled Ticket',
-            org: ticket.requester || 'Unknown User',
+            company: 'Unknown org',
+            requester: ticket.requester || 'Unknown requester',
+            org: 'Unknown org',
+            site: ticket.requester || 'Unknown requester',
             created_at: ticket.created_at,
         }));
 

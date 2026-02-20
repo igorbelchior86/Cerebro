@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import SettingsModal from './SettingsModal';
 import UserProfileDropdown from './UserProfileDropdown';
 import ProfileModal from './ProfileModal';
 import ThemeToggle from './ThemeToggle';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslations } from 'next-intl';
+import { usePathname, useSearchParams } from 'next/navigation';
 
 export interface ActiveTicket {
   id: string;
@@ -14,6 +15,8 @@ export interface ActiveTicket {
   status: 'pending' | 'processing' | 'completed' | 'failed';
   priority?: 'P1' | 'P2' | 'P3' | 'P4';
   title?: string;
+  company?: string;
+  requester?: string;
   org?: string;
   site?: string;
   age?: string;
@@ -27,6 +30,8 @@ interface ChatSidebarProps {
   onSelectTicket?: (ticketId: string) => void;
   isLoading?: boolean;
 }
+
+const SIDEBAR_STATE_KEY = 'chatSidebarState.v1';
 
 const PRIORITY_COLOR: Record<string, string> = {
   P1: '#F97316',
@@ -48,15 +53,67 @@ const FILTERS = [
   { id: 'completed', localeKey: 'statusDone' },
   { id: 'failed', localeKey: 'statusFailed' },
 ];
+const FILTER_IDS = new Set(FILTERS.map((f) => f.id));
+
+const STATUS_LABEL: Record<ActiveTicket['status'], string> = {
+  completed: 'DONE',
+  processing: 'ACTIVE',
+  pending: 'PENDING',
+  failed: 'FAILED',
+};
+
+const HTML_ENTITY_MAP: Record<string, string> = {
+  '&nbsp;': ' ',
+  '&amp;': '&',
+  '&lt;': '<',
+  '&gt;': '>',
+  '&quot;': '"',
+  '&#39;': "'",
+};
+
+function normalizeText(value?: string, fallback = ''): string {
+  const raw = (value ?? '').trim();
+  if (!raw) return fallback;
+
+  const withoutTags = raw
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ');
+  const decoded = withoutTags.replace(/&nbsp;|&amp;|&lt;|&gt;|&quot;|&#39;/g, (m) => HTML_ENTITY_MAP[m] ?? ' ');
+  return decoded.replace(/\s+/g, ' ').trim() || fallback;
+}
+
+function normalizeTicketTitle(value?: string, fallback = ''): string {
+  const normalized = normalizeText(value, fallback);
+  return normalized.replace(/\s+Description\s*:\s*.*$/i, '').trim() || fallback;
+}
+
+function formatCreatedAt(createdAt?: string, age?: string, justNowFallback = 'just now'): string {
+  if (age && age.trim() !== '') return normalizeText(age, justNowFallback);
+  if (!createdAt) return justNowFallback;
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return justNowFallback;
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
 
 export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, isLoading }: ChatSidebarProps) {
   const t = useTranslations('ChatSidebar');
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user, updateProfile } = useAuth();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [filter, setFilter] = useState('all');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [clock, setClock] = useState('');
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const restoredRef = useRef(false);
+
+  const persistSidebarState = useCallback((nextFilter: string, nextScrollTop?: number) => {
+    if (typeof window === 'undefined') return;
+    const scrollTop = typeof nextScrollTop === 'number' ? nextScrollTop : listRef.current?.scrollTop ?? 0;
+    sessionStorage.setItem(SIDEBAR_STATE_KEY, JSON.stringify({ filter: nextFilter, scrollTop }));
+  }, []);
 
   // Fallback defaults
   const userName = user?.name || "John Technician";
@@ -90,6 +147,40 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (restoredRef.current || typeof window === 'undefined') return;
+
+    const urlFilter = searchParams.get('sidebarFilter');
+    const rawSaved = sessionStorage.getItem(SIDEBAR_STATE_KEY);
+    let saved: { filter?: string; scrollTop?: number } = {};
+    if (rawSaved) {
+      try {
+        saved = JSON.parse(rawSaved) as { filter?: string; scrollTop?: number };
+      } catch {
+        saved = {};
+      }
+    }
+    const candidateFilter = urlFilter || saved.filter || 'all';
+    const restoredFilter = FILTER_IDS.has(candidateFilter) ? candidateFilter : 'all';
+    setFilter(restoredFilter);
+
+    requestAnimationFrame(() => {
+      if (listRef.current && typeof saved.scrollTop === 'number') {
+        listRef.current.scrollTop = saved.scrollTop;
+      }
+    });
+
+    restoredRef.current = true;
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('sidebarFilter', filter);
+    window.history.replaceState(null, '', `${pathname}?${params.toString()}`);
+    persistSidebarState(filter);
+  }, [filter, pathname, searchParams, persistSidebarState]);
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
@@ -192,7 +283,11 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
         </div>
 
         {/* Ticket list */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 10px 10px', display: 'flex', flexDirection: 'column', gap: '5px', position: 'relative', zIndex: 1 }}>
+        <div
+          ref={listRef}
+          onScroll={(e) => persistSidebarState(filter, (e.currentTarget as HTMLDivElement).scrollTop)}
+          style={{ flex: 1, overflowY: 'auto', padding: '0 10px 10px', display: 'flex', flexDirection: 'column', gap: '5px', position: 'relative', zIndex: 1 }}
+        >
           {isLoading && tickets.length === 0 ? (
             [1, 2].map((i) => <div key={i} style={{ height: '80px', borderRadius: '9px', background: 'var(--bg-card)', border: '1px solid var(--border)', opacity: 0.6 }} />)
           ) : visible.length === 0 ? (
@@ -201,8 +296,19 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
             const cfg = STATUS_CONFIG[ticket.status] ?? STATUS_CONFIG.pending;
             const priority = ticket.priority ?? 'P3';
             const isActive = currentTicketId === ticket.id;
+            const normalized = {
+              priority,
+              id: normalizeText(ticket.ticket_id, ticket.id),
+              status: STATUS_LABEL[ticket.status] ?? 'PENDING',
+              title: normalizeTicketTitle(ticket.title, t('defaultIssue')),
+              company: normalizeText(ticket.company ?? ticket.org, t('unknownOrg')),
+              requester: normalizeText(ticket.requester ?? ticket.site, 'Unknown requester'),
+              createdAt: ticket.created_at ?? '',
+            };
+            const createdAtLabel = formatCreatedAt(normalized.createdAt, ticket.age, t('justNow'));
+
             return (
-              <button key={ticket.id} onClick={() => onSelectTicket?.(ticket.id)}
+              <button key={ticket.id} onClick={() => { persistSidebarState(filter); onSelectTicket?.(ticket.id); }}
                 className="animate-fadeIn"
                 style={{ position: 'relative', padding: '12px 14px', borderRadius: '9px', cursor: 'pointer', background: isActive ? 'var(--bg-card-active)' : 'var(--bg-card)', border: `1px solid ${isActive ? 'var(--border-accent)' : 'var(--border)'}`, boxShadow: 'var(--shadow-card)', textAlign: 'left', overflow: 'hidden', width: '100%', animationDelay: `${idx * 0.05}s`, display: 'flex', flexDirection: 'column', alignItems: 'stretch', flexShrink: 0 }}
                 onMouseEnter={(e) => { if (!isActive) { (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card-hover)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-strong)'; } }}
@@ -214,8 +320,26 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '7px', width: '100%' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                     <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', fontWeight: 700, color: PRIORITY_COLOR[priority] ?? '#5B7FFF', letterSpacing: '0.05em' }}>{priority}</span>
-                    <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-muted)', letterSpacing: '0.03em' }}>{ticket.ticket_id}</span>
+                    <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-muted)', letterSpacing: '0.03em' }}>{normalized.id}</span>
                   </div>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: cfg.color }}>
+                    <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: cfg.dot, flexShrink: 0 }} />
+                    {normalized.status}
+                  </span>
+                </div>
+
+                <p style={{ fontSize: '12.5px', fontWeight: 500, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', lineHeight: 1.35, letterSpacing: '-0.01em', marginBottom: '8px', width: '100%', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {normalized.title}
+                </p>
+                <div style={{ width: '100%', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                  <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-faint)', flexShrink: 0 }}>
+                    {createdAtLabel}
+                  </span>
+                  <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right' }}>
+                    {normalized.company}<span style={{ margin: '0 4px', opacity: 0.4 }}>•</span>{normalized.requester}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 7px', borderRadius: '999px', fontSize: '9.5px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}` }}>
                     {cfg.pulse ? (
                       <span style={{ position: 'relative', display: 'inline-flex', width: '7px', height: '7px' }}>
@@ -223,21 +347,8 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                         <span style={{ position: 'relative', width: '7px', height: '7px', borderRadius: '50%', background: cfg.dot }} />
                       </span>
                     ) : <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: cfg.dot, flexShrink: 0 }} />}
-                    {t(cfg.localeKey as any)}
+                    {normalized.status}
                   </span>
-                </div>
-
-                <p style={{ fontSize: '12.5px', fontWeight: 500, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', lineHeight: 1.4, letterSpacing: '-0.01em', marginBottom: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>
-                  {ticket.title && ticket.title.trim() !== '' ? ticket.title : t('defaultIssue')}
-                </p>
-                <p style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginBottom: '9px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%' }}>
-                  {(ticket.org && ticket.org.trim() !== '') ? ticket.org : t('unknownOrg')}{ticket.site ? <><span style={{ margin: '0 4px', opacity: 0.4 }}>·</span>{ticket.site}</> : null}
-                </p>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                  <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-faint)' }}>
-                    {ticket.age ?? (ticket.created_at ? new Date(ticket.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : t('justNow'))}
-                  </span>
-                  {ticket.meta && <span style={{ fontSize: '9.5px', fontWeight: 600, color: cfg.color }}>{ticket.meta}</span>}
                 </div>
               </button>
             );

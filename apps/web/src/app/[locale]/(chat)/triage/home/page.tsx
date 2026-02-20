@@ -123,7 +123,7 @@ export default function HomePage() {
 
   return (
     <ResizableLayout
-      sidebarContent={<ChatSidebar tickets={sidebarTickets} isLoading={isLoadingTickets} onSelectTicket={(id) => router.push(`/triage/${id}`)} />}
+      sidebarContent={<ChatSidebar tickets={sidebarTickets} isLoading={isLoadingTickets} onSelectTicket={(id) => router.push(`/triage/${id}`, { scroll: false })} />}
       mainContent={
         <div className="flex-1 flex flex-col" style={{ background: 'var(--bg-root)', minWidth: 0, height: '100%' }}>
           {/* Header */}

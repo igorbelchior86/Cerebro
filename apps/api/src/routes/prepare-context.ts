@@ -92,6 +92,7 @@ router.post('/session-and-collect/:ticketId', async (req, res, next) => {
   try {
     const { ticketId } = req.params;
     const { org_id, org_name, created_by } = req.body;
+    const tenantId = req.auth?.tid || null;
 
     if (!created_by) {
       res.status(400).json({ error: 'created_by is required' });
@@ -103,10 +104,10 @@ router.post('/session-and-collect/:ticketId', async (req, res, next) => {
 
     await query(
       `
-      INSERT INTO triage_sessions (id, ticket_id, org_id, org_name, status, created_by, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+      INSERT INTO triage_sessions (id, ticket_id, org_id, org_name, status, created_by, tenant_id, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
       `,
-      [sessionId, ticketId, org_id || null, org_name || null, 'processing', created_by]
+      [sessionId, ticketId, org_id || null, org_name || null, 'processing', created_by, tenantId]
     );
 
     // Prepare context immediately

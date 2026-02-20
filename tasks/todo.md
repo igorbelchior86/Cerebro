@@ -1,28 +1,34 @@
-# Task: Playbook stopped generating after iterative PrepareContext
+# Task: Reset and regenerate playbooks for T20260220.0014/.0013/.0012
 **Status**: completed
 **Started**: 2026-02-20
 
 ## Plan
-- [x] Step 1: Reproduce and identify failing stage in full flow.
-- [x] Step 2: Pinpoint root cause in backend code and data contracts.
-- [x] Step 3: Implement minimal root-cause fix.
-- [x] Step 4: Verify end-to-end generation path can resume.
-- [x] Step 5: Update wiki/docs and lessons.
+- [x] Step 1: Snapshot current state of sessions/playbooks for the 3 target tickets.
+- [x] Step 2: Reset generated artifacts (playbook/diagnose/validation/evidence) and session status.
+- [x] Step 3: Trigger pipeline regeneration for each ticket.
+- [x] Step 4: Validate regenerated outputs and report summary.
 
 ## Open Questions
-- LLM provider keys in local shell scripts may differ from API service env; runtime generation should be verified through app UI flow.
+- None.
 
 ## Progress Notes
-- Root cause found in logs: `PrepareContext` query failed with `column "company" does not exist`, causing no evidence pack and therefore no playbook.
-- Added schema-compatible handling in `PrepareContext` (company column detection + projection fallback).
-- Added schema-compatible handling in `PgStore.saveProcessedTicket` so new email tickets are persisted even if `company` column is absent.
-- Added stale `processing` session recovery in orchestrator (resume if stuck > 5min).
+- Reset/regeneration task started on user request.
+- Snapshot before reset:
+  - `T20260220.0012` session `e2f45b9a-905e-491e-8d70-e34e5fb46b29` had playbook + diagnose + validation + evidence.
+  - `T20260220.0013` session `e4efb739-57cd-409e-a56b-8625054fd2b1` had playbook + diagnose + validation + evidence.
+  - `T20260220.0014` session `530854e5-e54a-489b-87c6-abe34190fb44` had playbook + diagnose + validation + evidence.
+- Reset executed for all 3 target sessions:
+  - Deleted `playbooks`, `llm_outputs` (`diagnose`/`playbook`), `validation_results`, `evidence_packs`.
+  - Set `triage_sessions.status` to `pending`.
+- Regeneration executed through `triageOrchestrator.runPipeline(...)` for all 3 tickets.
+- One ticket (`T20260220.0014`) was temporarily skipped because session was already `processing`; force-reset to `pending` and reran successfully.
+- Final verification:
+  - All 3 tickets now have fresh evidence/diagnose/validation/playbook timestamps and status `approved`.
 
 ## Review
 - What worked:
-  - Eliminated blocker that prevented evidence generation for newer tickets.
-  - Added resilience against schema drift and stuck sessions.
+  - DB-level reset + orchestrator rerun gave deterministic regeneration without code changes.
 - What was tricky:
-  - Distinguish runtime service env vs ad-hoc shell env for LLM provider checks.
+  - Concurrent background processing briefly locked `T20260220.0014` in `processing`; resolved via targeted status reset and rerun.
 - Time taken:
-  - ~20 minutes
+  - ~12 minutes

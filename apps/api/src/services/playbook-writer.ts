@@ -10,6 +10,7 @@ import type {
   EvidencePack,
 } from '@playbook-brain/types';
 import { createLLMProvider, getDefaultLLMProvider } from './llm-adapter.js';
+import { shouldDowngradePlaybookToFallback } from './evidence-guardrails.js';
 
 export class PlaybookWriterService {
   /**
@@ -80,6 +81,20 @@ export class PlaybookWriterService {
     const playbookMarkdown = response.content;
 
     const latencyMs = Date.now() - startTime;
+
+    if (shouldDowngradePlaybookToFallback(playbookMarkdown, diagnosis, pack)) {
+      const fallbackContent = this.buildDeterministicPlaybook(diagnosis, pack);
+      return {
+        content_md: fallbackContent,
+        meta: {
+          model: `${modelName}-guardrail-fallback`,
+          input_tokens: response.inputTokens,
+          output_tokens: response.outputTokens,
+          cost_usd: response.costUsd,
+          latency_ms: latencyMs,
+        },
+      };
+    }
 
     // ─── Validate playbook structure ────────────────────────────
     this.validatePlaybookStructure(playbookMarkdown);
@@ -248,6 +263,8 @@ ${pack.docs
 3. Be clear: Use code blocks, formatting, step-by-step
 4. Be practical: Estimated time, prerequisites, dependencies
 5. No hallucinations: Only reference things in the evidence
+6. Do not turn missing integration credentials (401/invalid_client/auth failures) into root cause unless ticket explicitly mentions those integrations
+7. Do not introduce security-compromise narratives unless directly evidenced in this ticket/signals/docs
 
 ## OUTPUT
 

@@ -36,29 +36,147 @@ interface SourceFinding {
   details: string[];
 }
 
+interface AutotaskCreds {
+  apiIntegrationCode: string;
+  username: string;
+  secret: string;
+  zoneUrl?: string;
+}
+
+interface NinjaOneCreds {
+  clientId: string;
+  clientSecret: string;
+  region?: 'us' | 'eu' | 'oc';
+}
+
+interface ITGlueCreds {
+  apiKey: string;
+  region?: 'us' | 'eu' | 'au';
+}
+
+const NINJAONE_BASE: Record<string, string> = {
+  us: 'https://app.ninjarmm.com',
+  eu: 'https://eu.ninjarmm.com',
+  oc: 'https://oc.ninjarmm.com',
+};
+
+const ITGLUE_BASE: Record<string, string> = {
+  us: 'https://api.itglue.com',
+  eu: 'https://api.eu.itglue.com',
+  au: 'https://api.au.itglue.com',
+};
+
 export class PrepareContextService {
-  private autotaskClient: AutotaskClient;
-  private ninjaoneClient: NinjaOneClient;
-  private itglueClient: ITGlueClient;
+  constructor() {}
 
-  constructor() {
-    this.autotaskClient = new AutotaskClient({
-      apiIntegrationCode: process.env.AUTOTASK_API_INTEGRATION_CODE || '',
-      username: process.env.AUTOTASK_USERNAME || '',
-      secret: process.env.AUTOTASK_SECRET || '',
-    });
+  private hasCompanyColumnCache: boolean | null = null;
 
-    this.ninjaoneClient = new NinjaOneClient({
-      clientId: process.env.NINJAONE_CLIENT_ID || '',
-      clientSecret: process.env.NINJAONE_CLIENT_SECRET || '',
-    });
+  private async getSessionTenantId(sessionId: string): Promise<string | null> {
+    const row = await queryOne<{ tenant_id: string | null }>(
+      `SELECT tenant_id FROM triage_sessions WHERE id = $1 LIMIT 1`,
+      [sessionId]
+    );
+    return row?.tenant_id || null;
+  }
 
-    this.itglueClient = new ITGlueClient({
-      apiKey: process.env.ITGLUE_API_KEY || '',
+  private async getIntegrationCredentials<T>(
+    service: 'autotask' | 'ninjaone' | 'itglue',
+    tenantId?: string | null
+  ): Promise<T | null> {
+    try {
+      if (tenantId) {
+        const tenantScoped = await queryOne<{ credentials: T }>(
+          `SELECT credentials
+           FROM integration_credentials
+           WHERE tenant_id = $1 AND service = $2
+           LIMIT 1`,
+          [tenantId, service]
+        );
+        if (tenantScoped?.credentials) return tenantScoped.credentials;
+      }
+
+      const latest = await queryOne<{ credentials: T }>(
+        `SELECT credentials
+         FROM integration_credentials
+         WHERE service = $1
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        [service]
+      );
+      return latest?.credentials ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  private buildAutotaskClient(creds: AutotaskCreds | null): AutotaskClient {
+    const apiIntegrationCode =
+      creds?.apiIntegrationCode ||
+      process.env.AUTOTASK_API_INTEGRATION_CODE ||
+      process.env.AUTOTASK_API_INTEGRATIONCODE ||
+      '';
+    const username =
+      creds?.username ||
+      process.env.AUTOTASK_USERNAME ||
+      process.env.AUTOTASK_API_USER ||
+      '';
+    const secret =
+      creds?.secret ||
+      process.env.AUTOTASK_SECRET ||
+      process.env.AUTOTASK_API_SECRET ||
+      '';
+    const zoneUrl = creds?.zoneUrl || process.env.AUTOTASK_ZONE_URL || undefined;
+
+    return new AutotaskClient({
+      apiIntegrationCode,
+      username,
+      secret,
+      ...(zoneUrl ? { zoneUrl } : {}),
     });
   }
 
-  private hasCompanyColumnCache: boolean | null = null;
+  private buildNinjaClient(creds: NinjaOneCreds | null): NinjaOneClient {
+    const clientId = creds?.clientId || process.env.NINJAONE_CLIENT_ID || '';
+    const clientSecret = creds?.clientSecret || process.env.NINJAONE_CLIENT_SECRET || '';
+    const region: 'us' | 'eu' | 'oc' = creds?.region ?? 'us';
+    const baseUrl = NINJAONE_BASE[region];
+    return new NinjaOneClient({
+      clientId,
+      clientSecret,
+      ...(baseUrl ? { baseUrl } : {}),
+    });
+  }
+
+  private buildITGlueClient(creds: ITGlueCreds | null): ITGlueClient {
+    const apiKey = creds?.apiKey || process.env.ITGLUE_API_KEY || '';
+    const region: 'us' | 'eu' | 'au' = creds?.region ?? 'us';
+    const baseUrl = ITGLUE_BASE[region];
+    return new ITGlueClient({
+      apiKey,
+      ...(baseUrl ? { baseUrl } : {}),
+    });
+  }
+
+  private async resolveClientsForSession(sessionId: string): Promise<{
+    autotaskClient: AutotaskClient;
+    ninjaoneClient: NinjaOneClient;
+    itglueClient: ITGlueClient;
+    credentialScope: 'tenant' | 'workspace_fallback';
+  }> {
+    const tenantId = await this.getSessionTenantId(sessionId);
+    const [autotaskCreds, ninjaCreds, itglueCreds] = await Promise.all([
+      this.getIntegrationCredentials<AutotaskCreds>('autotask', tenantId),
+      this.getIntegrationCredentials<NinjaOneCreds>('ninjaone', tenantId),
+      this.getIntegrationCredentials<ITGlueCreds>('itglue', tenantId),
+    ]);
+
+    return {
+      autotaskClient: this.buildAutotaskClient(autotaskCreds),
+      ninjaoneClient: this.buildNinjaClient(ninjaCreds),
+      itglueClient: this.buildITGlueClient(itglueCreds),
+      credentialScope: tenantId ? 'tenant' : 'workspace_fallback',
+    };
+  }
 
   private async hasCompanyColumn(): Promise<boolean> {
     if (this.hasCompanyColumnCache !== null) return this.hasCompanyColumnCache;
@@ -82,6 +200,8 @@ export class PrepareContextService {
 
     const startTime = Date.now();
     const missingData: Array<{ field: string; why: string }> = [];
+    const { autotaskClient, ninjaoneClient, itglueClient, credentialScope } =
+      await this.resolveClientsForSession(input.sessionId);
 
     // ─── Coleta de Dados (Autotask ou Email Ingestion) ───────────
     let ticket: any = null;
@@ -167,11 +287,11 @@ export class PrepareContextService {
         if (isNaN(ticketIdNum)) {
           throw new Error(`Invalid numeric ticket ID: ${input.ticketId}`);
         }
-        ticket = await this.autotaskClient.getTicket(ticketIdNum);
+        ticket = await autotaskClient.getTicket(ticketIdNum);
         console.log(`[PrepareContext] Got Autotask ticket ${input.ticketId}`);
 
         // Coleta notas (signals)
-        const notes = await this.autotaskClient.getTicketNotes(ticketIdNum);
+        const notes = await autotaskClient.getTicketNotes(ticketIdNum);
         signals = notes.map((note, idx) => ({
           id: `autotask-note-${idx}`,
           source: 'autotask' as const,
@@ -212,16 +332,16 @@ export class PrepareContextService {
     // ROUND 1: AT/Intake -> IT Glue
     try {
       if (companyName) {
-        itglueOrgMatch = await this.resolveITGlueOrg(companyName);
+        itglueOrgMatch = await this.resolveITGlueOrg(itglueClient, companyName);
       }
       const runbooks = itglueOrgMatch
-        ? await this.itglueClient.getRunbooks(itglueOrgMatch.id)
-        : await this.itglueClient.getRunbooks();
+        ? await itglueClient.getRunbooks(itglueOrgMatch.id)
+        : await itglueClient.getRunbooks();
 
       if (itglueOrgMatch) {
         [itglueConfigs, itglueContacts] = await Promise.all([
-          this.itglueClient.getConfigurations(itglueOrgMatch.id).catch(() => []),
-          this.itglueClient.getContacts(itglueOrgMatch.id).catch(() => []),
+          itglueClient.getConfigurations(itglueOrgMatch.id).catch(() => []),
+          itglueClient.getContacts(itglueOrgMatch.id).catch(() => []),
         ]);
       }
 
@@ -244,6 +364,7 @@ export class PrepareContextService {
           itglueOrgMatch ? `org match: ${itglueOrgMatch.name} (${itglueOrgMatch.id})` : 'org match: none',
           `configs: ${itglueConfigs.length}`,
           `contacts: ${itglueContacts.length}`,
+          `credential scope: ${credentialScope}`,
         ],
       });
     } catch (error) {
@@ -265,15 +386,15 @@ export class PrepareContextService {
     try {
       const orgSeed = companyName || itglueOrgMatch?.name || '';
       if (orgSeed) {
-        ninjaOrgMatch = await this.resolveNinjaOrg(orgSeed);
+        ninjaOrgMatch = await this.resolveNinjaOrg(ninjaoneClient, orgSeed);
       }
       if (ninjaOrgMatch) {
         [ninjaOrgDevices, ninjaAlerts] = await Promise.all([
-          this.ninjaoneClient.listDevicesByOrganization(String(ninjaOrgMatch.id), { limit: 100 }),
-          this.ninjaoneClient.listAlerts(String(ninjaOrgMatch.id)),
+          ninjaoneClient.listDevicesByOrganization(String(ninjaOrgMatch.id), { limit: 100 }),
+          ninjaoneClient.listAlerts(String(ninjaOrgMatch.id)),
         ]);
       } else {
-        ninjaOrgDevices = await this.ninjaoneClient.listDevices({ limit: 100 });
+        ninjaOrgDevices = await ninjaoneClient.listDevices({ limit: 100 });
       }
 
       const requesterTokens = this.buildRequesterTokens(requesterName);
@@ -291,8 +412,8 @@ export class PrepareContextService {
       device = requesterMatchedDevices[0] || ninjaOrgDevices[0] || null;
       if (device?.id) {
         const [checks, details] = await Promise.all([
-          this.ninjaoneClient.getDeviceChecks(String(device.id)).catch(() => []),
-          this.ninjaoneClient.getDeviceDetails(String(device.id)).catch(() => null),
+          ninjaoneClient.getDeviceChecks(String(device.id)).catch(() => []),
+          ninjaoneClient.getDeviceDetails(String(device.id)).catch(() => null),
         ]);
         ninjaChecks = checks.map((check) => ({
           id: `ninja-check-${check.id}`,
@@ -319,6 +440,7 @@ export class PrepareContextService {
           `alerts: ${ninjaAlerts.length}`,
           `health checks: ${ninjaChecks.length}`,
           loggedInUser ? `logged-in user: ${loggedInUser}` : 'logged-in user: not available',
+          `credential scope: ${credentialScope}`,
         ],
       });
     } catch (error) {
@@ -367,7 +489,7 @@ export class PrepareContextService {
       });
       if (refined && (!device || String(refined.id) !== String(device.id))) {
         device = refined;
-        const details = await this.ninjaoneClient.getDeviceDetails(String(device.id)).catch(() => null);
+        const details = await ninjaoneClient.getDeviceDetails(String(device.id)).catch(() => null);
         if (details) {
           loggedInUser = this.extractLoggedInUser(details) || loggedInUser;
         }
@@ -587,14 +709,20 @@ export class PrepareContextService {
     return c === n || c.includes(n) || n.includes(c);
   }
 
-  private async resolveNinjaOrg(companyName: string): Promise<{ id: number; name: string } | null> {
-    const orgs = await this.ninjaoneClient.listOrganizations();
+  private async resolveNinjaOrg(
+    ninjaoneClient: NinjaOneClient,
+    companyName: string
+  ): Promise<{ id: number; name: string } | null> {
+    const orgs = await ninjaoneClient.listOrganizations();
     const found = orgs.find((o: any) => this.fuzzyMatch(companyName, String(o?.name || '')));
     return found ? { id: Number(found.id), name: String(found.name) } : null;
   }
 
-  private async resolveITGlueOrg(companyName: string): Promise<{ id: string; name: string } | null> {
-    const orgs = await this.itglueClient.getOrganizations();
+  private async resolveITGlueOrg(
+    itglueClient: ITGlueClient,
+    companyName: string
+  ): Promise<{ id: string; name: string } | null> {
+    const orgs = await itglueClient.getOrganizations();
     const found = orgs.find((o: any) => this.fuzzyMatch(companyName, String(o?.attributes?.name || '')));
     return found ? { id: String(found.id), name: String(found.attributes?.name || companyName) } : null;
   }

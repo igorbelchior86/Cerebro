@@ -16,6 +16,7 @@ const router: ExpressRouter = Router();
 router.post('/sessions', async (req, res, next) => {
   try {
     const { ticket_id, org_id, org_name, created_by } = req.body;
+    const tenantId = req.auth?.tid || null;
 
     if (!ticket_id || !created_by) {
       res.status(400).json({
@@ -28,10 +29,10 @@ router.post('/sessions', async (req, res, next) => {
 
     await execute(
       `
-      INSERT INTO triage_sessions (id, ticket_id, org_id, org_name, status, created_by, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+      INSERT INTO triage_sessions (id, ticket_id, org_id, org_name, status, created_by, tenant_id, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
       `,
-      [sessionId, ticket_id, org_id || null, org_name || null, 'pending', created_by]
+      [sessionId, ticket_id, org_id || null, org_name || null, 'pending', created_by, tenantId]
     );
 
     const session: TriageSession = {

@@ -39,6 +39,7 @@ router.get('/full-flow', async (req, res) => {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawId);
 
     if (!isUuid) {
+      const tenantId = req.auth?.tid || null;
       const session = await queryOne<{ id: string }>(
         `SELECT id
          FROM triage_sessions
@@ -52,10 +53,10 @@ router.get('/full-flow', async (req, res) => {
         // Auto-create session if it doesn't exist
         console.log(`[FULL-FLOW] Creating new session for ticket ${rawId}`);
         const newSession = await queryOne<{ id: string }>(
-          `INSERT INTO triage_sessions (id, ticket_id, status, created_by, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, NOW(), NOW())
+          `INSERT INTO triage_sessions (id, ticket_id, status, created_by, tenant_id, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
            RETURNING id`,
-          [uuidv4(), rawId, 'pending', '00000000-0000-0000-0000-000000000000']
+          [uuidv4(), rawId, 'pending', '00000000-0000-0000-0000-000000000000', tenantId]
         );
 
         if (!newSession) {

@@ -60,10 +60,13 @@ export class TriageOrchestrator {
                 await this.updateSessionStatus(sessionId as string, 'processing');
             } else {
                 sessionId = uuidv4();
+                const defaultTenant = await queryOne<{ id: string }>(
+                    `SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`
+                );
                 await execute(
-                    `INSERT INTO triage_sessions (id, ticket_id, org_id, status, created_by, created_at, updated_at)
-                     VALUES ($1, $2, $3, $4, $5, NOW(), NOW())`,
-                    [sessionId, ticketId, orgId || null, 'processing', 'system']
+                    `INSERT INTO triage_sessions (id, ticket_id, org_id, status, created_by, tenant_id, created_at, updated_at)
+                     VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+                    [sessionId, ticketId, orgId || null, 'processing', 'system', defaultTenant?.id || null]
                 );
                 console.log(`[Orchestrator] Created new session ${sessionId} for ticket ${ticketId}`);
             }

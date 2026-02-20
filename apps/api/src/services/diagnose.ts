@@ -9,6 +9,7 @@ import type {
   RecommendedAction,
 } from '@playbook-brain/types';
 import { createLLMProvider, getDefaultLLMProvider } from './llm-adapter.js';
+import { shouldDowngradeDiagnosisToFallback } from './evidence-guardrails.js';
 
 export class DiagnoseService {
   /**
@@ -93,6 +94,13 @@ export class DiagnoseService {
         latency_ms: latencyMs,
       },
     };
+  }
+
+  private buildEvidenceAnchoredFallback(pack: EvidencePack): DiagnosisOutput {
+    const fallback = this.buildDeterministicFallback(pack, 0);
+    delete fallback.meta;
+    fallback.summary = `Evidence-anchored fallback diagnosis generated for ${pack.ticket.id} due to unsupported high-risk inference in model output.`;
+    return fallback;
   }
 
   /**
@@ -229,7 +237,10 @@ Rules:
 4. "do_not_do" includes destructive actions, unsupported fixes, or risky changes
 5. Be specific: avoid generic advice
 6. Consider the priority level and SLA implications
-7. Reference the related cases for context`;
+7. Reference related cases only as weak prior context; never treat them as direct evidence
+8. Never infer compromise/malware/phishing without direct evidence in this ticket/signals/docs
+9. Missing integration access (401/invalid_client/auth failures) is missing data, not root cause unless the ticket is explicitly about those integrations
+10. If evidence is insufficient, lower confidence and ask focused next_questions instead of escalating severity`;
   }
 
   /**
@@ -252,7 +263,7 @@ Rules:
 
       const parsed = JSON.parse(cleanJson);
 
-      return {
+      const parsedDiagnosis: DiagnosisOutput = {
         summary: String(parsed.summary || 'Diagnosis complete.'),
         top_hypotheses: (parsed.top_hypotheses || []).map(
           (h: any, idx: number) => ({
@@ -279,6 +290,12 @@ Rules:
         ),
         do_not_do: Array.isArray(parsed.do_not_do) ? parsed.do_not_do : [],
       };
+
+      if (shouldDowngradeDiagnosisToFallback(parsedDiagnosis, pack)) {
+        return this.buildEvidenceAnchoredFallback(pack);
+      }
+
+      return parsedDiagnosis;
     } catch (err) {
       console.error('[DIAGNOSE] Failed to parse Claude response:', err);
       const seedEvidence = [

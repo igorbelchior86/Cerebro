@@ -117,3 +117,9 @@
 **Root cause**: Read/write paths were not equally backward-compatible across evolving schema.
 **Rule**: Any schema extension must include compatibility guards in all critical pipeline stages (ingest + prepare + list).
 **Pattern**: Runtime column capability check + fallback projection/query branch.
+
+## Lesson: 2026-02-20 (integration split-brain + evidence drift)
+**Mistake**: Integration health UI used workspace credentials from DB, but PrepareContext runtime used process env credentials; diagnosis/playbook also over-weighted weak priors and missing-data failures.
+**Root cause**: Credential source paths were not unified across runtime stages; LLM prompts lacked strict grounding constraints against high-risk inference drift.
+**Rule**: For every external integration, all runtime consumers must read from the same tenant/workspace credential source as the health endpoint; missing integration data must stay as data gap unless ticket-scoped evidence says otherwise.
+**Pattern**: Shared credential resolver + evidence guardrail checks (diagnosis/playbook) with deterministic fallback when unsupported narratives appear.

@@ -100,6 +100,21 @@ export class TriageOrchestrator {
                 // PHASE 3: Validate
                 console.log(`[Orchestrator] [${sid}] Phase 3: Validate`);
                 const validation = this.validateService.validate(diagnosis, pack);
+                const persistedRequiredFixes = [
+                    ...(validation.required_fixes || []),
+                    ...(validation.coverage_scores
+                        ? [`coverage_scores=${JSON.stringify(validation.coverage_scores)}`]
+                        : []),
+                    ...(validation.blocking_reasons?.length
+                        ? [`blocking_reasons=${JSON.stringify(validation.blocking_reasons)}`]
+                        : []),
+                ];
+                const persistedQuestions = [
+                    ...(validation.required_questions || []),
+                    ...(validation.quality_gates
+                        ? [`quality_gates=${JSON.stringify(validation.quality_gates)}`]
+                        : []),
+                ];
                 await execute(
                     `INSERT INTO validation_results (
                         id, session_id, status, violations, required_fixes, req_questions, safe_to_proceed, created_at
@@ -109,8 +124,8 @@ export class TriageOrchestrator {
                         sid,
                         validation.status,
                         JSON.stringify(validation.violations || []),
-                        JSON.stringify(validation.required_fixes || []),
-                        JSON.stringify(validation.required_questions || []),
+                        JSON.stringify(persistedRequiredFixes),
+                        JSON.stringify(persistedQuestions),
                         validation.safe_to_generate_playbook,
                     ]
                 );

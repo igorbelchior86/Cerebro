@@ -107,6 +107,8 @@ export class DiagnoseService {
    * Build comprehensive diagnostic prompt from evidence pack
    */
   private buildDiagnosticPrompt(pack: EvidencePack): string {
+    const digest = pack.evidence_digest;
+
     const ticketInfo = `
 ## TICKET INFO
 - ID: ${pack.ticket.id}
@@ -117,65 +119,53 @@ export class DiagnoseService {
 - Created: ${pack.ticket.created_at}
     `.trim();
 
-    const deviceInfo =
-      pack.device?.hostname || pack.user?.name
-        ? `
-## AFFECTED DEVICE/USER
-${pack.device
-            ? `- Device: ${pack.device.hostname} (${pack.device.os})
-- Last Seen: ${pack.device.last_seen}
-- OS: ${pack.device.os}
-${pack.device.connection ? `- Connection: ${pack.device.connection.type}` : ''}`
-            : ''
-          }
-${pack.user ? `- User: ${pack.user.name} (${pack.user.email})` : ''}
-    `.trim()
-        : '';
+    const digestInfo = digest
+      ? `
+## EVIDENCE DIGEST (PRIMARY CONTEXT)
 
-    const signalsInfo =
-      pack.signals.length > 0
-        ? `
-## HEALTH SIGNALS & ALERTS
-${pack.signals
-            .map(
-              (s) => `- [${s.source.toUpperCase()}] ${s.type}: ${s.summary} (${s.timestamp})`
-            )
-            .join('\n')}
-    `.trim()
-        : '';
+### facts_confirmed
+${digest.facts_confirmed.map((f) => `- [${f.id}] ${f.fact} (score=${f.evidence_score})`).join('\n') || '- none'}
 
-    const relatedCasesInfo =
-      pack.related_cases.length > 0
-        ? `
-## SIMILAR PAST CASES
-${pack.related_cases
-            .map((c) => `- ${c.symptom} → ${c.resolution} (resolved ${c.resolved_at})`)
-            .join('\n')}
-    `.trim()
-        : '';
+### facts_conflicted
+${digest.facts_conflicted.map((f) => `- [${f.id}] ${f.fact}`).join('\n') || '- none'}
 
-    const externalStatusInfo =
-      pack.external_status.length > 0
-        ? `
-## EXTERNAL STATUS
-${pack.external_status
-            .map((s) => `- ${s.provider} (${s.region}): ${s.status}`)
-            .join('\n')}
-    `.trim()
-        : '';
+### missing_critical
+${digest.missing_critical.map((m) => `- ${m.field}: ${m.why}`).join('\n') || '- none'}
 
-    const docsInfo =
-      pack.docs.length > 0
-        ? `
-## RELEVANT DOCUMENTATION & RUNBOOKS
-${pack.docs
-            .map(
-              (d) => `- [${d.source}] ${d.title} (relevance: ${d.relevance.toFixed(1)}/1.0)
-  ${d.snippet}`
-            )
-            .join('\n\n')}
-    `.trim()
-        : '';
+### candidate_actions_with_evidence_refs
+${digest.candidate_actions
+  .map((a) => `- ${a.action} | evidence_refs: ${a.evidence_refs.join(', ')}`)
+  .join('\n') || '- none'}
+
+### tech_context_detected
+${digest.tech_context_detected.map((t) => `- ${t}`).join('\n') || '- none'}
+
+### sources_consulted_by_facet
+${Object.entries(digest.sources_consulted_by_facet || {})
+  .map(([facet, sources]) => `- ${facet}: ${(sources || []).join(', ')}`)
+  .join('\n') || '- none'}
+
+### rejected_evidence
+${(digest.rejected_evidence || []).map((r) => `- ${r.id}: ${r.reason} (${r.summary})`).join('\n') || '- none'}
+      `.trim()
+      : '';
+
+    const fallbackRawContext = !digest
+      ? `
+## RAW FALLBACK CONTEXT (ONLY WHEN DIGEST IS MISSING)
+${pack.signals.length > 0
+  ? `### Signals\n${pack.signals
+      .map((s) => `- [${s.source.toUpperCase()}] ${s.type}: ${s.summary} (${s.timestamp})`)
+      .join('\n')}`
+  : ''}
+${pack.docs.length > 0
+  ? `\n### Docs\n${pack.docs.map((d) => `- [${d.source}] ${d.title}`).join('\n')}`
+  : ''}
+${pack.related_cases.length > 0
+  ? `\n### Related Cases\n${pack.related_cases.map((c) => `- ${c.symptom} -> ${c.resolution}`).join('\n')}`
+  : ''}
+      `.trim()
+      : '';
 
     const missingDataInfo =
       pack.missing_data && pack.missing_data.length > 0
@@ -187,19 +177,13 @@ ${pack.missing_data.map((m) => `- ${m.field}: ${m.why}`).join('\n')}
 
     return `You are an expert IT support specialist and network systems diagnostician.
 
-Your task: Analyze the provided evidence and generate a detailed technical diagnosis.
+Your task: Analyze the provided evidence digest and generate a detailed technical diagnosis.
 
 ${ticketInfo}
 
-${deviceInfo}
+${digestInfo}
 
-${signalsInfo}
-
-${relatedCasesInfo}
-
-${externalStatusInfo}
-
-${docsInfo}
+${fallbackRawContext}
 
 ${missingDataInfo}
 
@@ -233,14 +217,15 @@ Respond with ONLY a valid JSON object (no markdown, no code blocks) with this EX
 Rules:
 1. Top 3 hypotheses ranked by confidence (0.0-1.0)
 2. Each hypothesis must have supporting evidence and tests
-3. Recommended actions should be safe, tested, and prioritized by impact
-4. "do_not_do" includes destructive actions, unsupported fixes, or risky changes
-5. Be specific: avoid generic advice
-6. Consider the priority level and SLA implications
-7. Reference related cases only as weak prior context; never treat them as direct evidence
-8. Never infer compromise/malware/phishing without direct evidence in this ticket/signals/docs
-9. Missing integration access (401/invalid_client/auth failures) is missing data, not root cause unless the ticket is explicitly about those integrations
-10. If evidence is insufficient, lower confidence and ask focused next_questions instead of escalating severity`;
+3. Prefer actions from candidate_actions_with_evidence_refs when available
+4. Never recommend an action that has no supporting evidence reference in facts_confirmed
+5. If evidence is insufficient, explicitly lower confidence and keep status investigative
+6. "do_not_do" includes destructive actions, unsupported fixes, or risky changes
+7. Be specific: avoid generic advice
+8. Consider the priority level and SLA implications
+9. Reference related cases only as weak prior context; never treat them as direct evidence
+10. Never infer compromise/malware/phishing without direct evidence in this ticket/signals/docs
+11. Missing integration access (401/invalid_client/auth failures) is missing data, not root cause unless the ticket is explicitly about those integrations`;
   }
 
   /**

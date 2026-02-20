@@ -118,7 +118,10 @@ export class PlaybookWriterService {
     const hypothesis = diagnosis.top_hypotheses?.[0]?.hypothesis || 'Issue requires guided triage';
     const evidence = diagnosis.top_hypotheses?.[0]?.evidence || [];
     const tests = diagnosis.top_hypotheses?.[0]?.tests || [];
-    const actions = diagnosis.recommended_actions || [];
+    const digestActions = pack.evidence_digest?.candidate_actions || [];
+    const actions = diagnosis.recommended_actions?.length
+      ? diagnosis.recommended_actions
+      : digestActions.map((action) => ({ action: action.action, risk: 'low' as const }));
     return `# [${pack.ticket.id}] - ${pack.ticket.title}
 
 ## Overview
@@ -167,6 +170,7 @@ ${evidence.length ? evidence.map((e) => `- ${e}`).join('\n') : '- Ticket narrati
     pack: EvidencePack
   ): string {
     const topHypothesis = diagnosis.top_hypotheses[0];
+    const digest = pack.evidence_digest;
 
     return `You are an expert IT support engineer. Generate a detailed, safe, and actionable support playbook in Markdown format.
 
@@ -180,10 +184,28 @@ ${topHypothesis ? `- ${topHypothesis.hypothesis} (Confidence: ${(topHypothesis.c
 **Supporting Evidence:**
 ${diagnosis.top_hypotheses.map((h) => h.evidence.map((e) => `- ${e}`).join('\n')).join('\n')}
 
+${digest ? `## EVIDENCE DIGEST (MANDATORY GROUNDING)
+### Confirmed facts
+${digest.facts_confirmed.map((fact) => `- [${fact.id}] ${fact.fact}`).join('\n') || '- none'}
+
+### Candidate actions with refs
+${digest.candidate_actions
+  .map((action) => `- ${action.action} | refs: ${action.evidence_refs.join(', ')}`)
+  .join('\n') || '- none'}
+
+### Missing critical
+${digest.missing_critical.map((m) => `- ${m.field}: ${m.why}`).join('\n') || '- none'}
+
+### Rejected evidence
+${digest.rejected_evidence.map((r) => `- ${r.id}: ${r.reason} (${r.summary})`).join('\n') || '- none'}
+` : ''}
+
 ## VALIDATION GATES
 
 ✅ Status: ${validation.status}
 ✅ Safe to generate: ${validation.safe_to_generate_playbook}
+${validation.quality_gates ? `✅ Quality gates: ${JSON.stringify(validation.quality_gates)}` : ''}
+${validation.coverage_scores ? `✅ Coverage scores: ${JSON.stringify(validation.coverage_scores)}` : ''}
 
 ## TICKET CONTEXT
 
@@ -262,9 +284,11 @@ ${pack.docs
 2. Be safe: Include warnings, verification steps, rollback
 3. Be clear: Use code blocks, formatting, step-by-step
 4. Be practical: Estimated time, prerequisites, dependencies
-5. No hallucinations: Only reference things in the evidence
+5. No hallucinations: Only reference things in the evidence digest and validated diagnosis
 6. Do not turn missing integration credentials (401/invalid_client/auth failures) into root cause unless ticket explicitly mentions those integrations
 7. Do not introduce security-compromise narratives unless directly evidenced in this ticket/signals/docs
+8. Do not include any remediation step without at least one valid evidence reference from evidence digest
+9. If capability verification is required and incomplete, output only directed data-collection steps (no final compatibility conclusion)
 
 ## OUTPUT
 

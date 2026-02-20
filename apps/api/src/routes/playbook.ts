@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { Router } from 'express';
-import type { PlaybookOutput } from '@playbook-brain/types';
+import type { PlaybookOutput, ValidationOutput } from '@playbook-brain/types';
 import { generatePlaybook } from '../services/playbook-writer.js';
 import {
   getEvidencePack,
@@ -111,7 +111,7 @@ router.get('/full-flow', async (req, res) => {
       `SELECT status, violations, required_fixes, req_questions, safe_to_proceed FROM validation_results WHERE session_id = $1`,
       [sessionId]
     );
-    const validation = valResult ? {
+    const validation: ValidationOutput | null = valResult ? {
       status: valResult.status as any,
       violations: valResult.violations,
       required_fixes: valResult.required_fixes,
@@ -144,7 +144,7 @@ router.get('/full-flow', async (req, res) => {
       try {
         let currentPack = pack;
         let currentDiagnosis = diagnosis;
-        let currentValidation = validation;
+        let currentValidation: ValidationOutput | null = validation;
 
         // 1. Evidence Pack
         if (!currentPack) {
@@ -186,6 +186,21 @@ router.get('/full-flow', async (req, res) => {
         if (shouldRevalidate && currentDiagnosis && currentPack) {
           console.log(`[FULL-FLOW] Background: Validating Diagnosis for ${sessionId}`);
           currentValidation = await validateDiagnosis(currentDiagnosis, currentPack);
+          const persistedRequiredFixes = [
+            ...(currentValidation.required_fixes || []),
+            ...(currentValidation.coverage_scores
+              ? [`coverage_scores=${JSON.stringify(currentValidation.coverage_scores)}`]
+              : []),
+            ...(currentValidation.blocking_reasons?.length
+              ? [`blocking_reasons=${JSON.stringify(currentValidation.blocking_reasons)}`]
+              : []),
+          ];
+          const persistedQuestions = [
+            ...(currentValidation.required_questions || []),
+            ...(currentValidation.quality_gates
+              ? [`quality_gates=${JSON.stringify(currentValidation.quality_gates)}`]
+              : []),
+          ];
 
           const existing = await queryOne<{ id: string }>(
             `SELECT id FROM validation_results WHERE session_id = $1`,
@@ -198,8 +213,8 @@ router.get('/full-flow', async (req, res) => {
               [
                 currentValidation.status,
                 JSON.stringify(currentValidation.violations),
-                JSON.stringify(currentValidation.required_fixes),
-                JSON.stringify(currentValidation.required_questions),
+                JSON.stringify(persistedRequiredFixes),
+                JSON.stringify(persistedQuestions),
                 currentValidation.safe_to_generate_playbook,
                 existing.id
               ]
@@ -212,8 +227,8 @@ router.get('/full-flow', async (req, res) => {
                 sessionId,
                 currentValidation.status,
                 JSON.stringify(currentValidation.violations),
-                JSON.stringify(currentValidation.required_fixes),
-                JSON.stringify(currentValidation.required_questions),
+                JSON.stringify(persistedRequiredFixes),
+                JSON.stringify(persistedQuestions),
                 currentValidation.safe_to_generate_playbook
               ]
             );

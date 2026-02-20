@@ -38,6 +38,21 @@ export class ValidatePolicyService {
     const violations: Violation[] = [];
     const requiredQuestions: Set<string> = new Set();
     const requiredFixes: Set<string> = new Set();
+    const blockingReasons: string[] = [];
+    const digest = pack.evidence_digest;
+
+    const qualityGates = {
+      cross_tenant_candidate_detected: Boolean(
+        (digest?.rejected_evidence || pack.rejected_evidence || []).some(
+          (item) => item.reason === 'org_mismatch' || item.reason === 'tenant_mismatch'
+        )
+      ),
+      named_entity_unresolved: (pack.entity_resolution?.status || 'unresolved') !== 'resolved',
+      domain_required_source_missing: this.hasDomainRequiredSourceMissing(pack),
+      capability_verification_incomplete: this.isCapabilityVerificationIncomplete(pack),
+    };
+
+    const coverageScores = this.computeCoverageScores(pack);
 
     if (!diagnosis.top_hypotheses || diagnosis.top_hypotheses.length === 0) {
       violations.push({
@@ -141,6 +156,82 @@ export class ValidatePolicyService {
       });
     }
 
+    if (qualityGates.cross_tenant_candidate_detected) {
+      violations.push({
+        type: 'quality_gate',
+        detail: 'cross_tenant_candidate_detected: evidence from divergent org/tenant was rejected',
+      });
+      requiredFixes.add('Collect equivalent evidence scoped to the ticket org');
+      blockingReasons.push('cross_tenant_candidate_detected');
+    }
+
+    if (qualityGates.named_entity_unresolved) {
+      violations.push({
+        type: 'quality_gate',
+        detail: 'named_entity_unresolved: actor was not strongly resolved in org scope',
+      });
+      requiredQuestions.add(
+        pack.entity_resolution?.disambiguation_question ||
+          'Confirm exact affected actor (name/email/phone) inside ticket org scope'
+      );
+      blockingReasons.push('named_entity_unresolved');
+    }
+
+    if (qualityGates.domain_required_source_missing) {
+      violations.push({
+        type: 'quality_gate',
+        detail: 'domain_required_source_missing: required source for detected technology/domain was not consulted',
+      });
+      requiredFixes.add('Run directed retrieval for detected technology facets before approval');
+      blockingReasons.push('domain_required_source_missing');
+    }
+
+    if (qualityGates.capability_verification_incomplete) {
+      violations.push({
+        type: 'quality_gate',
+        detail:
+          'capability_verification_incomplete: capability ticket requires strong device match + official model spec confirmation',
+      });
+      requiredQuestions.add(
+        'Provide device model/serial and confirm official vendor compatibility source URL'
+      );
+      blockingReasons.push('capability_verification_incomplete');
+    }
+
+    const coverageThreshold = 0.6;
+    if (coverageScores.entity_coverage < coverageThreshold) {
+      violations.push({
+        type: 'coverage_gate',
+        detail: `entity_coverage below threshold (${coverageScores.entity_coverage.toFixed(2)} < ${coverageThreshold})`,
+      });
+      requiredQuestions.add('Collect stronger actor evidence (exact name/email/phone) in org scope');
+      blockingReasons.push('entity_coverage');
+    }
+    if (coverageScores.tech_coverage < coverageThreshold) {
+      violations.push({
+        type: 'coverage_gate',
+        detail: `tech_coverage below threshold (${coverageScores.tech_coverage.toFixed(2)} < ${coverageThreshold})`,
+      });
+      requiredFixes.add('Consult technology-specific sources based on detected tech context');
+      blockingReasons.push('tech_coverage');
+    }
+    if (coverageScores.signal_coverage < coverageThreshold) {
+      violations.push({
+        type: 'coverage_gate',
+        detail: `signal_coverage below threshold (${coverageScores.signal_coverage.toFixed(2)} < ${coverageThreshold})`,
+      });
+      requiredQuestions.add('Collect at least one direct signal/alert supporting the diagnosis');
+      blockingReasons.push('signal_coverage');
+    }
+    if (coverageScores.asset_coverage < coverageThreshold) {
+      violations.push({
+        type: 'coverage_gate',
+        detail: `asset_coverage below threshold (${coverageScores.asset_coverage.toFixed(2)} < ${coverageThreshold})`,
+      });
+      requiredFixes.add('Collect asset/device capability evidence before final recommendation');
+      blockingReasons.push('asset_coverage');
+    }
+
     // ─── Check do_not_do compliance ───────────────────────────────
     const doNotDoList = diagnosis.do_not_do || [];
     if (doNotDoList.length === 0) {
@@ -175,16 +266,17 @@ export class ValidatePolicyService {
 
     if (violations.some((v) => v.type === 'risk_gate')) {
       status = 'blocked';
+    } else if (
+      violations.some((v) => v.type === 'quality_gate' || v.type === 'coverage_gate')
+    ) {
+      status = 'needs_more_info';
     } else if (violations.some((v) => v.type === 'no_evidence')) {
       status = 'needs_more_info';
     } else if (violations.length > 0) {
       status = 'needs_more_info';
     }
 
-    // Allow generation for needs_more_info as long as there is no risk gate.
-    // The playbook can still include validation checks and missing-info steps.
-    const safeToGenerate =
-      status !== 'blocked' && diagnosis.top_hypotheses.length > 0;
+    const safeToGenerate = status === 'approved' && diagnosis.top_hypotheses.length > 0;
 
     return {
       status,
@@ -192,6 +284,74 @@ export class ValidatePolicyService {
       required_questions: Array.from(requiredQuestions),
       required_fixes: Array.from(requiredFixes),
       safe_to_generate_playbook: safeToGenerate,
+      quality_gates: qualityGates,
+      coverage_scores: coverageScores,
+      blocking_reasons: [...new Set(blockingReasons)],
+    };
+  }
+
+  private hasDomainRequiredSourceMissing(pack: EvidencePack): boolean {
+    const tech = pack.evidence_digest?.tech_context_detected || [];
+    if (!tech.length) return false;
+    const consultedSources = new Set(
+      Object.values(pack.evidence_digest?.sources_consulted_by_facet || {})
+        .flatMap((v) => v || [])
+        .map((source) => String(source).toLowerCase())
+    );
+    if (tech.includes('fortinet')) {
+      const ok = consultedSources.has('itglue') && consultedSources.has('ninjaone');
+      if (!ok) return true;
+    }
+    if (tech.includes('goto')) {
+      const ok = consultedSources.has('itglue');
+      if (!ok) return true;
+    }
+    if (tech.includes('vpn')) {
+      const ok = consultedSources.has('itglue') && consultedSources.has('ninjaone');
+      if (!ok) return true;
+    }
+    return false;
+  }
+
+  private isCapabilityVerificationIncomplete(pack: EvidencePack): boolean {
+    const capability = pack.capability_verification || pack.evidence_digest?.capability_verification;
+    if (!capability?.required) return false;
+    return !capability.device_match_strong || !capability.model_spec_confirmed;
+  }
+
+  private computeCoverageScores(pack: EvidencePack) {
+    const entityStatus = pack.entity_resolution?.status || 'unresolved';
+    const entityCoverage =
+      entityStatus === 'resolved'
+        ? 1
+        : pack.entity_resolution?.actor_candidates?.length
+          ? 0.5
+          : 0;
+
+    const techDetected = pack.evidence_digest?.tech_context_detected || [];
+    const consultedSourcesCount = new Set(
+      Object.values(pack.evidence_digest?.sources_consulted_by_facet || {}).flatMap((v) => v || [])
+    ).size;
+    const techCoverage =
+      techDetected.length === 0
+        ? 1
+        : Math.min(1, consultedSourcesCount / Math.max(1, techDetected.length));
+
+    const signalCoverage = pack.signals.length > 0 ? 1 : 0;
+
+    const capability = pack.capability_verification || pack.evidence_digest?.capability_verification;
+    const assetCoverage =
+      capability?.required
+        ? capability.device_match_strong && capability.model_spec_confirmed
+          ? 1
+          : 0
+        : 1;
+
+    return {
+      entity_coverage: entityCoverage,
+      tech_coverage: techCoverage,
+      signal_coverage: signalCoverage,
+      asset_coverage: assetCoverage,
     };
   }
 }

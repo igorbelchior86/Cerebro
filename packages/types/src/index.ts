@@ -7,11 +7,14 @@
 
 export interface Signal {
   id: string;
-  source: 'ninja' | 'autotask' | 'external';
+  source: 'ninja' | 'autotask' | 'external' | 'email';
   timestamp: string;
   type: string;
   summary: string;
   raw_ref?: Record<string, unknown>;
+  tenant_id?: string | null;
+  org_id?: string | null;
+  source_workspace?: string;
 }
 
 export interface RelatedCase {
@@ -19,6 +22,9 @@ export interface RelatedCase {
   symptom: string;
   resolution: string;
   resolved_at: string;
+  tenant_id?: string | null;
+  org_id?: string | null;
+  source_workspace?: string;
 }
 
 export interface ExternalStatus {
@@ -27,6 +33,9 @@ export interface ExternalStatus {
   status: 'operational' | 'degraded' | 'outage' | 'unknown';
   updated_at: string;
   source_ref: string;
+  tenant_id?: string | null;
+  org_id?: string | null;
+  source_workspace?: string;
 }
 
 export interface Doc {
@@ -36,6 +45,9 @@ export interface Doc {
   snippet: string;
   relevance: number;
   raw_ref?: Record<string, unknown>;
+  tenant_id?: string | null;
+  org_id?: string | null;
+  source_workspace?: string;
 }
 
 export interface DeviceConnection {
@@ -60,14 +72,116 @@ export interface EvidenceRules {
 export interface SourceFinding {
   source: 'autotask' | 'ninjaone' | 'itglue' | 'external';
   round?: number;
+  facet?: string;
   queried: boolean;
   matched: boolean;
   summary: string;
   details: string[];
+  why_selected?: string[];
+  why_rejected?: string[];
+  tenant_id?: string | null;
+  org_id?: string | null;
+  source_workspace?: string;
+}
+
+export interface ArtifactScope {
+  tenant_id: string | null;
+  org_id: string | null;
+  source_workspace: string;
+}
+
+export interface ActorCandidate {
+  id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  company?: string;
+  score: number;
+  score_breakdown: {
+    exact_name: number;
+    email: number;
+    phone: number;
+    company_normalized: number;
+  };
+}
+
+export interface EntityResolution {
+  extracted_entities: {
+    person: string[];
+    company: string[];
+    phone: string[];
+    email: string[];
+    location: string[];
+    product_or_domain: string[];
+  };
+  resolved_actor?: {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    confidence: 'strong' | 'medium';
+  };
+  actor_candidates?: ActorCandidate[];
+  disambiguation_question?: string;
+  status: 'resolved' | 'ambiguous' | 'unresolved';
+}
+
+export interface RejectedEvidence {
+  id: string;
+  source: string;
+  reason: 'org_mismatch' | 'tenant_mismatch' | 'insufficient_support' | 'invalid_source_scope';
+  summary: string;
+  tenant_id: string | null;
+  org_id: string | null;
+  source_workspace: string;
+  evidence_score: number;
+}
+
+export interface DigestFact {
+  id: string;
+  fact: string;
+  evidence_score: number;
+  evidence_refs: string[];
+  source: string;
+  tenant_id: string | null;
+  org_id: string | null;
+  source_workspace: string;
+}
+
+export interface DigestAction {
+  action: string;
+  evidence_refs: string[];
+  rationale?: string;
+}
+
+export interface CapabilityVerification {
+  required: boolean;
+  device_match_strong: boolean;
+  model_spec_confirmed: boolean;
+  device_match_reason?: string;
+  manufacturer?: string;
+  model?: string;
+  serial?: string;
+  dock_or_adapter?: string;
+  spec_source_url?: string;
+  compatibility_outcome?: 'supported' | 'supported_with_dock' | 'not_supported';
+}
+
+export interface EvidenceDigest {
+  facts_confirmed: DigestFact[];
+  facts_conflicted: DigestFact[];
+  missing_critical: { field: string; why: string }[];
+  candidate_actions: DigestAction[];
+  tech_context_detected: string[];
+  sources_consulted_by_facet: Record<string, string[]>;
+  rejected_evidence: RejectedEvidence[];
+  capability_verification?: CapabilityVerification;
 }
 
 export interface EvidencePack {
   session_id: string;
+  tenant_id?: string | null;
+  source_workspace?: string;
   ticket: {
     id: string;
     title: string;
@@ -105,6 +219,10 @@ export interface EvidencePack {
   external_status: ExternalStatus[];
   docs: Doc[];
   source_findings?: SourceFinding[];
+  entity_resolution?: EntityResolution;
+  evidence_digest?: EvidenceDigest;
+  rejected_evidence?: RejectedEvidence[];
+  capability_verification?: CapabilityVerification;
   evidence_rules: EvidenceRules;
   missing_data?: { field: string; why: string }[];
   prepared_at: string;
@@ -146,8 +264,28 @@ export interface DiagnosisOutput {
 export type ValidationStatus = 'approved' | 'needs_more_info' | 'blocked';
 
 export interface Violation {
-  type: 'no_evidence' | 'risk_gate' | 'coherence' | 'missing_checklist';
+  type:
+    | 'no_evidence'
+    | 'risk_gate'
+    | 'coherence'
+    | 'missing_checklist'
+    | 'quality_gate'
+    | 'coverage_gate';
   detail: string;
+}
+
+export interface QualityGateScores {
+  entity_coverage: number;
+  tech_coverage: number;
+  signal_coverage: number;
+  asset_coverage: number;
+}
+
+export interface QualityGateFlags {
+  cross_tenant_candidate_detected: boolean;
+  named_entity_unresolved: boolean;
+  domain_required_source_missing: boolean;
+  capability_verification_incomplete: boolean;
 }
 
 export interface ValidationOutput {
@@ -156,6 +294,9 @@ export interface ValidationOutput {
   required_questions: string[];
   required_fixes: string[];
   safe_to_generate_playbook: boolean;
+  quality_gates?: QualityGateFlags;
+  coverage_scores?: QualityGateScores;
+  blocking_reasons?: string[];
 }
 
 // ─── Playbook Output ──────────────────────────────────────────

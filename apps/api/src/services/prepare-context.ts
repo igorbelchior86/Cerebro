@@ -9,6 +9,13 @@ import type {
   RelatedCase,
   Doc,
   ExternalStatus,
+  SourceFinding,
+  EntityResolution,
+  EvidenceDigest,
+  RejectedEvidence,
+  CapabilityVerification,
+  DigestAction,
+  DigestFact,
 } from '@playbook-brain/types';
 import { AutotaskClient } from '../clients/autotask.js';
 import { NinjaOneClient } from '../clients/ninjaone.js';
@@ -27,13 +34,38 @@ interface PrepareContextInput {
   };
 }
 
-interface SourceFinding {
-  source: 'autotask' | 'ninjaone' | 'itglue' | 'external';
-  round?: number;
-  queried: boolean;
-  matched: boolean;
-  summary: string;
-  details: string[];
+type TicketLike = {
+  id?: string | number;
+  ticketNumber?: string;
+  title?: string;
+  description?: string;
+  company?: string;
+  requester?: string;
+  createDate?: string;
+  priority?: number;
+  queueName?: string;
+};
+
+interface ScopeMeta {
+  tenant_id: string | null;
+  org_id: string | null;
+  source_workspace: string;
+}
+
+interface FacetContext {
+  symptom: string[];
+  technology: string[];
+  entities: string[];
+  requiresCapabilityVerification: boolean;
+}
+
+interface DeviceResolutionResult {
+  device: any | null;
+  checks: Signal[];
+  loggedInUser: string;
+  reason: string;
+  strongMatch: boolean;
+  details?: any | null;
 }
 
 interface AutotaskCreds {
@@ -65,6 +97,48 @@ const ITGLUE_BASE: Record<string, string> = {
   eu: 'https://api.eu.itglue.com',
   au: 'https://api.au.itglue.com',
 };
+
+const FACET_TERMS = {
+  symptom: {
+    connection: ['connection', 'internet', 'offline', 'network', 'latency', 'packet loss'],
+    telephony: ['phone', 'voip', 'calling', 'extension', 'dial tone', 'gotoconnect', 'goto'],
+    vpn: ['vpn', 'tunnel', 'remote access', 'always on'],
+    printing: ['printer', 'print', 'spooler', 'toner'],
+    hardware: ['laptop', 'monitor', 'dock', 'usb-c', 'thunderbolt', 'displayport', 'hdmi', 'adapter', 'hardware'],
+  },
+  technology: {
+    fortinet: ['fortinet', 'fortigate', 'forticlient'],
+    goto: ['goto', 'gotoconnect', 'goto connect', 'gotomeeting'],
+    m365: ['m365', 'office 365', 'exchange', 'sharepoint', 'teams', 'entra'],
+    vpn: ['vpn', 'forticlient', 'wireguard', 'openvpn'],
+  },
+};
+
+const CAPABILITY_SPEC_RULES: Array<{
+  manufacturer: RegExp;
+  modelContains: RegExp;
+  spec_source_url: string;
+  compatibility_outcome: 'supported' | 'supported_with_dock' | 'not_supported';
+}> = [
+  {
+    manufacturer: /dell/i,
+    modelContains: /(latitude|precision|xps)/i,
+    spec_source_url: 'https://www.dell.com/support/home',
+    compatibility_outcome: 'supported_with_dock',
+  },
+  {
+    manufacturer: /lenovo/i,
+    modelContains: /(thinkpad|thinkbook)/i,
+    spec_source_url: 'https://pcsupport.lenovo.com',
+    compatibility_outcome: 'supported_with_dock',
+  },
+  {
+    manufacturer: /hp/i,
+    modelContains: /(elitebook|probook|zbook)/i,
+    spec_source_url: 'https://support.hp.com',
+    compatibility_outcome: 'supported_with_dock',
+  },
+];
 
 export class PrepareContextService {
   constructor() {}
@@ -162,6 +236,7 @@ export class PrepareContextService {
     ninjaoneClient: NinjaOneClient;
     itglueClient: ITGlueClient;
     credentialScope: 'tenant' | 'workspace_fallback';
+    tenantId: string | null;
   }> {
     const tenantId = await this.getSessionTenantId(sessionId);
     const [autotaskCreds, ninjaCreds, itglueCreds] = await Promise.all([
@@ -175,6 +250,7 @@ export class PrepareContextService {
       ninjaoneClient: this.buildNinjaClient(ninjaCreds),
       itglueClient: this.buildITGlueClient(itglueCreds),
       credentialScope: tenantId ? 'tenant' : 'workspace_fallback',
+      tenantId,
     };
   }
 
@@ -200,11 +276,12 @@ export class PrepareContextService {
 
     const startTime = Date.now();
     const missingData: Array<{ field: string; why: string }> = [];
-    const { autotaskClient, ninjaoneClient, itglueClient, credentialScope } =
+    const { autotaskClient, ninjaoneClient, itglueClient, credentialScope, tenantId } =
       await this.resolveClientsForSession(input.sessionId);
+    const sourceWorkspace = tenantId ? `tenant:${tenantId}` : 'workspace:latest';
 
     // ─── Coleta de Dados (Autotask ou Email Ingestion) ───────────
-    let ticket: any = null;
+    let ticket: TicketLike | null = null;
     let signals: Signal[] = [];
 
     // Check if it's an email-ingested ticket (starts with T)
@@ -243,6 +320,9 @@ export class PrepareContextService {
             type: 'ticket_note',
             summary: update.content?.substring(0, 200) || '',
             raw_ref: update,
+            tenant_id: tenantId,
+            org_id: input.orgId || null,
+            source_workspace: sourceWorkspace,
           }));
         } else {
           console.warn(`[PrepareContext] Email ticket ${input.ticketId} not found in tickets_processed. Trying raw fallback...`);
@@ -299,6 +379,9 @@ export class PrepareContextService {
           type: 'ticket_note',
           summary: note.noteText?.substring(0, 200) || '',
           raw_ref: note,
+          tenant_id: tenantId,
+          org_id: input.orgId || null,
+          source_workspace: sourceWorkspace,
         }));
       } catch (error) {
         missingData.push({
@@ -315,11 +398,21 @@ export class PrepareContextService {
     const companyName = this.normalizeName(ticket.company || '');
     const requesterName = this.normalizeName(ticket.requester || '');
     const sourceFindings: SourceFinding[] = [];
+    const rejectedEvidence: RejectedEvidence[] = [];
+    const facetContext = this.detectFacetContext(
+      `${ticket.title || ''} ${ticket.description || ''} ${ticket.requester || ''}`
+    );
+    const scopeMeta: ScopeMeta = {
+      tenant_id: tenantId,
+      org_id: input.orgId || null,
+      source_workspace: sourceWorkspace,
+    };
 
     // round state
     let relatedCases: RelatedCase[] = [];
     let docs: Doc[] = [];
     let device: any = null;
+    let deviceDetails: any | null = null;
     let loggedInUser = '';
     let ninjaChecks: Signal[] = [];
     let ninjaOrgMatch: { id: number; name: string } | null = null;
@@ -328,6 +421,8 @@ export class PrepareContextService {
     let itglueOrgMatch: { id: string; name: string } | null = null;
     let itglueConfigs: any[] = [];
     let itglueContacts: any[] = [];
+    let itgluePasswords: any[] = [];
+    let itglueAssets: any[] = [];
 
     // ROUND 1: AT/Intake -> IT Glue
     try {
@@ -356,10 +451,20 @@ export class PrepareContextService {
       }
 
       if (itglueOrgMatch) {
-        [itglueConfigs, itglueContacts] = await Promise.all([
+        [itglueConfigs, itglueContacts, itgluePasswords] = await Promise.all([
           itglueClient.getConfigurations(itglueOrgMatch.id).catch(() => []),
           itglueClient.getContacts(itglueOrgMatch.id).catch(() => []),
+          itglueClient.getPasswords(itglueOrgMatch.id).catch(() => []),
         ]);
+        if (facetContext.symptom.includes('hardware')) {
+          const assetTypes = await itglueClient.getFlexibleAssetTypes(20).catch(() => []);
+          const assetCandidates = await Promise.all(
+            assetTypes.slice(0, 3).map((t: any) =>
+              itglueClient.getFlexibleAssets(String(t.id), itglueOrgMatch!.id, 30).catch(() => [])
+            )
+          );
+          itglueAssets = assetCandidates.flat();
+        }
       }
 
       docs = runbooks.slice(0, 5).map((doc, idx) => ({
@@ -369,11 +474,38 @@ export class PrepareContextService {
         snippet: doc.body?.substring(0, 500) || '',
         relevance: 0.5 - idx * 0.05,
         raw_ref: doc as unknown as Record<string, unknown>,
+        tenant_id: tenantId,
+        org_id: itglueOrgMatch?.id || null,
+        source_workspace: sourceWorkspace,
       }));
+
+      const boostTerms = this.getFacetBoostTerms(facetContext);
+      if (boostTerms.length > 0) {
+        const boostedDocs = await Promise.all(
+          boostTerms.slice(0, 3).map((term) =>
+            itglueClient.searchDocuments(term, itglueOrgMatch?.id).catch(() => [])
+          )
+        );
+        const flattened = boostedDocs.flat().slice(0, 4);
+        docs = docs.concat(
+          flattened.map((doc: any, idx: number) => ({
+            id: String(doc.id),
+            source: 'itglue' as const,
+            title: String(doc.name || `Context doc ${idx + 1}`),
+            snippet: String((doc as any).body || '').substring(0, 500),
+            relevance: 0.45 - idx * 0.05,
+            raw_ref: doc as unknown as Record<string, unknown>,
+            tenant_id: tenantId,
+            org_id: itglueOrgMatch?.id || null,
+            source_workspace: sourceWorkspace,
+          }))
+        );
+      }
 
       sourceFindings.push({
         source: 'itglue',
         round: 1,
+        facet: 'base',
         queried: true,
         matched: Boolean(itglueOrgMatch || docs.length || itglueConfigs.length || itglueContacts.length),
         summary: docs.length > 0
@@ -385,9 +517,18 @@ export class PrepareContextService {
           itglueOrgMatch ? `org match: ${itglueOrgMatch.name} (${itglueOrgMatch.id})` : 'org match: none',
           `configs: ${itglueConfigs.length}`,
           `contacts: ${itglueContacts.length}`,
+          `passwords: ${itgluePasswords.length}`,
+          `assets: ${itglueAssets.length}`,
           runbooksEndpointUnavailable ? 'runbooks endpoint: unavailable (404)' : `runbooks: ${docs.length}`,
           `credential scope: ${credentialScope}`,
         ],
+        why_selected: [
+          'base retrieval always includes contacts, configs, passwords, documents, assets, recent alerts, and related changes',
+          ...(boostTerms.length ? [`facet boost terms: ${boostTerms.join(', ')}`] : []),
+        ],
+        tenant_id: tenantId,
+        org_id: itglueOrgMatch?.id || null,
+        source_workspace: sourceWorkspace,
       });
     } catch (error) {
       missingData.push({
@@ -397,10 +538,15 @@ export class PrepareContextService {
       sourceFindings.push({
         source: 'itglue',
         round: 1,
+        facet: 'base',
         queried: true,
         matched: false,
         summary: 'organization context query failed',
         details: [`error: ${(error as Error).message}`],
+        why_rejected: ['itglue collection error'],
+        tenant_id: tenantId,
+        org_id: null,
+        source_workspace: sourceWorkspace,
       });
     }
 
@@ -419,38 +565,26 @@ export class PrepareContextService {
         ninjaOrgDevices = await ninjaoneClient.listDevices({ limit: 100 });
       }
 
-      const requesterTokens = this.buildRequesterTokens(requesterName);
-      const configHints = itglueConfigs
-        .map((c: any) => String(c?.attributes?.hostname || c?.attributes?.name || '').toLowerCase())
-        .filter(Boolean);
-
-      const requesterMatchedDevices = ninjaOrgDevices.filter((d: any) => {
-        const candidate = `${d.hostname || ''} ${d.systemName || ''}`.toLowerCase();
-        const requesterMatch = requesterTokens.some((t) => candidate.includes(t));
-        const configMatch = configHints.some((h) => h && candidate.includes(h));
-        return requesterMatch || configMatch;
+      const resolvedDevice = await this.resolveDeviceDeterministically({
+        devices: ninjaOrgDevices,
+        ticketText: `${ticket.title || ''} ${ticket.description || ''}`,
+        requesterName,
+        itglueConfigs,
+        ninjaoneClient,
+        sourceWorkspace,
+        tenantId,
+        orgId: ninjaOrgMatch ? String(ninjaOrgMatch.id) : itglueOrgMatch?.id || null,
       });
 
-      device = requesterMatchedDevices[0] || ninjaOrgDevices[0] || null;
-      if (device?.id) {
-        const [checks, details] = await Promise.all([
-          ninjaoneClient.getDeviceChecks(String(device.id)).catch(() => []),
-          ninjaoneClient.getDeviceDetails(String(device.id)).catch(() => null),
-        ]);
-        ninjaChecks = checks.map((check) => ({
-          id: `ninja-check-${check.id}`,
-          source: 'ninja' as const,
-          timestamp: check.lastCheck,
-          type: check.status === 'passed' ? 'health_ok' : 'health_warn',
-          summary: `${check.name}: ${check.status}`,
-          raw_ref: check,
-        }));
-        loggedInUser = this.extractLoggedInUser(details) || '';
-      }
+      device = resolvedDevice.device;
+      ninjaChecks = resolvedDevice.checks;
+      loggedInUser = resolvedDevice.loggedInUser;
+      deviceDetails = resolvedDevice.details ?? null;
 
       sourceFindings.push({
         source: 'ninjaone',
         round: 1,
+        facet: 'base',
         queried: true,
         matched: Boolean(device || ninjaOrgMatch || ninjaOrgDevices.length),
         summary: device
@@ -464,6 +598,10 @@ export class PrepareContextService {
           loggedInUser ? `logged-in user: ${loggedInUser}` : 'logged-in user: not available',
           `credential scope: ${credentialScope}`,
         ],
+        why_selected: [resolvedDevice.reason],
+        tenant_id: tenantId,
+        org_id: ninjaOrgMatch ? String(ninjaOrgMatch.id) : null,
+        source_workspace: sourceWorkspace,
       });
     } catch (error) {
       missingData.push({
@@ -473,10 +611,15 @@ export class PrepareContextService {
       sourceFindings.push({
         source: 'ninjaone',
         round: 1,
+        facet: 'base',
         queried: true,
         matched: false,
         summary: 'device lookup failed',
         details: [`error: ${(error as Error).message}`],
+        why_rejected: ['ninjaone collection error'],
+        tenant_id: tenantId,
+        org_id: null,
+        source_workspace: sourceWorkspace,
       });
     }
 
@@ -490,16 +633,26 @@ export class PrepareContextService {
       String(device?.systemName || ''),
       ...docs.slice(0, 2).map((d) => d.title || ''),
     ].filter(Boolean);
-    relatedCases = await this.findRelatedCasesByTerms(historyTerms, input.orgId);
+    relatedCases = (await this.findRelatedCasesByTerms(historyTerms, input.orgId)).map((rc) => ({
+      ...rc,
+      tenant_id: tenantId,
+      org_id: input.orgId || null,
+      source_workspace: sourceWorkspace,
+    }));
     sourceFindings.push({
       source: 'autotask',
       round: 2,
+      facet: 'related_changes',
       queried: true,
       matched: relatedCases.length > 0,
       summary: relatedCases.length > 0
         ? `historical correlation found ${relatedCases.length} related case(s)`
         : 'historical correlation found no related case',
       details: [`search terms used: ${Math.min(historyTerms.length, 6)}`],
+      why_selected: ['related_changes is always collected from historical sessions'],
+      tenant_id: tenantId,
+      org_id: input.orgId || null,
+      source_workspace: sourceWorkspace,
     });
 
     // ROUND 3: Ninja refinement with logged-in user + IT Glue refinement
@@ -519,10 +672,18 @@ export class PrepareContextService {
       sourceFindings.push({
         source: 'ninjaone',
         round: 3,
+        facet: 'entity_linking',
         queried: true,
         matched: Boolean(device),
         summary: device ? `refined device context: ${device.hostname || device.systemName || device.id}` : 'no refined device context',
         details: [loggedInUser ? `logged-in user after refinement: ${loggedInUser}` : 'logged-in user unavailable after refinement'],
+        why_selected: ['round-3 refinement re-evaluates device alignment using resolved actor tokens'],
+        tenant_id: tenantId,
+        org_id:
+          input.orgId ||
+          itglueOrgMatch?.id ||
+          (ninjaOrgMatch ? String(ninjaOrgMatch.id) : null),
+        source_workspace: sourceWorkspace,
       });
     }
 
@@ -546,6 +707,7 @@ export class PrepareContextService {
     sourceFindings.push({
       source: 'itglue',
       round: 3,
+      facet: 'entity_linking',
       queried: true,
       matched: Boolean(refinedConfigs.length || refinedContacts.length),
       summary: refinedConfigs.length || refinedContacts.length
@@ -555,6 +717,10 @@ export class PrepareContextService {
         `refined configs: ${refinedConfigs.length}`,
         `refined contacts: ${refinedContacts.length}`,
       ],
+      why_selected: ['round-3 refinement aligns entities after initial source crossing'],
+      tenant_id: tenantId,
+      org_id: itglueOrgMatch?.id || null,
+      source_workspace: sourceWorkspace,
     });
 
     // ─── Status de Provedores Externos ───────────────────────────
@@ -566,6 +732,9 @@ export class PrepareContextService {
       matched: false,
       summary: 'external status query not executed for this ticket',
       details: ['no external provider adapter configured in current pipeline'],
+      tenant_id: tenantId,
+      org_id: input.orgId || null,
+      source_workspace: sourceWorkspace,
     });
 
     sourceFindings.unshift({
@@ -578,11 +747,121 @@ export class PrepareContextService {
         `ticket id: ${ticket.ticketNumber || String(ticket.id)}`,
         `related cases: ${relatedCases.length}`,
       ],
+      why_selected: ['ticket intake is authoritative for first-pass org and actor hints'],
+      tenant_id: tenantId,
+      org_id: input.orgId || null,
+      source_workspace: sourceWorkspace,
+    });
+
+    const resolvedOrgId =
+      input.orgId ||
+      itglueOrgMatch?.id ||
+      (ninjaOrgMatch ? String(ninjaOrgMatch.id) : null);
+    scopeMeta.org_id = resolvedOrgId || null;
+
+    const entityResolution = this.resolveEntityScope({
+      ticketText: `${ticket.title || ''}\n${ticket.description || ''}`,
+      requesterName,
+      companyName,
+      contacts: itglueContacts,
+      orgScopeId: resolvedOrgId || null,
+      tenantId,
+      sourceWorkspace,
+    });
+
+    if (entityResolution.status !== 'resolved') {
+      missingData.push({
+        field: 'named_entity',
+        why:
+          entityResolution.disambiguation_question ||
+          'Named entity unresolved inside org scope; disambiguation required before final playbook',
+      });
+    }
+
+    const capabilityVerification = this.verifyCapabilityChain({
+      required: facetContext.requiresCapabilityVerification,
+      device,
+      deviceDetails,
+      ticketText: `${ticket.title || ''} ${ticket.description || ''}`,
+      itglueAssets,
+      sourceWorkspace,
+      tenantId,
+      orgId: resolvedOrgId || null,
+    });
+
+    if (
+      capabilityVerification.required &&
+      (!capabilityVerification.device_match_strong || !capabilityVerification.model_spec_confirmed)
+    ) {
+      missingData.push({
+        field: 'capability_verification',
+        why:
+          'Capability ticket requires strong device match and official model specification before final conclusion',
+      });
+    }
+
+    const scopedDocs = docs.filter((doc) => {
+      const decision = this.enforceOrgBoundary({
+        itemId: `doc:${doc.id}`,
+        itemOrgId: doc.org_id || null,
+        targetOrgId: resolvedOrgId || null,
+        source: 'itglue',
+        summary: doc.title,
+        scopeMeta,
+      });
+      if (decision.rejected) rejectedEvidence.push(decision.rejected);
+      return decision.accepted;
+    });
+
+    const scopedSignals = [...signals, ...ninjaChecks].filter((signal) => {
+      const candidateOrgId = signal.org_id || resolvedOrgId || null;
+      const decision = this.enforceOrgBoundary({
+        itemId: `signal:${signal.id}`,
+        itemOrgId: candidateOrgId,
+        targetOrgId: resolvedOrgId || null,
+        source: signal.source,
+        summary: signal.summary,
+        scopeMeta,
+      });
+      if (decision.rejected) rejectedEvidence.push(decision.rejected);
+      return decision.accepted;
+    });
+
+    const scopedRelatedCases = relatedCases.filter((relatedCase) => {
+      const decision = this.enforceOrgBoundary({
+        itemId: `case:${relatedCase.ticket_id}`,
+        itemOrgId: relatedCase.org_id || resolvedOrgId || null,
+        targetOrgId: resolvedOrgId || null,
+        source: 'history',
+        summary: relatedCase.symptom,
+        scopeMeta,
+      });
+      if (decision.rejected) rejectedEvidence.push(decision.rejected);
+      return decision.accepted;
+    });
+
+    const evidenceDigest = this.buildEvidenceDigest({
+      ticket,
+      sourceFindings,
+      missingData,
+      entityResolution,
+      signals: scopedSignals,
+      docs: scopedDocs,
+      relatedCases: scopedRelatedCases,
+      rejectedEvidence,
+      capabilityVerification,
+      facetContext,
+      scopeMeta,
+      device,
+      loggedInUser,
+      requesterName,
     });
 
     // ─── Monta EvidencePack ──────────────────────────────────────
     const basePackObject = {
       session_id: input.sessionId,
+      tenant_id: tenantId,
+      source_workspace: sourceWorkspace,
       ticket: {
         id: ticket.ticketNumber || String(ticket.id),
         title: ticket.title || '',
@@ -593,14 +872,24 @@ export class PrepareContextService {
         category: 'Support',
       },
       org: {
-        id: input.orgId || itglueOrgMatch?.id || (ninjaOrgMatch ? String(ninjaOrgMatch.id) : 'unknown'),
+        id: resolvedOrgId || 'unknown',
         name: companyName || itglueOrgMatch?.name || ninjaOrgMatch?.name || 'Organization',
       },
-      signals: [...signals, ...ninjaChecks],
-      related_cases: relatedCases,
+      ...(entityResolution.resolved_actor && {
+        user: {
+          name: entityResolution.resolved_actor.name,
+          email: entityResolution.resolved_actor.email || '',
+        },
+      }),
+      signals: scopedSignals,
+      related_cases: scopedRelatedCases,
       external_status: externalStatus,
-      docs: docs,
+      docs: scopedDocs,
       source_findings: sourceFindings,
+      entity_resolution: entityResolution,
+      evidence_digest: evidenceDigest,
+      rejected_evidence: rejectedEvidence,
+      capability_verification: capabilityVerification,
       evidence_rules: {
         require_evidence_for_claims: true,
         no_destructive_steps_without_gating: true,
@@ -613,10 +902,10 @@ export class PrepareContextService {
       ...(device && {
         device: {
           ninja_device_id: device.id,
-          hostname: device.hostname,
-          os: device.osName,
-          last_seen: device.lastActivityTime,
-          confidence: 'high' as const,
+          hostname: device.hostname || device.systemName || String(device.id),
+          os: device.osName || device.osVersion || 'Unknown',
+          last_seen: device.lastActivityTime || device.lastContact || new Date().toISOString(),
+          confidence: capabilityVerification.device_match_strong ? 'high' as const : 'medium' as const,
         },
       }),
       ...(missingData.length > 0 && { missing_data: missingData }),
@@ -626,6 +915,576 @@ export class PrepareContextService {
     console.log(`[PrepareContext] Completed in ${duration}ms`);
 
     return evidencePack;
+  }
+
+  private detectFacetContext(ticketText: string): FacetContext {
+    const normalized = ticketText.toLowerCase();
+    const symptom = Object.entries(FACET_TERMS.symptom)
+      .filter(([, terms]) => terms.some((term) => normalized.includes(term)))
+      .map(([facet]) => facet);
+    const technology = Object.entries(FACET_TERMS.technology)
+      .filter(([, terms]) => terms.some((term) => normalized.includes(term)))
+      .map(([facet]) => facet);
+    const entityCandidates = this.extractEmailDomains(ticketText).concat(
+      (ticketText.match(/[A-Z]{2,}-\d{2,}/g) || []).map((v) => v.toLowerCase())
+    );
+    return {
+      symptom,
+      technology,
+      entities: [...new Set(entityCandidates)].slice(0, 8),
+      requiresCapabilityVerification:
+        symptom.includes('hardware') &&
+        /(monitor|usb-c|thunderbolt|display|dock|adapter)/i.test(ticketText),
+    };
+  }
+
+  private getFacetBoostTerms(facets: FacetContext): string[] {
+    const boosts: string[] = [];
+    if (facets.technology.includes('fortinet')) {
+      boosts.push('fortinet firewall configuration', 'fortinet vpn credentials');
+    }
+    if (facets.technology.includes('goto') || facets.symptom.includes('telephony')) {
+      boosts.push('goto voip troubleshooting', 'telephony runbook');
+    }
+    if (facets.symptom.includes('vpn') || facets.technology.includes('vpn')) {
+      boosts.push('vpn identity endpoint troubleshooting', 'firewall vpn tunnel checks');
+    }
+    if (facets.requiresCapabilityVerification) {
+      boosts.push('multi monitor support', 'usb-c alt mode', 'thunderbolt compatibility');
+    }
+    return [...new Set(boosts)];
+  }
+
+  private async resolveDeviceDeterministically(input: {
+    devices: any[];
+    ticketText: string;
+    requesterName: string;
+    itglueConfigs: any[];
+    ninjaoneClient: NinjaOneClient;
+    sourceWorkspace: string;
+    tenantId: string | null;
+    orgId: string | null;
+  }): Promise<DeviceResolutionResult> {
+    if (!input.devices.length) {
+      return {
+        device: null,
+        checks: [],
+        loggedInUser: '',
+        reason: 'no devices available in org scope',
+        strongMatch: false,
+      };
+    }
+
+    const normalizedTicket = input.ticketText.toLowerCase();
+    const requesterTokens = this.buildRequesterTokens(input.requesterName);
+    const configHints = input.itglueConfigs
+      .map((c: any) => String(c?.attributes?.hostname || c?.attributes?.name || '').toLowerCase())
+      .filter(Boolean);
+
+    const scored = input.devices
+      .map((device) => {
+        const identity = `${device.hostname || ''} ${device.systemName || ''}`.toLowerCase();
+        let score = 0;
+        const reasons: string[] = [];
+        if (identity && normalizedTicket.includes(identity)) {
+          score += 0.55;
+          reasons.push('hostname mentioned in ticket');
+        }
+        if (requesterTokens.some((token) => identity.includes(token))) {
+          score += 0.25;
+          reasons.push('hostname correlated with requester token');
+        }
+        if (configHints.some((hint) => hint && identity.includes(hint))) {
+          score += 0.2;
+          reasons.push('hostname correlated with IT Glue configuration');
+        }
+        return { device, score, reasons };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    const winner = scored[0];
+    if (!winner) {
+      return {
+        device: null,
+        checks: [],
+        loggedInUser: '',
+        reason: 'no scored device candidates in org scope',
+        strongMatch: false,
+      };
+    }
+    const strongMatch = winner.score >= 0.65;
+    const selectedDevice = winner.device;
+
+    let details: any = null;
+    let loggedInUser = '';
+    let checks: Signal[] = [];
+    if (selectedDevice?.id) {
+      const [rawChecks, rawDetails] = await Promise.all([
+        input.ninjaoneClient.getDeviceChecks(String(selectedDevice.id)).catch(() => []),
+        input.ninjaoneClient.getDeviceDetails(String(selectedDevice.id)).catch(() => null),
+      ]);
+      details = rawDetails;
+      loggedInUser = this.extractLoggedInUser(rawDetails) || '';
+      checks = rawChecks.map((check) => ({
+        id: `ninja-check-${check.id}`,
+        source: 'ninja' as const,
+        timestamp: check.lastCheck,
+        type: check.status === 'passed' ? 'health_ok' : 'health_warn',
+        summary: `${check.name}: ${check.status}`,
+        raw_ref: check,
+        tenant_id: input.tenantId,
+        org_id: input.orgId,
+        source_workspace: input.sourceWorkspace,
+      }));
+    }
+
+    const reason =
+      winner.reasons.length > 0
+        ? `${winner.reasons.join(', ')}; score=${winner.score.toFixed(2)}`
+        : `fallback to first available device; score=${winner.score.toFixed(2)}`;
+
+    return {
+      device: selectedDevice,
+      checks,
+      loggedInUser,
+      reason,
+      strongMatch,
+      details,
+    };
+  }
+
+  private resolveEntityScope(input: {
+    ticketText: string;
+    requesterName: string;
+    companyName: string;
+    contacts: any[];
+    orgScopeId: string | null;
+    tenantId: string | null;
+    sourceWorkspace: string;
+  }): EntityResolution {
+    const text = input.ticketText;
+    const emailMatches = [
+      ...new Set((text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || []).map((e) => e.toLowerCase())),
+    ];
+    const phoneMatches = [
+      ...new Set((text.match(/(?:\+?\d[\d\-\s().]{7,}\d)/g) || []).map((p) => p.trim())),
+    ];
+    const locationMatches = [
+      ...new Set(
+        (text.match(/(?:site|office|location)\s*[:\-]\s*([^\n,.]+)/gi) || []).map((v) =>
+          v.replace(/(?:site|office|location)\s*[:\-]\s*/i, '').trim()
+        )
+      ),
+    ];
+    const productMatches = [
+      ...new Set(
+        this.getFacetBoostTerms(this.detectFacetContext(text))
+          .map((s) => s.split(' ')[0])
+          .filter((value): value is string => Boolean(value && value.trim()))
+      ),
+    ];
+    const properNames = text.match(/[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+/g) || [];
+    const personCandidates = [
+      ...new Set(
+        [input.requesterName, ...properNames].filter(
+          (value): value is string => Boolean(value && value.trim())
+        )
+      ),
+    ];
+    const companyCandidates = [
+      ...new Set([input.companyName].filter((value): value is string => Boolean(value && value.trim()))),
+    ];
+
+    const normalizedRequester = this.normalizeName(input.requesterName).toLowerCase();
+    const normalizedCompany = this.normalizeName(input.companyName).toLowerCase();
+    const scoredCandidates = input.contacts
+      .map((contact: any) => {
+        const attrs = contact?.attributes || {};
+        const name = this.normalizeName(
+          String(attrs.name || `${attrs.first_name || ''} ${attrs.last_name || ''}` || '').trim()
+        );
+        const email = String(attrs.primary_email || '').toLowerCase();
+        const phone = String(attrs.primary_phone || '');
+        const exactName = normalizedRequester && name.toLowerCase() === normalizedRequester ? 0.4 : 0;
+        const emailScore = emailMatches.includes(email) && email ? 0.3 : 0;
+        const phoneScore = phoneMatches.some((p) => phone.includes(p) || p.includes(phone)) && phone ? 0.2 : 0;
+        const companyScore = normalizedCompany ? 0.1 : 0;
+        const score = Number((exactName + emailScore + phoneScore + companyScore).toFixed(3));
+        return {
+          id: String(contact.id || `contact-${name}`),
+          name: name || 'Unknown Contact',
+          score,
+          score_breakdown: {
+            exact_name: exactName,
+            email: emailScore,
+            phone: phoneScore,
+            company_normalized: companyScore,
+          },
+          ...(email ? { email } : {}),
+          ...(phone ? { phone } : {}),
+          ...(input.companyName ? { company: input.companyName } : {}),
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    const best = scoredCandidates[0];
+    const second = scoredCandidates[1];
+    const hasStrongMatch = Boolean(best && best.score >= 0.75 && (!second || best.score - second.score >= 0.15));
+
+    if (hasStrongMatch && best) {
+      const resolvedActor: EntityResolution['resolved_actor'] = {
+        id: best.id,
+        name: best.name,
+        confidence: 'strong',
+        ...(best.email ? { email: best.email } : {}),
+        ...(best.phone ? { phone: best.phone } : {}),
+      };
+      return {
+        extracted_entities: {
+          person: personCandidates,
+          company: companyCandidates,
+          phone: phoneMatches,
+          email: emailMatches,
+          location: locationMatches,
+          product_or_domain: productMatches,
+        },
+        resolved_actor: resolvedActor,
+        status: 'resolved',
+      };
+    }
+
+    if (best && best.score > 0) {
+      const list = scoredCandidates.slice(0, 4);
+      return {
+        extracted_entities: {
+          person: personCandidates,
+          company: companyCandidates,
+          phone: phoneMatches,
+          email: emailMatches,
+          location: locationMatches,
+          product_or_domain: productMatches,
+        },
+        actor_candidates: list,
+        disambiguation_question: `Please confirm actor identity in org ${input.orgScopeId || 'scope'}: ${list
+          .map((c) => `${c.name}${c.email ? ` <${c.email}>` : ''}`)
+          .join(' | ')}`,
+        status: 'ambiguous',
+      };
+    }
+
+    return {
+      extracted_entities: {
+        person: personCandidates,
+        company: companyCandidates,
+        phone: phoneMatches,
+        email: emailMatches,
+        location: locationMatches,
+        product_or_domain: productMatches,
+      },
+      disambiguation_question:
+        'Actor could not be resolved from org-scoped contacts; request explicit user/email confirmation',
+      status: 'unresolved',
+    };
+  }
+
+  private verifyCapabilityChain(input: {
+    required: boolean;
+    device: any | null;
+    deviceDetails: any | null;
+    ticketText: string;
+    itglueAssets: any[];
+    sourceWorkspace: string;
+    tenantId: string | null;
+    orgId: string | null;
+  }): CapabilityVerification {
+    if (!input.required) {
+      return {
+        required: false,
+        device_match_strong: true,
+        model_spec_confirmed: true,
+      };
+    }
+
+    const extracted = this.extractDeviceHardwareInfo(input.device, input.deviceDetails, input.itglueAssets);
+    const vendorRule = CAPABILITY_SPEC_RULES.find((rule) =>
+      rule.manufacturer.test(extracted.manufacturer || '') &&
+      rule.modelContains.test(extracted.model || '')
+    );
+
+    return {
+      required: true,
+      device_match_strong: Boolean(input.device && extracted.matchReason !== 'device not resolved'),
+      model_spec_confirmed: Boolean(vendorRule),
+      device_match_reason: extracted.matchReason,
+      ...(extracted.manufacturer ? { manufacturer: extracted.manufacturer } : {}),
+      ...(extracted.model ? { model: extracted.model } : {}),
+      ...(extracted.serial ? { serial: extracted.serial } : {}),
+      ...(extracted.dockOrAdapter ? { dock_or_adapter: extracted.dockOrAdapter } : {}),
+      ...(vendorRule?.spec_source_url ? { spec_source_url: vendorRule.spec_source_url } : {}),
+      ...(vendorRule?.compatibility_outcome
+        ? { compatibility_outcome: vendorRule.compatibility_outcome }
+        : {}),
+    };
+  }
+
+  private extractDeviceHardwareInfo(device: any, details: any, assets: any[]): {
+    manufacturer?: string;
+    model?: string;
+    serial?: string;
+    dockOrAdapter?: string;
+    matchReason: string;
+  } {
+    if (!device) {
+      return { matchReason: 'device not resolved' };
+    }
+    const manufacturer = String(
+      details?.manufacturer ||
+      details?.vendor ||
+      device?.manufacturer ||
+      device?.vendor ||
+      ''
+    ).trim();
+    const model = String(details?.model || device?.model || details?.systemModel || '').trim();
+    const serial = String(details?.serialNumber || details?.serial || device?.serialNumber || '').trim();
+    const dockAsset = assets.find((asset: any) =>
+      /dock|adapter|usb-c|thunderbolt/i.test(String(JSON.stringify(asset?.attributes || {})))
+    );
+    const dockOrAdapter = dockAsset
+      ? String((dockAsset?.attributes?.name || dockAsset?.attributes?.description || 'Dock/Adapter')).trim()
+      : undefined;
+
+    const result: {
+      manufacturer?: string;
+      model?: string;
+      serial?: string;
+      dockOrAdapter?: string;
+      matchReason: string;
+    } = {
+      matchReason: `resolved via ninja inventory${dockOrAdapter ? ' + itglue asset correlation' : ''}`,
+    };
+    if (manufacturer) result.manufacturer = manufacturer;
+    if (model) result.model = model;
+    if (serial) result.serial = serial;
+    if (dockOrAdapter) result.dockOrAdapter = dockOrAdapter;
+    return result;
+  }
+
+  private enforceOrgBoundary(input: {
+    itemId: string;
+    itemOrgId: string | null;
+    targetOrgId: string | null;
+    source: string;
+    summary: string;
+    scopeMeta: ScopeMeta;
+  }): { accepted: boolean; rejected?: RejectedEvidence } {
+    if (!input.itemOrgId || !input.targetOrgId || input.itemOrgId === input.targetOrgId) {
+      return { accepted: true };
+    }
+
+    return {
+      accepted: false,
+      rejected: {
+        id: input.itemId,
+        source: input.source,
+        reason: 'org_mismatch',
+        summary: input.summary,
+        tenant_id: input.scopeMeta.tenant_id,
+        org_id: input.itemOrgId,
+        source_workspace: input.scopeMeta.source_workspace,
+        evidence_score: 0,
+      },
+    };
+  }
+
+  private buildEvidenceDigest(input: {
+    ticket: TicketLike;
+    sourceFindings: SourceFinding[];
+    missingData: Array<{ field: string; why: string }>;
+    entityResolution: EntityResolution;
+    signals: Signal[];
+    docs: Doc[];
+    relatedCases: RelatedCase[];
+    rejectedEvidence: RejectedEvidence[];
+    capabilityVerification: CapabilityVerification;
+    facetContext: FacetContext;
+    scopeMeta: ScopeMeta;
+    device: any;
+    loggedInUser: string;
+    requesterName: string;
+  }): EvidenceDigest {
+    const factsConfirmed: DigestFact[] = [];
+    const factsConflicted: DigestFact[] = [];
+
+    const ticketFactId = `fact-ticket-${String(input.ticket.ticketNumber || input.ticket.id || 'unknown')}`;
+    factsConfirmed.push({
+      id: ticketFactId,
+      fact: `Ticket scope: ${input.ticket.title || 'Untitled ticket'}`,
+      evidence_score: 1,
+      evidence_refs: [ticketFactId],
+      source: 'ticket',
+      tenant_id: input.scopeMeta.tenant_id,
+      org_id: input.scopeMeta.org_id,
+      source_workspace: input.scopeMeta.source_workspace,
+    });
+
+    if (input.entityResolution.resolved_actor) {
+      const actor = input.entityResolution.resolved_actor;
+      factsConfirmed.push({
+        id: `fact-actor-${actor.id}`,
+        fact: `Resolved actor: ${actor.name}${actor.email ? ` <${actor.email}>` : ''}`,
+        evidence_score: actor.confidence === 'strong' ? 1 : 0.7,
+        evidence_refs: [`entity:${actor.id}`],
+        source: 'entity_resolution',
+        tenant_id: input.scopeMeta.tenant_id,
+        org_id: input.scopeMeta.org_id,
+        source_workspace: input.scopeMeta.source_workspace,
+      });
+    } else if (input.entityResolution.actor_candidates?.length) {
+      factsConflicted.push({
+        id: 'fact-actor-ambiguous',
+        fact: `Actor candidates: ${input.entityResolution.actor_candidates.map((c) => c.name).join(', ')}`,
+        evidence_score: 0.2,
+        evidence_refs: input.entityResolution.actor_candidates.map((c) => `entity:${c.id}`),
+        source: 'entity_resolution',
+        tenant_id: input.scopeMeta.tenant_id,
+        org_id: input.scopeMeta.org_id,
+        source_workspace: input.scopeMeta.source_workspace,
+      });
+    }
+
+    if (input.device) {
+      factsConfirmed.push({
+        id: `fact-device-${String(input.device.id)}`,
+        fact: `Device candidate: ${input.device.hostname || input.device.systemName || input.device.id}${input.loggedInUser ? ` (logged in: ${input.loggedInUser})` : ''}`,
+        evidence_score: input.capabilityVerification.device_match_strong ? 0.9 : 0.55,
+        evidence_refs: [`device:${String(input.device.id)}`],
+        source: 'ninjaone',
+        tenant_id: input.scopeMeta.tenant_id,
+        org_id: input.scopeMeta.org_id,
+        source_workspace: input.scopeMeta.source_workspace,
+      });
+    }
+
+    input.docs.slice(0, 4).forEach((doc) => {
+      factsConfirmed.push({
+        id: `fact-doc-${doc.id}`,
+        fact: `Doc evidence: ${doc.title}`,
+        evidence_score: Number(Math.max(0.35, doc.relevance).toFixed(2)),
+        evidence_refs: [`doc:${doc.id}`],
+        source: doc.source,
+        tenant_id: input.scopeMeta.tenant_id,
+        org_id: input.scopeMeta.org_id,
+        source_workspace: input.scopeMeta.source_workspace,
+      });
+    });
+
+    input.signals.slice(0, 6).forEach((signal) => {
+      factsConfirmed.push({
+        id: `fact-signal-${signal.id}`,
+        fact: `Signal: ${signal.summary}`,
+        evidence_score: 0.6,
+        evidence_refs: [`signal:${signal.id}`],
+        source: signal.source,
+        tenant_id: input.scopeMeta.tenant_id,
+        org_id: input.scopeMeta.org_id,
+        source_workspace: input.scopeMeta.source_workspace,
+      });
+    });
+
+    if (input.requesterName && input.loggedInUser && input.requesterName.toLowerCase() !== input.loggedInUser.toLowerCase()) {
+      factsConflicted.push({
+        id: 'fact-conflict-requester-loggedin',
+        fact: `Requester "${input.requesterName}" differs from logged-in user "${input.loggedInUser}"`,
+        evidence_score: 0.25,
+        evidence_refs: ['ticket:requester', 'ninja:logged_in_user'],
+        source: 'cross_correlation',
+        tenant_id: input.scopeMeta.tenant_id,
+        org_id: input.scopeMeta.org_id,
+        source_workspace: input.scopeMeta.source_workspace,
+      });
+    }
+
+    const missingCritical = [...input.missingData];
+
+    const candidateActions: DigestAction[] = this.buildFacetActions(input.facetContext)
+      .map((action) => ({
+        ...action,
+        evidence_refs: action.evidence_refs
+          .flatMap((kind) => this.resolveEvidenceRefsByKind(kind, factsConfirmed))
+          .slice(0, 6),
+      }))
+      .filter((action) => action.evidence_refs.length > 0);
+
+    const sourcesByFacet: Record<string, string[]> = {};
+    for (const finding of input.sourceFindings) {
+      const facet = finding.facet || 'base';
+      if (!sourcesByFacet[facet]) sourcesByFacet[facet] = [];
+      if (!sourcesByFacet[facet].includes(finding.source)) {
+        sourcesByFacet[facet].push(finding.source);
+      }
+    }
+
+    return {
+      facts_confirmed: factsConfirmed,
+      facts_conflicted: factsConflicted,
+      missing_critical: missingCritical,
+      candidate_actions: candidateActions,
+      tech_context_detected: [...new Set(input.facetContext.technology)],
+      sources_consulted_by_facet: sourcesByFacet,
+      rejected_evidence: input.rejectedEvidence,
+      capability_verification: input.capabilityVerification,
+    };
+  }
+
+  private buildFacetActions(facets: FacetContext): DigestAction[] {
+    const actions: DigestAction[] = [
+      {
+        action: 'Confirm current symptom with requester and exact start time',
+        evidence_refs: ['kind:ticket'],
+        rationale: 'Baseline triage action anchored in ticket narrative',
+      },
+    ];
+    if (facets.symptom.includes('connection')) {
+      actions.push({
+        action: 'Run endpoint connectivity checks and compare against last known-good baseline',
+        evidence_refs: ['kind:signal', 'kind:device'],
+      });
+    }
+    if (facets.symptom.includes('telephony') || facets.technology.includes('goto')) {
+      actions.push({
+        action: 'Validate VoIP registration and call path from GoTo/FQDN context',
+        evidence_refs: ['kind:doc', 'kind:signal'],
+      });
+    }
+    if (facets.symptom.includes('vpn') || facets.technology.includes('fortinet')) {
+      actions.push({
+        action: 'Verify firewall VPN tunnel state and identity/session logs',
+        evidence_refs: ['kind:doc', 'kind:signal'],
+      });
+    }
+    if (facets.requiresCapabilityVerification) {
+      actions.push({
+        action: 'Confirm device video capability against official vendor specs before final recommendation',
+        evidence_refs: ['kind:device', 'kind:doc'],
+      });
+    }
+    return actions;
+  }
+
+  private resolveEvidenceRefsByKind(kind: string, facts: DigestFact[]): string[] {
+    if (kind === 'kind:ticket') {
+      return facts.filter((fact) => fact.id.startsWith('fact-ticket-')).map((fact) => fact.id);
+    }
+    if (kind === 'kind:signal') {
+      return facts.filter((fact) => fact.id.startsWith('fact-signal-')).map((fact) => fact.id);
+    }
+    if (kind === 'kind:doc') {
+      return facts.filter((fact) => fact.id.startsWith('fact-doc-')).map((fact) => fact.id);
+    }
+    if (kind === 'kind:device') {
+      return facts.filter((fact) => fact.id.startsWith('fact-device-')).map((fact) => fact.id);
+    }
+    return [];
   }
 
   /**

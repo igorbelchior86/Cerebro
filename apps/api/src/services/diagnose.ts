@@ -8,7 +8,7 @@ import type {
   Hypothesis,
   RecommendedAction,
 } from '@playbook-brain/types';
-import { getDefaultLLMProvider } from './llm-adapter.js';
+import { createLLMProvider, getDefaultLLMProvider } from './llm-adapter.js';
 
 export class DiagnoseService {
   /**
@@ -21,8 +21,29 @@ export class DiagnoseService {
     const prompt = this.buildDiagnosticPrompt(pack);
 
     // ─── Call LLM (Groq, Anthropic, or Minimax) ──────────────────
-    const llm = getDefaultLLMProvider();
-    const response = await llm.complete(prompt);
+    let llm;
+    let response;
+    let modelName = process.env.LLM_PROVIDER || 'gemini';
+    try {
+      llm = getDefaultLLMProvider();
+      modelName = llm.name;
+      response = await llm.complete(prompt);
+    } catch (error) {
+      const message = String((error as Error)?.message || '');
+      const shouldFallback =
+        modelName === 'gemini' &&
+        (message.includes('GEMINI_API_KEY') || message.includes('[GeminiLimiter]') || message.includes('Gemini API error'));
+      if (!shouldFallback) {
+        return this.buildDeterministicFallback(pack, Date.now() - startTime);
+      }
+      try {
+        llm = createLLMProvider('groq');
+        modelName = llm.name;
+        response = await llm.complete(prompt);
+      } catch {
+        return this.buildDeterministicFallback(pack, Date.now() - startTime);
+      }
+    }
     const responseText = response.content;
 
     const latencyMs = Date.now() - startTime;
@@ -32,7 +53,7 @@ export class DiagnoseService {
 
     // ─── Add metadata ──────────────────────────────────────────────
     diagnosis.meta = {
-      model: (process.env.LLM_PROVIDER || 'gemini') as string,
+      model: modelName as string,
       input_tokens: response.inputTokens,
       output_tokens: response.outputTokens,
       cost_usd: response.costUsd,
@@ -40,6 +61,38 @@ export class DiagnoseService {
     };
 
     return diagnosis;
+  }
+
+  private buildDeterministicFallback(pack: EvidencePack, latencyMs: number): DiagnosisOutput {
+    const title = pack.ticket.title || 'Reported issue';
+    const desc = pack.ticket.description || 'No description provided';
+    const evidence = [title, desc].filter(Boolean).slice(0, 3);
+    return {
+      summary: `Deterministic fallback diagnosis generated from ticket context for ${pack.ticket.id}.`,
+      top_hypotheses: [
+        {
+          rank: 1,
+          hypothesis: `Primary issue is consistent with user-reported symptom: ${title}`,
+          confidence: 0.62,
+          evidence,
+          tests: ['Confirm current error state with the requester', 'Validate service/device status against recent known-good baseline'],
+          next_questions: ['When did the issue start?', 'Does it affect one user/device or multiple?'],
+        },
+      ],
+      missing_data: pack.missing_data || [],
+      recommended_actions: [
+        { action: 'Collect missing context from ticket requester and confirm exact failure mode', risk: 'low' },
+        { action: 'Run standard service/device connectivity checks based on environment baseline', risk: 'low' },
+      ],
+      do_not_do: ['Do not apply destructive changes before confirming scope and root cause'],
+      meta: {
+        model: 'rules-fallback',
+        input_tokens: 0,
+        output_tokens: 0,
+        cost_usd: 0,
+        latency_ms: latencyMs,
+      },
+    };
   }
 
   /**

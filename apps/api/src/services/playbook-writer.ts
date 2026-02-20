@@ -9,7 +9,7 @@ import type {
   PlaybookOutput,
   EvidencePack,
 } from '@playbook-brain/types';
-import { getDefaultLLMProvider } from './llm-adapter.js';
+import { createLLMProvider, getDefaultLLMProvider } from './llm-adapter.js';
 
 export class PlaybookWriterService {
   /**
@@ -34,8 +34,49 @@ export class PlaybookWriterService {
     const prompt = this.buildPlaybookPrompt(diagnosis, validation, pack);
 
     // ─── Call LLM ──────────────────────────────────────────────
-    const llm = getDefaultLLMProvider();
-    const response = await llm.complete(prompt);
+    let llm;
+    let response;
+    let modelName = process.env.LLM_PROVIDER || 'gemini';
+    try {
+      llm = getDefaultLLMProvider();
+      modelName = llm.name;
+      response = await llm.complete(prompt);
+    } catch (error) {
+      const message = String((error as Error)?.message || '');
+      const shouldFallback =
+        modelName === 'gemini' &&
+        (message.includes('GEMINI_API_KEY') || message.includes('[GeminiLimiter]') || message.includes('Gemini API error'));
+      if (!shouldFallback) {
+        const fallbackContent = this.buildDeterministicPlaybook(diagnosis, pack);
+        return {
+          content_md: fallbackContent,
+          meta: {
+            model: 'rules-fallback',
+            input_tokens: 0,
+            output_tokens: 0,
+            cost_usd: 0,
+            latency_ms: Date.now() - startTime,
+          },
+        };
+      }
+      try {
+        llm = createLLMProvider('groq');
+        modelName = llm.name;
+        response = await llm.complete(prompt);
+      } catch {
+        const fallbackContent = this.buildDeterministicPlaybook(diagnosis, pack);
+        return {
+          content_md: fallbackContent,
+          meta: {
+            model: 'rules-fallback',
+            input_tokens: 0,
+            output_tokens: 0,
+            cost_usd: 0,
+            latency_ms: Date.now() - startTime,
+          },
+        };
+      }
+    }
     const playbookMarkdown = response.content;
 
     const latencyMs = Date.now() - startTime;
@@ -47,7 +88,7 @@ export class PlaybookWriterService {
     const playbook: PlaybookOutput = {
       content_md: playbookMarkdown,
       meta: {
-        model: process.env.LLM_PROVIDER || 'gemini',
+        model: modelName,
         input_tokens: response.inputTokens,
         output_tokens: response.outputTokens,
         cost_usd: response.costUsd,
@@ -56,6 +97,50 @@ export class PlaybookWriterService {
     };
 
     return playbook;
+  }
+
+  private buildDeterministicPlaybook(diagnosis: DiagnosisOutput, pack: EvidencePack): string {
+    const hypothesis = diagnosis.top_hypotheses?.[0]?.hypothesis || 'Issue requires guided triage';
+    const evidence = diagnosis.top_hypotheses?.[0]?.evidence || [];
+    const tests = diagnosis.top_hypotheses?.[0]?.tests || [];
+    const actions = diagnosis.recommended_actions || [];
+    return `# [${pack.ticket.id}] - ${pack.ticket.title}
+
+## Overview
+- Issue: ${pack.ticket.description || 'No detailed description provided.'}
+- Affected: ${pack.user?.name || 'Unknown user'} / ${pack.device?.hostname || 'Unknown device'}
+- Impact: Medium (pending confirmation)
+- Estimated Time: 15-30 minutes
+
+## Root Cause
+- Primary hypothesis: ${hypothesis}
+
+## Pre-flight Checks
+1. Confirm ticket scope with requester and capture exact error message.
+2. Confirm affected user/device and whether issue is isolated or widespread.
+3. Check current status of related services/connectivity.
+
+## Resolution Steps
+${actions.length ? actions.map((a, i) => `${i + 1}. ${a.action}`).join('\n') : '1. Gather missing context and replicate symptom.\n2. Execute standard triage checks based on the affected service or endpoint.\n3. Apply lowest-risk remediation aligned to confirmed findings.'}
+
+## Verification
+${tests.length ? tests.map((t, i) => `${i + 1}. ${t}`).join('\n') : '1. Confirm symptom no longer reproduces.\n2. Validate service/device health after change.\n3. Confirm with requester that business function is restored.'}
+
+## Rollback
+1. Revert the last change if behavior degrades.
+2. Restore previous known-good configuration.
+3. Escalate with collected evidence if issue persists.
+
+## Escalation
+- Escalate to: L2/L3 Operations
+- If: root cause remains unconfirmed after baseline checks or impact expands
+
+## Do Not Do
+${(diagnosis.do_not_do || ['Do not perform destructive changes without approval']).map((d) => `- ${d}`).join('\n')}
+
+## References
+${evidence.length ? evidence.map((e) => `- ${e}`).join('\n') : '- Ticket narrative and collected context only.'}
+`;
   }
 
   /**

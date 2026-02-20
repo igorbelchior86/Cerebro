@@ -40,7 +40,11 @@ router.get('/full-flow', async (req, res) => {
 
     if (!isUuid) {
       const session = await queryOne<{ id: string }>(
-        'SELECT id FROM triage_sessions WHERE ticket_id = $1 OR id::text = $1 LIMIT 1',
+        `SELECT id
+         FROM triage_sessions
+         WHERE ticket_id = $1 OR id::text = $1
+         ORDER BY created_at DESC
+         LIMIT 1`,
         [rawId]
       );
 
@@ -173,8 +177,12 @@ router.get('/full-flow', async (req, res) => {
           }
         }
 
+        const shouldRevalidate =
+          !currentValidation ||
+          (!currentValidation.safe_to_generate_playbook && !playbook);
+
         // 3. Validation
-        if (!currentValidation && currentDiagnosis && currentPack) {
+        if (shouldRevalidate && currentDiagnosis && currentPack) {
           console.log(`[FULL-FLOW] Background: Validating Diagnosis for ${sessionId}`);
           currentValidation = await validateDiagnosis(currentDiagnosis, currentPack);
 

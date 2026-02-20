@@ -124,6 +124,9 @@ app.listen(PORT, '0.0.0.0', async () => {
   console.log(`\n[API] ✓ Server running at http://localhost:${PORT}`);
   console.log(`[API] ✓ Health check: http://localhost:${PORT}/health`);
   console.log(`[API] ✓ Auth: JWT + httpOnly cookie + TOTP MFA`);
+  console.log(
+    `[API] ✓ LLM env loaded (provider=${process.env.LLM_PROVIDER || 'gemini'}, geminiKey=${process.env.GEMINI_API_KEY ? 'yes' : 'no'}, groqKey=${process.env.GROQ_API_KEY ? 'yes' : 'no'})`
+  );
   await autoSeedAdmin();
   await bootstrapWorkspaceRuntimeSettings();
 

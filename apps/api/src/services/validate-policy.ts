@@ -181,8 +181,10 @@ export class ValidatePolicyService {
       status = 'needs_more_info';
     }
 
+    // Allow generation for needs_more_info as long as there is no risk gate.
+    // The playbook can still include validation checks and missing-info steps.
     const safeToGenerate =
-      status === 'approved' && diagnosis.top_hypotheses.length > 0;
+      status !== 'blocked' && diagnosis.top_hypotheses.length > 0;
 
     return {
       status,

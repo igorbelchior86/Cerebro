@@ -57,3 +57,63 @@
 **Root cause**: Message array changed every polling cycle due to new Date timestamps and unconditional setMessages.
 **Rule**: In polling UIs, update message timelines only on semantic state changes, not on polling ticks.
 **Pattern**: Use deterministic timestamps + content signature guard + no auto-scroll on periodic refresh.
+
+## Lesson: 2026-02-20 (PrepareContext rundown)
+**Mistake**: Timeline item 2 appeared only conditionally and could disappear for some completed tickets.
+**Root cause**: Rendering depended strictly on evidence pack presence.
+**Rule**: Key pipeline milestones required by UX must render deterministically with data-driven enrichment and safe fallbacks.
+**Pattern**: Always render PrepareContext stage; enrich details from pack when available.
+
+## Lesson: 2026-02-20 (real vs generic source crossing)
+**Mistake**: PrepareContext steps looked factual but were assembled from static/generic templates.
+**Root cause**: UI labels were derived from shallow pack fields instead of explicit provenance records per source.
+**Rule**: If the UI claims data was crossed, pipeline must emit auditable source findings (`queried`, `matched`, and summary/details) from actual calls.
+**Pattern**: Add a `source_findings` contract in evidence payload and let UI render it first, with legacy fallback only for old tickets.
+
+## Lesson: 2026-02-20 (iterative crossing vs linear)
+**Mistake**: Source crossing was effectively linear and did not revisit systems after enrichment.
+**Root cause**: Pipeline aggregated one-pass outputs without explicit multi-round refinement model.
+**Rule**: For triage correlation, model the flow as iterative rounds and store chronology (`round`) in provenance records.
+**Pattern**: Intake anchors -> source pass -> enriched terms -> historical pass -> refinement pass, then UI reflects the same sequence.
+
+## Lesson: 2026-02-20 (history source regression)
+**Mistake**: Sidebar history endpoint was narrowed to one table and dropped legacy session data from the UI.
+**Root cause**: List API coupled to ingestion source (`tickets_processed`) instead of canonical session history.
+**Rule**: Ticket list endpoints must aggregate all authoritative history sources and dedupe by ticket identity.
+**Pattern**: Merge + normalize + sort strategy in API before rendering list-based navigation UIs.
+
+## Lesson: 2026-02-20 (home route auth fetch)
+**Mistake**: Same endpoint behaved differently across pages because one route omitted credentials.
+**Root cause**: Inconsistent fetch options between triage detail and triage home implementations.
+**Rule**: Any session-protected API call must always include `credentials: include` on frontend.
+**Pattern**: Centralize or standardize fetch config for shared endpoints to prevent silent empty states.
+
+## Lesson: 2026-02-20 (schema drift + stale process)
+**Mistake**: Introduced query dependency on new column without guaranteeing migration rollout across all running DBs/processes.
+**Root cause**: Mixed schema versions + detached API process still running old code path.
+**Rule**: For evolving schemas, make read paths backward-compatible and always verify against live running process after deploy/restart.
+**Pattern**: `information_schema` capability check + explicit stack restart + live endpoint assertion.
+
+## Lesson: 2026-02-20 (best-source precedence for historical payloads)
+**Mistake**: Sidebar read model preferred stale/low-quality fields from legacy evidence payload over cleaner processed ticket data.
+**Root cause**: No data-quality precedence policy in merge layer.
+**Rule**: In merged read models, prioritize highest-quality parsed source and fallback only when missing.
+**Pattern**: processed ticket fields > sanitized pack fields > hard fallback.
+
+## Lesson: 2026-02-20 (fallback precedence bug)
+**Mistake**: Added raw fallback source but forgot to include it in title precedence.
+**Root cause**: Merge policy implemented partially across fields.
+**Rule**: When introducing a new fallback source, apply it consistently to every displayed field.
+**Pattern**: validate by asserting a known edge pair (valid session-only ticket vs noisy one).
+
+## Lesson: 2026-02-20 (requester semantics)
+**Mistake**: Mapped requester to ticket creator (`Created by`) even when text clearly identified a different affected user.
+**Root cause**: Extraction logic optimized for metadata field, not business meaning.
+**Rule**: For requester in UI, prioritize requested-for/affected user from ticket narrative before creator metadata.
+**Pattern**: `request from X` > salutation name > `Created by` fallback.
+
+## Lesson: 2026-02-20 (playbook pipeline blocked by schema drift)
+**Mistake**: PrepareContext and ingestion persistence assumed `tickets_processed.company` exists, breaking pipeline when DB migration wasn't applied.
+**Root cause**: Read/write paths were not equally backward-compatible across evolving schema.
+**Rule**: Any schema extension must include compatibility guards in all critical pipeline stages (ingest + prepare + list).
+**Pattern**: Runtime column capability check + fallback projection/query branch.

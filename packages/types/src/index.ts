@@ -57,6 +57,15 @@ export interface EvidenceRules {
   no_destructive_steps_without_gating: boolean;
 }
 
+export interface SourceFinding {
+  source: 'autotask' | 'ninjaone' | 'itglue' | 'external';
+  round?: number;
+  queried: boolean;
+  matched: boolean;
+  summary: string;
+  details: string[];
+}
+
 export interface EvidencePack {
   session_id: string;
   ticket: {
@@ -95,6 +104,7 @@ export interface EvidencePack {
   related_cases: RelatedCase[];
   external_status: ExternalStatus[];
   docs: Doc[];
+  source_findings?: SourceFinding[];
   evidence_rules: EvidenceRules;
   missing_data?: { field: string; why: string }[];
   prepared_at: string;

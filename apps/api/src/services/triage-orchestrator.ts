@@ -27,8 +27,8 @@ export class TriageOrchestrator {
         return tenantContext.run({ tenantId: undefined, bypassRLS: true }, async () => {
             console.log(`[Orchestrator] Starting zero-click pipeline for ticket ${ticketId} (source: ${source})`);
 
-            const existingSession = await queryOne<{ id: string; status: string }>(
-                `SELECT id, status FROM triage_sessions WHERE ticket_id = $1 ORDER BY created_at DESC LIMIT 1`,
+            const existingSession = await queryOne<{ id: string; status: string; updated_at: string }>(
+                `SELECT id, status, updated_at FROM triage_sessions WHERE ticket_id = $1 ORDER BY created_at DESC LIMIT 1`,
                 [ticketId]
             );
 
@@ -36,8 +36,14 @@ export class TriageOrchestrator {
 
             if (existingSession) {
                 if (existingSession.status === 'processing') {
-                    console.log(`[Orchestrator] Ticket ${ticketId} is already processing in session ${sessionId}. Skipping.`);
-                    return;
+                    const updatedAt = new Date(existingSession.updated_at);
+                    const ageMs = Number.isNaN(updatedAt.getTime()) ? 0 : Date.now() - updatedAt.getTime();
+                    const staleMs = 5 * 60 * 1000;
+                    if (ageMs < staleMs) {
+                        console.log(`[Orchestrator] Ticket ${ticketId} is already processing in session ${sessionId}. Skipping.`);
+                        return;
+                    }
+                    console.warn(`[Orchestrator] Session ${sessionId} was stuck in processing (${Math.round(ageMs / 1000)}s). Resuming.`);
                 }
                 if (existingSession.status === 'approved') {
                     const existingPlaybook = await queryOne<{ id: string }>(

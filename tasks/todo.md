@@ -1,27 +1,28 @@
-# Task: Eliminate UI lift/fall jitter while switching tickets
+# Task: Playbook stopped generating after iterative PrepareContext
 **Status**: completed
 **Started**: 2026-02-20
 
 ## Plan
-- [x] Step 1: Stop continuous timeline re-creation on every polling tick.
-- [x] Step 2: Use deterministic timestamps per selected ticket timeline.
-- [x] Step 3: Prevent automatic smooth scroll on each message refresh.
-- [x] Step 4: Verify type safety.
-- [x] Step 5: Update wiki and lessons.
+- [x] Step 1: Reproduce and identify failing stage in full flow.
+- [x] Step 2: Pinpoint root cause in backend code and data contracts.
+- [x] Step 3: Implement minimal root-cause fix.
+- [x] Step 4: Verify end-to-end generation path can resume.
+- [x] Step 5: Update wiki/docs and lessons.
 
 ## Open Questions
-- None.
+- LLM provider keys in local shell scripts may differ from API service env; runtime generation should be verified through app UI flow.
 
 ## Progress Notes
-- Added timeline signature guard to only update messages when pipeline content truly changes.
-- Replaced dynamic `new Date()` timeline timestamps with deterministic offsets from ticket created time.
-- Removed auto `scrollIntoView` behavior that was causing repeated vertical motion.
-- Decoupled flow polling effect from sidebar polling updates using `sidebarTicketsRef`.
+- Root cause found in logs: `PrepareContext` query failed with `column "company" does not exist`, causing no evidence pack and therefore no playbook.
+- Added schema-compatible handling in `PrepareContext` (company column detection + projection fallback).
+- Added schema-compatible handling in `PgStore.saveProcessedTicket` so new email tickets are persisted even if `company` column is absent.
+- Added stale `processing` session recovery in orchestrator (resume if stuck > 5min).
 
 ## Review
 - What worked:
-  - Removing unnecessary message resets/pseudo-changes significantly reduces visual jump.
+  - Eliminated blocker that prevented evidence generation for newer tickets.
+  - Added resilience against schema drift and stuck sessions.
 - What was tricky:
-  - Keeping ticket context data available without tying timeline effect to sidebar fetch cadence.
+  - Distinguish runtime service env vs ad-hoc shell env for LLM provider checks.
 - Time taken:
-  - ~15 minutes
+  - ~20 minutes

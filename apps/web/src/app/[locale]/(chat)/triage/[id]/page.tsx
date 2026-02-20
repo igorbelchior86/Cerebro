@@ -12,7 +12,7 @@ import { usePathname } from 'next/navigation';
 
 interface SessionData {
   session: { id: string; ticket_id: string; status: string };
-  evidence_pack?: unknown;
+  evidence_pack?: any;
   diagnosis?: unknown;
   validation?: unknown;
   playbook?: { content_md: string };
@@ -130,21 +130,44 @@ export default function SessionDetail({
           },
         ];
 
-        if (newData.evidence_pack) {
-          timeline.push({
-            id: `evidence-${selectedTicketId}`,
-            role: 'assistant',
-            type: 'evidence',
-            timestamp: ts(1),
-            content: 'Pulling data from 3 sources simultaneously.',
-            steps: [
-              { label: 'Autotask — ticket, org, contact, related cases', status: 'done' },
-              { label: 'NinjaOne — device snapshot and active alerts', status: 'done' },
-              { label: 'IT Glue — network stack and runbook context', status: 'done' },
-              { label: 'External — status providers and regional checks', status: 'done' },
-            ],
-          });
-        }
+        const pack = newData.evidence_pack;
+        const sourceFindings = Array.isArray(pack?.source_findings) ? pack.source_findings : [];
+        const hasSourceFindings = sourceFindings.length > 0;
+        const relatedCount = Array.isArray(pack?.related_cases) ? pack.related_cases.length : 0;
+        const ninjaSignals = Array.isArray(pack?.signals) ? pack.signals.filter((s: any) => s?.source === 'ninja') : [];
+        const ninjaWarns = ninjaSignals.filter((s: any) => String(s?.type || '').includes('warn')).length;
+        const docTitle = Array.isArray(pack?.docs) && pack.docs.length > 0 ? String(pack.docs[0]?.title || '').trim() : '';
+        const ext = Array.isArray(pack?.external_status) && pack.external_status.length > 0 ? pack.external_status[0] : null;
+
+        const sourceLabelMap: Record<string, string> = {
+          autotask: 'Autotask',
+          ninjaone: 'NinjaOne',
+          itglue: 'IT Glue',
+          external: 'External',
+        };
+
+        const prepareSteps: NonNullable<Message['steps']> = hasSourceFindings
+          ? sourceFindings.map((f: any) => ({
+            label: `${f?.round ? `R${f.round} · ` : ''}${sourceLabelMap[String(f?.source || '')] || String(f?.source || 'Source')} — ${normalizePlainText(String(f?.summary || ''), 'No summary')}`,
+            status: f?.queried ? (f?.matched ? 'done' : 'running') : 'idle',
+          }))
+          : [
+            { label: `Autotask — ticket, org, contact${relatedCount > 0 ? `, ${relatedCount} related cases` : ''}`, status: 'done' },
+            { label: `NinjaOne — ${pack?.device ? 'device snapshot' : 'device lookup'}${ninjaSignals.length > 0 ? `, ${ninjaSignals.length} checks` : ''}${ninjaWarns > 0 ? ` (${ninjaWarns} warnings)` : ''}`, status: 'done' },
+            { label: `IT Glue — ${docTitle ? `runbook "${docTitle}"` : 'network stack and runbook context'}`, status: 'done' },
+            { label: `External — ${ext ? `${ext.provider} status: ${ext.status}` : 'status providers and regional checks'}`, status: 'done' },
+          ];
+
+        timeline.push({
+          id: `evidence-${selectedTicketId}`,
+          role: 'assistant',
+          type: 'evidence',
+          timestamp: ts(1),
+          content: hasSourceFindings
+            ? 'Running iterative cross-source correlation (intake → IT Glue → Ninja → history → refine).'
+            : 'Pulling data from 3 sources simultaneously.',
+          steps: prepareSteps,
+        });
 
         if (newData.diagnosis) {
           timeline.push({

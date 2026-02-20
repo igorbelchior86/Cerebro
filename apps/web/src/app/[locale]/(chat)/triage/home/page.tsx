@@ -47,10 +47,14 @@ export default function HomePage() {
   useEffect(() => {
     const fetchTickets = async () => {
       try {
-        const res = await fetch(`${API}/email-ingestion/list`);
+        const res = await fetch(`${API}/email-ingestion/list`, {
+          credentials: 'include',
+        });
         if (res.ok) {
           const json = await res.json();
           if (json.success) setSidebarTickets(json.data);
+        } else {
+          console.error('Failed to load tickets', res.status);
         }
       } catch (err) {
         console.error('Failed to load tickets', err);

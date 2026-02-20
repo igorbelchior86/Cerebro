@@ -2,6 +2,7 @@ export interface ParsedTicket {
     id: string;
     title: string;
     description: string;
+    company?: string;
     requester: string;
     createdAt: string;
     source: 'email_ingestion';
@@ -11,6 +12,16 @@ export interface ParsedTicket {
 }
 
 export class EmailParser {
+    private extractEndUser(bodyText: string): string {
+        const requestFrom = bodyText.match(/request\s+from\s+([A-Za-z][A-Za-z\s.'-]{1,80})\s*:/i);
+        if (requestFrom?.[1]) return this.cleanInlineField(requestFrom[1]);
+
+        const salutation = bodyText.match(/^\s*([A-Za-z][A-Za-z\s.'-]{1,80})\s*,\s*(?:<br\s*\/?>|\n|\r)/i);
+        if (salutation?.[1]) return this.cleanInlineField(salutation[1]);
+
+        return '';
+    }
+
     private cleanInlineField(value: string): string {
         return value
             .replace(/<[^>]+>/g, ' ')
@@ -108,6 +119,15 @@ export class EmailParser {
         if (titleMatch?.[1]) {
             title = this.cleanInlineField(titleMatch[1]);
         } else {
+            const subjectTemplateMatch =
+                subject.match(/A NEW TICKET has been received for .*? - (.*?) - T\d{8}\.\d+/i) ||
+                subject.match(/-\s*(.*?)\s*-\s*T\d{8}\.\d+/i);
+            if (subjectTemplateMatch?.[1]) {
+                title = this.cleanInlineField(subjectTemplateMatch[1]);
+            }
+        }
+
+        if (!title) {
             // Fallback: clean the subject line
             title = this.cleanInlineField(
                 subject
@@ -127,11 +147,24 @@ export class EmailParser {
             description = this.cleanDescription(bodyText.substring(0, 500));
         }
 
-        // Extract Requester
+        // Extract Requester (requested-for user first, then creator fallback)
         let requester = 'Unknown';
-        const reqMatch = bodyText.match(/Created by:\s*([^\n]+)/i);
-        if (reqMatch?.[1]) {
-            requester = reqMatch[1].trim();
+        const endUser = this.extractEndUser(bodyText);
+        if (endUser) {
+            requester = endUser;
+        }
+        const reqMatch =
+            bodyText.match(/Created by:\s*([^\n<]+)/i) ||
+            bodyText.match(/Created on\s+[^\n<]*?\s+by\s+([^\n<]+)/i);
+        if (requester === 'Unknown' && reqMatch?.[1]) {
+            requester = this.cleanInlineField(reqMatch[1]);
+        }
+
+        // Extract Company
+        let company = '';
+        const companyMatch = bodyText.match(/has been created for\s+(.+?)\.\s*we will attend/i);
+        if (companyMatch?.[1]) {
+            company = this.cleanInlineField(companyMatch[1]);
         }
 
         // Extract ticket creation time from body when available, fallback to email received time.
@@ -153,6 +186,7 @@ export class EmailParser {
             id,
             title,
             description,
+            company,
             requester,
             createdAt,
             source: 'email_ingestion',

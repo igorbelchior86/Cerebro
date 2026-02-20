@@ -123,3 +123,9 @@
 **Root cause**: Credential source paths were not unified across runtime stages; LLM prompts lacked strict grounding constraints against high-risk inference drift.
 **Rule**: For every external integration, all runtime consumers must read from the same tenant/workspace credential source as the health endpoint; missing integration data must stay as data gap unless ticket-scoped evidence says otherwise.
 **Pattern**: Shared credential resolver + evidence guardrail checks (diagnosis/playbook) with deterministic fallback when unsupported narratives appear.
+
+## Lesson: 2026-02-20 (partial capability vs total failure in IT Glue)
+**Mistake**: Treated IT Glue runbooks endpoint `404` as total IT Glue outage in PrepareContext.
+**Root cause**: Single-call failure in one IT Glue capability (`/documents`) was mapped to whole-stage failure.
+**Rule**: Integration collection must degrade gracefully per capability (runbooks/docs/configs/contacts), not fail-all on one endpoint.
+**Pattern**: classify endpoint-specific errors, continue with remaining data sources, and emit granular `source_findings` instead of broad `missing_data` failure.

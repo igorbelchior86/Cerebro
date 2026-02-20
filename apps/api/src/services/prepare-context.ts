@@ -332,11 +332,28 @@ export class PrepareContextService {
     // ROUND 1: AT/Intake -> IT Glue
     try {
       if (companyName) {
-        itglueOrgMatch = await this.resolveITGlueOrg(itglueClient, companyName);
+        itglueOrgMatch = await this.resolveITGlueOrg(
+          itglueClient,
+          companyName,
+          `${ticket.title || ''}\n${ticket.description || ''}\n${ticket.requester || ''}`
+        );
       }
-      const runbooks = itglueOrgMatch
-        ? await itglueClient.getRunbooks(itglueOrgMatch.id)
-        : await itglueClient.getRunbooks();
+
+      let runbooks: any[] = [];
+      let runbooksEndpointUnavailable = false;
+      try {
+        runbooks = itglueOrgMatch
+          ? await itglueClient.getRunbooks(itglueOrgMatch.id)
+          : await itglueClient.getRunbooks();
+      } catch (err) {
+        const msg = String((err as Error)?.message || '').toLowerCase();
+        if (msg.includes('404')) {
+          runbooksEndpointUnavailable = true;
+          runbooks = [];
+        } else {
+          throw err;
+        }
+      }
 
       if (itglueOrgMatch) {
         [itglueConfigs, itglueContacts] = await Promise.all([
@@ -359,11 +376,16 @@ export class PrepareContextService {
         round: 1,
         queried: true,
         matched: Boolean(itglueOrgMatch || docs.length || itglueConfigs.length || itglueContacts.length),
-        summary: docs.length > 0 ? `organization context loaded with ${docs.length} runbook/document(s)` : 'organization context had no runbook/document',
+        summary: docs.length > 0
+          ? `organization context loaded with ${docs.length} runbook/document(s)`
+          : runbooksEndpointUnavailable
+            ? 'runbooks endpoint unavailable; using org/config/contact context'
+            : 'organization context had no runbook/document',
         details: [
           itglueOrgMatch ? `org match: ${itglueOrgMatch.name} (${itglueOrgMatch.id})` : 'org match: none',
           `configs: ${itglueConfigs.length}`,
           `contacts: ${itglueContacts.length}`,
+          runbooksEndpointUnavailable ? 'runbooks endpoint: unavailable (404)' : `runbooks: ${docs.length}`,
           `credential scope: ${credentialScope}`,
         ],
       });
@@ -709,6 +731,16 @@ export class PrepareContextService {
     return c === n || c.includes(n) || n.includes(c);
   }
 
+  private extractEmailDomains(text: string): string[] {
+    const source = String(text || '').toLowerCase();
+    const matches = source.match(/[a-z0-9._%+-]+@([a-z0-9.-]+\.[a-z]{2,})/g) || [];
+    const domains = matches
+      .map((m) => m.split('@')[1] || '')
+      .map((d) => d.trim())
+      .filter(Boolean);
+    return [...new Set(domains)].slice(0, 3);
+  }
+
   private async resolveNinjaOrg(
     ninjaoneClient: NinjaOneClient,
     companyName: string
@@ -720,11 +752,24 @@ export class PrepareContextService {
 
   private async resolveITGlueOrg(
     itglueClient: ITGlueClient,
-    companyName: string
+    companyName: string,
+    hintText?: string
   ): Promise<{ id: string; name: string } | null> {
     const orgs = await itglueClient.getOrganizations();
-    const found = orgs.find((o: any) => this.fuzzyMatch(companyName, String(o?.attributes?.name || '')));
-    return found ? { id: String(found.id), name: String(found.attributes?.name || companyName) } : null;
+    const byName = orgs.find((o: any) => this.fuzzyMatch(companyName, String(o?.attributes?.name || '')));
+    if (byName) {
+      return { id: String(byName.id), name: String(byName.attributes?.name || companyName) };
+    }
+
+    const domains = this.extractEmailDomains(hintText || '');
+    if (domains.length === 0) return null;
+
+    const byDomain = orgs.find((o: any) => {
+      const primaryDomain = String(o?.attributes?.primary_domain || '').toLowerCase();
+      return primaryDomain && domains.some((d) => d === primaryDomain || d.endsWith(`.${primaryDomain}`) || primaryDomain.endsWith(`.${d}`));
+    });
+
+    return byDomain ? { id: String(byDomain.id), name: String(byDomain.attributes?.name || companyName) } : null;
   }
 }
 

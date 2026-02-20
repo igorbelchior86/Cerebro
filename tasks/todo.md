@@ -1,34 +1,34 @@
-# Task: Reset and regenerate playbooks for T20260220.0014/.0013/.0012
+# Task: Fix urgent IT Glue retrieval failure in PrepareContext
 **Status**: completed
 **Started**: 2026-02-20
 
 ## Plan
-- [x] Step 1: Snapshot current state of sessions/playbooks for the 3 target tickets.
-- [x] Step 2: Reset generated artifacts (playbook/diagnose/validation/evidence) and session status.
-- [x] Step 3: Trigger pipeline regeneration for each ticket.
-- [x] Step 4: Validate regenerated outputs and report summary.
+- [x] Step 1: Reproduce IT Glue failure and identify failing endpoint with current credentials.
+- [x] Step 2: Patch PrepareContext so IT Glue `documents` 404 does not collapse entire IT Glue stage.
+- [x] Step 3: Rebuild and re-run pipeline for `T20260220.0012/.0013/.0014`.
+- [x] Step 4: Validate evidence output no longer reports IT Glue as missing-data failure.
 
 ## Open Questions
 - None.
 
 ## Progress Notes
 - Reset/regeneration task started on user request.
-- Snapshot before reset:
-  - `T20260220.0012` session `e2f45b9a-905e-491e-8d70-e34e5fb46b29` had playbook + diagnose + validation + evidence.
-  - `T20260220.0013` session `e4efb739-57cd-409e-a56b-8625054fd2b1` had playbook + diagnose + validation + evidence.
-  - `T20260220.0014` session `530854e5-e54a-489b-87c6-abe34190fb44` had playbook + diagnose + validation + evidence.
-- Reset executed for all 3 target sessions:
-  - Deleted `playbooks`, `llm_outputs` (`diagnose`/`playbook`), `validation_results`, `evidence_packs`.
-  - Set `triage_sessions.status` to `pending`.
-- Regeneration executed through `triageOrchestrator.runPipeline(...)` for all 3 tickets.
-- One ticket (`T20260220.0014`) was temporarily skipped because session was already `processing`; force-reset to `pending` and reran successfully.
-- Final verification:
-  - All 3 tickets now have fresh evidence/diagnose/validation/playbook timestamps and status `approved`.
+- Root-cause reproduced with live creds:
+  - `GET /organizations` returns `200`.
+  - `GET /documents` (runbooks path) returns `404`.
+- Implemented fallback behavior in IT Glue round:
+  - `documents` 404 is treated as endpoint unavailability for runbooks only.
+  - Pipeline continues with org/config/contact collection instead of flagging full IT Glue failure.
+- Reprocessed `T20260220.0012/.0013/.0014` after patch.
+- Verification after reprocess:
+  - All 3 sessions `approved`.
+  - `missing_data` no longer contains IT Glue failure.
+  - `source_findings` now states: `runbooks endpoint unavailable; using org/config/contact context`.
 
 ## Review
 - What worked:
-  - DB-level reset + orchestrator rerun gave deterministic regeneration without code changes.
+  - Endpoint-level diagnosis avoided guessing and produced targeted fix.
 - What was tricky:
-  - Concurrent background processing briefly locked `T20260220.0014` in `processing`; resolved via targeted status reset and rerun.
+  - Legacy sessions with `tenant_id = null` still show `credential scope: workspace_fallback`.
 - Time taken:
-  - ~12 minutes
+  - ~25 minutes

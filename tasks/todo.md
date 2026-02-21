@@ -1,3 +1,39 @@
+# Task: Implementar pipeline de enriquecimento iterativo (A-E) com contrato canônico
+**Status**: completed
+**Started**: 2026-02-21
+
+## Plan
+- [x] Step 1: Estender contratos compartilhados (`@playbook-brain/types`) com `enrichment` versionado e rounds.
+- [x] Step 2: Implementar no `PrepareContextService` o preenchimento cumulativo A-E com status/confidence/evidence/round.
+- [x] Step 3: Integrar gate de obrigatoriedade de campos do ticket no `ValidatePolicyService`.
+- [x] Step 4: Adicionar/atualizar testes unitários para contrato e gating.
+- [x] Step 5: Executar testes/typecheck e validar regressão.
+- [x] Step 6: Documentar na wiki (`features` + `changelog`) e preencher Review.
+
+## Open Questions
+- Nenhuma para iniciar: implementação foca Fase 1+2 do plano aprovado (contrato + rounds cumulativos), mantendo o restante backward compatible.
+
+## Progress Notes
+- Iniciado com revisão de wiki/SSOT/pipeline-only e validação do estado atual do `PrepareContext`.
+- Contrato canônico A-E (`iterative_enrichment`) implementado em `packages/types` com envelope por campo, resumo por round e cobertura.
+- `PrepareContextService` passou a montar e persistir esse bloco canônico + `network_stack` derivado.
+- `ValidatePolicyService` recebeu gate `mandatory_ticket_fields_missing`.
+- Testes adicionados/atualizados para enrichment builders e validação de gate.
+- Verificação executada com sucesso:
+  - `pnpm --recursive typecheck`
+  - `pnpm --filter @playbook-brain/api test -- --runInBand src/__tests__/services/prepare-context-device-resolution.test.ts src/__tests__/services/validate-policy-gates.test.ts`
+- Wiki atualizada em `features`, `changelog` e `decisions`.
+
+## Review
+- What worked:
+- Alteração incremental em cima da base já existente (rounds/evidence gates) permitiu adicionar o contrato A-E sem quebrar pipeline-only.
+- What was tricky:
+- Workspace usa `@playbook-brain/types` apontando para `dist`, exigindo build local do pacote de tipos para validar consumo no API durante o ciclo.
+- Time taken:
+- ~95 minutos
+
+---
+
 # Task: Investigar oscilação persistente no ticket T20260220.0005 (fluxo único ponta-a-ponta)
 **Status**: completed
 **Started**: 2026-02-21

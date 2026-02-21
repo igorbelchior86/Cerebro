@@ -98,4 +98,124 @@ describe('PrepareContextService device resolution guard', () => {
 
     expect(provider).toBe('GoTo Connect');
   });
+
+  it('copies requester into affected user fields when actor is unresolved', () => {
+    const service = new PrepareContextService() as any;
+    const section = service.buildTicketEnrichmentSection({
+      ticket: {
+        ticketNumber: 'T20260221.0001',
+        requester: 'Alex Zigler <alex@linnanehomes.com>',
+        title: 'Laptop outputs not working',
+        description: 'Need confirmation for multiple monitors',
+        createDate: '2026-02-21T10:00:00.000Z',
+      },
+      companyName: 'Linnane Homes',
+      inferredCompany: '',
+      requesterName: 'Alex Zigler',
+      entityResolution: {
+        extracted_entities: {
+          person: ['Alex Zigler'],
+          company: ['Linnane Homes'],
+          phone: [],
+          email: ['alex@linnanehomes.com'],
+          location: [],
+          product_or_domain: [],
+        },
+        status: 'unresolved',
+      },
+    });
+
+    expect(section.affected_user_name.value).toBe('Alex Zigler <alex@linnanehomes.com>');
+    expect(section.affected_user_name.status).toBe('inferred');
+    expect(section.affected_user_email.value).toBe('alex@linnanehomes.com');
+    expect(section.affected_user_email.status).toBe('inferred');
+  });
+
+  it('builds network enrichment with vpn and phone-provider inference', () => {
+    const service = new PrepareContextService() as any;
+    const section = service.buildNetworkEnrichmentSection({
+      ticketNarrative: 'User working remote over VPN',
+      device: { ipAddress: '8.8.8.8' },
+      deviceDetails: {},
+      docs: [],
+      itglueConfigs: [],
+      ninjaChecks: [
+        {
+          id: 'n1',
+          source: 'ninja',
+          timestamp: new Date().toISOString(),
+          type: 'health_ok',
+          summary: 'VPN tunnel passed',
+        },
+      ],
+      inferredPhoneProvider: 'GoTo Connect',
+    });
+
+    expect(section.location_context.value).toBe('remote');
+    expect(section.public_ip.value).toBe('8.8.8.8');
+    expect(section.vpn_state.value).toBe('connected');
+    expect(section.phone_provider.value).toBe('connected');
+    expect(section.phone_provider_name.value).toBe('GoTo Connect');
+  });
+
+  it('builds iterative enrichment profile with round summaries', () => {
+    const service = new PrepareContextService() as any;
+    const profile = service.buildIterativeEnrichmentProfile({
+      ticket: {
+        ticketNumber: 'T20260221.0002',
+        title: 'VPN issue',
+        description: 'Remote user cannot connect',
+        requester: 'John Example <john@example.com>',
+        createDate: '2026-02-21T10:00:00.000Z',
+        company: 'Acme Corp',
+      },
+      ticketNarrative: 'Remote user cannot connect to VPN',
+      companyName: 'Acme Corp',
+      inferredCompany: '',
+      requesterName: 'John Example',
+      entityResolution: {
+        extracted_entities: {
+          person: ['John Example'],
+          company: ['Acme Corp'],
+          phone: [],
+          email: ['john@example.com'],
+          location: [],
+          product_or_domain: ['vpn'],
+        },
+        resolved_actor: {
+          id: 'u1',
+          name: 'John Example',
+          email: 'john@example.com',
+          confidence: 'medium',
+        },
+        status: 'resolved',
+      },
+      device: {
+        id: 'd1',
+        hostname: 'ACME-LT-01',
+        osName: 'Windows',
+        osVersion: '11',
+        lastActivityTime: '2026-02-21T09:59:00.000Z',
+        ipAddress: '8.8.4.4',
+      },
+      deviceDetails: {},
+      loggedInUser: 'john@example.com',
+      inferredPhoneProvider: 'GoTo Connect',
+      sourceFindings: [
+        { source: 'autotask', round: 1, queried: true, matched: true, summary: 'ticket parsed', details: [] },
+        { source: 'ninjaone', round: 1, queried: true, matched: true, summary: 'device found', details: [] },
+        { source: 'autotask', round: 2, queried: true, matched: false, summary: 'history done', details: [] },
+        { source: 'external', round: 4, queried: false, matched: false, summary: 'external skipped', details: [] },
+      ],
+      itglueConfigs: [],
+      docs: [],
+      ninjaChecks: [],
+      missingData: [],
+    });
+
+    expect(profile.schema_version).toBe('1.0.0');
+    expect(profile.sections.ticket.ticket_id.value).toBe('T20260221.0002');
+    expect(profile.rounds.some((round: any) => round.round === 1)).toBe(true);
+    expect(profile.rounds.some((round: any) => round.round === 4)).toBe(true);
+  });
 });

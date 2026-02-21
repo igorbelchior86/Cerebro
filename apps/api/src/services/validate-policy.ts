@@ -100,6 +100,7 @@ export class ValidatePolicyService {
       named_entity_unresolved: (pack.entity_resolution?.status || 'unresolved') !== 'resolved',
       domain_required_source_missing: this.hasDomainRequiredSourceMissing(pack),
       capability_verification_incomplete: this.isCapabilityVerificationIncomplete(pack),
+      mandatory_ticket_fields_missing: this.hasMandatoryTicketFieldsMissing(pack),
     };
     const hasTicketActorContactHints = this.hasTicketActorContactHints(pack);
 
@@ -246,6 +247,17 @@ export class ValidatePolicyService {
       blockingReasons.push('domain_required_source_missing');
     }
 
+    if (qualityGates.mandatory_ticket_fields_missing) {
+      violations.push({
+        type: 'quality_gate',
+        detail: 'mandatory_ticket_fields_missing: canonical ticket block is missing required fields',
+      });
+      requiredFixes.add(
+        'Re-run enrichment rounds until mandatory ticket fields (id/company/requester/affected/title/description) are confirmed'
+      );
+      blockingReasons.push('mandatory_ticket_fields_missing');
+    }
+
     const shouldBlockCapabilityIncomplete =
       qualityGates.capability_verification_incomplete && this.profile === 'strict';
     if (shouldBlockCapabilityIncomplete) {
@@ -349,7 +361,8 @@ export class ValidatePolicyService {
     const hasNoEvidence = violations.some((v) => v.type === 'no_evidence');
     const hasHardQualityStop =
       blockingReasons.includes('cross_tenant_candidate_detected') ||
-      blockingReasons.includes('domain_required_source_missing');
+      blockingReasons.includes('domain_required_source_missing') ||
+      blockingReasons.includes('mandatory_ticket_fields_missing');
 
     const safeToGenerate =
       diagnosis.top_hypotheses.length > 0 &&
@@ -410,6 +423,40 @@ export class ValidatePolicyService {
     if (tech.includes('vpn')) {
       const ok = consultedSources.has('itglue') && consultedSources.has('ninjaone');
       if (!ok) return true;
+    }
+    return false;
+  }
+
+  private hasMandatoryTicketFieldsMissing(pack: EvidencePack): boolean {
+    const ticketSection = pack.iterative_enrichment?.sections?.ticket;
+    if (!ticketSection) return false;
+
+    const requiredFields = [
+      ticketSection.ticket_id,
+      ticketSection.company,
+      ticketSection.requester_name,
+      ticketSection.requester_email,
+      ticketSection.affected_user_name,
+      ticketSection.affected_user_email,
+      ticketSection.created_at,
+      ticketSection.title,
+      ticketSection.description_clean,
+    ];
+
+    return requiredFields.some((field) => this.isMissingEnrichmentField(field));
+  }
+
+  private isMissingEnrichmentField(field: { value: unknown; status: string }): boolean {
+    if (field.status === 'unknown' || field.status === 'conflict') return true;
+    const value = field.value;
+    if (value === null || value === undefined) return true;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      return normalized.length === 0 || normalized === 'unknown';
+    }
+    if (Array.isArray(value)) {
+      if (value.length === 0) return true;
+      if (value.length === 1 && String(value[0] || '').trim().toLowerCase() === 'unknown') return true;
     }
     return false;
   }

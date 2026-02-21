@@ -16,6 +16,10 @@ import type {
   CapabilityVerification,
   DigestAction,
   DigestFact,
+  EnrichmentField,
+  IterativeEnrichmentProfile,
+  IterativeEnrichmentSections,
+  SecurityAgentSummary,
 } from '@playbook-brain/types';
 import { AutotaskClient } from '../clients/autotask.js';
 import { NinjaOneClient } from '../clients/ninjaone.js';
@@ -773,6 +777,8 @@ export class PrepareContextService {
     const externalStatus: ExternalStatus[] = [];
     sourceFindings.push({
       source: 'external',
+      round: 4,
+      facet: 'external_refinement',
       queried: false,
       matched: false,
       summary: 'external status query not executed for this ticket',
@@ -909,6 +915,26 @@ export class PrepareContextService {
       inferredPhoneProvider,
     });
 
+    const iterativeEnrichment = this.buildIterativeEnrichmentProfile({
+      ticket,
+      ticketNarrative,
+      companyName,
+      inferredCompany: inferredCompany || '',
+      requesterName,
+      entityResolution,
+      device,
+      deviceDetails,
+      loggedInUser,
+      inferredPhoneProvider,
+      sourceFindings,
+      itglueConfigs,
+      docs: scopedDocs,
+      ninjaChecks: scopedSignals.filter((signal) => signal.source === 'ninja'),
+      missingData,
+    });
+
+    const networkStack = this.buildNetworkStackFromEnrichment(iterativeEnrichment.sections);
+
     // ─── Monta EvidencePack ──────────────────────────────────────
     const basePackObject = {
       session_id: input.sessionId,
@@ -937,11 +963,13 @@ export class PrepareContextService {
       related_cases: scopedRelatedCases,
       external_status: externalStatus,
       docs: scopedDocs,
+      ...(networkStack ? { network_stack: networkStack } : {}),
       source_findings: sourceFindings,
       entity_resolution: entityResolution,
       evidence_digest: evidenceDigest,
       rejected_evidence: rejectedEvidence,
       capability_verification: capabilityVerification,
+      iterative_enrichment: iterativeEnrichment,
       evidence_rules: {
         require_evidence_for_claims: true,
         no_destructive_steps_without_gating: true,
@@ -1579,6 +1607,819 @@ export class PrepareContextService {
       rejected_evidence: input.rejectedEvidence,
       capability_verification: input.capabilityVerification,
     };
+  }
+
+  private buildIterativeEnrichmentProfile(input: {
+    ticket: TicketLike;
+    ticketNarrative: string;
+    companyName: string;
+    inferredCompany: string;
+    requesterName: string;
+    entityResolution: EntityResolution;
+    device: any | null;
+    deviceDetails: any | null;
+    loggedInUser: string;
+    inferredPhoneProvider: string | null;
+    sourceFindings: SourceFinding[];
+    itglueConfigs: any[];
+    docs: Doc[];
+    ninjaChecks: Signal[];
+    missingData: Array<{ field: string; why: string }>;
+  }): IterativeEnrichmentProfile {
+    const ticketSection = this.buildTicketEnrichmentSection({
+      ticket: input.ticket,
+      companyName: input.companyName,
+      inferredCompany: input.inferredCompany,
+      requesterName: input.requesterName,
+      entityResolution: input.entityResolution,
+    });
+    const identitySection = this.buildIdentityEnrichmentSection(input.entityResolution);
+    const endpointSection = this.buildEndpointEnrichmentSection({
+      ticketNarrative: input.ticketNarrative,
+      device: input.device,
+      deviceDetails: input.deviceDetails,
+      loggedInUser: input.loggedInUser,
+      ninjaChecks: input.ninjaChecks,
+    });
+    const networkSection = this.buildNetworkEnrichmentSection({
+      ticketNarrative: input.ticketNarrative,
+      device: input.device,
+      deviceDetails: input.deviceDetails,
+      docs: input.docs,
+      itglueConfigs: input.itglueConfigs,
+      ninjaChecks: input.ninjaChecks,
+      inferredPhoneProvider: input.inferredPhoneProvider,
+    });
+    const infraSection = this.buildInfraEnrichmentSection({
+      itglueConfigs: input.itglueConfigs,
+      docs: input.docs,
+    });
+
+    const sections: IterativeEnrichmentSections = {
+      ticket: ticketSection,
+      identity: identitySection,
+      endpoint: endpointSection,
+      network: networkSection,
+      infra: infraSection,
+    };
+
+    const fieldRecords = this.flattenEnrichmentFields(sections);
+    const coverage = this.computeEnrichmentCoverage(fieldRecords);
+    const rounds = this.buildEnrichmentRounds(fieldRecords, input.sourceFindings);
+    const lastRound = rounds.at(-1);
+    const completedRounds = lastRound?.round ?? 1;
+    const lastRoundGain = lastRound?.gain_count ?? 0;
+
+    let stopReason: IterativeEnrichmentProfile['stop_reason'] = 'source_exhausted';
+    if (completedRounds >= 5) {
+      stopReason = 'max_rounds_reached';
+    } else if (coverage.completion_ratio >= 0.85) {
+      stopReason = 'coverage_target_reached';
+    } else if (lastRoundGain <= 1 || input.missingData.length > 0) {
+      stopReason = 'marginal_gain';
+    }
+
+    return {
+      schema_version: '1.0.0',
+      completed_rounds: completedRounds,
+      stop_reason: stopReason,
+      rounds,
+      sections,
+      coverage,
+    };
+  }
+
+  private buildTicketEnrichmentSection(input: {
+    ticket: TicketLike;
+    companyName: string;
+    inferredCompany: string;
+    requesterName: string;
+    entityResolution: EntityResolution;
+  }): IterativeEnrichmentSections['ticket'] {
+    const ticketId = String(input.ticket.ticketNumber || input.ticket.id || '').trim();
+    const requesterFromTicket = this.normalizeName(input.ticket.requester || input.requesterName || '');
+    const requesterEmailFromTicket = this.extractFirstEmail(input.ticket.requester || '');
+    const extractedEmail = input.entityResolution.extracted_entities.email[0] || '';
+    const requesterEmail = requesterEmailFromTicket || extractedEmail || '';
+
+    const resolvedActor = input.entityResolution.resolved_actor;
+    const affectedName = this.normalizeName(
+      resolvedActor?.name || requesterFromTicket || 'unknown'
+    );
+    const affectedEmail = String(
+      resolvedActor?.email || requesterEmail || 'unknown'
+    ).trim();
+
+    const companyFromTicket = this.normalizeName(input.ticket.company || '');
+    const companyValue = companyFromTicket || input.companyName || input.inferredCompany || 'unknown';
+    const companyStatus = companyFromTicket
+      ? 'confirmed'
+      : companyValue !== 'unknown'
+        ? 'inferred'
+        : 'unknown';
+
+    const actorRound = resolvedActor ? 3 : 1;
+    const actorStatus = resolvedActor
+      ? resolvedActor.confidence === 'strong'
+        ? 'confirmed'
+        : 'inferred'
+      : requesterFromTicket
+        ? 'inferred'
+        : 'unknown';
+
+    return {
+      ticket_id: this.buildField({
+        value: ticketId || 'unknown',
+        status: ticketId ? 'confirmed' : 'unknown',
+        confidence: ticketId ? 1 : 0,
+        sourceSystem: 'ticket',
+        sourceRef: 'ticket.id',
+        round: 1,
+      }),
+      company: this.buildField({
+        value: companyValue,
+        status: companyStatus,
+        confidence: companyStatus === 'confirmed' ? 1 : companyStatus === 'inferred' ? 0.7 : 0,
+        sourceSystem: companyFromTicket ? 'ticket' : companyValue !== 'unknown' ? 'ticket_narrative' : 'unknown',
+        sourceRef: companyFromTicket ? 'ticket.company' : companyValue !== 'unknown' ? 'ticket.domain_inference' : undefined,
+        round: 1,
+      }),
+      requester_name: this.buildField({
+        value: requesterFromTicket || 'unknown',
+        status: requesterFromTicket ? 'confirmed' : 'unknown',
+        confidence: requesterFromTicket ? 0.95 : 0,
+        sourceSystem: requesterFromTicket ? 'ticket' : 'unknown',
+        sourceRef: requesterFromTicket ? 'ticket.requester' : undefined,
+        round: 1,
+      }),
+      requester_email: this.buildField({
+        value: requesterEmail || 'unknown',
+        status: requesterEmailFromTicket ? 'confirmed' : requesterEmail ? 'inferred' : 'unknown',
+        confidence: requesterEmailFromTicket ? 0.95 : requesterEmail ? 0.65 : 0,
+        sourceSystem: requesterEmailFromTicket ? 'ticket' : requesterEmail ? 'entity_resolution' : 'unknown',
+        sourceRef: requesterEmailFromTicket ? 'ticket.requester' : requesterEmail ? 'entity_resolution.extracted_entities.email[0]' : undefined,
+        round: requesterEmailFromTicket ? 1 : requesterEmail ? 2 : 1,
+      }),
+      affected_user_name: this.buildField({
+        value: affectedName,
+        status: actorStatus,
+        confidence: actorStatus === 'confirmed' ? 0.95 : actorStatus === 'inferred' ? 0.65 : 0,
+        sourceSystem: resolvedActor ? 'entity_resolution' : requesterFromTicket ? 'ticket' : 'unknown',
+        sourceRef: resolvedActor ? 'entity_resolution.resolved_actor.name' : requesterFromTicket ? 'ticket.requester' : undefined,
+        round: actorRound,
+      }),
+      affected_user_email: this.buildField({
+        value: affectedEmail,
+        status: resolvedActor?.email
+          ? resolvedActor.confidence === 'strong'
+            ? 'confirmed'
+            : 'inferred'
+          : requesterEmail
+            ? 'inferred'
+            : 'unknown',
+        confidence: resolvedActor?.email
+          ? resolvedActor.confidence === 'strong'
+            ? 0.95
+            : 0.7
+          : requesterEmail
+            ? 0.6
+            : 0,
+        sourceSystem: resolvedActor?.email ? 'entity_resolution' : requesterEmail ? 'ticket' : 'unknown',
+        sourceRef: resolvedActor?.email ? 'entity_resolution.resolved_actor.email' : requesterEmail ? 'ticket.requester' : undefined,
+        round: resolvedActor?.email ? actorRound : requesterEmail ? 1 : 1,
+      }),
+      created_at: this.buildField({
+        value: String(input.ticket.createDate || '').trim() || 'unknown',
+        status: input.ticket.createDate ? 'confirmed' : 'unknown',
+        confidence: input.ticket.createDate ? 0.95 : 0,
+        sourceSystem: input.ticket.createDate ? 'ticket' : 'unknown',
+        sourceRef: input.ticket.createDate ? 'ticket.createDate' : undefined,
+        round: 1,
+      }),
+      title: this.buildField({
+        value: String(input.ticket.title || '').trim() || 'unknown',
+        status: input.ticket.title ? 'confirmed' : 'unknown',
+        confidence: input.ticket.title ? 0.95 : 0,
+        sourceSystem: input.ticket.title ? 'ticket' : 'unknown',
+        sourceRef: input.ticket.title ? 'ticket.title' : undefined,
+        round: 1,
+      }),
+      description_clean: this.buildField({
+        value: String(input.ticket.description || '').trim() || 'unknown',
+        status: input.ticket.description ? 'confirmed' : 'unknown',
+        confidence: input.ticket.description ? 0.9 : 0,
+        sourceSystem: input.ticket.description ? 'ticket' : 'unknown',
+        sourceRef: input.ticket.description ? 'ticket.description' : undefined,
+        round: 1,
+      }),
+    };
+  }
+
+  private buildIdentityEnrichmentSection(
+    entityResolution: EntityResolution
+  ): IterativeEnrichmentSections['identity'] {
+    const resolvedEmail = entityResolution.resolved_actor?.email || '';
+    const extractedEmail = entityResolution.extracted_entities.email[0] || '';
+    const principal = resolvedEmail || extractedEmail || 'unknown';
+    const hasStrongResolvedEmail =
+      Boolean(resolvedEmail) && entityResolution.resolved_actor?.confidence === 'strong';
+
+    return {
+      user_principal_name: this.buildField({
+        value: principal,
+        status: hasStrongResolvedEmail ? 'confirmed' : principal !== 'unknown' ? 'inferred' : 'unknown',
+        confidence: hasStrongResolvedEmail ? 0.9 : principal !== 'unknown' ? 0.6 : 0,
+        sourceSystem: resolvedEmail ? 'entity_resolution' : extractedEmail ? 'ticket_narrative' : 'unknown',
+        sourceRef: resolvedEmail
+          ? 'entity_resolution.resolved_actor.email'
+          : extractedEmail
+            ? 'entity_resolution.extracted_entities.email[0]'
+            : undefined,
+        round: resolvedEmail ? 3 : extractedEmail ? 2 : 1,
+      }),
+      account_status: this.buildField({
+        value: 'unknown',
+        status: 'unknown',
+        confidence: 0,
+        sourceSystem: 'directory',
+        sourceRef: 'unavailable',
+        round: 2,
+      }),
+      mfa_state: this.buildField({
+        value: 'unknown',
+        status: 'unknown',
+        confidence: 0,
+        sourceSystem: 'directory',
+        sourceRef: 'unavailable',
+        round: 2,
+      }),
+      licenses_summary: this.buildField({
+        value: 'Unknown',
+        status: 'unknown',
+        confidence: 0,
+        sourceSystem: 'directory',
+        sourceRef: 'unavailable',
+        round: 2,
+      }),
+      groups_top: this.buildField({
+        value: 'unknown',
+        status: 'unknown',
+        confidence: 0,
+        sourceSystem: 'directory',
+        sourceRef: 'unavailable',
+        round: 2,
+      }),
+    };
+  }
+
+  private buildEndpointEnrichmentSection(input: {
+    ticketNarrative: string;
+    device: any | null;
+    deviceDetails: any | null;
+    loggedInUser: string;
+    ninjaChecks: Signal[];
+  }): IterativeEnrichmentSections['endpoint'] {
+    const deviceName = String(
+      input.device?.hostname || input.device?.systemName || input.device?.id || ''
+    ).trim();
+    const deviceType = this.inferDeviceType({
+      ticketNarrative: input.ticketNarrative,
+      device: input.device,
+      deviceDetails: input.deviceDetails,
+    });
+    const osName = String(input.device?.osName || input.deviceDetails?.osName || '').trim();
+    const osVersion = String(input.device?.osVersion || input.deviceDetails?.osVersion || '').trim();
+    const lastCheckIn = String(
+      input.device?.lastActivityTime || input.device?.lastContact || ''
+    ).trim();
+    const securityAgent = this.inferSecurityAgent(input.ninjaChecks, input.deviceDetails);
+
+    return {
+      device_name: this.buildField({
+        value: deviceName || 'unknown',
+        status: deviceName ? 'confirmed' : 'unknown',
+        confidence: deviceName ? 0.85 : 0,
+        sourceSystem: deviceName ? 'ninjaone' : 'unknown',
+        sourceRef: deviceName ? 'ninja.device.hostname' : undefined,
+        round: 1,
+      }),
+      device_type: this.buildField({
+        value: deviceType,
+        status: deviceType !== 'unknown' ? 'inferred' : 'unknown',
+        confidence: deviceType !== 'unknown' ? 0.65 : 0,
+        sourceSystem: deviceType !== 'unknown' ? 'ninjaone' : 'unknown',
+        sourceRef: deviceType !== 'unknown' ? 'ninja.device.os/type_heuristic' : undefined,
+        round: 1,
+      }),
+      os_name: this.buildField({
+        value: osName || 'unknown',
+        status: osName ? 'confirmed' : 'unknown',
+        confidence: osName ? 0.8 : 0,
+        sourceSystem: osName ? 'ninjaone' : 'unknown',
+        sourceRef: osName ? 'ninja.device.osName' : undefined,
+        round: 1,
+      }),
+      os_version: this.buildField({
+        value: osVersion || 'unknown',
+        status: osVersion ? 'confirmed' : 'unknown',
+        confidence: osVersion ? 0.75 : 0,
+        sourceSystem: osVersion ? 'ninjaone' : 'unknown',
+        sourceRef: osVersion ? 'ninja.device.osVersion' : undefined,
+        round: 1,
+      }),
+      last_check_in: this.buildField({
+        value: lastCheckIn || 'unknown',
+        status: lastCheckIn ? 'confirmed' : 'unknown',
+        confidence: lastCheckIn ? 0.85 : 0,
+        sourceSystem: lastCheckIn ? 'ninjaone' : 'unknown',
+        sourceRef: lastCheckIn ? 'ninja.device.lastActivityTime' : undefined,
+        round: 1,
+      }),
+      security_agent: this.buildField({
+        value: securityAgent,
+        status: securityAgent.state === 'unknown' ? 'unknown' : 'inferred',
+        confidence: securityAgent.state === 'present' ? 0.7 : securityAgent.state === 'absent' ? 0.45 : 0,
+        sourceSystem: securityAgent.state === 'unknown' ? 'unknown' : 'ninjaone',
+        sourceRef: securityAgent.state === 'unknown' ? undefined : 'ninja.device.checks',
+        round: 1,
+      }),
+      user_signed_in: this.buildField({
+        value: input.loggedInUser || 'unknown',
+        status: input.loggedInUser ? 'inferred' : 'unknown',
+        confidence: input.loggedInUser ? 0.7 : 0,
+        sourceSystem: input.loggedInUser ? 'ninjaone' : 'unknown',
+        sourceRef: input.loggedInUser ? 'ninja.device.details.user' : undefined,
+        round: input.loggedInUser ? 3 : 1,
+      }),
+      user_signed_in_at: this.buildField({
+        value: input.loggedInUser && lastCheckIn ? lastCheckIn : 'unknown',
+        status: input.loggedInUser && lastCheckIn ? 'inferred' : 'unknown',
+        confidence: input.loggedInUser && lastCheckIn ? 0.55 : 0,
+        sourceSystem: input.loggedInUser && lastCheckIn ? 'ninjaone' : 'unknown',
+        sourceRef: input.loggedInUser && lastCheckIn ? 'ninja.device.lastActivityTime' : undefined,
+        round: input.loggedInUser ? 3 : 1,
+      }),
+    };
+  }
+
+  private buildNetworkEnrichmentSection(input: {
+    ticketNarrative: string;
+    device: any | null;
+    deviceDetails: any | null;
+    docs: Doc[];
+    itglueConfigs: any[];
+    ninjaChecks: Signal[];
+    inferredPhoneProvider: string | null;
+  }): IterativeEnrichmentSections['network'] {
+    const locationContext = this.inferLocationContext(input.ticketNarrative);
+    const publicIp = this.resolvePublicIp(input.device, input.deviceDetails);
+    const ispName = this.inferIspName({
+      ticketNarrative: input.ticketNarrative,
+      docs: input.docs,
+      itglueConfigs: input.itglueConfigs,
+    });
+    const vpnState = this.inferVpnState(input.ninjaChecks, input.ticketNarrative);
+    const phoneProviderConnected = Boolean(input.inferredPhoneProvider);
+
+    return {
+      location_context: this.buildField({
+        value: locationContext,
+        status: locationContext === 'unknown' ? 'unknown' : 'inferred',
+        confidence: locationContext === 'unknown' ? 0 : 0.65,
+        sourceSystem: locationContext === 'unknown' ? 'unknown' : 'ticket_narrative',
+        sourceRef: locationContext === 'unknown' ? undefined : 'ticket.text',
+        round: 1,
+      }),
+      public_ip: this.buildField({
+        value: publicIp || 'unknown',
+        status: publicIp ? 'confirmed' : 'unknown',
+        confidence: publicIp ? 0.9 : 0,
+        sourceSystem: publicIp ? 'ninjaone' : 'unknown',
+        sourceRef: publicIp ? 'ninja.device.ipAddress' : undefined,
+        round: 1,
+      }),
+      isp_name: this.buildField({
+        value: ispName || 'unknown',
+        status: ispName ? 'inferred' : 'unknown',
+        confidence: ispName ? 0.6 : 0,
+        sourceSystem: ispName ? 'cross_correlation' : 'unknown',
+        sourceRef: ispName ? 'ticket/docs/itglue keyword' : undefined,
+        round: ispName ? 2 : 1,
+      }),
+      vpn_state: this.buildField({
+        value: vpnState,
+        status: vpnState === 'unknown' ? 'unknown' : 'inferred',
+        confidence: vpnState === 'connected' ? 0.7 : vpnState === 'disconnected' ? 0.6 : 0,
+        sourceSystem: vpnState === 'unknown' ? 'unknown' : 'ninjaone',
+        sourceRef: vpnState === 'unknown' ? undefined : 'ninja.checks:vpn',
+        round: 1,
+      }),
+      phone_provider: this.buildField({
+        value: phoneProviderConnected ? 'connected' : 'unknown',
+        status: phoneProviderConnected ? 'inferred' : 'unknown',
+        confidence: phoneProviderConnected ? 0.7 : 0,
+        sourceSystem: phoneProviderConnected ? 'provider_inference' : 'unknown',
+        sourceRef: phoneProviderConnected ? 'ticket/docs/configs/signals' : undefined,
+        round: 1,
+      }),
+      phone_provider_name: this.buildField({
+        value: input.inferredPhoneProvider || 'unknown',
+        status: input.inferredPhoneProvider ? 'inferred' : 'unknown',
+        confidence: input.inferredPhoneProvider ? 0.75 : 0,
+        sourceSystem: input.inferredPhoneProvider ? 'provider_inference' : 'unknown',
+        sourceRef: input.inferredPhoneProvider ? 'provider.keyword_match' : undefined,
+        round: 1,
+      }),
+    };
+  }
+
+  private buildInfraEnrichmentSection(input: {
+    itglueConfigs: any[];
+    docs: Doc[];
+  }): IterativeEnrichmentSections['infra'] {
+    const firewall = this.extractInfraMakeModel('firewall', input.itglueConfigs, input.docs);
+    const wifi = this.extractInfraMakeModel('wifi', input.itglueConfigs, input.docs);
+    const sw = this.extractInfraMakeModel('switch', input.itglueConfigs, input.docs);
+
+    return {
+      firewall_make_model: this.buildField({
+        value: firewall.value,
+        status: firewall.status,
+        confidence: firewall.confidence,
+        sourceSystem: firewall.sourceSystem,
+        sourceRef: firewall.sourceRef,
+        round: firewall.round,
+      }),
+      wifi_make_model: this.buildField({
+        value: wifi.value,
+        status: wifi.status,
+        confidence: wifi.confidence,
+        sourceSystem: wifi.sourceSystem,
+        sourceRef: wifi.sourceRef,
+        round: wifi.round,
+      }),
+      switch_make_model: this.buildField({
+        value: sw.value,
+        status: sw.status,
+        confidence: sw.confidence,
+        sourceSystem: sw.sourceSystem,
+        sourceRef: sw.sourceRef,
+        round: sw.round,
+      }),
+    };
+  }
+
+  private buildNetworkStackFromEnrichment(
+    sections: IterativeEnrichmentSections
+  ): EvidencePack['network_stack'] | undefined {
+    const stack: NonNullable<EvidencePack['network_stack']> = {};
+
+    const isp = String(sections.network.isp_name.value || '').trim();
+    if (isp && isp.toLowerCase() !== 'unknown') {
+      stack.isp = isp;
+    }
+
+    const firewall = this.parseMakeModel(String(sections.infra.firewall_make_model.value || ''));
+    if (firewall) {
+      stack.firewall = firewall;
+    }
+
+    const wifi = this.parseMakeModel(String(sections.infra.wifi_make_model.value || ''));
+    if (wifi) {
+      stack.aps = [{ vendor: wifi.vendor, model: wifi.model }];
+    }
+
+    const sw = this.parseMakeModel(String(sections.infra.switch_make_model.value || ''));
+    if (sw) {
+      stack.switches = [{ vendor: sw.vendor, model: sw.model }];
+    }
+
+    if (!stack.isp && !stack.firewall && !stack.aps?.length && !stack.switches?.length) {
+      return undefined;
+    }
+
+    return stack;
+  }
+
+  private parseMakeModel(value: string): { vendor: string; model: string } | null {
+    const normalized = String(value || '').trim();
+    if (!normalized || normalized.toLowerCase() === 'unknown') return null;
+    const parts = normalized.split(/\s+/).filter(Boolean);
+    const vendor = parts[0];
+    if (!vendor) return null;
+    if (parts.length === 1) {
+      return { vendor, model: vendor };
+    }
+    return {
+      vendor,
+      model: parts.slice(1).join(' '),
+    };
+  }
+
+  private flattenEnrichmentFields(
+    sections: IterativeEnrichmentSections
+  ): Array<{ path: string; field: EnrichmentField<unknown> }> {
+    const output: Array<{ path: string; field: EnrichmentField<unknown> }> = [];
+    for (const [sectionKey, sectionValue] of Object.entries(sections) as Array<
+      [string, Record<string, EnrichmentField<unknown>>]
+    >) {
+      for (const [fieldKey, fieldValue] of Object.entries(sectionValue)) {
+        output.push({
+          path: `${sectionKey}.${fieldKey}`,
+          field: fieldValue,
+        });
+      }
+    }
+    return output;
+  }
+
+  private computeEnrichmentCoverage(
+    records: Array<{ path: string; field: EnrichmentField<unknown> }>
+  ): IterativeEnrichmentProfile['coverage'] {
+    const total = records.length || 1;
+    const confirmed = records.filter((record) => record.field.status === 'confirmed').length;
+    const inferred = records.filter((record) => record.field.status === 'inferred').length;
+    const unknown = records.filter((record) => record.field.status === 'unknown').length;
+    const conflict = records.filter((record) => record.field.status === 'conflict').length;
+    return {
+      total,
+      confirmed,
+      inferred,
+      unknown,
+      conflict,
+      completion_ratio: Number(((confirmed + inferred) / total).toFixed(3)),
+    };
+  }
+
+  private buildEnrichmentRounds(
+    records: Array<{ path: string; field: EnrichmentField<unknown> }>,
+    sourceFindings: SourceFinding[]
+  ): IterativeEnrichmentProfile['rounds'] {
+    const maxRound = Math.max(
+      1,
+      ...records.map((record) => Number(record.field.round || 1)),
+      ...sourceFindings.map((finding) => Number(finding.round || 0))
+    );
+    const rounds: IterativeEnrichmentProfile['rounds'] = [];
+    for (let round = 1; round <= maxRound; round += 1) {
+      const roundRecords = records.filter((record) => Number(record.field.round || 1) === round);
+      const roundFindings = sourceFindings.filter((finding) => Number(finding.round || 0) === round);
+      if (roundRecords.length === 0 && roundFindings.length === 0) {
+        continue;
+      }
+      const confirmed = roundRecords
+        .filter((record) => record.field.status === 'confirmed')
+        .map((record) => record.path);
+      const inferred = roundRecords
+        .filter((record) => record.field.status === 'inferred')
+        .map((record) => record.path);
+      const unknown = roundRecords
+        .filter((record) => record.field.status === 'unknown')
+        .map((record) => record.path);
+      rounds.push({
+        round,
+        label: this.roundLabel(round),
+        sources_consulted: [...new Set(roundFindings.map((finding) => finding.source))],
+        new_fields_confirmed: confirmed,
+        new_fields_inferred: inferred,
+        new_fields_unknown: unknown,
+        gain_count: confirmed.length + inferred.length,
+      });
+    }
+    return rounds;
+  }
+
+  private roundLabel(round: number): string {
+    if (round === 1) return 'intake_to_org_cross';
+    if (round === 2) return 'history_correlation';
+    if (round === 3) return 'identity_endpoint_refinement';
+    if (round === 4) return 'external_refinement';
+    if (round === 5) return 'final_reconciliation';
+    return `round_${round}`;
+  }
+
+  private buildField<T>(input: {
+    value: T;
+    status: EnrichmentField<T>['status'];
+    confidence: number;
+    sourceSystem: string;
+    sourceRef?: string | undefined;
+    round: number;
+    observedAt?: string | undefined;
+  }): EnrichmentField<T> {
+    const safeConfidence = Number(Math.max(0, Math.min(1, input.confidence)).toFixed(3));
+    return {
+      value: input.value,
+      status: input.status,
+      confidence: safeConfidence,
+      source_system: input.sourceSystem,
+      ...(input.sourceRef ? { source_ref: input.sourceRef } : {}),
+      observed_at: input.observedAt || new Date().toISOString(),
+      round: input.round,
+    };
+  }
+
+  private inferDeviceType(input: {
+    ticketNarrative: string;
+    device: any | null;
+    deviceDetails: any | null;
+  }): 'desktop' | 'laptop' | 'mobile' | 'unknown' {
+    const source = [
+      input.ticketNarrative,
+      String(input.device?.osName || ''),
+      String(input.device?.model || ''),
+      String(input.deviceDetails?.model || ''),
+      String(input.deviceDetails?.systemModel || ''),
+    ]
+      .join(' ')
+      .toLowerCase();
+    if (/(iphone|android|ipad|mobile|cell)/i.test(source)) return 'mobile';
+    if (/(laptop|notebook|macbook|thinkpad|latitude|elitebook|probook)/i.test(source)) return 'laptop';
+    if (/(desktop|workstation|tower|optiplex|prodesk)/i.test(source)) return 'desktop';
+    return 'unknown';
+  }
+
+  private inferSecurityAgent(checks: Signal[], deviceDetails: any): SecurityAgentSummary {
+    const sourceText = [
+      ...checks.map((check) => check.summary || ''),
+      JSON.stringify(deviceDetails || {}),
+    ]
+      .join(' ')
+      .toLowerCase();
+
+    const knownAgents: Array<{ name: string; pattern: RegExp }> = [
+      { name: 'Microsoft Defender', pattern: /\bdefender\b/ },
+      { name: 'CrowdStrike', pattern: /\bcrowdstrike\b/ },
+      { name: 'SentinelOne', pattern: /\bsentinelone\b/ },
+      { name: 'Sophos', pattern: /\bsophos\b/ },
+      { name: 'Bitdefender', pattern: /\bbitdefender\b/ },
+      { name: 'Trend Micro', pattern: /\btrend\s?micro\b/ },
+      { name: 'Carbon Black', pattern: /\bcarbon\s?black\b/ },
+    ];
+
+    const detected = knownAgents.find((agent) => agent.pattern.test(sourceText));
+    if (detected) {
+      return { state: 'present', name: detected.name };
+    }
+
+    if (
+      /(antivirus|endpoint security|edr|xdr)/i.test(sourceText) &&
+      /(disabled|inactive|not installed|missing|stopped|failed)/i.test(sourceText)
+    ) {
+      return { state: 'absent', name: 'Unknown' };
+    }
+
+    return { state: 'unknown', name: 'Unknown' };
+  }
+
+  private inferLocationContext(
+    ticketNarrative: string
+  ): 'office' | 'remote' | 'unknown' {
+    const source = String(ticketNarrative || '').toLowerCase();
+    if (/(home|remote|offsite|work from home|wfh|vpn)/i.test(source)) return 'remote';
+    if (/(office|onsite|on-site|conference room|headquarters|hq)/i.test(source)) return 'office';
+    return 'unknown';
+  }
+
+  private inferVpnState(
+    ninjaChecks: Signal[],
+    ticketNarrative: string
+  ): 'connected' | 'disconnected' | 'unknown' {
+    const vpnChecks = ninjaChecks.filter((check) => /vpn/i.test(check.summary || check.type || ''));
+    if (vpnChecks.length > 0) {
+      const combined = vpnChecks.map((check) => `${check.type} ${check.summary}`.toLowerCase()).join(' ');
+      if (/passed|ok|connected|up/.test(combined)) return 'connected';
+      if (/failed|warn|down|disconnected|error/.test(combined)) return 'disconnected';
+    }
+    if (/vpn/i.test(ticketNarrative || '')) return 'unknown';
+    return 'unknown';
+  }
+
+  private resolvePublicIp(device: any, deviceDetails: any): string {
+    const candidates = [
+      String(device?.ipAddress || ''),
+      String(deviceDetails?.publicIp || ''),
+      String(deviceDetails?.public_ip || ''),
+      String(deviceDetails?.wanIp || ''),
+      String(deviceDetails?.wan_ip || ''),
+    ]
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const publicIp = candidates.find((value) => this.isPublicIPv4(value));
+    return publicIp || '';
+  }
+
+  private isPublicIPv4(value: string): boolean {
+    const match = /^(\d{1,3}\.){3}\d{1,3}$/.test(value);
+    if (!match) return false;
+    const octets = value.split('.').map((part) => Number(part));
+    const first = octets[0] ?? -1;
+    const second = octets[1] ?? -1;
+    if (octets.some((part) => Number.isNaN(part) || part < 0 || part > 255)) return false;
+    if (first === 10) return false;
+    if (first === 127) return false;
+    if (first === 192 && second === 168) return false;
+    if (first === 172 && second >= 16 && second <= 31) return false;
+    return true;
+  }
+
+  private inferIspName(input: {
+    ticketNarrative: string;
+    docs: Doc[];
+    itglueConfigs: any[];
+  }): string {
+    const sourceText = [
+      input.ticketNarrative,
+      ...input.docs.map((doc) => `${doc.title} ${doc.snippet}`),
+      ...input.itglueConfigs.map((cfg) => JSON.stringify(cfg?.attributes || {})),
+    ]
+      .join(' ')
+      .toLowerCase();
+    const providers: Array<{ name: string; pattern: RegExp }> = [
+      { name: 'Comcast', pattern: /\bcomcast\b|\bxfinity\b/ },
+      { name: 'AT&T', pattern: /\bat&t\b|\batt\b/ },
+      { name: 'Verizon', pattern: /\bverizon\b/ },
+      { name: 'Spectrum', pattern: /\bspectrum\b|\bcharter\b/ },
+      { name: 'Cox', pattern: /\bcox\b/ },
+      { name: 'Frontier', pattern: /\bfrontier\b/ },
+      { name: 'Lumen/CenturyLink', pattern: /\bcenturylink\b|\blumen\b/ },
+      { name: 'Optimum', pattern: /\boptimum\b|\baltice\b/ },
+    ];
+    const found = providers.find((provider) => provider.pattern.test(sourceText));
+    return found ? found.name : '';
+  }
+
+  private extractInfraMakeModel(
+    kind: 'firewall' | 'wifi' | 'switch',
+    configs: any[],
+    docs: Doc[]
+  ): {
+    value: string;
+    status: EnrichmentField<string>['status'];
+    confidence: number;
+    sourceSystem: string;
+    sourceRef?: string;
+    round: number;
+  } {
+    const configMatchers: Record<'firewall' | 'wifi' | 'switch', RegExp> = {
+      firewall: /\bfirewall\b|\bfortigate\b|\bfortinet\b|\bsonicwall\b|\bpalo\s?alto\b|\bwatchguard\b|\bmx\d+\b/i,
+      wifi: /\bwifi\b|\bwireless\b|\baccess\s?point\b|\bap\b|\bmeraki\s?mr\b|\bunifi\b|\baruba\b|\bruckus\b/i,
+      switch: /\bswitch\b|\bcatalyst\b|\bprocurve\b|\baruba\b|\bnetgear\b|\bunifi\s?switch\b/i,
+    };
+
+    for (const config of configs) {
+      const attrs = config?.attributes || {};
+      const text = JSON.stringify(attrs);
+      if (!configMatchers[kind].test(text)) continue;
+      const vendor = String(attrs.manufacturer || attrs.vendor || attrs.brand || '').trim();
+      const model = String(attrs.model || attrs.product_model || '').trim();
+      const name = String(attrs.name || attrs.hostname || '').trim();
+      const value = [vendor, model].filter(Boolean).join(' ').trim() || name || 'unknown';
+      if (!value || value === 'unknown') continue;
+      return {
+        value,
+        status: 'confirmed',
+        confidence: 0.8,
+        sourceSystem: 'itglue',
+        sourceRef: `itglue_config:${String(config?.id || name || 'unknown')}`,
+        round: 1,
+      };
+    }
+
+    for (const doc of docs) {
+      const text = `${doc.title} ${doc.snippet}`;
+      if (!configMatchers[kind].test(text)) continue;
+      return {
+        value: String(doc.title || 'unknown').trim() || 'unknown',
+        status: 'inferred',
+        confidence: 0.55,
+        sourceSystem: 'itglue',
+        sourceRef: `itglue_doc:${doc.id}`,
+        round: 2,
+      };
+    }
+
+    return {
+      value: 'unknown',
+      status: 'unknown',
+      confidence: 0,
+      sourceSystem: 'unknown',
+      round: 1,
+    };
+  }
+
+  private extractEmails(text: string): string[] {
+    return [
+      ...new Set(
+        (String(text || '')
+          .match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [])
+          .map((value) => value.toLowerCase())
+      ),
+    ];
+  }
+
+  private extractFirstEmail(text: string): string {
+    return this.extractEmails(text)[0] || '';
   }
 
   private buildFacetActions(facets: FacetContext): DigestAction[] {

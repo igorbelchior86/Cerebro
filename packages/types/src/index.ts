@@ -178,6 +178,109 @@ export interface EvidenceDigest {
   capability_verification?: CapabilityVerification;
 }
 
+export type EnrichmentFieldStatus = 'confirmed' | 'inferred' | 'unknown' | 'conflict';
+
+export interface EnrichmentField<T = string | number | boolean | string[] | null> {
+  value: T;
+  status: EnrichmentFieldStatus;
+  confidence: number;
+  source_system: string;
+  source_ref?: string;
+  observed_at: string;
+  round: number;
+}
+
+export interface TicketEnrichmentSection {
+  ticket_id: EnrichmentField<string>;
+  company: EnrichmentField<string>;
+  requester_name: EnrichmentField<string>;
+  requester_email: EnrichmentField<string>;
+  affected_user_name: EnrichmentField<string>;
+  affected_user_email: EnrichmentField<string>;
+  created_at: EnrichmentField<string>;
+  title: EnrichmentField<string>;
+  description_clean: EnrichmentField<string>;
+}
+
+export interface IdentityEnrichmentSection {
+  user_principal_name: EnrichmentField<string>;
+  account_status: EnrichmentField<'enabled' | 'locked' | 'disabled' | 'unknown'>;
+  mfa_state: EnrichmentField<'enrolled' | 'not_enrolled' | 'unknown'>;
+  licenses_summary: EnrichmentField<string>;
+  groups_top: EnrichmentField<string[] | 'unknown'>;
+}
+
+export interface SecurityAgentSummary {
+  state: 'present' | 'absent' | 'unknown';
+  name: string;
+}
+
+export interface EndpointEnrichmentSection {
+  device_name: EnrichmentField<string>;
+  device_type: EnrichmentField<'desktop' | 'laptop' | 'mobile' | 'unknown'>;
+  os_name: EnrichmentField<string>;
+  os_version: EnrichmentField<string>;
+  last_check_in: EnrichmentField<string>;
+  security_agent: EnrichmentField<SecurityAgentSummary>;
+  user_signed_in: EnrichmentField<string>;
+  user_signed_in_at: EnrichmentField<string>;
+}
+
+export interface NetworkEnrichmentSection {
+  location_context: EnrichmentField<'office' | 'remote' | 'unknown'>;
+  public_ip: EnrichmentField<string>;
+  isp_name: EnrichmentField<string>;
+  vpn_state: EnrichmentField<'connected' | 'disconnected' | 'unknown'>;
+  phone_provider: EnrichmentField<'connected' | 'unknown'>;
+  phone_provider_name: EnrichmentField<string>;
+}
+
+export interface InfraEnrichmentSection {
+  firewall_make_model: EnrichmentField<string>;
+  wifi_make_model: EnrichmentField<string>;
+  switch_make_model: EnrichmentField<string>;
+}
+
+export interface IterativeEnrichmentSections {
+  ticket: TicketEnrichmentSection;
+  identity: IdentityEnrichmentSection;
+  endpoint: EndpointEnrichmentSection;
+  network: NetworkEnrichmentSection;
+  infra: InfraEnrichmentSection;
+}
+
+export interface EnrichmentRoundSummary {
+  round: number;
+  label: string;
+  sources_consulted: string[];
+  new_fields_confirmed: string[];
+  new_fields_inferred: string[];
+  new_fields_unknown: string[];
+  gain_count: number;
+}
+
+export interface EnrichmentCoverageSummary {
+  total: number;
+  confirmed: number;
+  inferred: number;
+  unknown: number;
+  conflict: number;
+  completion_ratio: number;
+}
+
+export interface IterativeEnrichmentProfile {
+  schema_version: '1.0.0';
+  completed_rounds: number;
+  stop_reason:
+    | 'max_rounds_reached'
+    | 'marginal_gain'
+    | 'coverage_target_reached'
+    | 'source_exhausted';
+  rounds: EnrichmentRoundSummary[];
+  sections: IterativeEnrichmentSections;
+  coverage: EnrichmentCoverageSummary;
+}
+
 export interface EvidencePack {
   session_id: string;
   tenant_id?: string | null;
@@ -223,6 +326,7 @@ export interface EvidencePack {
   evidence_digest?: EvidenceDigest;
   rejected_evidence?: RejectedEvidence[];
   capability_verification?: CapabilityVerification;
+  iterative_enrichment?: IterativeEnrichmentProfile;
   evidence_rules: EvidenceRules;
   missing_data?: { field: string; why: string }[];
   prepared_at: string;
@@ -286,6 +390,7 @@ export interface QualityGateFlags {
   named_entity_unresolved: boolean;
   domain_required_source_missing: boolean;
   capability_verification_incomplete: boolean;
+  mandatory_ticket_fields_missing: boolean;
 }
 
 export interface ValidationOutput {

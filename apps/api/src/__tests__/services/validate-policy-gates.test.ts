@@ -1,6 +1,17 @@
 import type { DiagnosisOutput, EvidencePack } from '@playbook-brain/types';
 import { ValidatePolicyService } from '../../services/validate-policy.js';
 
+function buildField(value: unknown, status: 'confirmed' | 'inferred' | 'unknown' | 'conflict' = 'confirmed') {
+  return {
+    value,
+    status,
+    confidence: status === 'unknown' ? 0 : status === 'inferred' ? 0.65 : 1,
+    source_system: 'test',
+    observed_at: new Date().toISOString(),
+    round: 1,
+  };
+}
+
 function buildDiagnosis(): DiagnosisOutput {
   return {
     summary: 'VPN connectivity issue likely tied to endpoint tunnel negotiation.',
@@ -222,5 +233,71 @@ describe('validate policy quality gates', () => {
     const result = service.validate(buildDiagnosis(), pack);
     expect(result.safe_to_generate_playbook).toBe(false);
     expect(result.blocking_reasons).toContain('cross_tenant_candidate_detected');
+  });
+
+  it('blocks generation when mandatory ticket fields are unknown in iterative enrichment', () => {
+    const service = new ValidatePolicyService({ profile: 'standard' });
+    const pack = buildPack();
+    pack.iterative_enrichment = {
+      schema_version: '1.0.0',
+      completed_rounds: 2,
+      stop_reason: 'marginal_gain',
+      rounds: [],
+      coverage: {
+        total: 30,
+        confirmed: 10,
+        inferred: 10,
+        unknown: 10,
+        conflict: 0,
+        completion_ratio: 0.67,
+      },
+      sections: {
+        ticket: {
+          ticket_id: buildField('T1'),
+          company: buildField('unknown', 'unknown'),
+          requester_name: buildField('John Example'),
+          requester_email: buildField('john@example.com'),
+          affected_user_name: buildField('John Example'),
+          affected_user_email: buildField('john@example.com'),
+          created_at: buildField(new Date().toISOString()),
+          title: buildField('VPN down for user'),
+          description_clean: buildField('Remote access is failing'),
+        },
+        identity: {
+          user_principal_name: buildField('john@example.com'),
+          account_status: buildField('unknown', 'unknown'),
+          mfa_state: buildField('unknown', 'unknown'),
+          licenses_summary: buildField('Unknown', 'unknown'),
+          groups_top: buildField('unknown', 'unknown'),
+        },
+        endpoint: {
+          device_name: buildField('ACME-LT-01'),
+          device_type: buildField('laptop', 'inferred'),
+          os_name: buildField('Windows'),
+          os_version: buildField('11'),
+          last_check_in: buildField(new Date().toISOString()),
+          security_agent: buildField({ state: 'unknown', name: 'Unknown' }, 'unknown'),
+          user_signed_in: buildField('john@example.com', 'inferred'),
+          user_signed_in_at: buildField(new Date().toISOString(), 'inferred'),
+        },
+        network: {
+          location_context: buildField('remote', 'inferred'),
+          public_ip: buildField('8.8.8.8'),
+          isp_name: buildField('unknown', 'unknown'),
+          vpn_state: buildField('connected', 'inferred'),
+          phone_provider: buildField('unknown', 'unknown'),
+          phone_provider_name: buildField('unknown', 'unknown'),
+        },
+        infra: {
+          firewall_make_model: buildField('unknown', 'unknown'),
+          wifi_make_model: buildField('unknown', 'unknown'),
+          switch_make_model: buildField('unknown', 'unknown'),
+        },
+      },
+    } as any;
+
+    const result = service.validate(buildDiagnosis(), pack);
+    expect(result.safe_to_generate_playbook).toBe(false);
+    expect(result.blocking_reasons).toContain('mandatory_ticket_fields_missing');
   });
 });

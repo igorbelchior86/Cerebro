@@ -26,6 +26,7 @@ import { NinjaOneClient } from '../clients/ninjaone.js';
 import { ITGlueClient } from '../clients/itglue.js';
 import { query, queryOne, execute } from '../db/index.js';
 import { emailParser } from './email/email-parser.js';
+import { callLLM } from './llm-adapter.js';
 
 interface PrepareContextInput {
   sessionId: string;
@@ -50,6 +51,10 @@ type TicketLike = {
   createDate?: string;
   priority?: number;
   queueName?: string;
+  canonicalRequesterName?: string;
+  canonicalRequesterEmail?: string;
+  canonicalAffectedName?: string;
+  canonicalAffectedEmail?: string;
 };
 
 interface ScopeMeta {
@@ -405,15 +410,44 @@ export class PrepareContextService {
     if (!ticket) {
       throw new Error(`Cannot prepare context without valid ticket from Autotask or Database`);
     }
-    const ticketNarrative = this.buildTicketNarrative(ticket);
-
-    const inferredCompany = this.inferCompanyNameFromTicketText(
-      ticketNarrative
-    );
-    const companyName = this.normalizeName(ticket.company || inferredCompany || '');
-    const requesterName = this.normalizeName(ticket.requester || '');
     const sourceFindings: SourceFinding[] = [];
     const rejectedEvidence: RejectedEvidence[] = [];
+    const normalizedTicket = await this.normalizeTicketForPipeline(ticket).catch(() => null);
+    if (normalizedTicket) {
+      if (normalizedTicket.title) ticket.title = normalizedTicket.title;
+      if (normalizedTicket.descriptionClean) ticket.description = normalizedTicket.descriptionClean;
+      if (normalizedTicket.requesterName) ticket.canonicalRequesterName = normalizedTicket.requesterName;
+      if (normalizedTicket.requesterEmail) ticket.canonicalRequesterEmail = normalizedTicket.requesterEmail;
+      if (normalizedTicket.affectedUserName) ticket.canonicalAffectedName = normalizedTicket.affectedUserName;
+      if (normalizedTicket.affectedUserEmail) ticket.canonicalAffectedEmail = normalizedTicket.affectedUserEmail;
+      sourceFindings.push({
+        source: 'external',
+        round: 0,
+        facet: 'base',
+        queried: true,
+        matched: true,
+        summary: 'ticket text normalized for intake',
+        details: [
+          `method: ${normalizedTicket.method}`,
+          `confidence: ${normalizedTicket.confidence.toFixed(2)}`,
+          normalizedTicket.requesterName || normalizedTicket.requesterEmail
+            ? `canonical requester: ${normalizedTicket.requesterName || 'unknown'}${normalizedTicket.requesterEmail ? ` <${normalizedTicket.requesterEmail}>` : ''}`
+            : 'canonical requester: unavailable',
+          normalizedTicket.affectedUserName || normalizedTicket.affectedUserEmail
+            ? `canonical affected: ${normalizedTicket.affectedUserName || 'unknown'}${normalizedTicket.affectedUserEmail ? ` <${normalizedTicket.affectedUserEmail}>` : ''}`
+            : 'canonical affected: unavailable',
+        ],
+        why_selected: ['round-0 normalization is mandatory before iterative enrichment'],
+        tenant_id: tenantId,
+        org_id: input.orgId || null,
+        source_workspace: sourceWorkspace,
+      });
+    }
+
+    const ticketNarrative = this.buildTicketNarrative(ticket);
+    const inferredCompany = this.inferCompanyNameFromTicketText(ticketNarrative);
+    const companyName = this.normalizeName(ticket.company || inferredCompany || '');
+    const requesterName = this.normalizeName(ticket.canonicalRequesterName || ticket.requester || '');
     const facetContext = this.detectFacetContext(
       ticketNarrative
     );
@@ -1855,17 +1889,21 @@ export class PrepareContextService {
     entityResolution: EntityResolution;
   }): IterativeEnrichmentSections['ticket'] {
     const ticketId = String(input.ticket.ticketNumber || input.ticket.id || '').trim();
-    const requesterFromTicket = this.normalizeName(input.ticket.requester || input.requesterName || '');
-    const requesterEmailFromTicket = this.extractFirstEmail(input.ticket.requester || '');
+    const requesterFromTicket = this.normalizeName(
+      input.ticket.canonicalRequesterName || input.ticket.requester || input.requesterName || ''
+    );
+    const requesterEmailFromTicket = String(
+      input.ticket.canonicalRequesterEmail || this.extractFirstEmail(input.ticket.requester || '')
+    ).trim();
     const extractedEmail = input.entityResolution.extracted_entities.email[0] || '';
     const requesterEmail = requesterEmailFromTicket || extractedEmail || '';
 
     const resolvedActor = input.entityResolution.resolved_actor;
     const affectedName = this.normalizeName(
-      resolvedActor?.name || requesterFromTicket || 'unknown'
+      input.ticket.canonicalAffectedName || resolvedActor?.name || requesterFromTicket || 'unknown'
     );
     const affectedEmail = String(
-      resolvedActor?.email || requesterEmail || 'unknown'
+      input.ticket.canonicalAffectedEmail || resolvedActor?.email || requesterEmail || 'unknown'
     ).trim();
 
     const companyFromTicket = this.normalizeName(input.ticket.company || '');
@@ -1906,25 +1944,25 @@ export class PrepareContextService {
         value: requesterFromTicket || 'unknown',
         status: requesterFromTicket ? 'confirmed' : 'unknown',
         confidence: requesterFromTicket ? 0.95 : 0,
-        sourceSystem: requesterFromTicket ? 'ticket' : 'unknown',
-        sourceRef: requesterFromTicket ? 'ticket.requester' : undefined,
+        sourceSystem: input.ticket.canonicalRequesterName ? 'entity_resolution' : requesterFromTicket ? 'ticket' : 'unknown',
+        sourceRef: input.ticket.canonicalRequesterName ? 'round0.canonical_requester' : requesterFromTicket ? 'ticket.requester' : undefined,
         round: 1,
       }),
       requester_email: this.buildField({
         value: requesterEmail || 'unknown',
         status: requesterEmailFromTicket ? 'confirmed' : requesterEmail ? 'inferred' : 'unknown',
         confidence: requesterEmailFromTicket ? 0.95 : requesterEmail ? 0.65 : 0,
-        sourceSystem: requesterEmailFromTicket ? 'ticket' : requesterEmail ? 'entity_resolution' : 'unknown',
-        sourceRef: requesterEmailFromTicket ? 'ticket.requester' : requesterEmail ? 'entity_resolution.extracted_entities.email[0]' : undefined,
-        round: requesterEmailFromTicket ? 1 : requesterEmail ? 2 : 1,
+        sourceSystem: input.ticket.canonicalRequesterEmail ? 'entity_resolution' : requesterEmailFromTicket ? 'ticket' : requesterEmail ? 'entity_resolution' : 'unknown',
+        sourceRef: input.ticket.canonicalRequesterEmail ? 'round0.canonical_requester' : requesterEmailFromTicket ? 'ticket.requester' : requesterEmail ? 'entity_resolution.extracted_entities.email[0]' : undefined,
+        round: input.ticket.canonicalRequesterEmail ? 0 : requesterEmailFromTicket ? 1 : requesterEmail ? 2 : 1,
       }),
       affected_user_name: this.buildField({
         value: affectedName,
         status: actorStatus,
         confidence: actorStatus === 'confirmed' ? 0.95 : actorStatus === 'inferred' ? 0.65 : 0,
-        sourceSystem: resolvedActor ? 'entity_resolution' : requesterFromTicket ? 'ticket' : 'unknown',
-        sourceRef: resolvedActor ? 'entity_resolution.resolved_actor.name' : requesterFromTicket ? 'ticket.requester' : undefined,
-        round: actorRound,
+        sourceSystem: input.ticket.canonicalAffectedName ? 'entity_resolution' : resolvedActor ? 'entity_resolution' : requesterFromTicket ? 'ticket' : 'unknown',
+        sourceRef: input.ticket.canonicalAffectedName ? 'round0.canonical_affected' : resolvedActor ? 'entity_resolution.resolved_actor.name' : requesterFromTicket ? 'ticket.requester' : undefined,
+        round: input.ticket.canonicalAffectedName ? 0 : actorRound,
       }),
       affected_user_email: this.buildField({
         value: affectedEmail,
@@ -1942,9 +1980,9 @@ export class PrepareContextService {
           : requesterEmail
             ? 0.6
             : 0,
-        sourceSystem: resolvedActor?.email ? 'entity_resolution' : requesterEmail ? 'ticket' : 'unknown',
-        sourceRef: resolvedActor?.email ? 'entity_resolution.resolved_actor.email' : requesterEmail ? 'ticket.requester' : undefined,
-        round: resolvedActor?.email ? actorRound : requesterEmail ? 1 : 1,
+        sourceSystem: input.ticket.canonicalAffectedEmail ? 'entity_resolution' : resolvedActor?.email ? 'entity_resolution' : requesterEmail ? 'ticket' : 'unknown',
+        sourceRef: input.ticket.canonicalAffectedEmail ? 'round0.canonical_affected' : resolvedActor?.email ? 'entity_resolution.resolved_actor.email' : requesterEmail ? 'ticket.requester' : undefined,
+        round: input.ticket.canonicalAffectedEmail ? 0 : resolvedActor?.email ? actorRound : requesterEmail ? 1 : 1,
       }),
       created_at: this.buildField({
         value: String(input.ticket.createDate || '').trim() || 'unknown',
@@ -2811,6 +2849,129 @@ export class PrepareContextService {
     ]
       .filter(Boolean)
       .join('\n');
+  }
+
+  private async normalizeTicketForPipeline(ticket: TicketLike): Promise<{
+    title: string;
+    descriptionClean: string;
+    requesterName: string;
+    requesterEmail: string;
+    affectedUserName: string;
+    affectedUserEmail: string;
+    method: 'llm' | 'deterministic_fallback';
+    confidence: number;
+  }> {
+    const narrative = this.buildTicketNarrative(ticket);
+    const fallback = this.normalizeTicketDeterministically(ticket.title || '', narrative);
+
+    try {
+      const prompt = `Normalize this IT support ticket text and return ONLY valid JSON.
+
+Rules:
+- Keep only relevant support information.
+- Remove signatures, legal disclaimers, portal boilerplate, and phishing warnings.
+- Preserve concrete facts: people, emails, phones, issue, symptoms, constraints, requested confirmation.
+- Keep output concise and factual.
+
+Output JSON schema:
+{
+  "title": "string",
+  "description_clean": "string",
+  "requester_name": "string",
+  "requester_email": "string",
+  "affected_user_name": "string",
+  "affected_user_email": "string",
+  "confidence": 0.0
+}
+
+Ticket text:
+"""${narrative.slice(0, 12000)}"""`;
+
+      const llm = await callLLM(prompt);
+      const parsed = this.extractJsonObject(llm.content);
+      const title = String(parsed?.title || '').trim();
+      const descriptionClean = String(parsed?.description_clean || '').trim();
+      const requesterName = this.normalizeName(String(parsed?.requester_name || '').trim());
+      const requesterEmail = String(parsed?.requester_email || '').trim().toLowerCase();
+      const affectedUserName = this.normalizeName(String(parsed?.affected_user_name || '').trim());
+      const affectedUserEmail = String(parsed?.affected_user_email || '').trim().toLowerCase();
+      const confidenceRaw = Number(parsed?.confidence);
+      const confidence = Number.isFinite(confidenceRaw) ? Math.max(0, Math.min(1, confidenceRaw)) : 0.75;
+
+      if (descriptionClean.length >= 40) {
+        const canonicalRequesterEmail = requesterEmail || this.extractFirstEmail(ticket.requester || '') || this.extractFirstEmail(narrative);
+        const canonicalRequesterName = requesterName || this.normalizeName(ticket.requester || '') || '';
+        const canonicalAffectedName = affectedUserName || canonicalRequesterName || '';
+        const canonicalAffectedEmail = affectedUserEmail || canonicalRequesterEmail || '';
+        return {
+          title: title || fallback.title,
+          descriptionClean,
+          requesterName: canonicalRequesterName,
+          requesterEmail: canonicalRequesterEmail,
+          affectedUserName: canonicalAffectedName,
+          affectedUserEmail: canonicalAffectedEmail,
+          method: 'llm',
+          confidence,
+        };
+      }
+    } catch {
+      // deterministic fallback below
+    }
+
+    return {
+      ...fallback,
+      method: 'deterministic_fallback',
+      confidence: 0.55,
+    };
+  }
+
+  private normalizeTicketDeterministically(title: string, narrative: string): {
+    title: string;
+    descriptionClean: string;
+    requesterName: string;
+    requesterEmail: string;
+    affectedUserName: string;
+    affectedUserEmail: string;
+  } {
+    const cleaned = String(narrative || '')
+      .replace(/you can access your service ticket[\s\S]*$/i, '')
+      .replace(/sincerely[\s\S]*$/i, '')
+      .replace(/caution[\s\S]*$/i, '')
+      .replace(/do not click any links? or attachments?[\s\S]*$/i, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const requesterEmail = this.extractFirstEmail(cleaned) || '';
+    const requesterName = this.normalizeName(
+      String(cleaned.match(/(?:first\s*name|firstname)\s*[:\-]\s*([a-zA-Z]+)\b/i)?.[1] || '') +
+      ' ' +
+      String(cleaned.match(/(?:last\s*name|lastname)\s*[:\-]\s*([a-zA-Z]+)\b/i)?.[1] || '')
+    ).trim();
+
+    return {
+      title: String(title || '').trim() || 'Support Request',
+      descriptionClean: cleaned || String(narrative || '').trim(),
+      requesterName,
+      requesterEmail,
+      affectedUserName: requesterName,
+      affectedUserEmail: requesterEmail,
+    };
+  }
+
+  private extractJsonObject(raw: string): Record<string, unknown> {
+    const text = String(raw || '').trim();
+    if (!text) return {};
+    try {
+      return JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      const match = text.match(/\{[\s\S]*\}/);
+      if (!match) return {};
+      try {
+        return JSON.parse(match[0]) as Record<string, unknown>;
+      } catch {
+        return {};
+      }
+    }
   }
 
   private inferPhoneProvider(input: {

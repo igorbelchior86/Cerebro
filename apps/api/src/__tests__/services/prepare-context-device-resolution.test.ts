@@ -44,6 +44,21 @@ describe('PrepareContextService device resolution guard', () => {
     expect(narrative).toContain('Provider appears to be GoTo Connect');
   });
 
+  it('deterministic normalization strips signature and caution boilerplate', () => {
+    const service = new PrepareContextService() as any;
+    const normalized = service.normalizeTicketDeterministically(
+      'Laptop Capabilities',
+      `Firstname: Alex Lastname: Zigler Message: Need multi-monitor confirmation.
+       You can access your service ticket via our client portal...
+       Sincerely, Refresh Support Team
+       Caution This email originated outside the organization.`
+    );
+
+    expect(normalized.descriptionClean).toContain('Need multi-monitor confirmation');
+    expect(normalized.descriptionClean.toLowerCase()).not.toContain('client portal');
+    expect(normalized.descriptionClean.toLowerCase()).not.toContain('caution');
+  });
+
   it('prioritizes last logged-in user match over weak config-only hostname correlation', async () => {
     const service = new PrepareContextService() as any;
 
@@ -169,6 +184,42 @@ describe('PrepareContextService device resolution guard', () => {
     expect(section.affected_user_name.status).toBe('inferred');
     expect(section.affected_user_email.value).toBe('alex@linnanehomes.com');
     expect(section.affected_user_email.status).toBe('inferred');
+  });
+
+  it('prefers round-0 canonical requester/affected identities when provided', () => {
+    const service = new PrepareContextService() as any;
+    const section = service.buildTicketEnrichmentSection({
+      ticket: {
+        ticketNumber: 'T20260221.0003',
+        requester: 'Answer ZSource',
+        canonicalRequesterName: 'Alex Zigler',
+        canonicalRequesterEmail: 'alex@linnanehomes.com',
+        canonicalAffectedName: 'Alex Zigler',
+        canonicalAffectedEmail: 'alex@linnanehomes.com',
+        title: 'Laptop capabilities',
+        description: 'Need usb-c video confirmation',
+        createDate: '2026-02-21T10:00:00.000Z',
+      },
+      companyName: 'Linnane Homes',
+      inferredCompany: '',
+      requesterName: 'Answer ZSource',
+      entityResolution: {
+        extracted_entities: {
+          person: ['Alex Zigler'],
+          company: ['Linnane Homes'],
+          phone: [],
+          email: ['alex@linnanehomes.com'],
+          location: [],
+          product_or_domain: [],
+        },
+        status: 'unresolved',
+      },
+    });
+
+    expect(section.requester_name.value).toBe('Alex Zigler');
+    expect(section.requester_email.value).toBe('alex@linnanehomes.com');
+    expect(section.affected_user_name.value).toBe('Alex Zigler');
+    expect(section.affected_user_email.value).toBe('alex@linnanehomes.com');
   });
 
   it('builds network enrichment with vpn and phone-provider inference', () => {

@@ -16,10 +16,21 @@ interface SessionData {
     id?: string;
     title?: string;
     description?: string;
+    description_normalized?: string;
     requester?: string;
+    requester_normalized?: string;
+    requester_email_normalized?: string;
+    affected_user_normalized?: string;
+    affected_user_email_normalized?: string;
     company?: string;
     created_at?: string;
     priority?: string;
+    normalization_audit?: {
+      round?: number | null;
+      method?: string | null;
+      confidence?: string | null;
+      source?: string | null;
+    };
   };
   evidence_pack?: any;
   diagnosis?: any;
@@ -190,12 +201,24 @@ export default function SessionDetail({
         );
         const problemDescription = pickStableText(
           snapshot?.description,
-          [backendTicket.description, currentTicket?.description, packTicket.description, subject],
+          [
+            backendTicket.description_normalized,
+            backendTicket.description,
+            currentTicket?.description,
+            packTicket.description,
+            subject,
+          ],
           subject
         );
         const requester = pickStableText(
           snapshot?.requester,
-          [backendTicket.requester, currentTicket?.requester, currentTicket?.site, packUser.name],
+          [
+            backendTicket.requester_normalized,
+            backendTicket.requester,
+            currentTicket?.requester,
+            currentTicket?.site,
+            packUser.name,
+          ],
           'Unknown user'
         );
         const org = pickStableText(

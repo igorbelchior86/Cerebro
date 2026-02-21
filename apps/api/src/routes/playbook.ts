@@ -135,15 +135,53 @@ router.get('/full-flow', async (req, res) => {
     const packTicket = (pack as any)?.ticket || {};
     const packOrg = (pack as any)?.org || {};
     const packUser = (pack as any)?.user || {};
+    const normalizedTicketSection = (pack as any)?.iterative_enrichment?.sections?.ticket || {};
+    const round0Finding = Array.isArray((pack as any)?.source_findings)
+      ? (pack as any).source_findings.find((f: any) => Number(f?.round) === 0)
+      : null;
+    const round0Details = Array.isArray(round0Finding?.details) ? round0Finding.details : [];
+    const normalizationMethod = String(
+      round0Details.find((d: string) => String(d).startsWith('method:')) || ''
+    ).replace('method:', '').trim();
+    const normalizationConfidence = String(
+      round0Details.find((d: string) => String(d).startsWith('confidence:')) || ''
+    ).replace('confidence:', '').trim();
     const dbTicket = ticketResult?.payload || {};
+    const normalizedDescription = String(
+      normalizedTicketSection?.description_clean?.value || ''
+    ).trim();
+    const normalizedRequesterName = String(
+      normalizedTicketSection?.requester_name?.value || ''
+    ).trim();
+    const normalizedRequesterEmail = String(
+      normalizedTicketSection?.requester_email?.value || ''
+    ).trim();
+    const normalizedAffectedName = String(
+      normalizedTicketSection?.affected_user_name?.value || ''
+    ).trim();
+    const normalizedAffectedEmail = String(
+      normalizedTicketSection?.affected_user_email?.value || ''
+    ).trim();
+
     const canonicalTicket = {
       id: String(ticketId || dbTicket.id || rawId),
       title: dbTicket.title ?? packTicket.title ?? null,
       description: dbTicket.description ?? packTicket.description ?? null,
+      description_normalized: normalizedDescription || null,
       requester: dbTicket.requester ?? packUser.name ?? null,
+      requester_normalized: normalizedRequesterName || null,
+      requester_email_normalized: normalizedRequesterEmail || null,
+      affected_user_normalized: normalizedAffectedName || null,
+      affected_user_email_normalized: normalizedAffectedEmail || null,
       company: dbTicket.company ?? packOrg.name ?? null,
       created_at: dbTicket.created_at ?? sessionRow?.created_at ?? null,
       priority: dbTicket.priority ?? 'P3',
+      normalization_audit: {
+        round: round0Finding ? 0 : null,
+        method: normalizationMethod || null,
+        confidence: normalizationConfidence || null,
+        source: round0Finding?.source || null,
+      },
     };
 
     const diagResult = await queryOne<{ payload: any }>(

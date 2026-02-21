@@ -444,6 +444,13 @@ export default function SessionDetail({
   const ticketNumber = data?.session.ticket_id || selectedTicket?.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`;
   const ticketLabel = `${ticketNumber} — ${ticketTitle}`;
   const ticketMetaLabel = getTicketContextMeta(selectedTicket);
+  const digestFacts = Array.isArray(data?.evidence_pack?.evidence_digest?.facts_confirmed)
+    ? data?.evidence_pack?.evidence_digest?.facts_confirmed
+    : [];
+  const digestFactMap = new Map<string, string>(
+    digestFacts.map((f: any) => [String(f?.id || ''), String(f?.fact || '').trim()])
+  );
+  const normalizeFact = (value: string) => value.replace(/\s+/g, ' ').trim();
   const playbookPanelData = data
     ? {
         ticketId: ticketNumber,
@@ -464,7 +471,21 @@ export default function SessionDetail({
               rank: Number(h?.rank) || i + 1,
               hypothesis: String(h?.hypothesis || 'Hypothesis'),
               confidence: Number(h?.confidence) || 0,
-              evidence: Array.isArray(h?.evidence) ? h.evidence.slice(0, 3).map((e: any) => String(e)) : [],
+              evidence: Array.isArray(h?.evidence)
+                ? h.evidence
+                    .slice(0, 4)
+                    .map((e: any) => {
+                      const id = String(e || '');
+                      const fact = normalizeFact(String(digestFactMap.get(id) || ''));
+                      return {
+                        id,
+                        label: fact || undefined,
+                      };
+                    })
+                    .filter((e: any, idx: number, arr: any[]) =>
+                      arr.findIndex((x) => String(x.label || x.id) === String(e.label || e.id)) === idx
+                    )
+                : [],
             }))
           : [],
       }

@@ -63,6 +63,31 @@ const STATUS_LABEL: Record<ActiveTicket['status'], string> = {
   failed: 'FAILED',
 };
 
+function MetaIcon({ type }: { type: 'clock' | 'company' | 'user' }) {
+  const common = { width: '11', height: '11', viewBox: '0 0 16 16', fill: 'none' } as const;
+  if (type === 'clock') {
+    return (
+      <svg {...common} aria-hidden="true">
+        <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.4" />
+        <path d="M8 4.8V8.1L10.5 9.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (type === 'company') {
+    return (
+      <svg {...common} aria-hidden="true">
+        <path d="M2.5 13.5h11M4.2 13.5V3.2h7.6v10.3M6.3 5.2h.01M9.7 5.2h.01M6.3 7.7h.01M9.7 7.7h.01M6.3 10.2h.01M9.7 10.2h.01" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common} aria-hidden="true">
+      <circle cx="8" cy="5.8" r="2.3" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M3.6 13.5c.6-2.1 2.3-3.2 4.4-3.2s3.8 1.1 4.4 3.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 const HTML_ENTITY_MAP: Record<string, string> = {
   '&nbsp;': ' ',
   '&amp;': '&',
@@ -287,7 +312,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
         <div
           ref={listRef}
           onScroll={(e) => persistSidebarState(filter, (e.currentTarget as HTMLDivElement).scrollTop)}
-          style={{ flex: 1, overflowY: 'auto', padding: '0 10px 10px', display: 'flex', flexDirection: 'column', gap: '5px', position: 'relative', zIndex: 1 }}
+          style={{ flex: 1, overflowY: 'auto', padding: '2px 10px 10px', display: 'flex', flexDirection: 'column', gap: '6px', position: 'relative', zIndex: 1 }}
         >
           {isLoading && tickets.length === 0 ? (
             [1, 2].map((i) => <div key={i} style={{ height: '80px', borderRadius: '9px', background: 'var(--bg-card)', border: '1px solid var(--border)', opacity: 0.6 }} />)
@@ -311,44 +336,71 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
             return (
               <button key={ticket.id} onClick={() => { persistSidebarState(filter); onSelectTicket?.(ticket.id); }}
                 className="animate-fadeIn"
-                style={{ position: 'relative', padding: '12px 14px', borderRadius: '9px', cursor: 'pointer', background: isActive ? 'var(--bg-card-active)' : 'var(--bg-card)', border: `1px solid ${isActive ? 'var(--border-accent)' : 'var(--border)'}`, boxShadow: 'var(--shadow-card)', textAlign: 'left', overflow: 'hidden', width: '100%', animationDelay: `${idx * 0.05}s`, display: 'flex', flexDirection: 'column', alignItems: 'stretch', flexShrink: 0 }}
-                onMouseEnter={(e) => { if (!isActive) { (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card-hover)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-strong)'; } }}
-                onMouseLeave={(e) => { if (!isActive) { (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card)'; (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; } }}
+                style={{
+                  position: 'relative',
+                  padding: '12px 12px 12px',
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  background: isActive ? 'var(--bg-card-active)' : 'var(--bg-card)',
+                  border: `1px solid ${isActive ? 'rgba(91,127,255,0.5)' : 'var(--border)'}`,
+                  boxShadow: isActive ? '0 0 0 1px rgba(91,127,255,0.24), 0 10px 26px rgba(29,34,55,0.25)' : '0 6px 16px rgba(20,24,38,0.12)',
+                  textAlign: 'left',
+                  overflow: 'hidden',
+                  width: '100%',
+                  animationDelay: `${idx * 0.05}s`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'stretch',
+                  flexShrink: 0,
+                  transition: 'var(--transition)',
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card-hover)';
+                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(91,127,255,0.3)';
+                    (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 10px 22px rgba(20,24,38,0.2)';
+                    (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card)';
+                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
+                    (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 16px rgba(20,24,38,0.12)';
+                    (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+                  }
+                }}
               >
                 {isActive && <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 0% 50%, rgba(91,127,255,0.18) 0%, transparent 70%)', pointerEvents: 'none' }} />}
-                <div style={{ position: 'absolute', left: 0, top: '18%', bottom: '18%', width: '2px', borderRadius: '0 2px 2px 0', background: PRIORITY_COLOR[priority] ?? '#5B7FFF', opacity: isActive ? 1 : 0.45 }} />
+                <div style={{ position: 'absolute', left: 0, top: 10, bottom: 10, width: '3px', borderRadius: '0 3px 3px 0', background: PRIORITY_COLOR[priority] ?? '#5B7FFF', opacity: isActive ? 1 : 0.55 }} />
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '7px', width: '100%' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', fontWeight: 700, color: PRIORITY_COLOR[priority] ?? '#5B7FFF', letterSpacing: '0.05em' }}>{priority}</span>
-                    <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-muted)', letterSpacing: '0.03em' }}>{normalized.id}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', width: '100%' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                    <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', fontWeight: 700, color: PRIORITY_COLOR[priority] ?? '#5B7FFF', letterSpacing: '0.05em', flexShrink: 0 }}>{priority}</span>
+                    <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-muted)', letterSpacing: '0.03em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{normalized.id}</span>
                   </div>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '9.5px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: cfg.color }}>
-                    <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: cfg.dot, flexShrink: 0 }} />
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 8px', borderRadius: '999px', fontSize: '9px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}`, flexShrink: 0 }}>
+                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: cfg.dot, flexShrink: 0 }} />
                     {normalized.status}
                   </span>
                 </div>
 
-                <p style={{ fontSize: '12.5px', fontWeight: 500, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', lineHeight: 1.35, letterSpacing: '-0.01em', marginBottom: '8px', width: '100%', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <p style={{ fontSize: '13px', fontWeight: 650, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', lineHeight: 1.34, letterSpacing: '-0.012em', marginBottom: '10px', width: '100%', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', minHeight: '34px' }}>
                   {normalized.title}
                 </p>
-                <div style={{ width: '100%', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                  <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-faint)', flexShrink: 0 }}>
+                <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'auto 1fr', alignItems: 'center', columnGap: '9px', rowGap: '4px' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-faint)', flexShrink: 0 }}>
+                    <MetaIcon type="clock" />
                     {createdAtLabel}
                   </span>
-                  <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right' }}>
-                    {normalized.company}<span style={{ margin: '0 4px', opacity: 0.4 }}>•</span>{normalized.requester}
+                  <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right', display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                    <MetaIcon type="company" />
+                    {normalized.company}
                   </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 7px', borderRadius: '999px', fontSize: '9.5px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}` }}>
-                    {cfg.pulse ? (
-                      <span style={{ position: 'relative', display: 'inline-flex', width: '7px', height: '7px' }}>
-                        <span className="animate-ping" style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: cfg.dot, opacity: 0.4 }} />
-                        <span style={{ position: 'relative', width: '7px', height: '7px', borderRadius: '50%', background: cfg.dot }} />
-                      </span>
-                    ) : <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: cfg.dot, flexShrink: 0 }} />}
-                    {normalized.status}
+                  <span />
+                  <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right', display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
+                    <MetaIcon type="user" />
+                    {normalized.requester}
                   </span>
                 </div>
               </button>

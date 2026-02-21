@@ -7,7 +7,7 @@ interface Hypothesis {
   rank: number;
   hypothesis: string;
   confidence: number;
-  evidence?: string[];
+  evidence?: Array<string | { id: string; label?: string }>;
 }
 
 interface ChecklistItem {
@@ -55,6 +55,42 @@ function SectionLabel({ children }: { children: ReactNode }) {
       {children}
     </div>
   );
+}
+
+function hypothesisCategory(text: string): string {
+  const t = String(text || '').toLowerCase();
+  if (/(laptop|monitor|display|usb|driver|hardware|dock)/.test(t)) return 'Hardware';
+  if (/(network|vpn|dns|interface|latency|internet|connect)/.test(t)) return 'Network';
+  if (/(user|identity|login|requester|account|mfa)/.test(t)) return 'Identity';
+  if (/(security|defender|edr|xdr|malware|phish)/.test(t)) return 'Security';
+  return 'Operational';
+}
+
+function confidenceTone(c: number): { label: string; color: string; bg: string; border: string } {
+  if (c >= 0.8) return { label: 'High', color: '#10B981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.28)' };
+  if (c >= 0.65) return { label: 'Medium', color: '#EAB308', bg: 'rgba(234,179,8,0.1)', border: 'rgba(234,179,8,0.26)' };
+  return { label: 'Low', color: '#5B7FFF', bg: 'rgba(91,127,255,0.1)', border: 'rgba(91,127,255,0.28)' };
+}
+
+function formatEvidenceChipLabel(raw: string | { id: string; label?: string }): string {
+  const value = typeof raw === 'string' ? raw : String(raw?.id || '').trim();
+  const explicit = typeof raw === 'string' ? '' : String(raw?.label || '').trim();
+  if (explicit) return explicit;
+  if (!value) return 'Evidence';
+
+  if (value.startsWith('fact-ticket-')) return 'Ticket evidence';
+  if (value.startsWith('fact-device-')) return 'Device evidence';
+  if (value.startsWith('fact-actor-')) return 'Actor evidence';
+  if (value.startsWith('fact-doc-')) return 'Documentation evidence';
+  if (value.startsWith('fact-signal-')) {
+    if (value.includes('ninja-iface')) return 'Ninja network interface signal';
+    if (value.includes('ninja-sw')) return 'Ninja software signal';
+    return 'Operational signal';
+  }
+  if (value.startsWith('fact-conflict-')) return 'Data conflict signal';
+  if (value.startsWith('fact-provider-')) return 'Provider evidence';
+
+  return value.length > 44 ? `${value.slice(0, 41)}...` : value;
 }
 
 function parseChecklistFromMarkdown(content: string): ChecklistItem[] {
@@ -105,6 +141,7 @@ function parseChecklistFromMarkdown(content: string): ChecklistItem[] {
 export default function PlaybookPanel({ content, status = 'ready', data, children }: PlaybookPanelProps) {
   const [copied, setCopied] = useState(false);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [openEvidenceFor, setOpenEvidenceFor] = useState<number | null>(null);
 
   const handleCopy = () => {
     navigator.clipboard?.writeText(content ?? '').then(() => {
@@ -200,29 +237,105 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
             <SectionLabel>Hypotheses</SectionLabel>
             {hyps.map((h) => {
               const c = confColor(h.confidence);
+              const tone = confidenceTone(h.confidence);
+              const category = hypothesisCategory(h.hypothesis);
               const rankBg = h.rank === 1 ? '#F97316' : h.rank === 2 ? '#EAB308' : '#5B7FFF';
               return (
-                <div key={h.rank} style={{ padding: '11px 13px', borderRadius: '8px', background: 'var(--bg-card)', border: '1px solid var(--border)', marginBottom: '7px', cursor: 'default', transition: 'var(--transition)' }}
+                <div key={h.rank} style={{ padding: '12px 13px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--border)', marginBottom: '8px', cursor: 'default', transition: 'var(--transition)' }}
                   onMouseEnter={(e) => (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-strong)'}
                   onMouseLeave={(e) => (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)'}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: h.evidence?.length ? '6px' : 0 }}>
-                    <span style={{ width: '18px', height: '18px', borderRadius: '5px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', fontWeight: 700, color: 'white', flexShrink: 0, background: rankBg }}>{h.rank}</span>
-                    <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', flex: 1 }}>{h.hypothesis}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', fontWeight: 700, color: c }}>{Math.round(h.confidence * 100)}%</span>
-                      <div style={{ width: '44px', height: '3px', borderRadius: '99px', background: 'var(--border)', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${h.confidence * 100}%`, borderRadius: '99px', background: c }} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <span style={{ width: '20px', height: '20px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '10px', fontWeight: 700, color: 'white', flexShrink: 0, background: rankBg }}>
+                      {h.rank}
+                    </span>
+                    <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                      {category}
+                    </span>
+                    <span
+                      style={{
+                        marginLeft: 'auto',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '2px 8px',
+                        borderRadius: '999px',
+                        border: `1px solid ${tone.border}`,
+                        background: tone.bg,
+                        color: tone.color,
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        fontFamily: 'var(--font-jetbrains-mono, monospace)',
+                      }}
+                    >
+                      {tone.label} {Math.round(h.confidence * 100)}%
+                    </span>
+                    {h.evidence && h.evidence.length > 0 && (
+                      <button
+                        type="button"
+                        aria-label="View evidence"
+                        onClick={() => setOpenEvidenceFor((p) => (p === h.rank ? null : h.rank))}
+                        style={{
+                          width: '22px',
+                          height: '22px',
+                          borderRadius: '999px',
+                          border: '1px solid var(--border)',
+                          background: 'var(--bg-panel)',
+                          color: 'var(--accent)',
+                          fontFamily: 'var(--font-jetbrains-mono, monospace)',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        i
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ fontSize: '12.5px', lineHeight: 1.5, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {h.hypothesis}
+                  </div>
+
+                  {openEvidenceFor === h.rank && h.evidence && h.evidence.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: '10px',
+                        padding: '10px 11px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--border-strong)',
+                        background: 'var(--bg-panel)',
+                      }}
+                    >
+                      <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+                        Evidence details
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                        {h.evidence.map((ev) => {
+                          const id = typeof ev === 'string' ? ev : ev.id;
+                          const label = formatEvidenceChipLabel(ev);
+                          return (
+                            <div key={id} style={{ border: '1px solid var(--border)', borderRadius: '7px', padding: '7px 8px', background: 'var(--bg-card)' }}>
+                              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>{label}</div>
+                              <div style={{ marginTop: '3px', fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)' }}>{id}</div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                  </div>
-                  {h.evidence && h.evidence.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                      {h.evidence.map((ev) => (
-                        <span key={ev} style={{ padding: '2px 7px', borderRadius: '4px', fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--accent)', background: 'var(--accent-muted)', border: '1px solid rgba(91,127,255,0.15)' }}>{ev}</span>
-                      ))}
-                    </div>
                   )}
+
+                  <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '62px' }}>
+                      Confidence
+                    </span>
+                    <div style={{ flex: 1, height: '5px', borderRadius: '999px', background: 'var(--border)', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${h.confidence * 100}%`, borderRadius: '999px', background: c }} />
+                    </div>
+                    <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '10px', fontWeight: 700, color: c }}>
+                      {Math.round(h.confidence * 100)}%
+                    </span>
+                  </div>
                 </div>
               );
             })}

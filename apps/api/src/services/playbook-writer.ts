@@ -60,7 +60,7 @@ export class PlaybookWriterService {
         `Playbook generation failed (${modelName}): ${message || 'unknown LLM error'}`
       );
     }
-    const playbookMarkdown = response.content;
+    let playbookMarkdown = response.content;
 
     const latencyMs = Date.now() - startTime;
 
@@ -75,10 +75,27 @@ export class PlaybookWriterService {
       );
     }
 
-    const sanitizedPlaybook = this.sanitizePlaybook(playbookMarkdown);
+    let sanitizedPlaybook = this.sanitizePlaybook(playbookMarkdown);
+
+    if (!this.hasChecklistHypothesisAlignment(sanitizedPlaybook, diagnosis)) {
+      const repairPrompt = `${prompt}
+
+## REVISION REQUIRED
+Your previous output did not map checklist items to the ranked hypotheses.
+Regenerate the full playbook and ensure Resolution Steps include explicit hypothesis tags: [H1], [H2], [H3] where applicable.
+`;
+      const repair = await llm.complete(repairPrompt);
+      playbookMarkdown = repair.content;
+      sanitizedPlaybook = this.sanitizePlaybook(playbookMarkdown);
+    }
 
     // ─── Validate playbook structure ────────────────────────────
     this.validatePlaybookStructure(sanitizedPlaybook);
+    if (!this.hasChecklistHypothesisAlignment(sanitizedPlaybook, diagnosis)) {
+      throw new Error(
+        `Playbook generation failed: checklist is not aligned with ranked hypotheses for ticket ${pack.ticket.id}`
+      );
+    }
 
     // ─── Build output ──────────────────────────────────────────
     const playbook: PlaybookOutput = {
@@ -179,7 +196,7 @@ List 3-5 checks to verify system state before starting:
 
 ## 🔧 Resolution Steps
 Numbered steps with:
-1. **Step Title** - One line summary
+1. **[H#] Step Title** - One line summary
    - Description of what to do
    - \`command to run\` if applicable
    - Expected output or behavior
@@ -188,6 +205,15 @@ Numbered steps with:
 2. **Next Step** - Continue...
 
 Stop at step 8 maximum. Each step should be 30-60 seconds execution.
+
+### Hypothesis Mapping Rule (MANDATORY)
+- Map checklist steps to hypotheses using tags:
+  - [H1] for primary hypothesis
+  - [H2] for second hypothesis
+  - [H3] for third hypothesis
+- At least one checklist step must exist for each hypothesis with confidence >= 0.60.
+- Do not produce a checklist focused only on H1 when H2/H3 are material.
+- If a hypothesis cannot be actioned, add one explicit investigative step tagged to that hypothesis.
 
 ## ✨ Verification
 - How to verify the fix worked
@@ -236,6 +262,26 @@ ${pack.docs
 Return ONLY the Markdown content. No explanation, no code fences wrapping the markdown itself.
 
 Start with the title and continue with the sections above.`;
+  }
+
+  private hasChecklistHypothesisAlignment(
+    markdown: string,
+    diagnosis: DiagnosisOutput
+  ): boolean {
+    const required = (diagnosis.top_hypotheses || [])
+      .slice(0, 3)
+      .filter((h) => Number(h?.confidence || 0) >= 0.6)
+      .map((h, idx) => `h${idx + 1}`);
+    if (required.length === 0) return true;
+
+    const lines = markdown.split('\n');
+    const checklistItems = lines
+      .filter((line) => /^\s*\d+\.\s+/.test(line))
+      .map((line) => line.toLowerCase());
+
+    return required.every((tag) =>
+      checklistItems.some((line) => line.includes(`[${tag}]`))
+    );
   }
 
   private hasInternalLeakage(markdown: string): boolean {

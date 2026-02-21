@@ -204,3 +204,9 @@
 **Root cause**: Pipeline catch blocks classified all exceptions as terminal.
 **Rule**: Provider transient failures must map to retriable status (`blocked`), while keeping `pipeline ou nada` (no fallback artifacts).
 **Pattern**: `RESOURCE_EXHAUSTED`/`429`/limiter/timeout => `blocked`; deterministic validation/logic errors => `failed`.
+
+## Lesson: 2026-02-21
+**Mistake**: Checklist generation was not explicitly bound to all material hypotheses, causing action plans to drift to generic H1-only steps.
+**Root cause**: Prompt contract between diagnosis and playbook lacked mandatory mapping and no post-generation alignment gate.
+**Rule**: When model output depends on ranked hypotheses, enforce explicit hypothesis tags and validate coverage before accepting output.
+**Pattern**: Any `top_hypotheses` -> procedural plan flow needs deterministic coverage checks.

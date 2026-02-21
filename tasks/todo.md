@@ -1,3 +1,34 @@
+# Task: Priorizar resolução de dispositivo por last logged-in user no NinjaOne
+**Status**: completed
+**Started**: 2026-02-21
+
+## Plan
+- [x] Step 1: Refatorar `resolveDeviceDeterministically` para user-first matching (ticket actor x last login).
+- [x] Step 2: Manter hostname/config como fallback secundário e endurecer threshold mínimo.
+- [x] Step 3: Adicionar teste de regressão para garantir prioridade de last login.
+- [x] Step 4: Rodar typecheck e testes alvo.
+- [x] Step 5: Atualizar wiki (feature + changelog).
+- [x] Step 6: Validar replay real no ticket `T20260220.0018`.
+
+## Open Questions
+- Nenhuma para esta iteração.
+
+## Progress Notes
+- Implementado user-first em `prepare-context.ts` com score por email/local-part/token do last logged-in user.
+- Fallback por hostname/config mantido apenas quando user-match não é forte.
+- Threshold de fallback elevado de `0.20` para `0.35`.
+- Replay real confirmou remoção do falso positivo (`LINNANE-GENERAL`): agora o endpoint ficou `unknown` quando não há correlação forte.
+
+## Review
+- What worked:
+- A regra user-first eliminou promoção indevida de device genérico por hint fraco de configuração.
+- What was tricky:
+- Em parte dos devices, last-login não vem no payload básico e depende de details por device.
+- Time taken:
+- ~35 minutos
+
+---
+
 # Task: Implementar pipeline de enriquecimento iterativo (A-E) com contrato canônico
 **Status**: completed
 **Started**: 2026-02-21

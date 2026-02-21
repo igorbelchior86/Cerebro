@@ -86,6 +86,31 @@ export class NinjaOneClient {
     return data as T;
   }
 
+  private async requestV2<T>(endpoint: string, params?: Record<string, string | number>) {
+    const token = await this.getAccessToken();
+    const url = new URL(`${this.baseUrl}/v2${endpoint}`);
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        url.searchParams.append(key, String(value));
+      });
+    }
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`NinjaOne API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data as T;
+  }
+
   async getDevice(deviceId: string): Promise<NinjaOneDevice> {
     const response = await this.request<NinjaOneDevice>(`/devices/${deviceId}`);
     return response;
@@ -136,17 +161,120 @@ export class NinjaOneClient {
   }
 
   async getDeviceDetails(deviceId: string) {
-    const response = await this.request<{
-      id: string;
-      hostname: string;
-      osName: string;
-      osVersion: string;
-      lastActivityTime: string;
-      ipAddress: string;
-      properties?: Record<string, unknown>;
-      [key: string]: unknown;
-    }>(`/devices/${deviceId}`);
-    return response;
+    try {
+      return await this.request<{
+        id: string;
+        hostname: string;
+        osName: string;
+        osVersion: string;
+        lastActivityTime: string;
+        ipAddress: string;
+        properties?: Record<string, unknown>;
+        [key: string]: unknown;
+      }>(`/devices/${deviceId}`);
+    } catch {
+      // Official beta docs use singular resource for this endpoint.
+      return this.requestV2<{
+        id: string;
+        hostname: string;
+        osName: string;
+        osVersion: string;
+        lastActivityTime: string;
+        ipAddress: string;
+        properties?: Record<string, unknown>;
+        [key: string]: unknown;
+      }>(`/device/${deviceId}`);
+    }
+  }
+
+  async getDeviceLastLoggedOnUser(deviceId: string): Promise<{ userName: string; logonTime?: number } | null> {
+    try {
+      return await this.requestV2<{ userName: string; logonTime?: number }>(`/device/${deviceId}/last-logged-on-user`);
+    } catch {
+      return null;
+    }
+  }
+
+  async listLastLoggedOnUsers(parameters?: { pageSize?: number; df?: string; cursor?: string }) {
+    const params: Record<string, string | number> = {};
+    if (parameters?.pageSize) params.pageSize = parameters.pageSize;
+    if (parameters?.df) params.df = parameters.df;
+    if (parameters?.cursor) params.cursor = parameters.cursor;
+    return this.requestV2<{
+      cursor?: { name?: string; offset?: number; count?: number; expires?: number };
+      results?: Array<{ userName: string; logonTime?: number; deviceId: number }>;
+    }>('/queries/logged-on-users', params);
+  }
+
+  async getDeviceActivities(deviceId: string, parameters?: { pageSize?: number }) {
+    const params: Record<string, string | number> = {};
+    if (parameters?.pageSize) params.pageSize = parameters.pageSize;
+    const response = await this.requestV2<
+      | {
+      cursor?: { name?: string; offset?: number; count?: number; expires?: number };
+      results?: Array<{
+        id?: string | number;
+        activityType?: string;
+        activityClass?: string;
+        activity?: string;
+        message?: string;
+        createTime?: number | string;
+        timestamp?: number | string;
+      }>;
+    }
+      | Array<{
+      id?: string | number;
+      activityType?: string;
+      activityClass?: string;
+      activity?: string;
+      message?: string;
+      createTime?: number | string;
+      timestamp?: number | string;
+    }>
+    >(`/device/${deviceId}/activities`, params);
+    return Array.isArray(response) ? response : Array.isArray(response?.results) ? response.results : [];
+  }
+
+  async getDeviceNetworkInterfaces(deviceId: string) {
+    const response = await this.requestV2<
+      | {
+      results?: Array<{
+        adapterName?: string;
+        interfaceName?: string;
+        ipAddress?: string[] | string;
+        macAddress?: string[] | string;
+        status?: string;
+        defaultGateway?: string;
+      }>;
+    }
+      | Array<{
+      adapterName?: string;
+      interfaceName?: string;
+      ipAddress?: string[] | string;
+      macAddress?: string[] | string;
+      status?: string;
+      defaultGateway?: string;
+    }>
+    >(`/device/${deviceId}/network-interfaces`);
+    return Array.isArray(response) ? response : Array.isArray(response?.results) ? response.results : [];
+  }
+
+  async querySoftware(parameters?: { pageSize?: number; df?: string; cursor?: string }) {
+    const params: Record<string, string | number> = {};
+    if (parameters?.pageSize) params.pageSize = parameters.pageSize;
+    if (parameters?.df) params.df = parameters.df;
+    if (parameters?.cursor) params.cursor = parameters.cursor;
+    const response = await this.requestV2<{
+      cursor?: { name?: string; offset?: number; count?: number; expires?: number };
+      results?: Array<{
+        name?: string;
+        version?: string;
+        publisher?: string;
+        deviceId?: number;
+        timestamp?: number;
+      }>;
+    }>('/queries/software', params);
+    return Array.isArray(response?.results) ? response.results : [];
   }
 
   async listOrganizations() {

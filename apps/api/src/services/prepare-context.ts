@@ -69,6 +69,7 @@ interface DeviceResolutionResult {
   device: any | null;
   checks: Signal[];
   loggedInUser: string;
+  loggedInAt?: string;
   reason: string;
   strongMatch: boolean;
   score: number;
@@ -141,7 +142,7 @@ const CAPABILITY_SPEC_RULES: Array<{
   },
   {
     manufacturer: /hp/i,
-    modelContains: /(elitebook|probook|zbook)/i,
+    modelContains: /(elitebook|probook|zbook|hp laptop|pavilion|envy|spectre)/i,
     spec_source_url: 'https://support.hp.com',
     compatibility_outcome: 'supported_with_dock',
   },
@@ -428,7 +429,9 @@ export class PrepareContextService {
     let device: any = null;
     let deviceDetails: any | null = null;
     let loggedInUser = '';
+    let loggedInAt = '';
     let ninjaChecks: Signal[] = [];
+    let ninjaContextSignals: Signal[] = [];
     let ninjaOrgMatch: { id: number; name: string } | null = null;
     let ninjaOrgDevices: any[] = [];
     let ninjaAlerts: any[] = [];
@@ -593,7 +596,20 @@ export class PrepareContextService {
       device = resolvedDevice.device;
       ninjaChecks = resolvedDevice.checks;
       loggedInUser = resolvedDevice.loggedInUser;
+      loggedInAt = resolvedDevice.loggedInAt || '';
       deviceDetails = resolvedDevice.details ?? null;
+      if (device?.id) {
+        ninjaContextSignals = await this.buildNinjaContextSignals({
+          ninjaoneClient,
+          deviceId: String(device.id),
+          orgId:
+            input.orgId ||
+            itglueOrgMatch?.id ||
+            (ninjaOrgMatch ? String(ninjaOrgMatch.id) : null),
+          tenantId,
+          sourceWorkspace,
+        });
+      }
 
       sourceFindings.push({
         source: 'ninjaone',
@@ -609,6 +625,7 @@ export class PrepareContextService {
           `devices: ${ninjaOrgDevices.length}`,
           `alerts: ${ninjaAlerts.length}`,
           `health checks: ${ninjaChecks.length}`,
+          `extended signals: ${ninjaContextSignals.length}`,
           loggedInUser ? `logged-in user: ${loggedInUser}` : 'logged-in user: not available',
           `credential scope: ${credentialScope}`,
         ],
@@ -714,9 +731,12 @@ export class PrepareContextService {
       if (refined && (!device || String(refined.id) !== String(device.id))) {
         device = refined;
         const details = await ninjaoneClient.getDeviceDetails(String(device.id)).catch(() => null);
-        if (details) {
-          loggedInUser = this.extractLoggedInUser(details) || loggedInUser;
+        const lastLogged = await this.resolveLastLoggedInContext(ninjaoneClient, String(device.id));
+        if (lastLogged.userName) {
+          loggedInUser = lastLogged.userName;
+          loggedInAt = lastLogged.logonTime || loggedInAt;
         }
+        else if (details) loggedInUser = this.extractLoggedInUser(details) || loggedInUser;
       }
       sourceFindings.push({
         source: 'ninjaone',
@@ -728,10 +748,7 @@ export class PrepareContextService {
         details: [loggedInUser ? `logged-in user after refinement: ${loggedInUser}` : 'logged-in user unavailable after refinement'],
         why_selected: ['round-3 refinement re-evaluates device alignment using resolved actor tokens'],
         tenant_id: tenantId,
-        org_id:
-          input.orgId ||
-          itglueOrgMatch?.id ||
-          (ninjaOrgMatch ? String(ninjaOrgMatch.id) : null),
+        org_id: ninjaOrgMatch ? String(ninjaOrgMatch.id) : null,
         source_workspace: sourceWorkspace,
       });
     }
@@ -870,7 +887,7 @@ export class PrepareContextService {
       return decision.accepted;
     });
 
-    const scopedSignals = [...signals, ...ninjaChecks].filter((signal) => {
+    const scopedSignals = [...signals, ...ninjaChecks, ...ninjaContextSignals].filter((signal) => {
       const candidateOrgId = signal.org_id || resolvedOrgId || null;
       const decision = this.enforceOrgBoundary({
         itemId: `signal:${signal.id}`,
@@ -925,6 +942,7 @@ export class PrepareContextService {
       device,
       deviceDetails,
       loggedInUser,
+      loggedInAt,
       inferredPhoneProvider,
       sourceFindings,
       itglueConfigs,
@@ -983,8 +1001,10 @@ export class PrepareContextService {
         device: {
           ninja_device_id: device.id,
           hostname: device.hostname || device.systemName || String(device.id),
-          os: device.osName || device.osVersion || 'Unknown',
-          last_seen: device.lastActivityTime || device.lastContact || new Date().toISOString(),
+          os: this.resolveDeviceOsLabel(device, deviceDetails),
+          last_seen:
+            this.normalizeTimeValue(device.lastActivityTime || device.lastContact || deviceDetails?.lastContact) ||
+            new Date().toISOString(),
           confidence: capabilityVerification.device_match_strong ? 'high' as const : 'medium' as const,
         },
       }),
@@ -1058,10 +1078,89 @@ export class PrepareContextService {
 
     const normalizedTicket = input.ticketText.toLowerCase();
     const requesterTokens = this.buildRequesterTokens(input.requesterName);
+    const actorEmails = this.extractEmails(input.ticketText);
+    const actorTokens = [...new Set([...requesterTokens, ...this.buildRequesterTokens(input.ticketText)])];
     const configHints = input.itglueConfigs
       .map((c: any) => String(c?.attributes?.hostname || c?.attributes?.name || '').toLowerCase())
       .filter(Boolean);
 
+    // 1) Primary strategy: ticket actor identity x Ninja last logged-in user.
+    // This must win over weak hostname/config correlations.
+    const USER_CORRELATION_DEVICE_LIMIT = 60;
+    const userCandidates = await Promise.all(
+      input.devices.slice(0, USER_CORRELATION_DEVICE_LIMIT).map(async (device) => {
+        let details: any = null;
+        let loggedInAt = '';
+        let loggedInUser = this.extractLoggedInUser(device) || '';
+        if (!loggedInUser && device?.id) {
+          const lastLogged = await this.resolveLastLoggedInContext(input.ninjaoneClient, String(device.id));
+          loggedInUser = lastLogged.userName;
+          loggedInAt = lastLogged.logonTime;
+        }
+        if (!loggedInUser && device?.id) {
+          details = await input.ninjaoneClient.getDeviceDetails(String(device.id)).catch(() => null);
+          loggedInUser = this.extractLoggedInUser(details) || '';
+        }
+        const userMatch = this.scoreLoggedInUserMatch({
+          loggedInUser,
+          actorEmails,
+          actorTokens,
+        });
+        return {
+          device,
+          details,
+          loggedInUser,
+          loggedInAt,
+          score: userMatch.score,
+          reasons: userMatch.reasons,
+        };
+      })
+    );
+    const bestUserCandidate = userCandidates.sort((a, b) => b.score - a.score)[0];
+    const MIN_USER_MATCH_SELECTION_SCORE = 0.6;
+    if (bestUserCandidate && bestUserCandidate.score >= MIN_USER_MATCH_SELECTION_SCORE) {
+      const selectedDevice = bestUserCandidate.device;
+      const selectedDetails = bestUserCandidate.details ||
+        (selectedDevice?.id
+          ? await input.ninjaoneClient.getDeviceDetails(String(selectedDevice.id)).catch(() => null)
+          : null);
+      const [rawChecks] = selectedDevice?.id
+        ? await Promise.all([
+            input.ninjaoneClient.getDeviceChecks(String(selectedDevice.id)).catch(() => []),
+          ])
+        : [[]];
+      const checks: Signal[] = rawChecks.map((check) => ({
+        id: `ninja-check-${check.id}`,
+        source: 'ninja' as const,
+        timestamp: check.lastCheck,
+        type: check.status === 'passed' ? 'health_ok' : 'health_warn',
+        summary: `${check.name}: ${check.status}`,
+        raw_ref: check,
+        tenant_id: input.tenantId,
+        org_id: input.orgId,
+        source_workspace: input.sourceWorkspace,
+      }));
+      const resolvedLastLogged = selectedDevice?.id
+        ? await this.resolveLastLoggedInContext(input.ninjaoneClient, String(selectedDevice.id))
+        : { userName: '', logonTime: '' };
+      const loggedInUser =
+        bestUserCandidate.loggedInUser ||
+        resolvedLastLogged.userName ||
+        this.extractLoggedInUser(selectedDetails) ||
+        '';
+      return {
+        device: selectedDevice,
+        checks,
+        loggedInUser,
+        loggedInAt: bestUserCandidate.loggedInAt || resolvedLastLogged.logonTime || '',
+        reason: `${bestUserCandidate.reasons.join(', ')}; score=${bestUserCandidate.score.toFixed(2)}`,
+        strongMatch: true,
+        score: bestUserCandidate.score,
+        details: selectedDetails,
+      };
+    }
+
+    // 2) Secondary strategy: hostname/config correlation.
     const scored = input.devices
       .map((device) => {
         const identity = `${device.hostname || ''} ${device.systemName || ''}`.toLowerCase();
@@ -1094,7 +1193,7 @@ export class PrepareContextService {
         score: 0,
       };
     }
-    const MIN_DEVICE_SELECTION_SCORE = 0.2;
+    const MIN_DEVICE_SELECTION_SCORE = 0.35;
     if (winner.score < MIN_DEVICE_SELECTION_SCORE) {
       return {
         device: null,
@@ -1111,6 +1210,7 @@ export class PrepareContextService {
 
     let details: any = null;
     let loggedInUser = '';
+    let loggedInAt = '';
     let checks: Signal[] = [];
     if (selectedDevice?.id) {
       const [rawChecks, rawDetails] = await Promise.all([
@@ -1118,7 +1218,12 @@ export class PrepareContextService {
         input.ninjaoneClient.getDeviceDetails(String(selectedDevice.id)).catch(() => null),
       ]);
       details = rawDetails;
-      loggedInUser = this.extractLoggedInUser(rawDetails) || '';
+      const lastLogged = await this.resolveLastLoggedInContext(input.ninjaoneClient, String(selectedDevice.id));
+      loggedInAt = lastLogged.logonTime || '';
+      loggedInUser =
+        lastLogged.userName ||
+        this.extractLoggedInUser(rawDetails) ||
+        '';
       checks = rawChecks.map((check) => ({
         id: `ninja-check-${check.id}`,
         source: 'ninja' as const,
@@ -1141,11 +1246,48 @@ export class PrepareContextService {
       device: selectedDevice,
       checks,
       loggedInUser,
+      loggedInAt,
       reason,
       strongMatch,
       score: winner.score,
       details,
     };
+  }
+
+  private scoreLoggedInUserMatch(input: {
+    loggedInUser: string;
+    actorEmails: string[];
+    actorTokens: string[];
+  }): { score: number; reasons: string[] } {
+    const logged = String(input.loggedInUser || '').trim().toLowerCase();
+    if (!logged) {
+      return { score: 0, reasons: [] };
+    }
+    let score = 0;
+    const reasons: string[] = [];
+    const loggedLocal = logged.includes('@') ? logged.split('@')[0] || logged : logged;
+    const loggedParts = logged
+      .split(/[\\\\/@._\\-\\s]+/)
+      .map((part) => part.trim())
+      .filter((part) => part.length >= 3);
+
+    if (input.actorEmails.some((email) => email.toLowerCase() === logged)) {
+      score = Math.max(score, 1);
+      reasons.push('last logged-in user exact email match');
+    } else if (input.actorEmails.some((email) => {
+      const local = (email.split('@')[0] || '').toLowerCase();
+      return local && (logged.includes(local) || loggedLocal === local);
+    })) {
+      score = Math.max(score, 0.8);
+      reasons.push('last logged-in user local-part match');
+    }
+
+    if (input.actorTokens.some((token) => loggedParts.includes(token) || logged.includes(token))) {
+      score = Math.max(score, score >= 0.8 ? score : 0.65);
+      reasons.push('last logged-in user token match');
+    }
+
+    return { score: Number(score.toFixed(3)), reasons };
   }
 
   private resolveEntityScope(input: {
@@ -1378,12 +1520,26 @@ export class PrepareContextService {
     const manufacturer = String(
       details?.manufacturer ||
       details?.vendor ||
+      details?.system?.manufacturer ||
       device?.manufacturer ||
       device?.vendor ||
       ''
     ).trim();
-    const model = String(details?.model || device?.model || details?.systemModel || '').trim();
-    const serial = String(details?.serialNumber || details?.serial || device?.serialNumber || '').trim();
+    const model = String(
+      details?.model ||
+      details?.system?.model ||
+      device?.model ||
+      details?.systemModel ||
+      ''
+    ).trim();
+    const serial = String(
+      details?.serialNumber ||
+      details?.serial ||
+      details?.system?.serialNumber ||
+      details?.system?.biosSerialNumber ||
+      device?.serialNumber ||
+      ''
+    ).trim();
     const dockAsset = assets.find((asset: any) =>
       /dock|adapter|usb-c|thunderbolt/i.test(String(JSON.stringify(asset?.attributes || {})))
     );
@@ -1619,6 +1775,7 @@ export class PrepareContextService {
     device: any | null;
     deviceDetails: any | null;
     loggedInUser: string;
+    loggedInAt: string;
     inferredPhoneProvider: string | null;
     sourceFindings: SourceFinding[];
     itglueConfigs: any[];
@@ -1639,6 +1796,7 @@ export class PrepareContextService {
       device: input.device,
       deviceDetails: input.deviceDetails,
       loggedInUser: input.loggedInUser,
+      loggedInAt: input.loggedInAt,
       ninjaChecks: input.ninjaChecks,
     });
     const networkSection = this.buildNetworkEnrichmentSection({
@@ -1877,6 +2035,7 @@ export class PrepareContextService {
     device: any | null;
     deviceDetails: any | null;
     loggedInUser: string;
+    loggedInAt: string;
     ninjaChecks: Signal[];
   }): IterativeEnrichmentSections['endpoint'] {
     const deviceName = String(
@@ -1887,11 +2046,25 @@ export class PrepareContextService {
       device: input.device,
       deviceDetails: input.deviceDetails,
     });
-    const osName = String(input.device?.osName || input.deviceDetails?.osName || '').trim();
-    const osVersion = String(input.device?.osVersion || input.deviceDetails?.osVersion || '').trim();
-    const lastCheckIn = String(
-      input.device?.lastActivityTime || input.device?.lastContact || ''
+    const osName = String(
+      input.device?.osName ||
+      input.deviceDetails?.osName ||
+      input.deviceDetails?.os?.name ||
+      ''
     ).trim();
+    const osVersion = String(
+      input.device?.osVersion ||
+      input.deviceDetails?.osVersion ||
+      [input.deviceDetails?.os?.buildNumber, input.deviceDetails?.os?.releaseId].filter(Boolean).join(' / ') ||
+      ''
+    ).trim();
+    const lastCheckIn = this.normalizeTimeValue(
+      input.device?.lastActivityTime ||
+      input.device?.lastContact ||
+      input.deviceDetails?.lastContact ||
+      input.deviceDetails?.lastUpdate ||
+      ''
+    );
     const securityAgent = this.inferSecurityAgent(input.ninjaChecks, input.deviceDetails);
 
     return {
@@ -1916,7 +2089,7 @@ export class PrepareContextService {
         status: osName ? 'confirmed' : 'unknown',
         confidence: osName ? 0.8 : 0,
         sourceSystem: osName ? 'ninjaone' : 'unknown',
-        sourceRef: osName ? 'ninja.device.osName' : undefined,
+        sourceRef: osName ? 'ninja.device.osName/os.name' : undefined,
         round: 1,
       }),
       os_version: this.buildField({
@@ -1924,7 +2097,7 @@ export class PrepareContextService {
         status: osVersion ? 'confirmed' : 'unknown',
         confidence: osVersion ? 0.75 : 0,
         sourceSystem: osVersion ? 'ninjaone' : 'unknown',
-        sourceRef: osVersion ? 'ninja.device.osVersion' : undefined,
+        sourceRef: osVersion ? 'ninja.device.osVersion/os.buildNumber+releaseId' : undefined,
         round: 1,
       }),
       last_check_in: this.buildField({
@@ -1948,15 +2121,15 @@ export class PrepareContextService {
         status: input.loggedInUser ? 'inferred' : 'unknown',
         confidence: input.loggedInUser ? 0.7 : 0,
         sourceSystem: input.loggedInUser ? 'ninjaone' : 'unknown',
-        sourceRef: input.loggedInUser ? 'ninja.device.details.user' : undefined,
+        sourceRef: input.loggedInUser ? 'ninja.device.last-logged-on-user' : undefined,
         round: input.loggedInUser ? 3 : 1,
       }),
       user_signed_in_at: this.buildField({
-        value: input.loggedInUser && lastCheckIn ? lastCheckIn : 'unknown',
-        status: input.loggedInUser && lastCheckIn ? 'inferred' : 'unknown',
-        confidence: input.loggedInUser && lastCheckIn ? 0.55 : 0,
-        sourceSystem: input.loggedInUser && lastCheckIn ? 'ninjaone' : 'unknown',
-        sourceRef: input.loggedInUser && lastCheckIn ? 'ninja.device.lastActivityTime' : undefined,
+        value: input.loggedInAt || (input.loggedInUser && lastCheckIn ? lastCheckIn : 'unknown'),
+        status: input.loggedInAt || (input.loggedInUser && lastCheckIn) ? 'inferred' : 'unknown',
+        confidence: input.loggedInAt || (input.loggedInUser && lastCheckIn) ? 0.7 : 0,
+        sourceSystem: input.loggedInAt || input.loggedInUser ? 'ninjaone' : 'unknown',
+        sourceRef: input.loggedInAt ? 'ninja.device.last-logged-on-user.logonTime' : input.loggedInUser && lastCheckIn ? 'ninja.device.lastActivityTime' : undefined,
         round: input.loggedInUser ? 3 : 1,
       }),
     };
@@ -1995,7 +2168,7 @@ export class PrepareContextService {
         status: publicIp ? 'confirmed' : 'unknown',
         confidence: publicIp ? 0.9 : 0,
         sourceSystem: publicIp ? 'ninjaone' : 'unknown',
-        sourceRef: publicIp ? 'ninja.device.ipAddress' : undefined,
+        sourceRef: publicIp ? 'ninja.device.publicIP/ipAddresses' : undefined,
         round: 1,
       }),
       isp_name: this.buildField({
@@ -2224,10 +2397,19 @@ export class PrepareContextService {
     device: any | null;
     deviceDetails: any | null;
   }): 'desktop' | 'laptop' | 'mobile' | 'unknown' {
+    const nodeClass = String(input.device?.nodeClass || input.deviceDetails?.nodeClass || '').toLowerCase();
+    const chassis = String(input.deviceDetails?.system?.chassisType || '').toLowerCase();
+    if (/(laptop|notebook)/.test(chassis)) return 'laptop';
+    if (/(windows_workstation|linux_workstation|mac)/.test(nodeClass)) return 'desktop';
+    if (/(android|apple_ios|apple_ipados)/.test(nodeClass)) return 'mobile';
+
     const source = [
       input.ticketNarrative,
       String(input.device?.osName || ''),
+      String(input.device?.nodeClass || ''),
       String(input.device?.model || ''),
+      String(input.deviceDetails?.system?.chassisType || ''),
+      String(input.deviceDetails?.system?.model || ''),
       String(input.deviceDetails?.model || ''),
       String(input.deviceDetails?.systemModel || ''),
     ]
@@ -2298,15 +2480,33 @@ export class PrepareContextService {
   private resolvePublicIp(device: any, deviceDetails: any): string {
     const candidates = [
       String(device?.ipAddress || ''),
+      String(device?.publicIP || ''),
       String(deviceDetails?.publicIp || ''),
+      String(deviceDetails?.publicIP || ''),
       String(deviceDetails?.public_ip || ''),
       String(deviceDetails?.wanIp || ''),
       String(deviceDetails?.wan_ip || ''),
+      ...(Array.isArray(deviceDetails?.ipAddresses) ? deviceDetails.ipAddresses.map((ip: unknown) => String(ip || '')) : []),
     ]
       .map((value) => value.trim())
       .filter(Boolean);
     const publicIp = candidates.find((value) => this.isPublicIPv4(value));
     return publicIp || '';
+  }
+
+  private normalizeTimeValue(value: unknown): string {
+    if (value === null || value === undefined || value === '') return '';
+    if (typeof value === 'number') {
+      const millis = value > 1e12 ? value : value > 1e9 ? value * 1000 : value;
+      const date = new Date(millis);
+      return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+    }
+    const text = String(value).trim();
+    if (!text) return '';
+    const numeric = Number(text);
+    if (!Number.isNaN(numeric)) return this.normalizeTimeValue(numeric);
+    const date = new Date(text);
+    return Number.isNaN(date.getTime()) ? text : date.toISOString();
   }
 
   private isPublicIPv4(value: string): boolean {
@@ -2669,6 +2869,110 @@ export class PrepareContextService {
       }
     }
     return null;
+  }
+
+  private async resolveLastLoggedInContext(
+    ninjaoneClient: NinjaOneClient,
+    deviceId: string
+  ): Promise<{ userName: string; logonTime: string }> {
+    const direct = await ninjaoneClient.getDeviceLastLoggedOnUser(deviceId).catch(() => null);
+    const directUser = String(direct?.userName || '').trim();
+    const directTime = this.normalizeTimeValue(direct?.logonTime || '');
+    if (directUser) return { userName: directUser, logonTime: directTime };
+
+    const report = await ninjaoneClient.listLastLoggedOnUsers({ pageSize: 1000 }).catch(() => null);
+    const rows = Array.isArray(report?.results) ? report.results : [];
+    const match = rows.find((row) => String(row.deviceId) === String(deviceId));
+    const reportUser = String(match?.userName || '').trim();
+    const reportTime = this.normalizeTimeValue(match?.logonTime || '');
+    if (reportUser) return { userName: reportUser, logonTime: reportTime };
+
+    return { userName: '', logonTime: '' };
+  }
+
+  private resolveDeviceOsLabel(device: any, details: any): string {
+    const name = String(device?.osName || details?.osName || details?.os?.name || '').trim();
+    const version = String(
+      device?.osVersion ||
+      details?.osVersion ||
+      [details?.os?.buildNumber, details?.os?.releaseId].filter(Boolean).join(' / ') ||
+      ''
+    ).trim();
+    const combined = [name, version].filter(Boolean).join(' ');
+    return combined || 'Unknown';
+  }
+
+  private async buildNinjaContextSignals(input: {
+    ninjaoneClient: NinjaOneClient;
+    deviceId: string;
+    orgId: string | null;
+    tenantId: string | null;
+    sourceWorkspace: string;
+  }): Promise<Signal[]> {
+    const signals: Signal[] = [];
+    const [activities, interfaces, softwareRows] = await Promise.all([
+      input.ninjaoneClient.getDeviceActivities(input.deviceId, { pageSize: 30 }).catch(() => []),
+      input.ninjaoneClient.getDeviceNetworkInterfaces(input.deviceId).catch(() => []),
+      input.ninjaoneClient.querySoftware({ pageSize: 200, df: `deviceId = ${input.deviceId}` }).catch(() => []),
+    ]);
+
+    for (const activity of activities.slice(0, 8)) {
+      const summary = String(
+        activity.message ||
+        activity.activity ||
+        activity.activityType ||
+        activity.activityClass ||
+        'device activity'
+      ).trim();
+      signals.push({
+        id: `ninja-activity-${input.deviceId}-${String(activity.id || summary).slice(0, 48)}`,
+        source: 'ninja',
+        timestamp: this.normalizeTimeValue(activity.createTime || activity.timestamp || '') || new Date().toISOString(),
+        type: 'ticket_note',
+        summary: `Activity: ${summary}`,
+        raw_ref: activity,
+        tenant_id: input.tenantId,
+        org_id: input.orgId,
+        source_workspace: input.sourceWorkspace,
+      });
+    }
+
+    for (const iface of interfaces.slice(0, 4)) {
+      const name = String(iface.adapterName || iface.interfaceName || 'interface').trim();
+      const ips = Array.isArray(iface.ipAddress) ? iface.ipAddress : [iface.ipAddress];
+      const ip = ips.map((v) => String(v || '').trim()).filter(Boolean)[0] || 'no-ip';
+      signals.push({
+        id: `ninja-iface-${input.deviceId}-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+        source: 'ninja',
+        timestamp: new Date().toISOString(),
+        type: 'health_ok',
+        summary: `Interface ${name}: ${ip}`,
+        raw_ref: iface,
+        tenant_id: input.tenantId,
+        org_id: input.orgId,
+        source_workspace: input.sourceWorkspace,
+      });
+    }
+
+    for (const sw of softwareRows.slice(0, 10)) {
+      const swName = String(sw.name || '').trim();
+      if (!swName) continue;
+      const version = String(sw.version || '').trim();
+      const publisher = String(sw.publisher || '').trim();
+      signals.push({
+        id: `ninja-sw-${input.deviceId}-${swName.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 48)}`,
+        source: 'ninja',
+        timestamp: this.normalizeTimeValue(sw.timestamp || '') || new Date().toISOString(),
+        type: 'ticket_note',
+        summary: `Software: ${swName}${version ? ` ${version}` : ''}${publisher ? ` (${publisher})` : ''}`,
+        raw_ref: sw,
+        tenant_id: input.tenantId,
+        org_id: input.orgId,
+        source_workspace: input.sourceWorkspace,
+      });
+    }
+
+    return signals;
   }
 
   private fuzzyMatch(name: string, candidate: string): boolean {

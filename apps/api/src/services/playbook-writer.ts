@@ -105,6 +105,8 @@ export class PlaybookWriterService {
   ): string {
     const topHypothesis = diagnosis.top_hypotheses[0];
     const digest = pack.evidence_digest;
+    const endpoint = pack.iterative_enrichment?.sections?.endpoint;
+    const capability = pack.capability_verification;
 
     return `You are an expert IT support engineer. Generate a detailed, safe, and actionable support playbook in Markdown format.
 
@@ -146,6 +148,8 @@ ${validation.coverage_scores ? `✅ Coverage scores: ${JSON.stringify(validation
 **Ticket:** ${pack.ticket.id} - ${pack.ticket.title}
 **Priority:** ${pack.ticket.priority}
 **Queue:** ${pack.ticket.queue}
+**Known endpoint data:** device=${String(endpoint?.device_name?.value || 'unknown')}, os=${String(endpoint?.os_name?.value || 'unknown')} ${String(endpoint?.os_version?.value || '')}, last_user=${String(endpoint?.user_signed_in?.value || 'unknown')}
+**Known capability data:** manufacturer=${String(capability?.manufacturer || 'unknown')}, model=${String(capability?.model || 'unknown')}, serial=${String(capability?.serial || 'unknown')}
 
 ## PLAYBOOK GENERATION REQUIREMENTS
 
@@ -224,6 +228,8 @@ ${pack.docs
 8. Do not include any remediation step without at least one valid evidence reference from evidence digest
 9. If capability verification is required and incomplete, output only directed data-collection steps (no final compatibility conclusion)
 10. NEVER include internal-engine instructions or meta-steps (forbidden examples: "check LLM JSON response", "review prompt", "inspect model output", "parse JSON")
+11. NEVER add data-collection steps for fields already present in Known endpoint/capability data above; use those facts directly.
+12. If manufacturer+model are already known, do not ask to identify hardware model again.
 
 ## OUTPUT
 

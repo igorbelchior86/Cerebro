@@ -15,6 +15,8 @@ describe('PrepareContextService device resolution guard', () => {
       ninjaoneClient: {
         getDeviceChecks: async () => [],
         getDeviceDetails: async () => null,
+        getDeviceLastLoggedOnUser: async () => null,
+        listLastLoggedOnUsers: async () => ({ results: [] }),
       },
       sourceWorkspace: 'tenant:test',
       tenantId: 'tenant-test',
@@ -40,6 +42,44 @@ describe('PrepareContextService device resolution guard', () => {
 
     expect(narrative).toContain('Company: Stintino Management');
     expect(narrative).toContain('Provider appears to be GoTo Connect');
+  });
+
+  it('prioritizes last logged-in user match over weak config-only hostname correlation', async () => {
+    const service = new PrepareContextService() as any;
+
+    const result = await service.resolveDeviceDeterministically({
+      devices: [
+        { id: 1, hostname: 'LINNANE-GENERAL', systemName: 'LINNANE-GENERAL' },
+        { id: 2, hostname: 'ALEX-LAPTOP-01', systemName: 'ALEX-LAPTOP-01' },
+      ],
+      ticketText: 'Firstname: Alex Lastname: Zigler Email: alex@linnanehomes.com',
+      requesterName: 'Alex Zigler',
+      itglueConfigs: [
+        { attributes: { hostname: 'LINNANE-GENERAL' } }, // weak/indirect hint
+      ],
+      ninjaoneClient: {
+        getDeviceChecks: async () => [],
+        getDeviceDetails: async (deviceId: string) => {
+          if (String(deviceId) === '2') {
+            return { id: 2, loggedInUser: 'alex@linnanehomes.com' };
+          }
+          return { id: 1 };
+        },
+        getDeviceLastLoggedOnUser: async (deviceId: string) => {
+          if (String(deviceId) === '2') return { userName: 'alex@linnanehomes.com' };
+          return null;
+        },
+        listLastLoggedOnUsers: async () => ({ results: [] }),
+      },
+      sourceWorkspace: 'tenant:test',
+      tenantId: 'tenant-test',
+      orgId: null,
+    });
+
+    expect(result.device?.id).toBe(2);
+    expect(result.loggedInUser).toBe('alex@linnanehomes.com');
+    expect(result.score).toBeGreaterThanOrEqual(0.8);
+    expect(String(result.reason)).toContain('last logged-in user');
   });
 
   it('does not grant company score without contact company evidence', () => {
@@ -200,6 +240,7 @@ describe('PrepareContextService device resolution guard', () => {
       },
       deviceDetails: {},
       loggedInUser: 'john@example.com',
+      loggedInAt: '2026-02-21T09:58:00.000Z',
       inferredPhoneProvider: 'GoTo Connect',
       sourceFindings: [
         { source: 'autotask', round: 1, queried: true, matched: true, summary: 'ticket parsed', details: [] },

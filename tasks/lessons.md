@@ -210,3 +210,9 @@
 **Root cause**: Prompt contract between diagnosis and playbook lacked mandatory mapping and no post-generation alignment gate.
 **Rule**: When model output depends on ranked hypotheses, enforce explicit hypothesis tags and validate coverage before accepting output.
 **Pattern**: Any `top_hypotheses` -> procedural plan flow needs deterministic coverage checks.
+
+## Lesson: 2026-02-21
+**Mistake**: Assumed Gemma 3 27B usage via Groq without confirming the actual provider path in this deployment.
+**Root cause**: Provider/model mapping was inferred from code defaults instead of explicitly aligning with user runtime setup.
+**Rule**: When user names model + platform (e.g. Gemma in AI Studio), configure the exact provider path first, then tune limiter on that path.
+**Pattern**: Multi-provider adapters require explicit provider confirmation before quota/rate-limit changes.

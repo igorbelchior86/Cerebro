@@ -39,6 +39,9 @@ class GroqRateLimiter {
   private lastStart = 0;
   private readonly maxConcurrent = 1;
   private readonly minSpacingMs = 1000; // Back to 1s min, but now header-aware
+  private minuteRequestTimestamps: number[] = [];
+  private dayRequestTimestamps: number[] = [];
+  private minuteTokenSamples: Array<{ ts: number; tokens: number }> = [];
 
   private state: RateLimitState = {
     remainingTokens: 30000,
@@ -46,6 +49,35 @@ class GroqRateLimiter {
     remainingRequests: 30,
     resetRequestsAt: 0,
   };
+
+  private parseResetDurationToMs(value: string): number {
+    const raw = String(value || '').trim();
+    if (!raw) return 0;
+    if (/^\d+(\.\d+)?$/.test(raw)) return Math.ceil(parseFloat(raw) * 1000);
+
+    const minuteMatch = raw.match(/(\d+(?:\.\d+)?)m/i);
+    const secondMatch = raw.match(/(\d+(?:\.\d+)?)s/i);
+    const minutes = minuteMatch?.[1] ? parseFloat(minuteMatch[1]) : 0;
+    const seconds = secondMatch?.[1] ? parseFloat(secondMatch[1]) : 0;
+    const totalMs = Math.ceil((minutes * 60 + seconds) * 1000);
+    return Number.isFinite(totalMs) ? totalMs : 0;
+  }
+
+  private prune(now: number) {
+    const minuteAgo = now - 60_000;
+    const dayAgo = now - 24 * 60 * 60 * 1000;
+    this.minuteRequestTimestamps = this.minuteRequestTimestamps.filter((t) => t > minuteAgo);
+    this.dayRequestTimestamps = this.dayRequestTimestamps.filter((t) => t > dayAgo);
+    this.minuteTokenSamples = this.minuteTokenSamples.filter((s) => s.ts > minuteAgo);
+  }
+
+  private getLimits() {
+    return {
+      rpm: parseInt(process.env.GROQ_LIMIT_RPM || '20', 10),
+      rpd: parseInt(process.env.GROQ_LIMIT_RPD || '14400', 10),
+      tpm: parseInt(process.env.GROQ_LIMIT_TPM || '18000', 10),
+    };
+  }
 
   update(headers: Headers) {
     const remainingTokens = parseInt(headers.get('x-ratelimit-remaining-tokens') || '');
@@ -55,16 +87,14 @@ class GroqRateLimiter {
 
     if (!isNaN(remainingTokens)) this.state.remainingTokens = remainingTokens;
     if (resetTokens) {
-      // resetTokens is "60s" or "0.5s" or similar occasionally? Or just seconds.
-      // Groq usually returns seconds as float/string.
-      const seconds = parseFloat(resetTokens.replace('s', ''));
-      this.state.resetTokensAt = Date.now() + (seconds * 1000);
+      const ms = this.parseResetDurationToMs(resetTokens);
+      this.state.resetTokensAt = Date.now() + ms;
     }
 
     if (!isNaN(remainingRequests)) this.state.remainingRequests = remainingRequests;
     if (resetRequests) {
-      const seconds = parseFloat(resetRequests.replace('s', ''));
-      this.state.resetRequestsAt = Date.now() + (seconds * 1000);
+      const ms = this.parseResetDurationToMs(resetRequests);
+      this.state.resetRequestsAt = Date.now() + ms;
     }
 
     if (this.state.remainingTokens < 2000) {
@@ -73,10 +103,30 @@ class GroqRateLimiter {
   }
 
   async acquire(estimatedTokens = 1500): Promise<void> {
-    return new Promise(resolve => {
+    const MAX_WAIT_MS = 45_000;
+    const start = Date.now();
+    return new Promise((resolve, reject) => {
       const attempt = () => {
         const now = Date.now();
         const gap = now - this.lastStart;
+        this.prune(now);
+        const limits = this.getLimits();
+
+        const minuteRequests = this.minuteRequestTimestamps.length;
+        const dayRequests = this.dayRequestTimestamps.length;
+        const minuteTokens = this.minuteTokenSamples.reduce((sum, item) => sum + item.tokens, 0);
+        const rpmBlocked = minuteRequests >= limits.rpm;
+        const rpdBlocked = dayRequests >= limits.rpd;
+        const tpmBlocked = (minuteTokens + estimatedTokens) > limits.tpm;
+
+        if (rpdBlocked) {
+          reject(new Error(`[GroqLimiter] RPD limit reached (${limits.rpd}/day). Waiting for daily reset.`));
+          return;
+        }
+        if (Date.now() - start > MAX_WAIT_MS) {
+          reject(new Error('[GroqLimiter] Wait timeout while respecting rate limits'));
+          return;
+        }
 
         // 1. Check Cool-down periods
         if (now < this.state.resetTokensAt && this.state.remainingTokens < estimatedTokens) {
@@ -91,10 +141,19 @@ class GroqRateLimiter {
           return;
         }
 
+        if (rpmBlocked || tpmBlocked) {
+          const waitMs = rpmBlocked ? 1100 : 900;
+          setTimeout(attempt, waitMs);
+          return;
+        }
+
         // 2. Standard concurrency/spacing
         if (this.inFlight < this.maxConcurrent && gap >= this.minSpacingMs) {
           this.inFlight++;
           this.lastStart = now;
+          this.minuteRequestTimestamps.push(now);
+          this.dayRequestTimestamps.push(now);
+          this.minuteTokenSamples.push({ ts: now, tokens: estimatedTokens });
           resolve();
         } else {
           const waitMs = Math.max(this.minSpacingMs - gap, 50) + Math.random() * 80;
@@ -117,7 +176,7 @@ class GroqProvider implements LLMProvider {
   name = 'groq';
   private apiKey: string;
   private baseUrl = 'https://api.groq.com/openai/v1';
-  private model = 'llama-3.1-8b-instant'; // Much higher TPM limits on Free Tier than 70b
+  private model = process.env.GROQ_MODEL || 'gemma-3-27b-it';
 
   constructor() {
     this.apiKey = process.env.GROQ_API_KEY || '';
@@ -401,7 +460,7 @@ class GeminiProvider implements LLMProvider {
   name = 'gemini';
   private apiKey: string;
   private baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models';
-  private model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  private model = process.env.GEMINI_MODEL || 'gemma-3-27b-it';
 
   constructor() {
     this.apiKey = process.env.GEMINI_API_KEY || '';

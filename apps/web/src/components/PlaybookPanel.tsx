@@ -68,7 +68,7 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
 
   if (status === 'loading') {
     return (
-      <div className="animate-slideInRight" style={{ width: '360px', flexShrink: 0, background: 'var(--bg-panel)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+      <div className="animate-slideInRight" style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0, flexShrink: 0, background: 'var(--bg-panel)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
         <div style={{ width: '32px', height: '32px', borderRadius: '50%', border: '2px solid rgba(91,127,255,0.25)', borderTopColor: '#5B7FFF', animation: 'spin 0.8s linear infinite' }} />
         <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Generating playbook...</p>
       </div>
@@ -77,7 +77,7 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
 
   if (!content && !data) {
     return (
-      <div className="animate-slideInRight" style={{ width: '360px', flexShrink: 0, background: 'var(--bg-panel)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+      <div className="animate-slideInRight" style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0, flexShrink: 0, background: 'var(--bg-panel)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
         <div style={{ width: '40px', height: '40px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', background: 'var(--bg-card)', border: '1px dashed var(--border-strong)' }}>📄</div>
         <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Playbook will appear here</p>
       </div>
@@ -93,7 +93,7 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
   const ticketId = data?.ticketId;
 
   return (
-    <div className="animate-slideInRight" style={{ width: '360px', flexShrink: 0, background: 'var(--bg-panel)', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden', borderLeft: '1px solid var(--border)' }}>
+    <div className="animate-slideInRight" style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0, flexShrink: 0, background: 'var(--bg-panel)', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden', borderLeft: '1px solid var(--border)' }}>
       <div style={{ position: 'absolute', top: '-60px', right: '-80px', width: '280px', height: '280px', borderRadius: '50%', background: 'var(--glow-playbook)', pointerEvents: 'none', zIndex: 0 }} />
 
       {/* Topbar */}
@@ -126,7 +126,7 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '18px', position: 'relative', zIndex: 1 }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '18px', position: 'relative', zIndex: 1 }}>
         {ctx.length > 0 && (
           <div style={{ marginBottom: '22px' }}>
             <SectionLabel>Context</SectionLabel>

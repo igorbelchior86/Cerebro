@@ -41,6 +41,7 @@ export default function SessionDetail({
   const [playbookReady, setPlaybookReady] = useState(false);
   const [playbookStatus, setPlaybookStatus] = useState<'loading' | 'ready' | 'error'>('ready');
   const timelineSignatureRef = useRef('');
+  const flowRequestSeqRef = useRef(0);
   const sidebarTicketsRef = useRef<ActiveTicket[]>([]);
 
   // Add state for real tickets
@@ -92,14 +93,79 @@ export default function SessionDetail({
     sidebarTicketsRef.current = sidebarTickets;
   }, [sidebarTickets]);
 
+  const isMeaningfulText = (value?: string) => {
+    const normalized = normalizePlainText(value, '').toLowerCase();
+    if (!normalized) return false;
+    return normalized !== 'unknown' &&
+      normalized !== 'unknown org' &&
+      normalized !== 'unknown requester' &&
+      normalized !== 'untitled ticket';
+  };
+
+  const fieldQualityScore = (value?: string, kind: 'title' | 'company' | 'requester' | 'description' = 'description') => {
+    const raw = value || '';
+    const normalized = normalizePlainText(raw, '');
+    if (!isMeaningfulText(normalized)) return 0;
+
+    let score = 10;
+    const noisyPatterns = [
+      /description\s*:/i,
+      /created by\s*:/i,
+      /has been created for/i,
+      /<[^>]+>/,
+      /\bfrom:\b/i,
+      /\bsubject:\b/i,
+    ];
+    if (noisyPatterns.some((rx) => rx.test(raw))) score -= 5;
+
+    if (kind === 'title') {
+      if (normalized.length > 140) score -= 3;
+      if (normalized.length >= 8 && normalized.length <= 120) score += 2;
+    }
+
+    if (kind === 'company' || kind === 'requester') {
+      if (normalized.length <= 2) score -= 3;
+      if (normalized.length >= 3 && normalized.length <= 80) score += 1;
+    }
+
+    return score;
+  };
+
+  const pickBestField = (
+    existing: string | undefined,
+    incoming: string | undefined,
+    kind: 'title' | 'company' | 'requester' | 'description'
+  ) => {
+    const existingScore = fieldQualityScore(existing, kind);
+    const incomingScore = fieldQualityScore(incoming, kind);
+    if (incomingScore > existingScore) return incoming;
+    if (existingScore > incomingScore) return existing;
+
+    // Tie-breaker for title: prefer cleaned/shorter variant.
+    if (kind === 'title') {
+      const ex = cleanTitle(existing);
+      const inc = cleanTitle(incoming);
+      if (inc && ex && inc.length !== ex.length) return inc.length < ex.length ? incoming : existing;
+      return incoming || existing;
+    }
+    return incoming || existing;
+  };
+
   useEffect(() => {
+    let cancelled = false;
+    let inFlight = false;
+
     const fetchData = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      const reqSeq = ++flowRequestSeqRef.current;
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
         const res = await axios.get(`${apiUrl}/playbook/full-flow`, {
           params: { sessionId: selectedTicketId },
           withCredentials: true,
         });
+        if (cancelled || reqSeq !== flowRequestSeqRef.current) return;
 
         const flowData = res.data.data || {};
         const newData = {
@@ -218,16 +284,22 @@ export default function SessionDetail({
         setPlaybookReady(Boolean(newData.playbook));
         setPlaybookStatus(newData.playbook ? 'ready' : 'loading');
       } catch (err) {
+        if (cancelled || reqSeq !== flowRequestSeqRef.current) return;
         setError(axios.isAxiosError(err) ? err.message : String(err));
         setPlaybookStatus('error');
       } finally {
+        inFlight = false;
+        if (cancelled || reqSeq !== flowRequestSeqRef.current) return;
         setLoading(false);
       }
     };
 
     fetchData();
     const interval = setInterval(fetchData, 3000);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [selectedTicketId]);
 
   useEffect(() => {
@@ -249,24 +321,51 @@ export default function SessionDetail({
 
   // Fetch tickets from email ingestion processed tickets table
   useEffect(() => {
+    let cancelled = false;
+    let inFlight = false;
+
     const fetchTickets = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-        const res = await fetch(`${apiUrl}/email-ingestion/list`);
+        const res = await fetch(`${apiUrl}/email-ingestion/list`, { credentials: 'include' });
         if (res.ok) {
           const json = await res.json();
-          if (json.success) setSidebarTickets(json.data);
+          if (!cancelled && json.success && Array.isArray(json.data)) {
+            setSidebarTickets((prev) => {
+              const prevById = new Map(prev.map((t) => [t.id, t]));
+              return json.data.map((incoming: ActiveTicket) => {
+                const existing = prevById.get(incoming.id);
+                if (!existing) return incoming;
+                return {
+                  ...existing,
+                  ...incoming,
+                  title: pickBestField(existing.title, incoming.title, 'title'),
+                  description: pickBestField(existing.description, incoming.description, 'description'),
+                  company: pickBestField(existing.company, incoming.company, 'company'),
+                  requester: pickBestField(existing.requester, incoming.requester, 'requester'),
+                  org: pickBestField(existing.org, incoming.org, 'company'),
+                  site: pickBestField(existing.site, incoming.site, 'requester'),
+                };
+              });
+            });
+          }
         }
       } catch (err) {
         console.error('Failed to load tickets', err);
       } finally {
-        setIsLoadingTickets(false);
+        inFlight = false;
+        if (!cancelled) setIsLoadingTickets(false);
       }
     };
 
     fetchTickets();
     const interval = setInterval(fetchTickets, 10000);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
   const handleSendMessage = (message: string) => {
@@ -296,11 +395,20 @@ export default function SessionDetail({
   };
 
   // Ensure current ticket is visible in case it's not in the DB yet, or just display the current DB list
+  const selectedTicketFromList = sidebarTickets.find((t) => t.id === selectedTicketId);
   const currentMock: ActiveTicket | null = data
     ? {
       id: data.session.id,
       ticket_id: data.session.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`,
-      status: playbookReady ? 'completed' : loading ? 'pending' : 'processing',
+      status: selectedTicketFromList?.status || 'pending',
+      ...(selectedTicketFromList?.priority ? { priority: selectedTicketFromList.priority } : { priority: 'P3' as const }),
+      ...(selectedTicketFromList?.title ? { title: selectedTicketFromList.title } : {}),
+      ...(selectedTicketFromList?.description ? { description: selectedTicketFromList.description } : {}),
+      ...(selectedTicketFromList?.company ? { company: selectedTicketFromList.company } : {}),
+      ...(selectedTicketFromList?.requester ? { requester: selectedTicketFromList.requester } : {}),
+      ...(selectedTicketFromList?.org ? { org: selectedTicketFromList.org } : {}),
+      ...(selectedTicketFromList?.site ? { site: selectedTicketFromList.site } : {}),
+      ...(selectedTicketFromList?.created_at ? { created_at: selectedTicketFromList.created_at } : {}),
     }
     : null;
 

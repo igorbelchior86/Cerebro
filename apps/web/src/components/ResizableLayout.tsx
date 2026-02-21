@@ -136,10 +136,14 @@ export default function ResizableLayout({ sidebarContent, mainContent, rightCont
             style={{
               width: `${rightWidth}px`,
               flexShrink: 0,
+              minWidth: 0,
+              minHeight: 0,
+              height: '100vh',
               background: 'var(--bg-sidebar)', // Or card background
               borderLeft: '1px solid var(--border)',
               display: 'flex',
-              flexDirection: 'column'
+              flexDirection: 'column',
+              overflow: 'hidden',
             }}
           >
             {rightContent}

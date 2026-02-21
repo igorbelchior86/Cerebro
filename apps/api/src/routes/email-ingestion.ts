@@ -151,7 +151,13 @@ router.get('/list', async (_req: Request, res: Response) => {
              LIMIT 300`
         );
 
-        const normalizeStatus = (status: string) => (status === 'approved' ? 'completed' : 'pending');
+        const normalizeStatus = (status: string) => {
+            const normalized = String(status || '').toLowerCase();
+            if (normalized === 'approved' || normalized === 'completed') return 'completed';
+            if (normalized === 'failed') return 'failed';
+            if (normalized === 'processing') return 'processing';
+            return 'pending';
+        };
         const normalizeText = (value?: string, fallback = '') =>
             (value || '')
                 .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -293,6 +299,12 @@ router.get('/list', async (_req: Request, res: Response) => {
             .filter(Boolean) as any[];
 
         const byTicketId = new Map<string, any>();
+        const isMeaningful = (value?: string, unknownLabel?: string) => {
+            const normalized = normalizeText(value, '').toLowerCase();
+            if (!normalized) return false;
+            if (unknownLabel && normalized === unknownLabel.toLowerCase()) return false;
+            return normalized !== 'unknown';
+        };
         for (const item of [...fromSessions, ...fromProcessed]) {
             const existing = byTicketId.get(item.ticket_id);
             if (!existing) {
@@ -301,9 +313,17 @@ router.get('/list', async (_req: Request, res: Response) => {
             }
             const existingDate = new Date(existing.created_at || 0).getTime();
             const nextDate = new Date(item.created_at || 0).getTime();
-            if (nextDate > existingDate) {
-                byTicketId.set(item.ticket_id, item);
-            }
+            const newer = nextDate > existingDate ? item : existing;
+            const older = newer === item ? existing : item;
+            byTicketId.set(item.ticket_id, {
+                ...older,
+                ...newer,
+                title: isMeaningful(newer.title, 'Untitled Ticket') ? newer.title : older.title,
+                company: isMeaningful(newer.company, 'Unknown org') ? newer.company : older.company,
+                requester: isMeaningful(newer.requester, 'Unknown requester') ? newer.requester : older.requester,
+                org: isMeaningful(newer.org, 'Unknown org') ? newer.org : older.org,
+                site: isMeaningful(newer.site, 'Unknown requester') ? newer.site : older.site,
+            });
         }
 
         const mapped = Array.from(byTicketId.values())

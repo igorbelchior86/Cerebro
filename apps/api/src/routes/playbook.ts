@@ -16,6 +16,7 @@ import { validateDiagnosis } from '../services/validate-policy.js';
 import { PrepareContextService } from '../services/prepare-context.js';
 
 const router: Router = Router();
+const fullFlowInFlight = new Set<string>();
 
 // ─── GET /playbook/full-flow ──────────────────────────────
 /**
@@ -286,9 +287,25 @@ router.get('/full-flow', async (req, res) => {
       }
     };
 
-    // Run in background
-    console.log(`[FULL-FLOW] Scheduling background processing for ${sessionId}`);
-    triggerBackgroundProcessing();
+    const needsBackgroundProcessing =
+      !pack ||
+      !diagnosis ||
+      !validation ||
+      (!playbook && (validation?.safe_to_generate_playbook ?? true));
+
+    if (needsBackgroundProcessing) {
+      if (fullFlowInFlight.has(sessionId)) {
+        console.log(`[FULL-FLOW] Background already running for ${sessionId}. Skipping duplicate trigger.`);
+      } else {
+        console.log(`[FULL-FLOW] Scheduling background processing for ${sessionId}`);
+        fullFlowInFlight.add(sessionId);
+        void triggerBackgroundProcessing().finally(() => {
+          fullFlowInFlight.delete(sessionId);
+        });
+      }
+    } else {
+      console.log(`[FULL-FLOW] All artifacts already ready for ${sessionId}. No background trigger needed.`);
+    }
 
     return res.json({
       sessionId,

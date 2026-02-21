@@ -162,3 +162,21 @@
 **Root cause**: Assumi o arquivo citado anteriormente como fonte de verdade sem reconfirmar o alvo de implementação no app.
 **Rule**: Em tarefas de paridade visual, sempre validar primeiro o componente renderizado na rota real antes de usar arquivos de referência estáticos.
 **Pattern**: "mock/reference file" != "runtime component"; localizar binding real (`page` -> `component`) antes de concluir análise.
+
+## Lesson: 2026-02-20 (resizable right pane blocked by child fixed width)
+**Mistake**: Painel direito parecia não redimensionar dinamicamente.
+**Root cause**: O filho (`PlaybookPanel`) tinha largura fixa (`360px`), sobrescrevendo a largura do container redimensionável.
+**Rule**: Em colunas resizables, componentes filhos devem usar `width: 100%` e respeitar constraints do parent.
+**Pattern**: `fixed child width` dentro de pane resizable gera falsa sensação de resize quebrado.
+
+## Lesson: 2026-02-20 (scope under-reported: issue affected all 3 panes)
+**Mistake**: Foquei inicialmente na sidebar esquerda, mas o padrão de reconstrução estava no ciclo de polling da página inteira (left/main/right).
+**Root cause**: Diagnóstico inicial ficou local (componente) e não no fluxo completo (route polling + backend trigger loop).
+**Rule**: Para sintomas de reconstrução frequente, auditar sempre o pipeline end-to-end (frontend polling + endpoint behavior + merge rules), não só o componente visível.
+**Pattern**: Re-render em múltiplas seções geralmente indica fonte de dados/polling compartilhada, não bug isolado de UI.
+
+## Lesson: 2026-02-20 (meaningful != stable)
+**Mistake**: Gate only blocked `Unknown` regressions but still allowed swapping between two meaningful variants (raw noisy vs normalized clean).
+**Root cause**: Merge logic lacked quality ranking/tie-breakers for semantically equivalent fields.
+**Rule**: SSOT merge must be monotonic by field quality, not only by non-empty checks.
+**Pattern**: For polled multi-source ticket fields, use deterministic quality scoring + tie-breaks to prevent text flapping.

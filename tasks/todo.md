@@ -80,3 +80,67 @@
 - `exactOptionalPropertyTypes` exigiu não enviar props opcionais como `undefined` explicitamente.
 - Time taken:
 - ~15 minutos
+
+---
+
+# Task: Sidebar direita com resize dinâmico e scroll interno
+**Status**: completed
+**Started**: 2026-02-20
+
+## Plan
+- [x] Step 1: Identificar por que o resize da direita não refletia visualmente.
+- [x] Step 2: Corrigir constraints do `PlaybookPanel` para respeitar a largura do container.
+- [x] Step 3: Garantir cadeia de scroll interno com `minHeight: 0`/`overflow`.
+- [x] Step 4: Validar via typecheck.
+- [x] Step 5: Atualizar wiki.
+
+## Open Questions
+- None.
+
+## Progress Notes
+- Root cause encontrado: `PlaybookPanel` com largura fixa `360px` anulava o resize do pane direito.
+- Ajustado para `width: 100%` + `height: 100%` e `minHeight: 0` nos pontos críticos.
+- `ResizableLayout` recebeu `minHeight: 0` e `overflow: hidden` no container direito para scroll interno consistente.
+- Typecheck web executado com sucesso.
+
+## Review
+- What worked:
+- Correção mínima em layout resolveu os 2 sintomas (resize visual + scroll interno).
+- What was tricky:
+- O problema parecia no resizer, mas era constraint do filho.
+- Time taken:
+- ~10 minutos
+
+---
+
+# Task: Estabilizar pipeline e SSOT nas 3 seções (left/main/right)
+**Status**: completed
+**Started**: 2026-02-20
+
+## Plan
+- [x] Step 1: Auditar corrida entre polling frontend e processamento backend.
+- [x] Step 2: Garantir execução única de background pipeline por sessão.
+- [x] Step 3: Bloquear respostas stale/overlap no polling da página de triagem.
+- [x] Step 4: Proteger dados de ticket contra regressão para placeholders no refresh.
+- [x] Step 5: Validar typecheck e documentar.
+
+## Open Questions
+- None.
+
+## Progress Notes
+- `GET /playbook/full-flow` disparava background em toda chamada de polling; adicionado lock em memória por sessão e trigger condicional.
+- Polling da tela de triagem recebia respostas sobrepostas sem guarda de sequência; adicionado seq guard + in-flight gate.
+- Lista de tickets passou a usar `credentials: include` e merge SSOT para não sobrescrever `company/requester/title` válidos por `Unknown`.
+- Endpoint `/email-ingestion/list` agora preserva status `processing/failed` e mergeia fontes sem degradar campos de identidade.
+
+## Review
+- What worked:
+- Combinação backend lock + frontend stale-guard reduziu reconstruções e flapping nas 3 seções.
+- What was tricky:
+- Existiam duas corridas simultâneas (trigger de pipeline no backend e polling overlap no frontend).
+- Time taken:
+- ~25 minutos
+
+## Progress Notes (update)
+- Added deterministic field-quality merge in triage page so sidebar/center do not oscillate between noisy raw strings and normalized strings.
+- Merge policy now keeps higher-quality title/company/requester/site/description per ticket ID across polling cycles.

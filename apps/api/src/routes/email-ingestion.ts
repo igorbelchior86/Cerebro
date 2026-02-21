@@ -209,6 +209,23 @@ router.get('/list', async (_req: Request, res: Response) => {
             const m = raw.match(/has been created for\s+(.+?)\.\s*we will attend/i);
             return normalizeText(m?.[1], 'Unknown org');
         };
+        const extractSite = (rawBody?: string, company?: string) => {
+            const raw = rawBody || '';
+            const explicit =
+                raw.match(/(?:site|office|location)\s*[:\-]\s*([^\n<]+)/i) ||
+                raw.match(/at\s+[^,\n.]{2,80},\s*([A-Za-z0-9][^.\n<]{1,80})/i);
+            const parsed = normalizeText(explicit?.[1], '');
+            if (parsed && !/^unknown$/i.test(parsed)) return parsed;
+
+            const companyName = normalizeText(company, '');
+            if (companyName) {
+                const escaped = companyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const companyScoped = raw.match(new RegExp(`${escaped}\\s*,\\s*([^\\.\\n<]{2,80})`, 'i'));
+                const companySite = normalizeText(companyScoped?.[1], '');
+                if (companySite && !/^unknown$/i.test(companySite)) return companySite;
+            }
+            return 'Unknown site';
+        };
 
         const isMeaningful = (value?: string, ...blocked: string[]) => {
             const normalized = normalizeText(value, '').toLowerCase();
@@ -222,6 +239,7 @@ router.get('/list', async (_req: Request, res: Response) => {
                 const packTicket = pack.ticket || {};
                 const packOrg = pack.org || {};
                 const packUser = pack.user || {};
+                const normalizedTicketSection = pack?.iterative_enrichment?.sections?.ticket || {};
 
                 const processedTitle = cleanTitle(row.title, row.description);
                 const packTitle = cleanTitle(packTicket.title, packTicket.description);
@@ -237,9 +255,24 @@ router.get('/list', async (_req: Request, res: Response) => {
 
                 const processedRequester = extractRequester(row.requester, row.raw_body);
                 const packRequester = normalizeText(packUser.name, '');
-                const requester = isMeaningful(processedRequester, 'Unknown requester', 'requester', 'user')
+                const canonicalRequester = normalizeText(
+                    normalizedTicketSection?.affected_user_name?.value ||
+                    normalizedTicketSection?.requester_name?.value,
+                    ''
+                );
+                const requester = isMeaningful(canonicalRequester, 'Unknown requester', 'requester', 'user')
+                    ? canonicalRequester
+                    : (isMeaningful(processedRequester, 'Unknown requester', 'requester', 'user')
                     ? processedRequester
-                    : (isMeaningful(packRequester, 'Unknown requester', 'requester', 'user') ? packRequester : 'Unknown requester');
+                    : (isMeaningful(packRequester, 'Unknown requester', 'requester', 'user') ? packRequester : 'Unknown requester'));
+
+                const canonicalSite = normalizeText(
+                    normalizedTicketSection?.site?.value || packTicket.site,
+                    ''
+                );
+                const site = isMeaningful(canonicalSite, 'Unknown site', 'site')
+                    ? canonicalSite
+                    : extractSite(row.raw_body, company);
 
                 return {
                     id: String(row.ticket_id),
@@ -251,7 +284,7 @@ router.get('/list', async (_req: Request, res: Response) => {
                     company,
                     requester,
                     org: company,
-                    site: requester,
+                    site,
                     created_at: row.ticket_created_at || row.first_session_created_at || row.session_created_at,
                 };
             })

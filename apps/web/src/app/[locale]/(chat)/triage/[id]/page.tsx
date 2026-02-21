@@ -440,10 +440,30 @@ export default function SessionDetail({
   const displayTickets = sidebarTickets;
   const canonicalTicketId = data?.session.ticket_id || selectedTicketId;
   const selectedTicket = displayTickets.find((t) => t.id === canonicalTicketId || t.ticket_id === canonicalTicketId);
-  const ticketTitle = cleanTitle(selectedTicket?.title) || 'Untitled ticket';
-  const ticketNumber = data?.session.ticket_id || selectedTicket?.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`;
+  const canonicalRequesterUi = normalizePlainText(
+    data?.ticket?.affected_user_normalized ||
+    data?.ticket?.requester_normalized ||
+    data?.ticket?.requester ||
+    selectedTicket?.requester,
+    'Unknown requester'
+  );
+  const canonicalCompanyUi = normalizePlainText(
+    data?.ticket?.company || selectedTicket?.company || selectedTicket?.org,
+    'Unknown org'
+  );
+  const selectedTicketView = selectedTicket
+    ? {
+        ...selectedTicket,
+        requester: canonicalRequesterUi,
+        company: canonicalCompanyUi,
+        org: canonicalCompanyUi,
+      }
+    : undefined;
+
+  const ticketTitle = cleanTitle(selectedTicketView?.title) || 'Untitled ticket';
+  const ticketNumber = data?.session.ticket_id || selectedTicketView?.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`;
   const ticketLabel = `${ticketNumber} — ${ticketTitle}`;
-  const ticketMetaLabel = getTicketContextMeta(selectedTicket);
+  const ticketMetaLabel = getTicketContextMeta(selectedTicketView);
   const digestFacts = Array.isArray(data?.evidence_pack?.evidence_digest?.facts_confirmed)
     ? data?.evidence_pack?.evidence_digest?.facts_confirmed
     : [];
@@ -455,16 +475,16 @@ export default function SessionDetail({
     ? {
         ticketId: ticketNumber,
         context: [
-          { key: 'Org', val: selectedTicket?.company || selectedTicket?.org || 'Unknown org' },
-          { key: 'Site', val: selectedTicket?.site || 'Unknown site' },
+          { key: 'Org', val: selectedTicketView?.company || selectedTicketView?.org || 'Unknown org' },
+          { key: 'Site', val: selectedTicketView?.site || 'Unknown site' },
           {
             key: 'ISP',
             val: data.evidence_pack?.external_status?.[0]?.provider || 'Unknown',
             ...(data.evidence_pack?.external_status?.[0]?.status ? { highlight: '#F97316' } : {}),
           },
           { key: 'Firewall', val: data.evidence_pack?.config?.firewall || 'Unknown' },
-          { key: 'User device', val: data.evidence_pack?.device?.hostname || selectedTicket?.requester || 'Unknown' },
-          { key: 'SLA', val: selectedTicket?.priority || 'Standard', highlight: 'var(--accent)' },
+          { key: 'User device', val: data.evidence_pack?.device?.hostname || selectedTicketView?.requester || 'Unknown' },
+          { key: 'SLA', val: selectedTicketView?.priority || 'Standard', highlight: 'var(--accent)' },
         ],
         hypotheses: Array.isArray(data.diagnosis?.top_hypotheses)
           ? data.diagnosis.top_hypotheses.slice(0, 3).map((h: any, i: number) => ({

@@ -5,11 +5,9 @@
 import type {
   EvidencePack,
   DiagnosisOutput,
-  Hypothesis,
-  RecommendedAction,
 } from '@playbook-brain/types';
-import { createLLMProvider, getDefaultLLMProvider } from './llm-adapter.js';
-import { shouldDowngradeDiagnosisToFallback } from './evidence-guardrails.js';
+import { getDefaultLLMProvider } from './llm-adapter.js';
+import { shouldBlockDiagnosisOutput } from './evidence-guardrails.js';
 
 export class DiagnoseService {
   /**
@@ -31,19 +29,9 @@ export class DiagnoseService {
       response = await llm.complete(prompt);
     } catch (error) {
       const message = String((error as Error)?.message || '');
-      const shouldFallback =
-        modelName === 'gemini' &&
-        (message.includes('GEMINI_API_KEY') || message.includes('[GeminiLimiter]') || message.includes('Gemini API error'));
-      if (!shouldFallback) {
-        return this.buildDeterministicFallback(pack, Date.now() - startTime);
-      }
-      try {
-        llm = createLLMProvider('groq');
-        modelName = llm.name;
-        response = await llm.complete(prompt);
-      } catch {
-        return this.buildDeterministicFallback(pack, Date.now() - startTime);
-      }
+      throw new Error(
+        `Diagnosis generation failed (${modelName}): ${message || 'unknown LLM error'}`
+      );
     }
     const responseText = response.content;
 
@@ -62,53 +50,6 @@ export class DiagnoseService {
     };
 
     return diagnosis;
-  }
-
-  private buildDeterministicFallback(pack: EvidencePack, latencyMs: number): DiagnosisOutput {
-    const title = pack.ticket.title || 'Reported issue';
-    const desc = pack.ticket.description || 'No description provided';
-    const evidence = [title, desc].filter(Boolean).slice(0, 3);
-    const digestActions = pack.evidence_digest?.candidate_actions || [];
-    const recommendedActions =
-      digestActions.length > 0
-        ? digestActions.slice(0, 4).map((item) => ({
-            action: item.action,
-            risk: 'low' as const,
-          }))
-        : [
-            { action: 'Collect missing context from ticket requester and confirm exact failure mode', risk: 'low' as const },
-            { action: 'Run standard service/device connectivity checks based on environment baseline', risk: 'low' as const },
-          ];
-    return {
-      summary: `Deterministic fallback diagnosis generated from ticket context for ${pack.ticket.id}.`,
-      top_hypotheses: [
-        {
-          rank: 1,
-          hypothesis: `Primary issue is consistent with user-reported symptom: ${title}`,
-          confidence: 0.62,
-          evidence,
-          tests: ['Confirm current error state with the requester', 'Validate service/device status against recent known-good baseline'],
-          next_questions: ['When did the issue start?', 'Does it affect one user/device or multiple?'],
-        },
-      ],
-      missing_data: pack.missing_data || [],
-      recommended_actions: recommendedActions,
-      do_not_do: ['Do not apply destructive changes before confirming scope and root cause'],
-      meta: {
-        model: 'rules-fallback',
-        input_tokens: 0,
-        output_tokens: 0,
-        cost_usd: 0,
-        latency_ms: latencyMs,
-      },
-    };
-  }
-
-  private buildEvidenceAnchoredFallback(pack: EvidencePack): DiagnosisOutput {
-    const fallback = this.buildDeterministicFallback(pack, 0);
-    delete fallback.meta;
-    fallback.summary = `Evidence-anchored fallback diagnosis generated for ${pack.ticket.id} due to unsupported high-risk inference in model output.`;
-    return fallback;
   }
 
   /**
@@ -284,42 +225,18 @@ Rules:
         do_not_do: Array.isArray(parsed.do_not_do) ? parsed.do_not_do : [],
       };
 
-      if (shouldDowngradeDiagnosisToFallback(parsedDiagnosis, pack)) {
-        return this.buildEvidenceAnchoredFallback(pack);
+      if (shouldBlockDiagnosisOutput(parsedDiagnosis, pack)) {
+        throw new Error(
+          `Diagnosis guardrail blocked unsupported inference for ticket ${pack.ticket.id}`
+        );
       }
 
       return parsedDiagnosis;
     } catch (err) {
       console.error('[DIAGNOSE] Failed to parse Claude response:', err);
-      const seedEvidence = [
-        pack.ticket.title,
-        pack.ticket.description,
-        ...(pack.signals?.slice(0, 2).map((s) => `${s.source}:${s.type}`) || []),
-      ]
-        .filter(Boolean)
-        .slice(0, 3);
-
-      return {
-        summary: 'Fallback diagnosis generated due to invalid LLM JSON response.',
-        top_hypotheses: [
-          {
-            rank: 1,
-            hypothesis: `Intermittent service degradation related to ticket symptom: ${pack.ticket.title}`,
-            confidence: 0.65,
-            evidence: seedEvidence,
-            tests: [
-              'Re-run network reachability checks from affected endpoint',
-              'Confirm scope of impact with at least one additional user/device',
-            ],
-            next_questions: pack.missing_data?.slice(0, 2).map((m) => `Confirm: ${m.field}`) || [],
-          },
-        ],
-        missing_data: [],
-        recommended_actions: [
-          { action: 'Run safe diagnostic checks before any configuration change', risk: 'low' },
-        ],
-        do_not_do: ['Do not execute destructive changes without explicit approval'],
-      };
+      throw new Error(
+        `Diagnosis parse failed for ticket ${pack.ticket.id}: ${(err as Error)?.message || String(err)}`
+      );
     }
   }
 }

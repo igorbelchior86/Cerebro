@@ -84,7 +84,7 @@ function ticketMentionsIntegrationContext(pack: EvidencePack): boolean {
   return includesAny(ticketText, INTEGRATION_CONTEXT_TERMS);
 }
 
-export function shouldDowngradeDiagnosisToFallback(
+export function shouldBlockDiagnosisOutput(
   diagnosis: DiagnosisOutput,
   pack: EvidencePack
 ): boolean {
@@ -105,7 +105,7 @@ export function shouldDowngradeDiagnosisToFallback(
   return false;
 }
 
-export function shouldDowngradePlaybookToFallback(
+export function shouldBlockPlaybookOutput(
   markdown: string,
   diagnosis: DiagnosisOutput,
   pack: EvidencePack

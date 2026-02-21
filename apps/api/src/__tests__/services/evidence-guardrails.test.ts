@@ -1,7 +1,7 @@
 import type { DiagnosisOutput, EvidencePack } from '@playbook-brain/types';
 import {
-  shouldDowngradeDiagnosisToFallback,
-  shouldDowngradePlaybookToFallback,
+  shouldBlockDiagnosisOutput,
+  shouldBlockPlaybookOutput,
 } from '../../services/evidence-guardrails.js';
 
 function buildBasePack(): EvidencePack {
@@ -49,20 +49,20 @@ function buildDiagnosis(hypothesis: string): DiagnosisOutput {
 }
 
 describe('evidence guardrails', () => {
-  it('downgrades diagnosis when high-risk narrative is unsupported by direct evidence', () => {
+  it('blocks diagnosis when high-risk narrative is unsupported by direct evidence', () => {
     const pack = buildBasePack();
     const diagnosis = buildDiagnosis('Compromised account and malware persistence via nircmd.exe');
-    expect(shouldDowngradeDiagnosisToFallback(diagnosis, pack)).toBe(true);
+    expect(shouldBlockDiagnosisOutput(diagnosis, pack)).toBe(true);
   });
 
-  it('does not downgrade diagnosis when high-risk terms are directly present in evidence', () => {
+  it('does not block diagnosis when high-risk terms are directly present in evidence', () => {
     const pack = buildBasePack();
     pack.ticket.description = 'Security tool detected malware and nircmd.exe on this endpoint.';
     const diagnosis = buildDiagnosis('Possible malware compromise requiring containment');
-    expect(shouldDowngradeDiagnosisToFallback(diagnosis, pack)).toBe(false);
+    expect(shouldBlockDiagnosisOutput(diagnosis, pack)).toBe(false);
   });
 
-  it('downgrades playbook when it drifts to integration credential remediation for unrelated ticket', () => {
+  it('blocks playbook when it drifts to integration credential remediation for unrelated ticket', () => {
     const pack = buildBasePack();
     pack.missing_data = [
       { field: 'itglue_docs', why: 'IT Glue API error: 401 Unauthorized' },
@@ -75,10 +75,10 @@ describe('evidence guardrails', () => {
 2. Reset IT Glue API key
 3. Rotate client secret
 `;
-    expect(shouldDowngradePlaybookToFallback(markdown, diagnosis, pack)).toBe(true);
+    expect(shouldBlockPlaybookOutput(markdown, diagnosis, pack)).toBe(true);
   });
 
-  it('does not downgrade playbook when ticket is explicitly about integration access', () => {
+  it('does not block playbook when ticket is explicitly about integration access', () => {
     const pack = buildBasePack();
     pack.ticket.title = 'NinjaOne integration credentials invalid';
     pack.ticket.description = 'NinjaOne oauth invalid_client while syncing integration';
@@ -91,6 +91,6 @@ describe('evidence guardrails', () => {
 1. Rotate client secret
 2. Reconnect integration
 `;
-    expect(shouldDowngradePlaybookToFallback(markdown, diagnosis, pack)).toBe(false);
+    expect(shouldBlockPlaybookOutput(markdown, diagnosis, pack)).toBe(false);
   });
 });

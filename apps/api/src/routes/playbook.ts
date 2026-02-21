@@ -18,6 +18,17 @@ import { PrepareContextService } from '../services/prepare-context.js';
 const router: Router = Router();
 const fullFlowInFlight = new Set<string>();
 
+function isTransientProviderError(error: unknown): boolean {
+  const message = String((error as any)?.message || error || '').toLowerCase();
+  return message.includes('[geminilimiter]') ||
+    message.includes('rpd limit reached') ||
+    message.includes('resource_exhausted') ||
+    message.includes('429') ||
+    message.includes('rate limit') ||
+    message.includes('timeout') ||
+    message.includes('temporarily unavailable');
+}
+
 // ─── GET /playbook/full-flow ──────────────────────────────
 /**
  * Complete flow: Evidence → Diagnosis → Validation → Playbook
@@ -354,6 +365,12 @@ router.get('/full-flow', async (req, res) => {
         console.log(`[FULL-FLOW] Background processing complete for ${sessionId}`);
       } catch (bgErr) {
         console.error(`[FULL-FLOW] Background error for ${sessionId}:`, bgErr);
+        await execute(
+          `UPDATE triage_sessions
+           SET status = $1, updated_at = NOW()
+           WHERE id = $2`,
+          [isTransientProviderError(bgErr) ? 'blocked' : 'failed', sessionId]
+        );
       }
     };
 

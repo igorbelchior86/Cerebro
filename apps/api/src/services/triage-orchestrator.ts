@@ -162,9 +162,26 @@ export class TriageOrchestrator {
                 console.log(`[Orchestrator] [${sid}] Pipeline completed successfully. Playbook ready.`);
             } catch (error: any) {
                 console.error(`[Orchestrator] [${sid}] Pipeline failed:`, error);
-                await this.updateSessionStatus(sid, 'failed');
+                const message = String(error?.message || error || '');
+                if (this.isTransientProviderError(message)) {
+                    await this.updateSessionStatus(sid, 'blocked');
+                    console.warn(`[Orchestrator] [${sid}] Marked as blocked (transient provider error): ${message}`);
+                } else {
+                    await this.updateSessionStatus(sid, 'failed');
+                }
             }
         });
+    }
+
+    private isTransientProviderError(message: string): boolean {
+        const normalized = message.toLowerCase();
+        return normalized.includes('[geminilimiter]') ||
+            normalized.includes('rpd limit reached') ||
+            normalized.includes('resource_exhausted') ||
+            normalized.includes('429') ||
+            normalized.includes('rate limit') ||
+            normalized.includes('timeout') ||
+            normalized.includes('temporarily unavailable');
     }
 
     private async updateSessionStatus(

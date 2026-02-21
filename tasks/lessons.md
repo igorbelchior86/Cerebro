@@ -186,3 +186,21 @@
 **Root cause**: O center continuava derivando campos críticos da lista da sidebar em vez de um payload canônico único do backend para o ticket atual.
 **Rule**: Em bugs de oscilação por polling, só considerar resolvido quando houver uma única fonte canônica por etapa (`ticket > pipeline > llm > ui > cache`) sem caminhos paralelos para os mesmos campos.
 **Pattern**: Se duas seções mostram o mesmo dado e divergem por segundos, existe split-brain de leitura; corrigir no contrato de resposta e no consumidor, não apenas no render.
+
+## Lesson: 2026-02-21 (pipeline-ou-nada must fail fast end-to-end)
+**Mistake**: Kept residual fallback-oriented runtime helpers/tests after the user explicitly mandated "pipeline ou nada".
+**Root cause**: Partial migration to fail-fast left legacy fallback artifacts in code paths and naming, creating ambiguity and regression risk.
+**Rule**: Under explicit no-fallback policy, all diagnose/playbook stages must either produce provider-backed outputs or set session `failed` with explicit error provenance.
+**Pattern**: If `llm_outputs.model` can still contain `*fallback*`, contract is violated; audit services + tests + runtime reprocess path immediately.
+
+## Lesson: 2026-02-21 (bulk reprocess scripts must load production-equivalent env)
+**Mistake**: First bulk reprocess run executed without dotenv bootstrap, causing false-negative pipeline failures (`GEMINI_API_KEY not set`).
+**Root cause**: Ad-hoc operational script imported orchestrator directly without app bootstrap environment loading.
+**Rule**: Any direct TSX orchestration script must load `.env` (or run through already bootstrapped API runtime) before invoking pipeline services.
+**Pattern**: Bulk reset/reprocess => bootstrap env first, then audit status/model for each ticket.
+
+## Lesson: 2026-02-21 (quota/rate-limit is retriable, not terminal)
+**Mistake**: Transient LLM provider failures (quota 429 / limiter) were marked as `failed` terminal sessions.
+**Root cause**: Pipeline catch blocks classified all exceptions as terminal.
+**Rule**: Provider transient failures must map to retriable status (`blocked`), while keeping `pipeline ou nada` (no fallback artifacts).
+**Pattern**: `RESOURCE_EXHAUSTED`/`429`/limiter/timeout => `blocked`; deterministic validation/logic errors => `failed`.

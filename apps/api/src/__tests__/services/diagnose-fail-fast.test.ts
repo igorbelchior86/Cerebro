@@ -1,15 +1,15 @@
 import type { EvidencePack } from '@playbook-brain/types';
 import { DiagnoseService } from '../../services/diagnose.js';
 
-describe('DiagnoseService deterministic fallback', () => {
-  it('uses evidence digest candidate actions when available', () => {
+describe('DiagnoseService fail-fast behavior', () => {
+  it('throws when response cannot be parsed as diagnosis JSON', () => {
     const service = new DiagnoseService() as any;
     const pack: EvidencePack = {
       session_id: 's1',
       ticket: {
         id: 'T1',
-        title: 'Phone line help',
-        description: 'Phone not ringing',
+        title: 'Email signature issue',
+        description: 'Unable to apply signature in Outlook',
         created_at: new Date().toISOString(),
         priority: 'Medium',
         queue: 'Support',
@@ -24,11 +24,8 @@ describe('DiagnoseService deterministic fallback', () => {
         facts_confirmed: [],
         facts_conflicted: [],
         missing_critical: [],
-        candidate_actions: [
-          { action: 'Validate VoIP registration in provider portal', evidence_refs: ['fact-1'] },
-          { action: 'Check handset provisioning profile', evidence_refs: ['fact-2'] },
-        ],
-        tech_context_detected: ['goto'],
+        candidate_actions: [],
+        tech_context_detected: [],
         sources_consulted_by_facet: { base: ['itglue'] },
         rejected_evidence: [],
       },
@@ -39,12 +36,8 @@ describe('DiagnoseService deterministic fallback', () => {
       prepared_at: new Date().toISOString(),
     };
 
-    const fallback = service.buildDeterministicFallback(pack, 0);
-    expect(fallback.meta?.model).toBe('rules-fallback');
-    expect(fallback.recommended_actions.map((a: any) => a.action)).toEqual([
-      'Validate VoIP registration in provider portal',
-      'Check handset provisioning profile',
-    ]);
+    expect(() => service.parseResponse('not-json', pack)).toThrow(
+      /Diagnosis parse failed/
+    );
   });
 });
-

@@ -176,3 +176,35 @@
 ## Progress Notes (update)
 - Added deterministic field-quality merge in triage page so sidebar/center do not oscillate between noisy raw strings and normalized strings.
 - Merge policy now keeps higher-quality title/company/requester/site/description per ticket ID across polling cycles.
+
+---
+
+# Task: Enforce "pipeline ou nada" and reprocess latest tickets without fallback
+**Status**: completed
+**Started**: 2026-02-21
+
+## Plan
+- [x] Step 1: Audit all diagnose/playbook fallback paths still present in runtime code.
+- [x] Step 2: Remove fallback generation paths and enforce fail-fast errors in pipeline stages.
+- [x] Step 3: Update guardrail naming/tests to reflect blocking (not downgrade/fallback behavior).
+- [x] Step 4: Reprocess latest tickets and verify persisted `llm_outputs.model` has zero fallback models.
+- [x] Step 5: Validate sidebar chronology for `T20260220.0005` and document changes.
+
+## Open Questions
+- None.
+
+## Progress Notes
+- Removed residual deterministic fallback helpers from `DiagnoseService` and `PlaybookWriterService`.
+- Renamed evidence guardrail APIs to blocking semantics (`shouldBlockDiagnosisOutput` / `shouldBlockPlaybookOutput`).
+- Replaced fallback-focused diagnose unit test with fail-fast parse test.
+- Typecheck passed for API and WEB; targeted API tests passed.
+- Reprocessed target tickets and confirmed `fallback model refs among targets: 0`.
+- Confirmed `/email-ingestion/list` ordering stability over repeated polls (`T20260220.0005` remained index 13; top remained `T20260220.0018`).
+
+## Review
+- What worked:
+- Removing fallback code paths surfaced real operational errors immediately (missing env in manual run, model quota/parse errors) instead of masking them.
+- What was tricky:
+- Manual TSX reprocess without dotenv caused immediate fail-fast failures; rerun with dotenv and controlled retries was required.
+- Time taken:
+- ~60 minutos

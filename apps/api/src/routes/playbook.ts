@@ -75,13 +75,30 @@ router.get('/full-flow', async (req, res) => {
     }
 
     console.log(`[FULL-FLOW] Using sessionId: ${sessionId}`);
+    const sessionRow = await queryOne<{
+      id: string;
+      ticket_id: string;
+      status: string;
+      created_at: string;
+      updated_at: string;
+    }>(
+      `SELECT id, ticket_id, status, created_at, updated_at
+       FROM triage_sessions
+       WHERE id = $1
+       LIMIT 1`,
+      [sessionId]
+    );
 
     // Get all the data
     console.log('[FULL-FLOW] Fetching Evidence Pack...');
     let pack = await getEvidencePack(sessionId);
     if (!pack) {
       const result = await queryOne<{ payload: any }>(
-        'SELECT payload FROM evidence_packs WHERE session_id = $1',
+        `SELECT payload
+         FROM evidence_packs
+         WHERE session_id = $1
+         ORDER BY created_at DESC
+         LIMIT 1`,
         [sessionId]
       );
       if (result) {
@@ -95,9 +112,35 @@ router.get('/full-flow', async (req, res) => {
     } else {
       console.log(`[FULL-FLOW] Evidence pack found, status: ✅`);
     }
+    const ticketId = sessionRow?.ticket_id || rawId;
+    const ticketResult = await queryOne<{ payload: any }>(
+      `SELECT to_jsonb(tp) AS payload
+       FROM tickets_processed tp
+       WHERE tp.id = $1
+       ORDER BY tp.created_at DESC
+       LIMIT 1`,
+      [ticketId]
+    );
+    const packTicket = (pack as any)?.ticket || {};
+    const packOrg = (pack as any)?.org || {};
+    const packUser = (pack as any)?.user || {};
+    const dbTicket = ticketResult?.payload || {};
+    const canonicalTicket = {
+      id: String(ticketId || dbTicket.id || rawId),
+      title: dbTicket.title ?? packTicket.title ?? null,
+      description: dbTicket.description ?? packTicket.description ?? null,
+      requester: dbTicket.requester ?? packUser.name ?? null,
+      company: dbTicket.company ?? packOrg.name ?? null,
+      created_at: dbTicket.created_at ?? sessionRow?.created_at ?? null,
+      priority: dbTicket.priority ?? 'P3',
+    };
 
     const diagResult = await queryOne<{ payload: any }>(
-      `SELECT payload FROM llm_outputs WHERE session_id = $1 AND step = 'diagnose'`,
+      `SELECT payload
+       FROM llm_outputs
+       WHERE session_id = $1 AND step = 'diagnose'
+       ORDER BY created_at DESC
+       LIMIT 1`,
       [sessionId]
     );
     const diagnosis = diagResult ? diagResult.payload : null;
@@ -109,7 +152,11 @@ router.get('/full-flow', async (req, res) => {
       req_questions: any;
       safe_to_proceed: boolean;
     }>(
-      `SELECT status, violations, required_fixes, req_questions, safe_to_proceed FROM validation_results WHERE session_id = $1`,
+      `SELECT status, violations, required_fixes, req_questions, safe_to_proceed
+       FROM validation_results
+       WHERE session_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
       [sessionId]
     );
     const validation: ValidationOutput | null = valResult ? {
@@ -129,7 +176,11 @@ router.get('/full-flow', async (req, res) => {
       [sessionId]
     );
     const playbookResult = await queryOne<{ payload: any }>(
-      `SELECT payload FROM llm_outputs WHERE session_id = $1 AND step = 'playbook'`,
+      `SELECT payload
+       FROM llm_outputs
+       WHERE session_id = $1 AND step = 'playbook'
+       ORDER BY created_at DESC
+       LIMIT 1`,
       [sessionId]
     );
     const playbook = playbookRow
@@ -161,7 +212,11 @@ router.get('/full-flow', async (req, res) => {
           currentDiagnosis = await diagnoseEvidencePack(currentPack);
 
           const existing = await queryOne<{ id: string }>(
-            `SELECT id FROM llm_outputs WHERE session_id = $1 AND step = $2`,
+            `SELECT id
+             FROM llm_outputs
+             WHERE session_id = $1 AND step = $2
+             ORDER BY created_at DESC
+             LIMIT 1`,
             [sessionId, 'diagnose']
           );
 
@@ -204,7 +259,11 @@ router.get('/full-flow', async (req, res) => {
           ];
 
           const existing = await queryOne<{ id: string }>(
-            `SELECT id FROM validation_results WHERE session_id = $1`,
+            `SELECT id
+             FROM validation_results
+             WHERE session_id = $1
+             ORDER BY created_at DESC
+             LIMIT 1`,
             [sessionId]
           );
 
@@ -242,7 +301,11 @@ router.get('/full-flow', async (req, res) => {
           const generatedPlaybook = await generatePlaybook(currentDiagnosis, currentValidation, currentPack);
 
           const existing = await queryOne<{ id: string }>(
-            `SELECT id FROM llm_outputs WHERE session_id = $1 AND step = $2`,
+            `SELECT id
+             FROM llm_outputs
+             WHERE session_id = $1 AND step = $2
+             ORDER BY created_at DESC
+             LIMIT 1`,
             [sessionId, 'playbook']
           );
 
@@ -260,7 +323,14 @@ router.get('/full-flow', async (req, res) => {
           }
 
           // Also save in 'playbooks' table for final display
-          const existingPlaybook = await queryOne<{ id: string }>(`SELECT id FROM playbooks WHERE session_id = $1`, [sessionId]);
+          const existingPlaybook = await queryOne<{ id: string }>(
+            `SELECT id
+             FROM playbooks
+             WHERE session_id = $1
+             ORDER BY created_at DESC
+             LIMIT 1`,
+            [sessionId]
+          );
           if (existingPlaybook) {
             await execute(
               `UPDATE playbooks SET content_md = $1, content_json = $2, created_at = NOW() WHERE id = $3`,
@@ -309,6 +379,7 @@ router.get('/full-flow', async (req, res) => {
 
     return res.json({
       sessionId,
+      session: sessionRow ?? { id: sessionId, ticket_id: ticketId, status: 'pending' },
       flow: {
         evidence_pack: pack ? '✅ Ready' : '⏳ Processing',
         diagnosis: diagnosis ? '✅ Ready' : '⏳ Waiting',
@@ -316,6 +387,7 @@ router.get('/full-flow', async (req, res) => {
         playbook: playbook ? '✅ Ready' : '⏳ Waiting',
       },
       data: {
+        ticket: canonicalTicket,
         pack,
         diagnosis,
         validation,
@@ -350,7 +422,11 @@ router.post('/', async (req, res) => {
 
     if (!pack) {
       const result = await queryOne<{ payload: string }>(
-        'SELECT payload FROM evidence_packs WHERE session_id = $1',
+        `SELECT payload
+         FROM evidence_packs
+         WHERE session_id = $1
+         ORDER BY created_at DESC
+         LIMIT 1`,
         [sessionId]
       );
       if (result) {
@@ -368,7 +444,9 @@ router.post('/', async (req, res) => {
     // ─── Get diagnosis ────────────────────────────────────────────
     const diagResult = await queryOne<{ payload: string }>(
       `SELECT payload FROM llm_outputs 
-       WHERE session_id = $1 AND step = 'diagnose'`,
+       WHERE session_id = $1 AND step = 'diagnose'
+       ORDER BY created_at DESC
+       LIMIT 1`,
       [sessionId]
     );
 
@@ -384,7 +462,9 @@ router.post('/', async (req, res) => {
     // ─── Get validation ───────────────────────────────────────────
     const valResult = await queryOne<{ payload: string }>(
       `SELECT payload FROM llm_outputs 
-       WHERE session_id = $1 AND step = 'validation'`,
+       WHERE session_id = $1 AND step = 'validation'
+       ORDER BY created_at DESC
+       LIMIT 1`,
       [sessionId]
     );
 
@@ -447,7 +527,9 @@ router.get('/:sessionId', async (req, res) => {
 
     const result = await queryOne<{ payload: string }>(
       `SELECT payload FROM llm_outputs 
-       WHERE session_id = $1 AND step = 'playbook'`,
+       WHERE session_id = $1 AND step = 'playbook'
+       ORDER BY created_at DESC
+       LIMIT 1`,
       [sessionId]
     );
 
@@ -480,7 +562,9 @@ router.get('/:sessionId/markdown', async (req, res) => {
 
     const result = await queryOne<{ payload: string }>(
       `SELECT payload FROM llm_outputs 
-       WHERE session_id = $1 AND step = 'playbook'`,
+       WHERE session_id = $1 AND step = 'playbook'
+       ORDER BY created_at DESC
+       LIMIT 1`,
       [sessionId]
     );
 

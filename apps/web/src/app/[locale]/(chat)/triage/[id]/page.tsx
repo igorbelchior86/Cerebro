@@ -12,6 +12,15 @@ import { usePathname } from 'next/navigation';
 
 interface SessionData {
   session: { id: string; ticket_id: string; status: string };
+  ticket?: {
+    id?: string;
+    title?: string;
+    description?: string;
+    requester?: string;
+    company?: string;
+    created_at?: string;
+    priority?: string;
+  };
   evidence_pack?: any;
   diagnosis?: any;
   validation?: any;
@@ -43,6 +52,16 @@ export default function SessionDetail({
   const timelineSignatureRef = useRef('');
   const flowRequestSeqRef = useRef(0);
   const sidebarTicketsRef = useRef<ActiveTicket[]>([]);
+  const ticketSnapshotRef = useRef<Record<string, {
+    ticketId: string;
+    subject: string;
+    description: string;
+    requester: string;
+    org: string;
+    site: string;
+    priority: string;
+    createdAt?: string;
+  }>>({});
 
   // Add state for real tickets
   const [sidebarTickets, setSidebarTickets] = useState<ActiveTicket[]>([]);
@@ -79,6 +98,30 @@ export default function SessionDetail({
     return Number.isNaN(d.getTime()) ? new Date() : d;
   };
 
+  const isMeaningfulText = (value?: string) => {
+    const normalized = normalizePlainText(value, '').toLowerCase();
+    if (!normalized) return false;
+    return ![
+      'unknown',
+      'unknown org',
+      'unknown requester',
+      'unknown user',
+      'unknown site',
+      'untitled ticket',
+      'organization',
+      'requester',
+      'user',
+    ].includes(normalized);
+  };
+
+  const pickStableText = (current: string | undefined, candidates: Array<string | undefined>, fallback: string) => {
+    if (isMeaningfulText(current)) return normalizePlainText(current, fallback);
+    for (const candidate of candidates) {
+      if (isMeaningfulText(candidate)) return normalizePlainText(candidate, fallback);
+    }
+    return normalizePlainText(current, fallback) || fallback;
+  };
+
   const getTicketContextMeta = (ticket?: ActiveTicket) => {
     if (!ticket) return selectedTicketId;
     const parts = [
@@ -92,64 +135,6 @@ export default function SessionDetail({
   useEffect(() => {
     sidebarTicketsRef.current = sidebarTickets;
   }, [sidebarTickets]);
-
-  const isMeaningfulText = (value?: string) => {
-    const normalized = normalizePlainText(value, '').toLowerCase();
-    if (!normalized) return false;
-    return normalized !== 'unknown' &&
-      normalized !== 'unknown org' &&
-      normalized !== 'unknown requester' &&
-      normalized !== 'untitled ticket';
-  };
-
-  const fieldQualityScore = (value?: string, kind: 'title' | 'company' | 'requester' | 'description' = 'description') => {
-    const raw = value || '';
-    const normalized = normalizePlainText(raw, '');
-    if (!isMeaningfulText(normalized)) return 0;
-
-    let score = 10;
-    const noisyPatterns = [
-      /description\s*:/i,
-      /created by\s*:/i,
-      /has been created for/i,
-      /<[^>]+>/,
-      /\bfrom:\b/i,
-      /\bsubject:\b/i,
-    ];
-    if (noisyPatterns.some((rx) => rx.test(raw))) score -= 5;
-
-    if (kind === 'title') {
-      if (normalized.length > 140) score -= 3;
-      if (normalized.length >= 8 && normalized.length <= 120) score += 2;
-    }
-
-    if (kind === 'company' || kind === 'requester') {
-      if (normalized.length <= 2) score -= 3;
-      if (normalized.length >= 3 && normalized.length <= 80) score += 1;
-    }
-
-    return score;
-  };
-
-  const pickBestField = (
-    existing: string | undefined,
-    incoming: string | undefined,
-    kind: 'title' | 'company' | 'requester' | 'description'
-  ) => {
-    const existingScore = fieldQualityScore(existing, kind);
-    const incomingScore = fieldQualityScore(incoming, kind);
-    if (incomingScore > existingScore) return incoming;
-    if (existingScore > incomingScore) return existing;
-
-    // Tie-breaker for title: prefer cleaned/shorter variant.
-    if (kind === 'title') {
-      const ex = cleanTitle(existing);
-      const inc = cleanTitle(incoming);
-      if (inc && ex && inc.length !== ex.length) return inc.length < ex.length ? incoming : existing;
-      return incoming || existing;
-    }
-    return incoming || existing;
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -167,24 +152,76 @@ export default function SessionDetail({
         });
         if (cancelled || reqSeq !== flowRequestSeqRef.current) return;
 
-        const flowData = res.data.data || {};
+        const payload = res.data || {};
+        const flowData = payload.data || {};
+        const resolvedSession = payload.session || {};
+        const resolvedTicket = flowData.ticket || {};
+        const resolvedTicketId = String(
+          resolvedSession.ticket_id ||
+          resolvedTicket.id ||
+          selectedTicketId
+        );
         const newData = {
-          session: { id: selectedTicketId, ticket_id: '', status: 'active' },
-          ...flowData,
+          session: {
+            id: String(resolvedSession.id || selectedTicketId),
+            ticket_id: resolvedTicketId,
+            status: String(resolvedSession.status || 'active'),
+          },
+          ticket: resolvedTicket || null,
+          diagnosis: flowData.diagnosis ?? null,
+          validation: flowData.validation ?? null,
+          playbook: flowData.playbook ?? null,
           evidence_pack: flowData.evidence_pack ?? flowData.pack ?? null,
         };
 
         setData(newData);
+        const pack = newData.evidence_pack || {};
+        const packTicket = pack.ticket || {};
+        const packOrg = pack.org || {};
+        const packUser = pack.user || {};
+        const backendTicket = newData.ticket || {};
         const currentTicket = sidebarTicketsRef.current.find((t) => t.id === selectedTicketId);
-        const ticketId = newData.session.ticket_id || currentTicket?.ticket_id || selectedTicketId;
-        const subject = normalizePlainText(cleanTitle(currentTicket?.title), 'Untitled ticket');
-        const problemDescription = normalizePlainText(currentTicket?.description, subject);
-        const requester = normalizePlainText(currentTicket?.requester || currentTicket?.site, 'Unknown user');
-        const org = normalizePlainText(currentTicket?.company || currentTicket?.org, 'Unknown org');
-        const site = normalizePlainText(currentTicket?.site, 'Unknown site');
-        const priority = currentTicket?.priority || 'P3';
+        const snapshot = ticketSnapshotRef.current[selectedTicketId];
+        const ticketId = newData.session.ticket_id || normalizePlainText(backendTicket.id, '') || currentTicket?.ticket_id || snapshot?.ticketId || selectedTicketId;
+        const subject = pickStableText(
+          snapshot?.subject,
+          [cleanTitle(backendTicket.title), cleanTitle(currentTicket?.title), cleanTitle(packTicket.title), cleanTitle(packTicket.description)],
+          'Untitled ticket'
+        );
+        const problemDescription = pickStableText(
+          snapshot?.description,
+          [backendTicket.description, currentTicket?.description, packTicket.description, subject],
+          subject
+        );
+        const requester = pickStableText(
+          snapshot?.requester,
+          [backendTicket.requester, currentTicket?.requester, currentTicket?.site, packUser.name],
+          'Unknown user'
+        );
+        const org = pickStableText(
+          snapshot?.org,
+          [backendTicket.company, currentTicket?.company, currentTicket?.org, packOrg.name],
+          'Unknown org'
+        );
+        const site = pickStableText(
+          snapshot?.site,
+          [backendTicket.requester, currentTicket?.site, currentTicket?.requester, packUser.name],
+          'Unknown site'
+        );
+        const priority = backendTicket.priority || currentTicket?.priority || snapshot?.priority || 'P3';
+        const createdAt = snapshot?.createdAt || backendTicket.created_at || currentTicket?.created_at || packTicket.created_at;
+        ticketSnapshotRef.current[selectedTicketId] = {
+          ticketId,
+          subject,
+          description: problemDescription,
+          requester,
+          org,
+          site,
+          priority,
+          createdAt,
+        };
         const priorityLabel = priority === 'P1' ? 'P1 Critical' : priority;
-        const firstEventTime = parseDate(currentTicket?.created_at);
+        const firstEventTime = parseDate(createdAt);
         const ts = (offsetSec: number) => new Date(firstEventTime.getTime() + offsetSec * 1000);
 
         const timeline: Message[] = [
@@ -197,7 +234,6 @@ export default function SessionDetail({
           },
         ];
 
-        const pack = newData.evidence_pack;
         const sourceFindings = Array.isArray(pack?.source_findings) ? pack.source_findings : [];
         const hasSourceFindings = sourceFindings.length > 0;
         const relatedCount = Array.isArray(pack?.related_cases) ? pack.related_cases.length : 0;
@@ -333,23 +369,7 @@ export default function SessionDetail({
         if (res.ok) {
           const json = await res.json();
           if (!cancelled && json.success && Array.isArray(json.data)) {
-            setSidebarTickets((prev) => {
-              const prevById = new Map(prev.map((t) => [t.id, t]));
-              return json.data.map((incoming: ActiveTicket) => {
-                const existing = prevById.get(incoming.id);
-                if (!existing) return incoming;
-                return {
-                  ...existing,
-                  ...incoming,
-                  title: pickBestField(existing.title, incoming.title, 'title'),
-                  description: pickBestField(existing.description, incoming.description, 'description'),
-                  company: pickBestField(existing.company, incoming.company, 'company'),
-                  requester: pickBestField(existing.requester, incoming.requester, 'requester'),
-                  org: pickBestField(existing.org, incoming.org, 'company'),
-                  site: pickBestField(existing.site, incoming.site, 'requester'),
-                };
-              });
-            });
+            setSidebarTickets(json.data as ActiveTicket[]);
           }
         }
       } catch (err) {
@@ -394,30 +414,9 @@ export default function SessionDetail({
     }, 500);
   };
 
-  // Ensure current ticket is visible in case it's not in the DB yet, or just display the current DB list
-  const selectedTicketFromList = sidebarTickets.find((t) => t.id === selectedTicketId);
-  const currentMock: ActiveTicket | null = data
-    ? {
-      id: data.session.id,
-      ticket_id: data.session.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`,
-      status: selectedTicketFromList?.status || 'pending',
-      ...(selectedTicketFromList?.priority ? { priority: selectedTicketFromList.priority } : { priority: 'P3' as const }),
-      ...(selectedTicketFromList?.title ? { title: selectedTicketFromList.title } : {}),
-      ...(selectedTicketFromList?.description ? { description: selectedTicketFromList.description } : {}),
-      ...(selectedTicketFromList?.company ? { company: selectedTicketFromList.company } : {}),
-      ...(selectedTicketFromList?.requester ? { requester: selectedTicketFromList.requester } : {}),
-      ...(selectedTicketFromList?.org ? { org: selectedTicketFromList.org } : {}),
-      ...(selectedTicketFromList?.site ? { site: selectedTicketFromList.site } : {}),
-      ...(selectedTicketFromList?.created_at ? { created_at: selectedTicketFromList.created_at } : {}),
-    }
-    : null;
-
-  const displayTickets = [...sidebarTickets];
-  if (currentMock && !displayTickets.find(t => t.id === currentMock.id)) {
-    displayTickets.unshift(currentMock);
-  }
-
-  const selectedTicket = displayTickets.find((t) => t.id === selectedTicketId);
+  const displayTickets = sidebarTickets;
+  const canonicalTicketId = data?.session.ticket_id || selectedTicketId;
+  const selectedTicket = displayTickets.find((t) => t.id === canonicalTicketId || t.ticket_id === canonicalTicketId);
   const ticketTitle = cleanTitle(selectedTicket?.title) || 'Untitled ticket';
   const ticketNumber = data?.session.ticket_id || selectedTicket?.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`;
   const ticketLabel = `${ticketNumber} — ${ticketTitle}`;

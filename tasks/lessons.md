@@ -180,3 +180,9 @@
 **Root cause**: Merge logic lacked quality ranking/tie-breakers for semantically equivalent fields.
 **Rule**: SSOT merge must be monotonic by field quality, not only by non-empty checks.
 **Pattern**: For polled multi-source ticket fields, use deterministic quality scoring + tie-breaks to prevent text flapping.
+
+## Lesson: 2026-02-21 (fix local isolado não resolve split-brain de payload)
+**Mistake**: Corrigi sintomas em partes (ordenação/lista/snapshot) sem eliminar completamente o caminho concorrente de metadados entre sidebar e center.
+**Root cause**: O center continuava derivando campos críticos da lista da sidebar em vez de um payload canônico único do backend para o ticket atual.
+**Rule**: Em bugs de oscilação por polling, só considerar resolvido quando houver uma única fonte canônica por etapa (`ticket > pipeline > llm > ui > cache`) sem caminhos paralelos para os mesmos campos.
+**Pattern**: Se duas seções mostram o mesmo dado e divergem por segundos, existe split-brain de leitura; corrigir no contrato de resposta e no consumidor, não apenas no render.

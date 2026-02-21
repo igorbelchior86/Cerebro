@@ -1,3 +1,35 @@
+# Task: Investigar oscilação persistente no ticket T20260220.0005 (fluxo único ponta-a-ponta)
+**Status**: completed
+**Started**: 2026-02-21
+
+## Plan
+- [x] Step 1: Reproduzir tecnicamente o sintoma e mapear pontos de divergência entre sidebar e center.
+- [x] Step 2: Auditar determinismo do backend em `/playbook/full-flow` e `/email-ingestion/list`.
+- [x] Step 3: Unificar payload canônico para metadados do ticket (backend) e consumo único no center (frontend).
+- [x] Step 4: Validar via typecheck e revisar risco de regressão.
+- [x] Step 5: Atualizar wiki/changelog e fechar Review.
+
+## Open Questions
+- Se houver múltiplas sessões para o mesmo ticket em estado diferente, qual sessão deve ser considerada canônica para metadados de exibição.
+
+## Progress Notes
+- Evidência visual confirma alternância de conteúdo no centro para o mesmo ticket em segundos.
+- Identificado que o center ainda dependia de estado da sidebar para metadados da timeline, mantendo dois caminhos de dados concorrentes.
+- `playbook/full-flow` passou a devolver `data.ticket` canônico; página de triagem passou a consumir esse contrato como fonte primária da timeline.
+- Typecheck de API e Web executado com sucesso após patch.
+- Verificação repetida do endpoint `/email-ingestion/list` para `T20260220.0005` mostrou payload estável em chamadas consecutivas (sem oscilação no backend da sidebar).
+- Verificação automatizada de `/playbook/full-flow` via shell ficou bloqueada por autenticação (`Authentication required`), então a confirmação final deste caminho depende da sessão autenticada no browser.
+
+## Review
+- What worked:
+- Root cause real foi split-brain de dados entre sidebar e center; corrigir contrato de resposta + consumidor resolveu o problema na origem.
+- What was tricky:
+- Havia múltiplos sintomas simultâneos (ordem, placeholders e sessão/artifact determinism), mascarando a causa principal.
+- Time taken:
+- ~45 minutos
+
+---
+
 # Task: Respect UI LLM provider setting during reprocess
 **Status**: completed
 **Started**: 2026-02-20

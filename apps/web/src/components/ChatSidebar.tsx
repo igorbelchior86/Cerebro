@@ -139,9 +139,9 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   }, [user?.preferences?.theme]);
 
   useEffect(() => {
-    const tick = () => setClock(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }));
+    const tick = () => setClock(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }));
     tick();
-    const id = setInterval(tick, 1000);
+    const id = setInterval(tick, 30000);
     return () => clearInterval(id);
   }, []);
 

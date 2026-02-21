@@ -108,47 +108,60 @@ router.get('/list', async (_req: Request, res: Response) => {
         );
         const includeCompany = Boolean(hasCompanyColumn[0]?.exists);
 
-        const processedResults = await query(
-            `SELECT tp.id,
+        const pipelineRows = await query(
+            `WITH ticket_sessions AS (
+               SELECT ts.id,
+                      ts.ticket_id,
+                      ts.status,
+                      ts.created_at,
+                      MIN(ts.created_at) OVER (PARTITION BY ts.ticket_id) AS first_session_created_at
+               FROM triage_sessions ts
+               WHERE ts.ticket_id IS NOT NULL
+                 AND ts.ticket_id <> ''
+             ),
+             latest_sessions AS (
+               SELECT DISTINCT ON (ticket_id)
+                      id AS session_id,
+                      ticket_id,
+                      status AS session_status,
+                      created_at AS session_created_at,
+                      first_session_created_at
+               FROM ticket_sessions
+               ORDER BY ticket_id, created_at DESC
+             )
+             SELECT ls.session_id,
+                    ls.ticket_id,
+                    ls.session_status,
+                    ls.session_created_at,
+                    ls.first_session_created_at,
                     tp.title,
                     tp.description,
                     ${includeCompany ? 'tp.company,' : `''::text AS company,`}
                     tp.requester,
                     tp.raw_body,
-                    tp.status,
-                    tp.is_reply,
-                    tp.updates,
-                    tp.created_at,
-                    tp.last_updated_at,
-                    COALESCE(ts.status, 'pending') AS pipeline_status
-             FROM tickets_processed tp
-             LEFT JOIN LATERAL (
-               SELECT status
-               FROM triage_sessions ts
-               WHERE ts.ticket_id = tp.id
-               ORDER BY ts.created_at DESC
-               LIMIT 1
-             ) ts ON true
-             ORDER BY tp.created_at DESC
-             LIMIT 200`
-        );
-
-        const sessionResults = await query(
-            `SELECT ts.id AS session_id,
-                    ts.ticket_id,
-                    ts.status AS session_status,
-                    ts.created_at AS session_created_at,
+                    tp.created_at AS ticket_created_at,
                     ep.payload AS evidence_payload
-             FROM triage_sessions ts
+             FROM latest_sessions ls
+             LEFT JOIN tickets_processed tp ON tp.id = ls.ticket_id
              LEFT JOIN LATERAL (
                SELECT payload
-               FROM evidence_packs ep
-               WHERE ep.session_id = ts.id
+               FROM triage_sessions ts_pack
+               JOIN evidence_packs ep ON ep.session_id = ts_pack.id
+               WHERE ts_pack.ticket_id = ls.ticket_id
                ORDER BY ep.created_at DESC
                LIMIT 1
              ) ep ON true
-             ORDER BY ts.created_at DESC
-             LIMIT 300`
+             ORDER BY
+               CASE
+                 WHEN ls.ticket_id ~ '^T[0-9]{8}\\.[0-9]+$' THEN substring(ls.ticket_id from 2 for 8)
+                 ELSE NULL
+               END DESC NULLS LAST,
+               CASE
+                 WHEN ls.ticket_id ~ '^T[0-9]{8}\\.[0-9]+$' THEN LPAD(split_part(ls.ticket_id, '.', 2), 12, '0')
+                 ELSE NULL
+               END DESC NULLS LAST,
+               COALESCE(tp.created_at, ls.first_session_created_at) DESC
+             LIMIT 200`
         );
 
         const normalizeStatus = (status: string) => {
@@ -197,137 +210,67 @@ router.get('/list', async (_req: Request, res: Response) => {
             return normalizeText(m?.[1], 'Unknown org');
         };
 
-        const fromProcessed = (processedResults as any[]).map(ticket => ({
-            id: ticket.id,
-            ticket_id: ticket.id,
-            status: normalizeStatus(ticket.pipeline_status),
-            priority: 'P3',
-            title: cleanTitle(ticket.title, ticket.description),
-            description: normalizeText(ticket.description, ''),
-            company: extractCompany(ticket.company, ticket.raw_body),
-            requester: extractRequester(ticket.requester, ticket.raw_body),
-            org: extractCompany(ticket.company, ticket.raw_body),
-            site: extractRequester(ticket.requester, ticket.raw_body),
-            created_at: ticket.created_at,
-        }));
-        const processedById = new Map(fromProcessed.map((t) => [t.ticket_id, t]));
-        const rawFallbackById = new Map<string, { title: string; description: string; requester: string; company: string; created_at?: string }>();
-
-        const sessionCandidateIds = (sessionResults as any[])
-            .map((r) => String(r?.ticket_id || '').trim())
-            .filter(Boolean);
-        const needsRawFallback = sessionCandidateIds.filter((id) => !processedById.has(id));
-        for (const ticketId of needsRawFallback.slice(0, 120)) {
-            const rawRows = await query<any>(
-                `SELECT email_data
-                 FROM tickets_raw
-                 WHERE (email_data->>'subject') ILIKE '%' || $1 || '%'
-                    OR (email_data->'body'->>'content') ILIKE '%' || $1 || '%'
-                 ORDER BY ingested_at DESC
-                 LIMIT 1`,
-                [ticketId]
-            );
-            const emailData = rawRows[0]?.email_data;
-            if (!emailData) continue;
-            const parsed = emailParser.parseEmail(
-                String(emailData.subject || ''),
-                String(emailData?.body?.content || ''),
-                String(emailData.receivedDateTime || '')
-            );
-            if (!parsed) continue;
-            rawFallbackById.set(ticketId, {
-                title: cleanTitle(parsed.title, parsed.description),
-                description: normalizeText(parsed.description, ''),
-                requester: normalizeText(parsed.requester, 'Unknown requester'),
-                company: normalizeText(parsed.company, 'Unknown org'),
-                created_at: parsed.createdAt,
-            });
-        }
-
-        const fromSessions = (sessionResults as any[])
+        const isMeaningful = (value?: string, ...blocked: string[]) => {
+            const normalized = normalizeText(value, '').toLowerCase();
+            if (!normalized) return false;
+            if (blocked.some((label) => normalized === label.toLowerCase())) return false;
+            return normalized !== 'unknown';
+        };
+        const mapped = (pipelineRows as any[])
             .map((row) => {
                 const pack = row.evidence_payload || {};
                 const packTicket = pack.ticket || {};
                 const packOrg = pack.org || {};
                 const packUser = pack.user || {};
-                const ticketId = String(row.ticket_id || row.session_id || '');
-                if (!ticketId) return null;
-                const processed = processedById.get(ticketId);
-                const rawFallback = rawFallbackById.get(ticketId);
-                const hasPackData = Boolean(packTicket.title || packTicket.description || packOrg.name || packUser.name);
-                const hasProcessedData = Boolean(processed || rawFallback);
-                // Ignore failed/placeholder sessions that have no parsed ticket/raw fallback and no evidence payload.
-                if (!hasPackData && !hasProcessedData) return null;
-                const processedTitle = processed?.title || '';
-                const rawTitle = normalizeText(rawFallback?.title, '');
-                const packTitle = normalizeText(packTicket.title || '', '');
-                const bestTitle = processedTitle && processedTitle !== 'Untitled Ticket'
+
+                const processedTitle = cleanTitle(row.title, row.description);
+                const packTitle = cleanTitle(packTicket.title, packTicket.description);
+                const title = isMeaningful(processedTitle, 'Untitled Ticket')
                     ? processedTitle
-                    : (rawTitle && rawTitle !== 'Untitled Ticket'
-                        ? rawTitle
-                        : cleanTitle(packTitle, packTicket.description || processed?.description || rawFallback?.description));
-                const processedCompany = normalizeText(processed?.company, '');
-                const rawCompany = normalizeText(rawFallback?.company, '');
+                    : (isMeaningful(packTitle, 'Untitled Ticket') ? packTitle : 'Untitled Ticket');
+
+                const processedCompany = extractCompany(row.company, row.raw_body);
                 const packCompany = normalizeText(packOrg.name, '');
-                const bestCompany = processedCompany && !/^unknown org$/i.test(processedCompany)
+                const company = isMeaningful(processedCompany, 'Unknown org', 'organization')
                     ? processedCompany
-                    : (rawCompany && !/^unknown org$/i.test(rawCompany)
-                        ? rawCompany
-                        : (packCompany && !/^organization$/i.test(packCompany) ? packCompany : 'Unknown org'));
-                const processedRequester = normalizeText(processed?.requester, '');
-                const rawRequester = normalizeText(rawFallback?.requester, '');
+                    : (isMeaningful(packCompany, 'Unknown org', 'organization') ? packCompany : 'Unknown org');
+
+                const processedRequester = extractRequester(row.requester, row.raw_body);
                 const packRequester = normalizeText(packUser.name, '');
-                const bestRequester = processedRequester && !/^unknown requester$/i.test(processedRequester)
+                const requester = isMeaningful(processedRequester, 'Unknown requester', 'requester', 'user')
                     ? processedRequester
-                    : (rawRequester && !/^unknown requester$/i.test(rawRequester)
-                        ? rawRequester
-                        : (packRequester || 'Unknown requester'));
+                    : (isMeaningful(packRequester, 'Unknown requester', 'requester', 'user') ? packRequester : 'Unknown requester');
+
                 return {
-                    id: ticketId,
-                    ticket_id: ticketId,
+                    id: String(row.ticket_id),
+                    ticket_id: String(row.ticket_id),
                     status: normalizeStatus(row.session_status || 'pending'),
                     priority: 'P3',
-                    title: bestTitle || 'Untitled Ticket',
-                    description: normalizeText(packTicket.description || processed?.description || rawFallback?.description, ''),
-                    company: bestCompany,
-                    requester: bestRequester,
-                    org: bestCompany,
-                    site: bestRequester,
-                    created_at: packTicket.created_at || processed?.created_at || rawFallback?.created_at || row.session_created_at,
+                    title,
+                    description: normalizeText(row.description || packTicket.description, ''),
+                    company,
+                    requester,
+                    org: company,
+                    site: requester,
+                    created_at: row.ticket_created_at || row.first_session_created_at || row.session_created_at,
                 };
             })
-            .filter(Boolean) as any[];
-
-        const byTicketId = new Map<string, any>();
-        const isMeaningful = (value?: string, unknownLabel?: string) => {
-            const normalized = normalizeText(value, '').toLowerCase();
-            if (!normalized) return false;
-            if (unknownLabel && normalized === unknownLabel.toLowerCase()) return false;
-            return normalized !== 'unknown';
-        };
-        for (const item of [...fromSessions, ...fromProcessed]) {
-            const existing = byTicketId.get(item.ticket_id);
-            if (!existing) {
-                byTicketId.set(item.ticket_id, item);
-                continue;
-            }
-            const existingDate = new Date(existing.created_at || 0).getTime();
-            const nextDate = new Date(item.created_at || 0).getTime();
-            const newer = nextDate > existingDate ? item : existing;
-            const older = newer === item ? existing : item;
-            byTicketId.set(item.ticket_id, {
-                ...older,
-                ...newer,
-                title: isMeaningful(newer.title, 'Untitled Ticket') ? newer.title : older.title,
-                company: isMeaningful(newer.company, 'Unknown org') ? newer.company : older.company,
-                requester: isMeaningful(newer.requester, 'Unknown requester') ? newer.requester : older.requester,
-                org: isMeaningful(newer.org, 'Unknown org') ? newer.org : older.org,
-                site: isMeaningful(newer.site, 'Unknown requester') ? newer.site : older.site,
-            });
-        }
-
-        const mapped = Array.from(byTicketId.values())
-            .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+            .filter((item) => item.ticket_id)
+            .sort((a, b) => {
+                const am = String(a.ticket_id || '').match(/^T(\d{8})\.(\d+)$/);
+                const bm = String(b.ticket_id || '').match(/^T(\d{8})\.(\d+)$/);
+                if (am && bm) {
+                    const aDay = am[1] || '';
+                    const bDay = bm[1] || '';
+                    if (aDay !== bDay) return aDay < bDay ? 1 : -1;
+                    const aSeq = Number(am[2] || 0);
+                    const bSeq = Number(bm[2] || 0);
+                    if (aSeq !== bSeq) return bSeq - aSeq;
+                }
+                const byTime = new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+                if (byTime !== 0) return byTime;
+                return String(b.ticket_id || '').localeCompare(String(a.ticket_id || ''));
+            })
             .slice(0, 200);
 
         res.json({ success: true, data: mapped });

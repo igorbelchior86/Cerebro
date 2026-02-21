@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
+import MarkdownRenderer from './MarkdownRenderer';
 
 interface Hypothesis {
   rank: number;
@@ -12,6 +13,7 @@ interface Hypothesis {
 interface ChecklistItem {
   id: string;
   text: string;
+  details_md?: string;
 }
 
 interface EscalateRow {
@@ -55,6 +57,51 @@ function SectionLabel({ children }: { children: ReactNode }) {
   );
 }
 
+function parseChecklistFromMarkdown(content: string): ChecklistItem[] {
+  const lines = content.split('\n');
+  const items: ChecklistItem[] = [];
+  let current: { id: string; text: string; details: string[] } | null = null;
+  let idx = 0;
+
+  const flush = () => {
+    if (!current) return;
+    const baseItem: ChecklistItem = {
+      id: current.id,
+      text: current.text.trim(),
+    };
+    const details = current.details.join('\n').trim();
+    if (details) baseItem.details_md = details;
+    items.push(baseItem);
+    current = null;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\r/g, '');
+    const stepMatch = line.match(/^\s*(\d+)\.\s+(.+)$/);
+    if (stepMatch) {
+      flush();
+      current = {
+        id: `c${idx++}`,
+        text: String(stepMatch[2] || '').trim(),
+        details: [],
+      };
+      continue;
+    }
+    if (current) {
+      if (line.trim().length === 0) {
+        const last = current.details.length > 0 ? current.details[current.details.length - 1] : null;
+        if (last !== null && last !== '') {
+          current.details.push('');
+        }
+      } else {
+        current.details.push(line);
+      }
+    }
+  }
+  flush();
+  return items;
+}
+
 export default function PlaybookPanel({ content, status = 'ready', data, children }: PlaybookPanelProps) {
   const [copied, setCopied] = useState(false);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
@@ -86,9 +133,16 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
 
   const ctx = data?.context ?? [];
   const hyps = data?.hypotheses ?? [];
-  const chk: ChecklistItem[] = data?.checklist ?? (content
-    ? content.split('\n').filter((l) => /^\d+\./.test(l)).map((l, i) => ({ id: `c${i}`, text: l.replace(/^\d+\.\s*/, '') }))
-    : []);
+  const chk: ChecklistItem[] = data?.checklist
+    ? data.checklist.map((item, i) => {
+      const out: ChecklistItem = {
+        id: item.id || `c${i}`,
+        text: item.text,
+      };
+      if (item.details_md) out.details_md = item.details_md;
+      return out;
+    })
+    : (content ? parseChecklistFromMarkdown(content) : []);
   const esc = data?.escalate ?? [];
   const ticketId = data?.ticketId;
 
@@ -183,7 +237,7 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
                 const done = !!checked[item.id];
                 return (
                   <div key={item.id} onClick={() => setChecked((p) => ({ ...p, [item.id]: !p[item.id] }))}
-                    style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '9px 11px', borderRadius: '7px', background: 'var(--bg-card)', border: '1px solid var(--border)', cursor: 'pointer', opacity: done ? 0.55 : 1, transition: 'var(--transition)' }}
+                    style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '10px 12px', borderRadius: '9px', background: 'var(--bg-card)', border: '1px solid var(--border)', cursor: 'pointer', opacity: done ? 0.55 : 1, transition: 'var(--transition)' }}
                     onMouseEnter={(e) => { if (!done) (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-strong)'; }}
                     onMouseLeave={(e) => { if (!done) (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)'; }}
                   >
@@ -191,7 +245,16 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
                       {done && <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                     </div>
                     <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)', flexShrink: 0, marginTop: '0.5px', minWidth: '14px' }}>{i + 1}.</span>
-                    <span style={{ fontSize: '12px', color: done ? 'var(--text-faint)' : 'var(--text-secondary)', lineHeight: 1.45, textDecoration: done ? 'line-through' : 'none' }}>{item.text}</span>
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '12px', color: done ? 'var(--text-faint)' : 'var(--text-secondary)', lineHeight: 1.45, textDecoration: done ? 'line-through' : 'none' }}>
+                        <MarkdownRenderer content={item.text} />
+                      </div>
+                      {item.details_md && (
+                        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '8px', opacity: done ? 0.75 : 1 }}>
+                          <MarkdownRenderer content={item.details_md} />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -214,8 +277,8 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
         )}
 
         {chk.length === 0 && hyps.length === 0 && content && (
-          <div style={{ whiteSpace: 'pre-wrap', fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.65 }}>
-            {content}
+          <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.65 }}>
+            <MarkdownRenderer content={content} />
           </div>
         )}
       </div>

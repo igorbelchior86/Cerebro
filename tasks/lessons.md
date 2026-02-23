@@ -216,3 +216,15 @@
 **Root cause**: Provider/model mapping was inferred from code defaults instead of explicitly aligning with user runtime setup.
 **Rule**: When user names model + platform (e.g. Gemma in AI Studio), configure the exact provider path first, then tune limiter on that path.
 **Pattern**: Multi-provider adapters require explicit provider confirmation before quota/rate-limit changes.
+
+## Lesson: 2026-02-23 (assumed DB access)
+**Mistake**: Requested user to provide DB access details even though the project has a default connection string.
+**Root cause**: I tried to query with a missing/invalid `DATABASE_URL` instead of falling back to the built-in default.
+**Rule**: If the repo includes a default DB connection string, use it before asking the user for access.
+**Pattern**: When `DATABASE_URL` causes auth errors, retry with the repo default and only ask if that fails.
+
+## Lesson: 2026-02-23 (refresh must be hard reset, not UI-only)
+**Mistake**: Implemented refresh that reset UI/session artifacts but still allowed org-level caches to repopulate pipeline outputs.
+**Root cause**: Hard refresh semantics were incomplete (did not clear IT Glue org caches) and button UX did not match expectation.
+**Rule**: Any user-facing 'refresh pipeline' action must explicitly define and enforce cache invalidation scope needed for true pipeline restart.
+**Pattern**: If pipeline output reappears immediately after refresh, audit upstream caches (`*_snapshot`, `*_enriched`) and invalidate at ticket/org scope.

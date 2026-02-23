@@ -140,7 +140,8 @@ router.get('/list', async (_req: Request, res: Response) => {
                     tp.requester,
                     tp.raw_body,
                     tp.created_at AS ticket_created_at,
-                    ep.payload AS evidence_payload
+                    ep.payload AS evidence_payload,
+                    ssot.payload AS ssot_payload
              FROM latest_sessions ls
              LEFT JOIN tickets_processed tp ON tp.id = ls.ticket_id
              LEFT JOIN LATERAL (
@@ -151,6 +152,13 @@ router.get('/list', async (_req: Request, res: Response) => {
                ORDER BY ep.created_at DESC
                LIMIT 1
              ) ep ON true
+             LEFT JOIN LATERAL (
+               SELECT payload
+               FROM ticket_ssot
+               WHERE ticket_id = ls.ticket_id
+               ORDER BY updated_at DESC
+               LIMIT 1
+             ) ssot ON true
              ORDER BY
                CASE
                  WHEN ls.ticket_id ~ '^T[0-9]{8}\\.[0-9]+$' THEN substring(ls.ticket_id from 2 for 8)
@@ -236,6 +244,7 @@ router.get('/list', async (_req: Request, res: Response) => {
         const mapped = (pipelineRows as any[])
             .map((row) => {
                 const pack = row.evidence_payload || {};
+                const ssot = row.ssot_payload || {};
                 const packTicket = pack.ticket || {};
                 const packOrg = pack.org || {};
                 const packUser = pack.user || {};
@@ -243,28 +252,37 @@ router.get('/list', async (_req: Request, res: Response) => {
 
                 const processedTitle = cleanTitle(row.title, row.description);
                 const packTitle = cleanTitle(packTicket.title, packTicket.description);
-                const title = isMeaningful(processedTitle, 'Untitled Ticket')
+                const ssotTitle = cleanTitle(ssot.title, ssot.description_clean);
+                const title = isMeaningful(ssotTitle, 'Untitled Ticket')
+                    ? ssotTitle
+                    : (isMeaningful(processedTitle, 'Untitled Ticket')
                     ? processedTitle
-                    : (isMeaningful(packTitle, 'Untitled Ticket') ? packTitle : 'Untitled Ticket');
+                    : (isMeaningful(packTitle, 'Untitled Ticket') ? packTitle : 'Untitled Ticket'));
 
                 const processedCompany = extractCompany(row.company, row.raw_body);
                 const packCompany = normalizeText(packOrg.name, '');
-                const company = isMeaningful(processedCompany, 'Unknown org', 'organization')
+                const ssotCompany = normalizeText(ssot.company, '');
+                const company = isMeaningful(ssotCompany, 'Unknown org', 'organization')
+                    ? ssotCompany
+                    : (isMeaningful(processedCompany, 'Unknown org', 'organization')
                     ? processedCompany
-                    : (isMeaningful(packCompany, 'Unknown org', 'organization') ? packCompany : 'Unknown org');
+                    : (isMeaningful(packCompany, 'Unknown org', 'organization') ? packCompany : 'Unknown org'));
 
                 const processedRequester = extractRequester(row.requester, row.raw_body);
                 const packRequester = normalizeText(packUser.name, '');
+                const ssotRequester = normalizeText(ssot.requester_name, '');
                 const canonicalRequester = normalizeText(
                     normalizedTicketSection?.affected_user_name?.value ||
                     normalizedTicketSection?.requester_name?.value,
                     ''
                 );
-                const requester = isMeaningful(canonicalRequester, 'Unknown requester', 'requester', 'user')
+                const requester = isMeaningful(ssotRequester, 'Unknown requester', 'requester', 'user')
+                    ? ssotRequester
+                    : (isMeaningful(canonicalRequester, 'Unknown requester', 'requester', 'user')
                     ? canonicalRequester
                     : (isMeaningful(processedRequester, 'Unknown requester', 'requester', 'user')
                     ? processedRequester
-                    : (isMeaningful(packRequester, 'Unknown requester', 'requester', 'user') ? packRequester : 'Unknown requester'));
+                    : (isMeaningful(packRequester, 'Unknown requester', 'requester', 'user') ? packRequester : 'Unknown requester')));
 
                 const canonicalSite = normalizeText(
                     normalizedTicketSection?.site?.value || packTicket.site,
@@ -285,7 +303,7 @@ router.get('/list', async (_req: Request, res: Response) => {
                     requester,
                     org: company,
                     site,
-                    created_at: row.ticket_created_at || row.first_session_created_at || row.session_created_at,
+                    created_at: ssot.created_at || row.ticket_created_at || row.first_session_created_at || row.session_created_at,
                 };
             })
             .filter((item) => item.ticket_id)

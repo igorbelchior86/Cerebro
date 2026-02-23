@@ -53,6 +53,31 @@ CREATE UNIQUE INDEX idx_ticket_ssot_ticket_id ON ticket_ssot(ticket_id);
 CREATE INDEX idx_ticket_ssot_session_id ON ticket_ssot(session_id);
 
 -- ─────────────────────────────────────────
+-- IT Glue Org Snapshot + Enriched Cache
+-- ─────────────────────────────────────────
+CREATE TABLE itglue_org_snapshot (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id     TEXT NOT NULL,
+  payload    JSONB NOT NULL,
+  source_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX idx_itglue_org_snapshot_org_id ON itglue_org_snapshot(org_id);
+
+CREATE TABLE itglue_org_enriched (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id     TEXT NOT NULL,
+  payload    JSONB NOT NULL,
+  source_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX idx_itglue_org_enriched_org_id ON itglue_org_enriched(org_id);
+
+-- ─────────────────────────────────────────
 -- LLM Outputs (diagnose + playbook)
 -- ─────────────────────────────────────────
 CREATE TABLE llm_outputs (

@@ -44,6 +44,21 @@ interface PlaybookPanelProps {
   children?: ReactNode;
 }
 
+function ShimmerBlock({ width = '100%', height = 10, radius = 6 }: { width?: string; height?: number; radius?: number }) {
+  return (
+    <div
+      style={{
+        width,
+        height,
+        borderRadius: `${radius}px`,
+        background: 'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.1) 37%, rgba(255,255,255,0.04) 63%)',
+        backgroundSize: '400% 100%',
+        animation: 'shimmer 1.4s ease infinite',
+      }}
+    />
+  );
+}
+
 function confColor(c: number): string {
   if (c >= 0.7) return '#1DB98A';
   if (c >= 0.45) return '#EAB308';
@@ -94,53 +109,6 @@ function formatEvidenceChipLabel(raw: string | { id: string; label?: string }): 
   return value.length > 44 ? `${value.slice(0, 41)}...` : value;
 }
 
-function parseChecklistFromMarkdown(md: string): ChecklistItem[] {
-  if (!md) return [];
-  const lines = md.split('\n');
-  const items: ChecklistItem[] = [];
-  let inSteps = false;
-  let currentItem: ChecklistItem | null = null;
-  let currentDetails: string[] = [];
-
-  for (const line of lines) {
-    if (line.toLowerCase().includes('resolution steps') || line.toLowerCase().includes('steps')) {
-      inSteps = true;
-      continue;
-    }
-    if (inSteps && line.startsWith('## ')) {
-      if (currentItem) {
-        if (currentDetails.length) currentItem.details_md = currentDetails.join('\n').trim();
-        items.push(currentItem);
-      }
-      break;
-    }
-
-    if (inSteps) {
-      const match = line.match(/^\d+\.\s+(.*)/);
-      if (match) {
-        if (currentItem) {
-          if (currentDetails.length) currentItem.details_md = currentDetails.join('\n').trim();
-          items.push(currentItem);
-        }
-        currentItem = {
-          id: `chk-${items.length}`,
-          text: match[1] || '',
-        };
-        currentDetails = [];
-      } else if (currentItem && line.trim()) {
-        currentDetails.push(line);
-      }
-    }
-  }
-
-  if (currentItem) {
-    if (currentDetails.length) currentItem.details_md = currentDetails.join('\n').trim();
-    items.push(currentItem);
-  }
-
-  return items;
-}
-
 export default function PlaybookPanel({ content, status = 'ready', data, sessionStatus, children }: PlaybookPanelProps) {
   const [copied, setCopied] = useState(false);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
@@ -164,7 +132,7 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
       if (item.details_md) out.details_md = item.details_md;
       return out;
     })
-    : content ? parseChecklistFromMarkdown(content) : [];
+    : [];
   const esc = data?.escalate ?? [];
   const ticketId = data?.ticketId;
 
@@ -330,14 +298,16 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
                 </div>
               );
             })
-          ) : (status === 'loading' || sessionStatus === 'processing' || sessionStatus === 'pending') ? (
-            <div style={{ padding: '20px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px dashed var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '1.5px solid rgba(91,127,255,0.2)', borderTopColor: '#5B7FFF', animation: 'spin 0.8s linear infinite' }} />
-              <span style={{ fontSize: '10.5px', color: 'var(--text-faint)' }}>Generating hypotheses...</span>
-            </div>
           ) : (
-            <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-faint)', fontSize: '11px' }}>
-              No hypotheses generated yet.
+            <div style={{ padding: '10px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <ShimmerBlock width="20px" height={20} radius={6} />
+                <ShimmerBlock width="72px" height={10} />
+                <ShimmerBlock width="58px" height={18} radius={999} />
+              </div>
+              <ShimmerBlock width="90%" height={12} />
+              <ShimmerBlock width="78%" height={12} />
+              <ShimmerBlock width="100%" height={6} radius={999} />
             </div>
           )}
         </div>
@@ -373,14 +343,18 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
                 );
               })}
             </div>
-          ) : (status === 'loading' || sessionStatus === 'processing' || sessionStatus === 'pending') ? (
-            <div style={{ padding: '20px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px dashed var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-              <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '1.5px solid rgba(91,127,255,0.2)', borderTopColor: '#5B7FFF', animation: 'spin 0.8s linear infinite' }} />
-              <span style={{ fontSize: '10.5px', color: 'var(--text-faint)' }}>Creating checklist...</span>
-            </div>
           ) : (
-            <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-faint)', fontSize: '11px' }}>
-              No checklist items available.
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+              {[0, 1, 2].map((i) => (
+                <div key={`chk-sk-${i}`} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '10px 12px', borderRadius: '9px', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                  <ShimmerBlock width="15px" height={15} radius={4} />
+                  <ShimmerBlock width="14px" height={10} />
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '7px', marginTop: '2px' }}>
+                    <ShimmerBlock width="92%" height={12} />
+                    <ShimmerBlock width="75%" height={12} />
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -399,7 +373,7 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
           </div>
         )}
 
-        {chk.length === 0 && hyps.length === 0 && content && sessionStatus === 'approved' && (
+        {chk.length === 0 && hyps.length === 0 && content && sessionStatus === 'approved' && status === 'ready' && (
           <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.65 }}>
             <MarkdownRenderer content={content} />
           </div>

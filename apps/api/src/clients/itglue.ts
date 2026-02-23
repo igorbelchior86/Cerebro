@@ -180,4 +180,38 @@ export class ITGlueClient {
       'page[size]': pageSize,
     });
     return response.data;
-  }}
+  }
+
+  async getLocations(organizationId: string, pageSize: number = 50) {
+    const response = await this.request<{
+      data: Array<{ id: string; attributes: Record<string, unknown> }>;
+      meta: { total_count: number };
+    }>('/locations', {
+      'filter[organization_id]': organizationId,
+      'page[size]': pageSize,
+    });
+    return response.data;
+  }
+
+  async getDomains(organizationId: string, pageSize: number = 50) {
+    const response = await this.request<{
+      data: Array<{ id: string; attributes: Record<string, unknown> }>;
+      meta: { total_count: number };
+    }>('/domains', {
+      'filter[organization_id]': organizationId,
+      'page[size]': pageSize,
+    });
+    return response.data;
+  }
+
+  async getSslCertificates(organizationId: string, pageSize: number = 50) {
+    const response = await this.request<{
+      data: Array<{ id: string; attributes: Record<string, unknown> }>;
+      meta: { total_count: number };
+    }>('/ssl_certificates', {
+      'filter[organization_id]': organizationId,
+      'page[size]': pageSize,
+    });
+    return response.data;
+  }
+}

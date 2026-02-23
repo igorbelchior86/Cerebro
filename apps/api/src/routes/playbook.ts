@@ -47,6 +47,9 @@ function isTransientProviderError(error: unknown): boolean {
 router.get('/full-flow', async (req, res) => {
   try {
     const rawId = (req.query.sessionId || req.body?.sessionId) as string;
+    const forceRefresh =
+      String(req.query.refresh || req.body?.refresh || '').toLowerCase() === '1' ||
+      String(req.query.refresh || req.body?.refresh || '').toLowerCase() === 'true';
 
     if (!rawId) {
       return res.status(400).json({ error: 'Missing sessionId' });
@@ -107,6 +110,71 @@ router.get('/full-flow', async (req, res) => {
        LIMIT 1`,
       [sessionId]
     );
+    const ticketId = sessionRow?.ticket_id || rawId;
+
+    if (forceRefresh && sessionRow?.id) {
+      console.log(`[FULL-FLOW] Force refresh requested for ${sessionId} / ticket ${ticketId}`);
+      const existingPack = await queryOne<{ payload: any }>(
+        `SELECT ep.payload
+         FROM evidence_packs ep
+         WHERE ep.session_id = $1
+         ORDER BY ep.created_at DESC
+         LIMIT 1`,
+        [sessionId]
+      );
+      const existingOrgId = String(existingPack?.payload?.org?.id || '').trim();
+      await execute(
+        `DELETE FROM playbooks WHERE session_id = $1`,
+        [sessionId]
+      );
+      await execute(
+        `DELETE FROM llm_outputs WHERE session_id = $1`,
+        [sessionId]
+      );
+      await execute(
+        `DELETE FROM validation_results WHERE session_id = $1`,
+        [sessionId]
+      );
+      await execute(
+        `DELETE FROM evidence_packs WHERE session_id = $1`,
+        [sessionId]
+      );
+      const hasTicketSSOT = await queryOne<{ exists: boolean }>(
+        `SELECT to_regclass('public.ticket_ssot') IS NOT NULL AS exists`
+      );
+      if (hasTicketSSOT?.exists) {
+        await execute(
+          `DELETE FROM ticket_ssot WHERE ticket_id = $1`,
+          [ticketId]
+        );
+      }
+      if (existingOrgId && existingOrgId !== 'unknown') {
+        const hasItglueEnriched = await queryOne<{ exists: boolean }>(
+          `SELECT to_regclass('public.itglue_org_enriched') IS NOT NULL AS exists`
+        );
+        if (hasItglueEnriched?.exists) {
+          await execute(
+            `DELETE FROM itglue_org_enriched WHERE org_id = $1`,
+            [existingOrgId]
+          );
+        }
+        const hasItglueSnapshot = await queryOne<{ exists: boolean }>(
+          `SELECT to_regclass('public.itglue_org_snapshot') IS NOT NULL AS exists`
+        );
+        if (hasItglueSnapshot?.exists) {
+          await execute(
+            `DELETE FROM itglue_org_snapshot WHERE org_id = $1`,
+            [existingOrgId]
+          );
+        }
+      }
+      await execute(
+        `UPDATE triage_sessions
+         SET status = 'pending', retry_count = 0, next_retry_at = NULL, last_error = NULL, updated_at = NOW()
+         WHERE id = $1`,
+        [sessionId]
+      );
+    }
 
     // Get all the data
     console.log('[FULL-FLOW] Fetching Evidence Pack...');
@@ -131,7 +199,6 @@ router.get('/full-flow', async (req, res) => {
     } else {
       console.log(`[FULL-FLOW] Evidence pack found, status: ✅`);
     }
-    const ticketId = sessionRow?.ticket_id || rawId;
     const ticketResult = await queryOne<{ payload: any }>(
       `SELECT to_jsonb(tp) AS payload
        FROM tickets_processed tp

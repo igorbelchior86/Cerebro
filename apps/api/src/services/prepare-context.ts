@@ -3,6 +3,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
 import type {
   EvidencePack,
   Signal,
@@ -133,6 +134,20 @@ interface ITGlueCreds {
   region?: 'us' | 'eu' | 'au';
 }
 
+interface ItglueEnrichedField {
+  value: string;
+  confidence: number;
+  source_system: string;
+  evidence_refs: string[];
+}
+
+interface ItglueEnrichedPayload {
+  org_id: string;
+  source_hash: string;
+  fields: Record<string, ItglueEnrichedField>;
+  created_at: string;
+}
+
 const NINJAONE_BASE: Record<string, string> = {
   us: 'https://app.ninjarmm.com',
   eu: 'https://eu.ninjarmm.com',
@@ -144,6 +159,8 @@ const ITGLUE_BASE: Record<string, string> = {
   eu: 'https://api.eu.itglue.com',
   au: 'https://api.au.itglue.com',
 };
+
+const ITGLUE_EXTRACTOR_VERSION = 'v2-summary-2026-02-23';
 
 const FACET_TERMS = {
   symptom: {
@@ -506,10 +523,15 @@ export class PrepareContextService {
     let ninjaAlerts: any[] = [];
     let resolvedDeviceScore = 0;
     let itglueOrgMatch: { id: string; name: string } | null = null;
+    let itglueOrgDetails: Record<string, unknown> | null = null;
     let itglueConfigs: any[] = [];
     let itglueContacts: any[] = [];
     let itgluePasswords: any[] = [];
     let itglueAssets: any[] = [];
+    let itglueLocations: any[] = [];
+    let itglueDomains: any[] = [];
+    let itglueSslCertificates: any[] = [];
+    let itglueEnriched: ItglueEnrichedPayload | null = null;
 
     // ROUND 1: AT/Intake -> IT Glue (Targeting Org/Contacts/Standards)
     try {
@@ -539,10 +561,14 @@ export class PrepareContextService {
       }
 
       if (itglueOrgMatch) {
-        [itglueConfigs, itglueContacts, itgluePasswords] = await Promise.all([
+        [itglueOrgDetails, itglueConfigs, itglueContacts, itgluePasswords, itglueLocations, itglueDomains, itglueSslCertificates] = await Promise.all([
+          itglueClient.getOrganizationById(itglueOrgMatch.id).then((org) => org?.attributes || {}).catch(() => ({})),
           itglueClient.getConfigurations(itglueOrgMatch.id).catch(() => []),
           itglueClient.getContacts(itglueOrgMatch.id).catch(() => []),
           itglueClient.getPasswords(itglueOrgMatch.id).catch(() => []),
+          itglueClient.getLocations(itglueOrgMatch.id).catch(() => []),
+          itglueClient.getDomains(itglueOrgMatch.id).catch(() => []),
+          itglueClient.getSslCertificates(itglueOrgMatch.id).catch(() => []),
         ]);
         if (facetContext.symptom.includes('hardware')) {
           const assetTypes = await itglueClient.getFlexibleAssetTypes(20).catch(() => []);
@@ -607,6 +633,9 @@ export class PrepareContextService {
           `contacts: ${itglueContacts.length}`,
           `passwords: ${itgluePasswords.length}`,
           `assets: ${itglueAssets.length}`,
+          `locations: ${itglueLocations.length}`,
+          `domains: ${itglueDomains.length}`,
+          `ssl_certs: ${itglueSslCertificates.length}`,
           runbooksEndpointUnavailable ? 'runbooks endpoint: unavailable (404)' : `runbooks: ${docs.length}`,
           `credential scope: ${credentialScope}`,
         ],
@@ -618,6 +647,29 @@ export class PrepareContextService {
         org_id: itglueOrgMatch?.id || null,
         source_workspace: sourceWorkspace,
       });
+
+      if (itglueOrgMatch) {
+        const rawSnapshot = {
+          org_id: itglueOrgMatch.id,
+          org_name: itglueOrgMatch.name,
+          configs: itglueConfigs,
+          contacts: itglueContacts,
+          passwords: itgluePasswords,
+          assets: itglueAssets,
+          locations: itglueLocations,
+          domains: itglueDomains,
+          ssl_certificates: itglueSslCertificates,
+          organization_details: itglueOrgDetails || {},
+          docs,
+        };
+        const snapshotHash = this.hashSnapshot(rawSnapshot);
+        await persistItglueOrgSnapshot(itglueOrgMatch.id, rawSnapshot, snapshotHash);
+        itglueEnriched = await this.getOrRefreshItglueEnriched({
+          orgId: itglueOrgMatch.id,
+          snapshot: rawSnapshot,
+          sourceHash: snapshotHash,
+        });
+      }
     } catch (error) {
       missingData.push({
         field: 'itglue_docs',
@@ -1137,6 +1189,7 @@ export class PrepareContextService {
       inferredPhoneProvider,
       sourceFindings,
       itglueConfigs,
+      itglueEnriched,
       docs: scopedDocs,
       ninjaChecks: scopedSignals.filter((signal) => signal.source === 'ninja'),
       missingData,
@@ -1161,6 +1214,10 @@ export class PrepareContextService {
       source_workspace: sourceWorkspace,
     });
     // ─── Monta EvidencePack ──────────────────────────────────────
+    const ssotUser = {
+      name: ssot.requester_name || 'Unknown user',
+      email: ssot.requester_email || '',
+    };
     const basePackObject = {
       session_id: input.sessionId,
       tenant_id: tenantId,
@@ -1172,24 +1229,24 @@ export class PrepareContextService {
         technology_facets: normalizedTicket?.technologyFacets,
       },
       ticket: {
-        id: ticket.ticketNumber || String(ticket.id),
-        title: ticket.title || '',
-        description: ticket.description || '',
-        created_at: ticket.createDate || new Date().toISOString(),
+        id: ssot.ticket_id || ticket.ticketNumber || String(ticket.id),
+        title: ssot.title || ticket.title || '',
+        description: ssot.description_clean || ticket.description || '',
+        created_at: ssot.created_at || ticket.createDate || new Date().toISOString(),
         priority: this.mapAutotaskPriority((ticket as any).priority),
         queue: (ticket as any).queueName || 'Unknown',
         category: 'Support',
       },
       org: {
         id: resolvedOrgId || 'unknown',
-        name: companyName || itglueOrgMatch?.name || ninjaOrgMatch?.name || 'Organization',
+        name: ssot.company || companyName || itglueOrgMatch?.name || ninjaOrgMatch?.name || 'Organization',
       },
-      ...(entityResolution.resolved_actor && {
-        user: {
+      user: entityResolution.resolved_actor
+        ? {
           name: entityResolution.resolved_actor.name,
           email: entityResolution.resolved_actor.email || '',
-        },
-      }),
+        }
+        : ssotUser,
       signals: scopedSignals,
       related_cases: scopedRelatedCases,
       external_status: externalStatus,
@@ -1993,6 +2050,7 @@ export class PrepareContextService {
     inferredPhoneProvider: string | null;
     sourceFindings: SourceFinding[];
     itglueConfigs: any[];
+    itglueEnriched?: ItglueEnrichedPayload | null;
     docs: Doc[];
     ninjaChecks: Signal[];
     missingData: Array<{ field: string; why: string }>;
@@ -2019,11 +2077,13 @@ export class PrepareContextService {
       deviceDetails: input.deviceDetails,
       docs: input.docs,
       itglueConfigs: input.itglueConfigs,
+      itglueEnriched: input.itglueEnriched || null,
       ninjaChecks: input.ninjaChecks,
       inferredPhoneProvider: input.inferredPhoneProvider,
     });
     const infraSection = this.buildInfraEnrichmentSection({
       itglueConfigs: input.itglueConfigs,
+      itglueEnriched: input.itglueEnriched || null,
       docs: input.docs,
     });
 
@@ -2359,12 +2419,13 @@ export class PrepareContextService {
     deviceDetails: any | null;
     docs: Doc[];
     itglueConfigs: any[];
+    itglueEnriched: ItglueEnrichedPayload | null;
     ninjaChecks: Signal[];
     inferredPhoneProvider: string | null;
   }): IterativeEnrichmentSections['network'] {
     const locationContext = this.inferLocationContext(input.ticketNarrative);
     const publicIp = this.resolvePublicIp(input.device, input.deviceDetails);
-    const ispName = this.inferIspName({
+    const ispName = this.pickEnrichedValue(input.itglueEnriched, 'isp_name') || this.inferIspName({
       ticketNarrative: input.ticketNarrative,
       docs: input.docs,
       itglueConfigs: input.itglueConfigs,
@@ -2393,8 +2454,8 @@ export class PrepareContextService {
         value: ispName || 'unknown',
         status: ispName ? 'inferred' : 'unknown',
         confidence: ispName ? 0.6 : 0,
-        sourceSystem: ispName ? 'cross_correlation' : 'unknown',
-        sourceRef: ispName ? 'ticket/docs/itglue keyword' : undefined,
+        sourceSystem: this.pickEnrichedValue(input.itglueEnriched, 'isp_name') ? 'itglue_llm' : ispName ? 'cross_correlation' : 'unknown',
+        sourceRef: this.pickEnrichedValue(input.itglueEnriched, 'isp_name') ? 'itglue_org_snapshot' : ispName ? 'ticket/docs/itglue keyword' : undefined,
         round: ispName ? 2 : 1,
       }),
       vpn_state: this.buildField({
@@ -2426,11 +2487,29 @@ export class PrepareContextService {
 
   private buildInfraEnrichmentSection(input: {
     itglueConfigs: any[];
+    itglueEnriched: ItglueEnrichedPayload | null;
     docs: Doc[];
   }): IterativeEnrichmentSections['infra'] {
-    const firewall = this.extractInfraMakeModel('firewall', input.itglueConfigs, input.docs);
-    const wifi = this.extractInfraMakeModel('wifi', input.itglueConfigs, input.docs);
-    const sw = this.extractInfraMakeModel('switch', input.itglueConfigs, input.docs);
+    const firewallValue = this.pickEnrichedValue(input.itglueEnriched, 'firewall_make_model');
+    const wifiValue = this.pickEnrichedValue(input.itglueEnriched, 'wifi_make_model');
+    const switchValue = this.pickEnrichedValue(input.itglueEnriched, 'switch_make_model');
+    const makeEnriched = (value: string) => ({
+      value,
+      status: 'inferred' as const,
+      confidence: 0.75,
+      sourceSystem: 'itglue_llm',
+      sourceRef: 'itglue_org_snapshot',
+      round: 2,
+    });
+    const firewall = firewallValue
+      ? makeEnriched(firewallValue)
+      : this.extractInfraMakeModel('firewall', input.itglueConfigs, input.docs);
+    const wifi = wifiValue
+      ? makeEnriched(wifiValue)
+      : this.extractInfraMakeModel('wifi', input.itglueConfigs, input.docs);
+    const sw = switchValue
+      ? makeEnriched(switchValue)
+      : this.extractInfraMakeModel('switch', input.itglueConfigs, input.docs);
 
     return {
       firewall_make_model: this.buildField({
@@ -2502,6 +2581,120 @@ export class PrepareContextService {
       }
     });
     return Array.from(map.values());
+  }
+
+  private hashSnapshot(snapshot: Record<string, unknown>): string {
+    const json = JSON.stringify(snapshot);
+    return crypto.createHash('sha256').update(`${ITGLUE_EXTRACTOR_VERSION}:${json}`).digest('hex');
+  }
+
+  private pickEnrichedValue(payload: ItglueEnrichedPayload | null, key: string): string | null {
+    if (!payload || !payload.fields || !payload.fields[key]) return null;
+    const value = String(payload.fields[key]?.value || '').trim();
+    if (!value || value.toLowerCase() === 'unknown') return null;
+    return value;
+  }
+
+  private buildItglueExtractionInput(snapshot: Record<string, unknown>): Record<string, unknown> {
+    const configs = Array.isArray((snapshot as any).configs) ? (snapshot as any).configs : [];
+    const passwords = Array.isArray((snapshot as any).passwords) ? (snapshot as any).passwords : [];
+    const assets = Array.isArray((snapshot as any).assets) ? (snapshot as any).assets : [];
+    const docs = Array.isArray((snapshot as any).docs) ? (snapshot as any).docs : [];
+    const locations = Array.isArray((snapshot as any).locations) ? (snapshot as any).locations : [];
+    const domains = Array.isArray((snapshot as any).domains) ? (snapshot as any).domains : [];
+    const sslCertificates = Array.isArray((snapshot as any).ssl_certificates) ? (snapshot as any).ssl_certificates : [];
+    const contacts = Array.isArray((snapshot as any).contacts) ? (snapshot as any).contacts : [];
+
+    return {
+      org_id: (snapshot as any).org_id,
+      org_name: (snapshot as any).org_name,
+      organization_details: (snapshot as any).organization_details || {},
+      configs: configs.slice(0, 200).map((c: any) => ({
+        id: c?.id,
+        name: c?.attributes?.name || c?.name,
+        manufacturer: c?.attributes?.manufacturer_name || c?.attributes?.manufacturer || c?.manufacturer,
+        model: c?.attributes?.model_name || c?.attributes?.model || c?.model,
+        type: c?.attributes?.configuration_type_name || c?.attributes?.type,
+      })),
+      passwords: passwords.slice(0, 200).map((p: any) => ({
+        id: p?.id,
+        name: p?.attributes?.name || p?.name,
+        username: p?.attributes?.username || p?.attributes?.user_name || p?.username,
+        resource: p?.attributes?.resource_name || p?.attributes?.resource || p?.resource,
+        category: p?.attributes?.password_category_name || p?.attributes?.category || p?.category,
+      })),
+      contacts: contacts.slice(0, 200).map((x: any) => ({
+        id: x?.id,
+        name: x?.attributes?.name || [x?.attributes?.first_name, x?.attributes?.last_name].filter(Boolean).join(' '),
+        email: x?.attributes?.primary_email,
+        phone: x?.attributes?.primary_phone,
+        type: x?.attributes?.contact_type_name,
+      })),
+      assets: assets.slice(0, 200).map((a: any) => ({
+        id: a?.id,
+        name: a?.attributes?.name || a?.name,
+        type: a?.attributes?.flexible_asset_type_name || a?.attributes?.type,
+      })),
+      locations: locations.slice(0, 200).map((x: any) => ({
+        id: x?.id,
+        name: x?.attributes?.name || x?.name,
+        city: x?.attributes?.city,
+        state: x?.attributes?.region_name || x?.attributes?.state,
+        country: x?.attributes?.country_name || x?.attributes?.country,
+      })),
+      domains: domains.slice(0, 200).map((x: any) => ({
+        id: x?.id,
+        name: x?.attributes?.name || x?.name,
+      })),
+      ssl_certificates: sslCertificates.slice(0, 200).map((x: any) => ({
+        id: x?.id,
+        name: x?.attributes?.name || x?.name,
+        active: x?.attributes?.active,
+        issued_by: x?.attributes?.issued_by,
+      })),
+      docs: docs.slice(0, 50).map((d: any) => ({
+        id: d?.id,
+        title: d?.title || d?.name,
+      })),
+    };
+  }
+
+  private async getOrRefreshItglueEnriched(input: {
+    orgId: string;
+    snapshot: Record<string, unknown>;
+    sourceHash: string;
+  }): Promise<ItglueEnrichedPayload | null> {
+    const cached = await getItglueOrgEnriched(input.orgId);
+    const ttlMs = 24 * 60 * 60 * 1000;
+    if (cached) {
+      const updatedAt = new Date(cached.updated_at || cached.created_at || 0).getTime();
+      const isFresh = Number.isFinite(updatedAt) && (Date.now() - updatedAt) < ttlMs;
+      if (isFresh && cached.source_hash === input.sourceHash) {
+        return cached.payload as unknown as ItglueEnrichedPayload;
+      }
+    }
+
+    const summary = this.buildItglueExtractionInput(input.snapshot);
+    const prompt = `You are an IT Glue data extractor. Given a JSON summary of ALL configs, passwords, assets, and docs for an organization, extract ONLY the fields below and return valid JSON.\n\nRules:\n1. If value unknown, set value to \"unknown\" and confidence to 0.\n2. Include evidence_refs as JSON path hints (e.g., \"passwords[12].name\").\n3. Return ONLY JSON, no extra text.\n\nOutput schema:\n{\n  \"org_id\": \"string\",\n  \"source_hash\": \"string\",\n  \"fields\": {\n    \"firewall_make_model\": { \"value\": \"string\", \"confidence\": 0.0, \"source_system\": \"itglue\", \"evidence_refs\": [\"string\"] },\n    \"wifi_make_model\": { \"value\": \"string\", \"confidence\": 0.0, \"source_system\": \"itglue\", \"evidence_refs\": [\"string\"] },\n    \"switch_make_model\": { \"value\": \"string\", \"confidence\": 0.0, \"source_system\": \"itglue\", \"evidence_refs\": [\"string\"] },\n    \"isp_name\": { \"value\": \"string\", \"confidence\": 0.0, \"source_system\": \"itglue\", \"evidence_refs\": [\"string\"] }\n  }\n}\n\nSnapshot JSON:\n${JSON.stringify(summary).slice(0, 12000)}`;
+
+    try {
+      const llm = await callLLM(prompt);
+      const parsed = this.extractJsonObject(llm.content);
+      const fields = (parsed?.fields && typeof parsed.fields === 'object')
+        ? (parsed.fields as Record<string, ItglueEnrichedField>)
+        : {};
+      const payload: ItglueEnrichedPayload = {
+        org_id: String(parsed?.org_id || input.orgId),
+        source_hash: String(parsed?.source_hash || input.sourceHash),
+        fields,
+        created_at: new Date().toISOString(),
+      };
+      await upsertItglueOrgEnriched(input.orgId, payload as unknown as Record<string, unknown>, input.sourceHash);
+      return payload;
+    } catch (error) {
+      console.error('[PrepareContext] IT Glue enrichment failed:', error);
+      return cached ? (cached.payload as unknown as ItglueEnrichedPayload) : null;
+    }
   }
 
   private buildTicketSSOT(sections: IterativeEnrichmentSections): TicketSSOT {
@@ -3490,6 +3683,61 @@ export async function persistTicketSSOT(
   } catch (error) {
     console.error('[DB] Failed to persist SSOT:', error);
     throw error;
+  }
+}
+
+export async function persistItglueOrgSnapshot(
+  orgId: string,
+  payload: Record<string, unknown>,
+  sourceHash: string
+): Promise<void> {
+  try {
+    await execute(
+      `INSERT INTO itglue_org_snapshot (org_id, payload, source_hash, created_at, updated_at)
+       VALUES ($1, $2, $3, NOW(), NOW())
+       ON CONFLICT (org_id)
+       DO UPDATE SET payload = EXCLUDED.payload, source_hash = EXCLUDED.source_hash, updated_at = NOW()`,
+      [orgId, JSON.stringify(payload), sourceHash]
+    );
+  } catch (error) {
+    console.error('[DB] Failed to persist IT Glue snapshot:', error);
+  }
+}
+
+export async function getItglueOrgEnriched(
+  orgId: string
+): Promise<{ payload: Record<string, unknown>; source_hash: string; created_at: string; updated_at: string } | null> {
+  try {
+    const row = await queryOne<{ payload: Record<string, unknown>; source_hash: string; created_at: string; updated_at: string }>(
+      `SELECT payload, source_hash, created_at, updated_at
+       FROM itglue_org_enriched
+       WHERE org_id = $1
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [orgId]
+    );
+    return row || null;
+  } catch (error) {
+    console.error('[DB] Failed to fetch IT Glue enriched cache:', error);
+    return null;
+  }
+}
+
+export async function upsertItglueOrgEnriched(
+  orgId: string,
+  payload: Record<string, unknown>,
+  sourceHash: string
+): Promise<void> {
+  try {
+    await execute(
+      `INSERT INTO itglue_org_enriched (org_id, payload, source_hash, created_at, updated_at)
+       VALUES ($1, $2, $3, NOW(), NOW())
+       ON CONFLICT (org_id)
+       DO UPDATE SET payload = EXCLUDED.payload, source_hash = EXCLUDED.source_hash, updated_at = NOW()`,
+      [orgId, JSON.stringify(payload), sourceHash]
+    );
+  } catch (error) {
+    console.error('[DB] Failed to persist IT Glue enriched cache:', error);
   }
 }
 

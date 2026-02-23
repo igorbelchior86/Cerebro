@@ -32,6 +32,20 @@ interface SessionData {
       source?: string | null;
     };
   };
+  ssot?: {
+    ticket_id?: string;
+    title?: string;
+    description_clean?: string;
+    requester_name?: string;
+    requester_email?: string;
+    affected_user_name?: string;
+    affected_user_email?: string;
+    company?: string;
+    created_at?: string;
+    device_name?: string;
+    isp_name?: string;
+    firewall_make_model?: string;
+  };
   evidence_pack?: any;
   diagnosis?: any;
   validation?: any;
@@ -167,8 +181,10 @@ export default function SessionDetail({
         const flowData = payload.data || {};
         const resolvedSession = payload.session || {};
         const resolvedTicket = flowData.ticket || {};
+        const resolvedSsot = flowData.ssot || {};
         const resolvedTicketId = String(
           resolvedSession.ticket_id ||
+          resolvedSsot.ticket_id ||
           resolvedTicket.id ||
           selectedTicketId
         );
@@ -179,6 +195,7 @@ export default function SessionDetail({
             status: (resolvedSession.status || 'processing') as 'pending' | 'processing' | 'approved' | 'failed' | 'needs_more_info' | 'blocked',
           },
           ticket: resolvedTicket || null,
+          ssot: resolvedSsot || null,
           diagnosis: flowData.diagnosis ?? null,
           validation: flowData.validation ?? null,
           playbook: flowData.playbook ?? null,
@@ -187,6 +204,7 @@ export default function SessionDetail({
 
         setData(newData);
         const pack = newData.evidence_pack || {};
+        const ssot = newData.ssot || {};
         const packTicket = pack.ticket || {};
         const packOrg = pack.org || {};
         const packUser = pack.user || {};
@@ -196,12 +214,19 @@ export default function SessionDetail({
         const ticketId = newData.session.ticket_id || normalizePlainText(backendTicket.id, '') || currentTicket?.ticket_id || snapshot?.ticketId || selectedTicketId;
         const subject = pickStableText(
           snapshot?.subject,
-          [cleanTitle(backendTicket.title), cleanTitle(currentTicket?.title), cleanTitle(packTicket.title), cleanTitle(packTicket.description)],
+          [
+            cleanTitle(ssot.title),
+            cleanTitle(backendTicket.title),
+            cleanTitle(currentTicket?.title),
+            cleanTitle(packTicket.title),
+            cleanTitle(packTicket.description),
+          ],
           'Untitled ticket'
         );
         const problemDescription = pickStableText(
           snapshot?.description,
           [
+            ssot.description_clean,
             backendTicket.description_normalized,
             backendTicket.description,
             currentTicket?.description,
@@ -213,6 +238,8 @@ export default function SessionDetail({
         const requester = pickStableText(
           snapshot?.requester,
           [
+            ssot.affected_user_name,
+            ssot.requester_name,
             backendTicket.requester_normalized,
             backendTicket.requester,
             currentTicket?.requester,
@@ -223,7 +250,7 @@ export default function SessionDetail({
         );
         const org = pickStableText(
           snapshot?.org,
-          [backendTicket.company, currentTicket?.company, currentTicket?.org, packOrg.name],
+          [ssot.company, backendTicket.company, currentTicket?.company, currentTicket?.org, packOrg.name],
           'Unknown org'
         );
         const site = pickStableText(
@@ -232,7 +259,7 @@ export default function SessionDetail({
           'Unknown site'
         );
         const priority = backendTicket.priority || currentTicket?.priority || snapshot?.priority || 'P3';
-        const createdAt = snapshot?.createdAt || backendTicket.created_at || currentTicket?.created_at || packTicket.created_at;
+        const createdAt = snapshot?.createdAt || ssot.created_at || backendTicket.created_at || currentTicket?.created_at || packTicket.created_at;
         ticketSnapshotRef.current[selectedTicketId] = {
           ticketId,
           subject,
@@ -437,10 +464,43 @@ export default function SessionDetail({
     }, 500);
   };
 
+  const handleRefreshPipeline = async () => {
+    const ticket = selectedTicketId;
+    setLoading(true);
+    setError('');
+    setPlaybookReady(false);
+    setPlaybookStatus('loading');
+    timelineSignatureRef.current = '';
+    setData(null);
+    setMessages([
+      {
+        id: `refresh-${ticket}-${Date.now()}`,
+        role: 'assistant',
+        content: 'Refreshing pipeline for this ticket...',
+        timestamp: new Date(),
+        type: 'status',
+      },
+    ]);
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      await axios.get(`${apiUrl}/playbook/full-flow`, {
+        params: { sessionId: ticket, refresh: 1 },
+        withCredentials: true,
+      });
+    } catch (err) {
+      setError(axios.isAxiosError(err) ? err.message : String(err));
+      setPlaybookStatus('error');
+      setLoading(false);
+    }
+  };
+
   const displayTickets = sidebarTickets;
   const canonicalTicketId = data?.session.ticket_id || selectedTicketId;
   const selectedTicket = displayTickets.find((t) => t.id === canonicalTicketId || t.ticket_id === canonicalTicketId);
   const canonicalRequesterUi = normalizePlainText(
+    data?.ssot?.affected_user_name ||
+    data?.ssot?.requester_name ||
     data?.ticket?.affected_user_normalized ||
     data?.ticket?.requester_normalized ||
     data?.ticket?.requester ||
@@ -448,7 +508,7 @@ export default function SessionDetail({
     'Unknown requester'
   );
   const canonicalCompanyUi = normalizePlainText(
-    data?.ticket?.company || selectedTicket?.company || selectedTicket?.org,
+    data?.ssot?.company || data?.ticket?.company || selectedTicket?.company || selectedTicket?.org,
     'Unknown org'
   );
   const selectedTicketView = selectedTicket
@@ -475,15 +535,15 @@ export default function SessionDetail({
     ? {
       ticketId: ticketNumber,
       context: [
-        { key: 'Org', val: selectedTicketView?.company || selectedTicketView?.org || 'Unknown org' },
+        { key: 'Org', val: data?.ssot?.company || selectedTicketView?.company || selectedTicketView?.org || 'Unknown org' },
         { key: 'Site', val: selectedTicketView?.site || 'Unknown site' },
         {
           key: 'ISP',
-          val: data.evidence_pack?.external_status?.[0]?.provider || 'Unknown',
+          val: data?.ssot?.isp_name || data.evidence_pack?.external_status?.[0]?.provider || 'Unknown',
           ...(data.evidence_pack?.external_status?.[0]?.status ? { highlight: '#F97316' } : {}),
         },
-        { key: 'Firewall', val: data.evidence_pack?.config?.firewall || 'Unknown' },
-        { key: 'User device', val: data.evidence_pack?.device?.hostname || selectedTicketView?.requester || 'Unknown' },
+        { key: 'Firewall', val: data?.ssot?.firewall_make_model || data.evidence_pack?.config?.firewall || 'Unknown' },
+        { key: 'User device', val: data?.ssot?.device_name || data.evidence_pack?.device?.hostname || selectedTicketView?.requester || 'Unknown' },
         { key: 'SLA', val: selectedTicketView?.priority || 'Standard', highlight: 'var(--accent)' },
       ],
       hypotheses: Array.isArray(data.diagnosis?.top_hypotheses)
@@ -555,6 +615,30 @@ export default function SessionDetail({
               <svg width="8" height="8" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
               {t('statusPlaybookReady')}
             </span>
+            <button
+              onClick={handleRefreshPipeline}
+              disabled={loading}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '24px',
+                height: '24px',
+                borderRadius: '999px',
+                color: loading ? 'var(--text-muted)' : 'var(--accent)',
+                background: 'var(--accent-muted)',
+                border: '1px solid var(--border-accent)',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                opacity: loading ? 0.7 : 1,
+              }}
+              title="Hard refresh pipeline"
+              aria-label="Hard refresh pipeline"
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                <path d="M13.3 8A5.3 5.3 0 1 1 11.75 4.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                <path d="M10.6 1.9h3.5v3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
             <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-jetbrains-mono)', marginLeft: playbookReady ? '0' : 'auto' }}>
               {playbookReady ? '' : loading ? t('statusInitializing') : t('statusProcessing')}
             </span>

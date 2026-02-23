@@ -90,6 +90,7 @@ interface TicketSSOT {
   firewall_make_model: string;
   wifi_make_model: string;
   switch_make_model: string;
+  fusion_audit?: Record<string, unknown>;
 }
 
 export interface TicketTextArtifact {
@@ -104,6 +105,55 @@ export interface TicketTextArtifact {
   normalization_method: 'llm' | 'deterministic_fallback';
   normalization_confidence: number;
   created_at: string;
+}
+
+export interface TicketContextAppendix {
+  ticket_id: string;
+  session_id: string;
+  created_at: string;
+  history_correlation?: {
+    mode: 'autotask_email_fallback';
+    round: number;
+    search_terms: string[];
+    strategies: string[];
+    matched_case_ids: string[];
+    matched_case_count: number;
+  };
+  history_confidence_calibration?: {
+    round: number;
+    field_adjustments: Array<{
+      path: string;
+      action: 'boost' | 'decrease' | 'context_only';
+      delta_confidence: number;
+      previous_confidence: number;
+      new_confidence: number;
+      support_case_ids: string[];
+      contradiction_case_ids?: string[];
+      reason: string;
+    }>;
+    contradictions: Array<{
+      path: string;
+      current_value: string;
+      observed_values: string[];
+      case_ids: string[];
+      note: string;
+    }>;
+  };
+  fusion_summary?: {
+    applied_resolution_count: number;
+    link_count: number;
+    inference_count: number;
+    used_llm: boolean;
+  };
+  final_refinement?: {
+    round: number;
+    targets: string[];
+    terms: string[];
+    itglue_docs_added: number;
+    ninja_device_reselected: boolean;
+    ninja_signals_added: number;
+    fields_updated: string[];
+  };
 }
 
 interface ScopeMeta {
@@ -174,6 +224,58 @@ interface NinjaEnrichedPayload {
   source_hash: string;
   fields: Record<string, NinjaEnrichedField>;
   created_at: string;
+}
+
+interface FusionLink {
+  id: string;
+  kind: 'identity_alias' | 'device_user' | 'ticket_software_device' | 'org_scope' | 'heuristic';
+  from_entity: string;
+  to_entity: string;
+  confidence: number;
+  evidence_refs: string[];
+  note?: string;
+}
+
+interface FusionInference {
+  id: string;
+  claim: string;
+  type: 'identity_link' | 'device_assignment' | 'software_relevance' | 'field_assembly' | 'heuristic';
+  confidence: number;
+  evidence_chain: string[];
+  assumptions?: string[];
+  disconfirmers?: string[];
+}
+
+interface FusionFieldCandidate {
+  path: string;
+  source: string;
+  value: unknown;
+  status: string;
+  confidence: number;
+  evidence_refs: string[];
+}
+
+interface FusionFieldResolution {
+  path: string;
+  value: unknown;
+  status: 'confirmed' | 'inferred' | 'unknown' | 'conflict';
+  confidence: number;
+  resolution_mode: 'direct' | 'assembled' | 'inferred' | 'fallback' | 'unknown';
+  evidence_refs: string[];
+  inference_refs?: string[];
+  note?: string;
+}
+
+interface FusionAdjudicationOutput {
+  resolutions: FusionFieldResolution[];
+  links?: FusionLink[];
+  inferences?: FusionInference[];
+  conflicts?: Array<{ field: string; note: string; evidence_refs?: string[] }>;
+}
+
+interface HistoryCalibrationResult {
+  sections: IterativeEnrichmentSections;
+  appendix: NonNullable<TicketContextAppendix['history_confidence_calibration']>;
 }
 
 const NINJAONE_BASE: Record<string, string> = {
@@ -569,6 +671,7 @@ export class PrepareContextService {
     let ninjaOrgMatch: { id: number; name: string } | null = null;
     let ninjaOrgDevices: any[] = [];
     let ninjaAlerts: any[] = [];
+    let ninjaSoftwareInventory: any[] = [];
     let ninjaOrgDetails: Record<string, unknown> | null = null;
     let ninjaCollectionErrors: string[] = [];
     let ninjaEnriched: NinjaEnrichedPayload | null = null;
@@ -807,6 +910,7 @@ export class PrepareContextService {
           ninjaoneClient.getOrganization(String(ninjaOrgMatch.id)),
           ninjaoneClient.listDevicesByOrganization(String(ninjaOrgMatch.id), { limit: 200 }),
           ninjaoneClient.listAlerts(String(ninjaOrgMatch.id)),
+          ninjaoneClient.querySoftware({ pageSize: 300 }),
         ]);
         if (ninjaOrgFetch[0].status === 'fulfilled') {
           ninjaOrgDetails = ninjaOrgFetch[0].value as Record<string, unknown>;
@@ -824,6 +928,16 @@ export class PrepareContextService {
         } else {
           ninjaAlerts = [];
           ninjaCollectionErrors.push(`alerts: ${(ninjaOrgFetch[2].reason as Error)?.message || String(ninjaOrgFetch[2].reason)}`);
+        }
+        if (ninjaOrgFetch[3].status === 'fulfilled') {
+          const orgDeviceIds = new Set((ninjaOrgDevices || []).map((d: any) => Number(d?.id)).filter(Number.isFinite));
+          ninjaSoftwareInventory = (ninjaOrgFetch[3].value || []).filter((row: any) => {
+            const deviceId = Number(row?.deviceId);
+            return orgDeviceIds.size === 0 || orgDeviceIds.has(deviceId);
+          });
+        } else {
+          ninjaSoftwareInventory = [];
+          ninjaCollectionErrors.push(`software_query: ${(ninjaOrgFetch[3].reason as Error)?.message || String(ninjaOrgFetch[3].reason)}`);
         }
       } else {
         ninjaOrgDevices = await ninjaoneClient.listDevices({ limit: 100 });
@@ -867,6 +981,7 @@ export class PrepareContextService {
           organization_details: ninjaOrgDetails || {},
           devices: ninjaOrgDevices,
           alerts: ninjaAlerts,
+          software_inventory_query: ninjaSoftwareInventory,
           selected_device: device || null,
           selected_device_details: deviceDetails || null,
           selected_device_checks: ninjaChecks,
@@ -898,6 +1013,7 @@ export class PrepareContextService {
           ninjaOrgMatch ? `org match: ${ninjaOrgMatch.name} (${ninjaOrgMatch.id})` : 'org match: none',
           `devices: ${ninjaOrgDevices.length}`,
           `alerts: ${ninjaAlerts.length}`,
+          `software_inventory: ${ninjaSoftwareInventory.length}`,
           `health checks: ${ninjaChecks.length}`,
           `extended signals: ${ninjaContextSignals.length}`,
           `ninja_enriched: ${ninjaEnriched ? 'cached/generated' : 'not available'}`,
@@ -1268,7 +1384,7 @@ export class PrepareContextService {
       });
     }
 
-    const scopedDocs = docs.filter((doc) => {
+    let scopedDocs = docs.filter((doc) => {
       const decision = this.enforceOrgBoundary({
         itemId: `doc:${doc.id}`,
         itemOrgId: doc.org_id || null,
@@ -1281,7 +1397,7 @@ export class PrepareContextService {
       return decision.accepted;
     });
 
-    const scopedSignals = [...signals, ...ninjaChecks, ...ninjaContextSignals].filter((signal) => {
+    let scopedSignals = [...signals, ...ninjaChecks, ...ninjaContextSignals].filter((signal) => {
       const candidateOrgId = signal.org_id || resolvedOrgId || null;
       const decision = this.enforceOrgBoundary({
         itemId: `signal:${signal.id}`,
@@ -1295,7 +1411,7 @@ export class PrepareContextService {
       return decision.accepted;
     });
 
-    const scopedRelatedCases = relatedCases.filter((relatedCase) => {
+    let scopedRelatedCases = relatedCases.filter((relatedCase) => {
       const decision = this.enforceOrgBoundary({
         itemId: `case:${relatedCase.ticket_id}`,
         itemOrgId: relatedCase.org_id || resolvedOrgId || null,
@@ -1308,7 +1424,7 @@ export class PrepareContextService {
       return decision.accepted;
     });
 
-    const evidenceDigest = this.buildEvidenceDigest({
+    let evidenceDigest = this.buildEvidenceDigest({
       ticket,
       sourceFindings,
       missingData,
@@ -1346,8 +1462,432 @@ export class PrepareContextService {
       missingData,
     });
 
+    const fusionResult = await this.runCrossSourceFusion({
+      sections: iterativeEnrichment.sections,
+      ticket,
+      ticketNarrative,
+      normalizedTicket,
+      itglueContacts,
+      itglueConfigs,
+      itglueEnriched,
+      ninjaEnriched,
+      ninjaOrgDevices,
+      ninjaSoftwareInventory,
+      device,
+      deviceDetails,
+      loggedInUser,
+      loggedInAt,
+    });
+    let fusionAudit: Record<string, unknown> | undefined;
+    let fusionSummaryForAppendix: TicketContextAppendix['fusion_summary'] | undefined;
+    if (fusionResult) {
+      iterativeEnrichment.sections = fusionResult.sections;
+      fusionAudit = fusionResult.audit;
+      fusionSummaryForAppendix = {
+        applied_resolution_count: fusionResult.appliedResolutionCount,
+        link_count: fusionResult.linkCount,
+        inference_count: fusionResult.inferenceCount,
+        used_llm: fusionResult.usedLlm,
+      };
+      sourceFindings.push({
+        source: 'external',
+        round: 7,
+        facet: 'cross_source_fusion',
+        queried: true,
+        matched: fusionResult.appliedResolutionCount > 0,
+        summary: fusionResult.appliedResolutionCount > 0
+          ? `cross-source fusion applied ${fusionResult.appliedResolutionCount} field resolution(s)`
+          : 'cross-source fusion completed with no field overrides',
+        details: [
+          `candidate fields: ${fusionResult.candidateFieldCount}`,
+          `links generated: ${fusionResult.linkCount}`,
+          `inferences generated: ${fusionResult.inferenceCount}`,
+          `llm: ${fusionResult.usedLlm ? 'yes' : 'no'}`,
+        ],
+        why_selected: ['cross-source assembly/inference required before final SSOT'],
+        tenant_id: tenantId,
+        org_id: resolvedOrgId || null,
+        source_workspace: sourceWorkspace,
+      });
+      const fusedRecords = this.flattenEnrichmentFields(iterativeEnrichment.sections);
+      iterativeEnrichment.coverage = this.computeEnrichmentCoverage(fusedRecords);
+      iterativeEnrichment.rounds = this.buildEnrichmentRounds(fusedRecords, sourceFindings);
+      iterativeEnrichment.completed_rounds = iterativeEnrichment.rounds.at(-1)?.round ?? iterativeEnrichment.completed_rounds;
+    }
+
+    // ROUND 8: Fused Context -> Broad History Correlation (Autotask / email fallback)
+    let historyAppendixCorrelation: TicketContextAppendix['history_correlation'] | undefined;
+    let historyCalibrationAppendix: TicketContextAppendix['history_confidence_calibration'] | undefined;
+    try {
+      const historySearchPlan = this.buildBroadHistorySearchPlan({
+        ticket,
+        ticketNarrative,
+        normalizedTicket,
+        sections: iterativeEnrichment.sections,
+        docs: scopedDocs,
+        ...(fusionAudit ? { fusionAudit } : {}),
+      });
+      const broadHistoryOrgId = resolvedOrgId || input.orgId;
+      const broadRelatedCases = await this.findRelatedCasesBroad({
+        ticketId: String(ticket.ticketNumber || ticket.id || input.ticketId || ''),
+        ...(broadHistoryOrgId ? { orgId: broadHistoryOrgId } : {}),
+        terms: historySearchPlan.terms,
+      });
+      if (broadRelatedCases.length > 0) {
+        relatedCases = broadRelatedCases.map((rc) => ({
+          ...rc,
+          tenant_id: tenantId,
+          org_id: resolvedOrgId || input.orgId || null,
+          source_workspace: sourceWorkspace,
+        }));
+      }
+
+      historyAppendixCorrelation = {
+        mode: 'autotask_email_fallback',
+        round: 8,
+        search_terms: historySearchPlan.terms.slice(0, 28),
+        strategies: historySearchPlan.strategies,
+        matched_case_ids: broadRelatedCases.map((c) => c.ticket_id).slice(0, 10),
+        matched_case_count: broadRelatedCases.length,
+      };
+
+      scopedRelatedCases = relatedCases.filter((relatedCase) => {
+        const decision = this.enforceOrgBoundary({
+          itemId: `case:${relatedCase.ticket_id}`,
+          itemOrgId: relatedCase.org_id || resolvedOrgId || null,
+          targetOrgId: resolvedOrgId || null,
+          source: 'history',
+          summary: relatedCase.symptom,
+          scopeMeta,
+        });
+        if (decision.rejected) rejectedEvidence.push(decision.rejected);
+        return decision.accepted;
+      });
+
+      sourceFindings.push({
+        source: 'autotask',
+        round: 8,
+        facet: 'history_correlation_broad',
+        queried: true,
+        matched: scopedRelatedCases.length > 0,
+        summary: scopedRelatedCases.length > 0
+          ? `broad historical correlation found ${scopedRelatedCases.length} related case(s)`
+          : 'broad historical correlation found no related case',
+        details: [
+          `term_count: ${historySearchPlan.terms.length}`,
+          `top_terms: ${historySearchPlan.terms.slice(0, 8).join(', ') || 'none'}`,
+          `strategies: ${historySearchPlan.strategies.join(' -> ')}`,
+        ],
+        why_selected: ['history search must use fused org/user/device/software/network context, not a single keyword'],
+        tenant_id: tenantId,
+        org_id: resolvedOrgId || input.orgId || null,
+        source_workspace: sourceWorkspace,
+      });
+
+      evidenceDigest = this.buildEvidenceDigest({
+        ticket,
+        sourceFindings,
+        missingData,
+        entityResolution,
+        signals: scopedSignals,
+        docs: scopedDocs,
+        relatedCases: scopedRelatedCases,
+        rejectedEvidence,
+        capabilityVerification,
+        facetContext,
+        scopeMeta,
+        device,
+        loggedInUser,
+        requesterName,
+        inferredPhoneProvider,
+      });
+
+      const currentRecords = this.flattenEnrichmentFields(iterativeEnrichment.sections);
+      iterativeEnrichment.rounds = this.buildEnrichmentRounds(currentRecords, sourceFindings);
+      iterativeEnrichment.completed_rounds = iterativeEnrichment.rounds.at(-1)?.round ?? iterativeEnrichment.completed_rounds;
+
+      const calibration = this.applyHistoryConfidenceCalibration({
+        sections: iterativeEnrichment.sections,
+        relatedCases: scopedRelatedCases,
+      });
+      iterativeEnrichment.sections = calibration.sections;
+      historyCalibrationAppendix = calibration.appendix;
+      const calibratedRecords = this.flattenEnrichmentFields(iterativeEnrichment.sections);
+      iterativeEnrichment.coverage = this.computeEnrichmentCoverage(calibratedRecords);
+      iterativeEnrichment.rounds = this.buildEnrichmentRounds(calibratedRecords, sourceFindings);
+      iterativeEnrichment.completed_rounds = iterativeEnrichment.rounds.at(-1)?.round ?? iterativeEnrichment.completed_rounds;
+    } catch (error) {
+      sourceFindings.push({
+        source: 'autotask',
+        round: 8,
+        facet: 'history_correlation_broad',
+        queried: true,
+        matched: false,
+        summary: 'broad historical correlation failed',
+        details: [`error: ${(error as Error).message}`],
+        why_rejected: ['broad history correlation error'],
+        tenant_id: tenantId,
+        org_id: resolvedOrgId || input.orgId || null,
+        source_workspace: sourceWorkspace,
+      });
+    }
+
+    // ROUND 9: Final ITG + Ninja pass guided by gaps/conflicts/history calibration (2f)
+    let finalRefinementAppendix: TicketContextAppendix['final_refinement'] | undefined;
+    try {
+      const finalRefinementPlan = this.buildFinalRefinementPlan({
+        sections: iterativeEnrichment.sections,
+        missingData,
+        ...(fusionAudit ? { fusionAudit } : {}),
+        ...(historyCalibrationAppendix ? { historyCalibration: historyCalibrationAppendix } : {}),
+        ...(historyAppendixCorrelation ? { historyCorrelation: historyAppendixCorrelation } : {}),
+      });
+      let finalItgDocsAdded = 0;
+      let finalNinjaDeviceReselected = false;
+      let finalNinjaSignalsAdded = 0;
+      const finalFieldsUpdated: string[] = [];
+
+      if (itglueOrgMatch && finalRefinementPlan.terms.length > 0) {
+        try {
+          const finalDocsRaw = await Promise.all(
+            finalRefinementPlan.terms.slice(0, 5).map((term) =>
+              itglueClient.searchDocuments(term, itglueOrgMatch.id).catch(() => [])
+            )
+          );
+          const extraDocs = finalDocsRaw
+            .flat()
+            .slice(0, 10)
+            .map((doc: any, idx: number) => ({
+              id: String(doc.id),
+              source: 'itglue' as const,
+              title: String(doc.name || `Final refinement doc ${idx + 1}`),
+              snippet: String((doc as any).body || '').substring(0, 600),
+              relevance: 0.35 - idx * 0.03,
+              raw_ref: doc as unknown as Record<string, unknown>,
+              tenant_id: tenantId,
+              org_id: itglueOrgMatch.id,
+              source_workspace: sourceWorkspace,
+            }));
+          const beforeDocs = scopedDocs.length;
+          docs = this.mergeDocsById(docs, extraDocs);
+          const acceptedExtraDocs = extraDocs.filter((doc) => {
+            const decision = this.enforceOrgBoundary({
+              itemId: `doc:${doc.id}`,
+              itemOrgId: doc.org_id || null,
+              targetOrgId: resolvedOrgId || null,
+              source: 'itglue',
+              summary: doc.title,
+              scopeMeta,
+            });
+            if (decision.rejected) rejectedEvidence.push(decision.rejected);
+            return decision.accepted;
+          });
+          scopedDocs = this.mergeDocsById(scopedDocs, acceptedExtraDocs);
+          finalItgDocsAdded = Math.max(0, scopedDocs.length - beforeDocs);
+          sourceFindings.push({
+            source: 'itglue',
+            round: 9,
+            facet: 'final_refinement',
+            queried: true,
+            matched: finalItgDocsAdded > 0,
+            summary: finalItgDocsAdded > 0
+              ? `final refinement added ${finalItgDocsAdded} IT Glue document(s)`
+              : 'final refinement found no new IT Glue documents',
+            details: [
+              `targets: ${finalRefinementPlan.targets.slice(0, 5).join(', ') || 'none'}`,
+              `terms: ${finalRefinementPlan.terms.slice(0, 5).join(', ') || 'none'}`,
+            ],
+            why_selected: ['final pass checks for missed org documentation after fusion/history calibration'],
+            tenant_id: tenantId,
+            org_id: itglueOrgMatch.id,
+            source_workspace: sourceWorkspace,
+          });
+        } catch (error) {
+          sourceFindings.push({
+            source: 'itglue',
+            round: 9,
+            facet: 'final_refinement',
+            queried: true,
+            matched: false,
+            summary: 'final IT Glue refinement failed',
+            details: [`error: ${(error as Error).message}`],
+            why_rejected: ['itglue final refinement error'],
+            tenant_id: tenantId,
+            org_id: itglueOrgMatch.id,
+            source_workspace: sourceWorkspace,
+          });
+        }
+      }
+
+      if (ninjaOrgDevices.length > 0 && finalRefinementPlan.terms.length > 0) {
+        const shouldReResolveDevice = this.shouldRunFinalNinjaRefinement({
+          sections: iterativeEnrichment.sections,
+          finalRefinementPlanTargets: finalRefinementPlan.targets,
+          currentDevice: device,
+        });
+        if (shouldReResolveDevice) {
+          try {
+            const refinedDevice = await this.resolveDeviceDeterministically({
+              devices: ninjaOrgDevices,
+              ticketText: `${ticketNarrative} ${finalRefinementPlan.terms.slice(0, 8).join(' ')}`,
+              requesterName,
+              itglueConfigs,
+              deviceHints: [...(normalizedTicket?.deviceHints || []), ...finalRefinementPlan.terms.slice(0, 4)],
+              ninjaoneClient,
+              sourceWorkspace,
+              tenantId,
+              orgId: ninjaOrgMatch ? String(ninjaOrgMatch.id) : itglueOrgMatch?.id || null,
+            });
+            if (refinedDevice.device && refinedDevice.score >= resolvedDeviceScore) {
+              const previousDeviceId = String(device?.id || '');
+              device = refinedDevice.device;
+              resolvedDeviceScore = refinedDevice.score;
+              ninjaChecks = refinedDevice.checks;
+              loggedInUser = refinedDevice.loggedInUser;
+              loggedInAt = refinedDevice.loggedInAt || '';
+              deviceDetails = refinedDevice.details ?? null;
+              if (device?.id) {
+                const refreshedSignals = await this.buildNinjaContextSignals({
+                  ninjaoneClient,
+                  deviceId: String(device.id),
+                  orgId: input.orgId || itglueOrgMatch?.id || (ninjaOrgMatch ? String(ninjaOrgMatch.id) : null),
+                  tenantId,
+                  sourceWorkspace,
+                });
+                const beforeSignals = scopedSignals.length;
+                const acceptedSignals = [...ninjaChecks, ...refreshedSignals].filter((signal) => {
+                  const candidateOrgId = signal.org_id || resolvedOrgId || null;
+                  const decision = this.enforceOrgBoundary({
+                    itemId: `signal:${signal.id}`,
+                    itemOrgId: candidateOrgId,
+                    targetOrgId: resolvedOrgId || null,
+                    source: signal.source,
+                    summary: signal.summary,
+                    scopeMeta,
+                  });
+                  if (decision.rejected) rejectedEvidence.push(decision.rejected);
+                  return decision.accepted;
+                });
+                scopedSignals = this.mergeSignalsById(scopedSignals, acceptedSignals);
+                finalNinjaSignalsAdded = Math.max(0, scopedSignals.length - beforeSignals);
+                ninjaContextSignals = refreshedSignals;
+              }
+              finalNinjaDeviceReselected = previousDeviceId !== String(device?.id || '') || Boolean(device);
+            }
+            sourceFindings.push({
+              source: 'ninjaone',
+              round: 9,
+              facet: 'final_refinement',
+              queried: true,
+              matched: Boolean(refinedDevice.device),
+              summary: refinedDevice.device
+                ? `final Ninja refinement ${finalNinjaDeviceReselected ? 'updated' : 'confirmed'} device ${refinedDevice.device.hostname || refinedDevice.device.systemName || refinedDevice.device.id}`
+                : 'final Ninja refinement did not improve device correlation',
+              details: [
+                `score: ${refinedDevice.score.toFixed(2)}`,
+                `targets: ${finalRefinementPlan.targets.slice(0, 5).join(', ') || 'none'}`,
+                `terms: ${finalRefinementPlan.terms.slice(0, 5).join(', ') || 'none'}`,
+              ],
+              why_selected: [refinedDevice.reason],
+              tenant_id: tenantId,
+              org_id: ninjaOrgMatch ? String(ninjaOrgMatch.id) : null,
+              source_workspace: sourceWorkspace,
+            });
+          } catch (error) {
+            sourceFindings.push({
+              source: 'ninjaone',
+              round: 9,
+              facet: 'final_refinement',
+              queried: true,
+              matched: false,
+              summary: 'final Ninja refinement failed',
+              details: [`error: ${(error as Error).message}`],
+              why_rejected: ['ninjaone final refinement error'],
+              tenant_id: tenantId,
+              org_id: ninjaOrgMatch ? String(ninjaOrgMatch.id) : null,
+              source_workspace: sourceWorkspace,
+            });
+          }
+        }
+      }
+
+      finalFieldsUpdated.push(
+        ...this.applyFinalRefinementToEnrichment({
+          sections: iterativeEnrichment.sections,
+          ticketNarrative,
+          docs: scopedDocs,
+          itglueConfigs,
+          itgluePasswords,
+          signals: scopedSignals,
+          device,
+          deviceDetails,
+          loggedInUser,
+          loggedInAt,
+        })
+      );
+
+      evidenceDigest = this.buildEvidenceDigest({
+        ticket,
+        sourceFindings,
+        missingData,
+        entityResolution,
+        signals: scopedSignals,
+        docs: scopedDocs,
+        relatedCases: scopedRelatedCases,
+        rejectedEvidence,
+        capabilityVerification,
+        facetContext,
+        scopeMeta,
+        device,
+        loggedInUser,
+        requesterName,
+        inferredPhoneProvider,
+      });
+      const finalRecords = this.flattenEnrichmentFields(iterativeEnrichment.sections);
+      iterativeEnrichment.coverage = this.computeEnrichmentCoverage(finalRecords);
+      iterativeEnrichment.rounds = this.buildEnrichmentRounds(finalRecords, sourceFindings);
+      iterativeEnrichment.completed_rounds = iterativeEnrichment.rounds.at(-1)?.round ?? iterativeEnrichment.completed_rounds;
+
+      finalRefinementAppendix = {
+        round: 9,
+        targets: finalRefinementPlan.targets,
+        terms: finalRefinementPlan.terms.slice(0, 20),
+        itglue_docs_added: finalItgDocsAdded,
+        ninja_device_reselected: finalNinjaDeviceReselected,
+        ninja_signals_added: finalNinjaSignalsAdded,
+        fields_updated: [...new Set(finalFieldsUpdated)],
+      };
+    } catch (error) {
+      sourceFindings.push({
+        source: 'external',
+        round: 9,
+        facet: 'final_refinement',
+        queried: true,
+        matched: false,
+        summary: 'final refinement orchestration failed',
+        details: [`error: ${(error as Error).message}`],
+        why_rejected: ['2f orchestration error'],
+        tenant_id: tenantId,
+        org_id: resolvedOrgId || null,
+        source_workspace: sourceWorkspace,
+      });
+    }
+
     const networkStack = this.buildNetworkStackFromEnrichment(iterativeEnrichment.sections);
     const ssot = this.buildTicketSSOT(iterativeEnrichment.sections);
+    if (fusionAudit) {
+      ssot.fusion_audit = fusionAudit;
+    }
+    const ticketContextAppendix: TicketContextAppendix = {
+      ticket_id: input.ticketId,
+      session_id: input.sessionId,
+      created_at: new Date().toISOString(),
+      ...(historyAppendixCorrelation ? { history_correlation: historyAppendixCorrelation } : {}),
+      ...(historyCalibrationAppendix ? { history_confidence_calibration: historyCalibrationAppendix } : {}),
+      ...(fusionSummaryForAppendix ? { fusion_summary: fusionSummaryForAppendix } : {}),
+      ...(finalRefinementAppendix ? { final_refinement: finalRefinementAppendix } : {}),
+    };
+    await persistTicketContextAppendix(input.ticketId, input.sessionId, ticketContextAppendix);
     await persistTicketSSOT(input.ticketId, input.sessionId, ssot);
 
     // ─── Status de Provedores Externos ───────────────────────────
@@ -2734,6 +3274,16 @@ export class PrepareContextService {
     return Array.from(map.values());
   }
 
+  private mergeSignalsById(base: Signal[], extra: Signal[]): Signal[] {
+    const map = new Map<string, Signal>();
+    base.forEach((signal) => map.set(String(signal.id), signal));
+    extra.forEach((signal) => {
+      const key = String(signal.id);
+      if (!map.has(key)) map.set(key, signal);
+    });
+    return Array.from(map.values());
+  }
+
   private hashSnapshot(snapshot: Record<string, unknown>): string {
     const json = JSON.stringify(snapshot);
     return crypto.createHash('sha256').update(`${ITGLUE_EXTRACTOR_VERSION}:${json}`).digest('hex');
@@ -2850,6 +3400,7 @@ export class PrepareContextService {
   private buildNinjaExtractionInput(snapshot: Record<string, unknown>): Record<string, unknown> {
     const devices = Array.isArray((snapshot as any).devices) ? (snapshot as any).devices : [];
     const alerts = Array.isArray((snapshot as any).alerts) ? (snapshot as any).alerts : [];
+    const softwareInventory = Array.isArray((snapshot as any).software_inventory_query) ? (snapshot as any).software_inventory_query : [];
     const checks = Array.isArray((snapshot as any).selected_device_checks) ? (snapshot as any).selected_device_checks : [];
     const contextSignals = Array.isArray((snapshot as any).selected_device_context_signals) ? (snapshot as any).selected_device_context_signals : [];
     const selectedDevice = (snapshot as any).selected_device || {};
@@ -2891,6 +3442,13 @@ export class PrepareContextService {
         message: a?.message,
         device_id: a?.deviceId,
         device_name: a?.deviceName,
+      })),
+      software_inventory_query: softwareInventory.slice(0, 300).map((row: any) => ({
+        device_id: row?.deviceId,
+        name: row?.name,
+        version: row?.version,
+        publisher: row?.publisher,
+        timestamp: row?.timestamp,
       })),
       devices_sample: devices.slice(0, 200).map((d: any) => ({
         id: d?.id,
@@ -3050,6 +3608,697 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
     };
   }
 
+  private async runCrossSourceFusion(input: {
+    sections: IterativeEnrichmentSections;
+    ticket: TicketLike;
+    ticketNarrative: string;
+    normalizedTicket: any | null;
+    itglueContacts: any[];
+    itglueConfigs: any[];
+    itglueEnriched: ItglueEnrichedPayload | null;
+    ninjaEnriched: NinjaEnrichedPayload | null;
+    ninjaOrgDevices: any[];
+    ninjaSoftwareInventory: any[];
+    device: any | null;
+    deviceDetails: any | null;
+    loggedInUser: string;
+    loggedInAt: string;
+  }): Promise<{
+    sections: IterativeEnrichmentSections;
+    audit: Record<string, unknown>;
+    appliedResolutionCount: number;
+    candidateFieldCount: number;
+    linkCount: number;
+    inferenceCount: number;
+    usedLlm: boolean;
+  } | null> {
+    const supportedPaths = this.getFusionSupportedPaths();
+    const fieldCandidates = this.buildFusionFieldCandidates(input, supportedPaths);
+    const { links, inferences } = this.buildFusionLinksAndInferences(input);
+
+    if (fieldCandidates.length === 0 && links.length === 0) return null;
+
+    let llmOutput: FusionAdjudicationOutput | null = null;
+    let usedLlm = false;
+    let llmError: string | null = null;
+
+    try {
+      const prompt = this.buildFusionAdjudicationPrompt({
+        ticket: input.ticket,
+        ticketNarrative: input.ticketNarrative,
+        fieldCandidates,
+        links,
+        inferences,
+      });
+      const llm = await callLLM(prompt);
+      const parsed = this.extractJsonObject(llm.content);
+      llmOutput = this.sanitizeFusionAdjudicationOutput(parsed, supportedPaths);
+      usedLlm = true;
+    } catch (error) {
+      llmError = (error as Error)?.message || String(error);
+    }
+
+    const fallbackResolutions = this.buildDeterministicFusionFallbackResolutions(input, links);
+    const mergedOutput: FusionAdjudicationOutput = {
+      resolutions: [
+        ...((llmOutput?.resolutions || []).filter((r) => supportedPaths.has(r.path))),
+        ...fallbackResolutions.filter((r) => !llmOutput?.resolutions?.some((x) => x.path === r.path)),
+      ],
+      links: [...(llmOutput?.links || []), ...links.filter((l) => !llmOutput?.links?.some((x) => x.id === l.id))],
+      inferences: [...(llmOutput?.inferences || []), ...inferences.filter((i) => !llmOutput?.inferences?.some((x) => x.id === i.id))],
+      conflicts: llmOutput?.conflicts || [],
+    };
+
+    const applied = this.applyFusionResolutionsToSections(input.sections, mergedOutput.resolutions);
+
+    const audit: Record<string, unknown> = {
+      version: 'fusion-v1-assembled-inference',
+      used_llm: usedLlm,
+      ...(llmError ? { llm_error: llmError } : {}),
+      candidate_fields: fieldCandidates,
+      links: mergedOutput.links || [],
+      inferences: mergedOutput.inferences || [],
+      resolutions: mergedOutput.resolutions,
+      conflicts: mergedOutput.conflicts || [],
+      applied_resolution_count: applied.appliedCount,
+      applied_paths: applied.appliedPaths,
+    };
+
+    return {
+      sections: applied.sections,
+      audit,
+      appliedResolutionCount: applied.appliedCount,
+      candidateFieldCount: fieldCandidates.length,
+      linkCount: (mergedOutput.links || []).length,
+      inferenceCount: (mergedOutput.inferences || []).length,
+      usedLlm,
+    };
+  }
+
+  private getFusionSupportedPaths(): Set<string> {
+    return new Set([
+      'ticket.requester_name',
+      'ticket.requester_email',
+      'ticket.affected_user_name',
+      'ticket.affected_user_email',
+      'identity.user_principal_name',
+      'identity.account_status',
+      'identity.mfa_state',
+      'identity.licenses_summary',
+      'endpoint.device_name',
+      'endpoint.device_type',
+      'endpoint.os_name',
+      'endpoint.os_version',
+      'endpoint.last_check_in',
+      'endpoint.user_signed_in',
+      'network.public_ip',
+      'network.isp_name',
+      'network.vpn_state',
+      'network.location_context',
+      'infra.firewall_make_model',
+      'infra.wifi_make_model',
+      'infra.switch_make_model',
+    ]);
+  }
+
+  private buildFusionFieldCandidates(input: {
+    sections: IterativeEnrichmentSections;
+    ticket: TicketLike;
+    normalizedTicket: any | null;
+    itglueEnriched: ItglueEnrichedPayload | null;
+    ninjaEnriched: NinjaEnrichedPayload | null;
+    device: any | null;
+    deviceDetails: any | null;
+    loggedInUser: string;
+    loggedInAt: string;
+  }, supportedPaths: Set<string>): FusionFieldCandidate[] {
+    const out: FusionFieldCandidate[] = [];
+    const push = (candidate: FusionFieldCandidate) => {
+      if (!supportedPaths.has(candidate.path)) return;
+      const v = candidate.value;
+      if (v === undefined || v === null) return;
+      if (typeof v === 'string' && !String(v).trim()) return;
+      out.push(candidate);
+    };
+
+    for (const record of this.flattenEnrichmentFields(input.sections)) {
+      if (!supportedPaths.has(record.path)) continue;
+      push({
+        path: record.path,
+        source: `baseline:${record.field.source_system}`,
+        value: (record.field as any).value,
+        status: record.field.status,
+        confidence: Number(record.field.confidence || 0),
+        evidence_refs: [record.field.source_ref || record.path].filter(Boolean),
+      });
+    }
+
+    const itgMap: Record<string, string> = {
+      isp_name: 'network.isp_name',
+      firewall_make_model: 'infra.firewall_make_model',
+      wifi_make_model: 'infra.wifi_make_model',
+      switch_make_model: 'infra.switch_make_model',
+    };
+    for (const [itKey, path] of Object.entries(itgMap)) {
+      const raw = input.itglueEnriched?.fields?.[itKey];
+      if (!raw) continue;
+      push({
+        path,
+        source: 'itglue_enriched',
+        value: raw.value,
+        status: String(raw.value || '').toLowerCase() === 'unknown' ? 'unknown' : 'inferred',
+        confidence: Number(raw.confidence || 0),
+        evidence_refs: Array.isArray(raw.evidence_refs) ? raw.evidence_refs.map((r) => `itglue.${r}`) : [],
+      });
+    }
+
+    const ninjaMap: Record<string, string> = {
+      device_name: 'endpoint.device_name',
+      device_type: 'endpoint.device_type',
+      os_name: 'endpoint.os_name',
+      os_version: 'endpoint.os_version',
+      last_check_in: 'endpoint.last_check_in',
+      user_signed_in: 'endpoint.user_signed_in',
+      public_ip: 'network.public_ip',
+      vpn_state: 'network.vpn_state',
+    };
+    for (const [nKey, path] of Object.entries(ninjaMap)) {
+      const raw = input.ninjaEnriched?.fields?.[nKey];
+      if (!raw) continue;
+      push({
+        path,
+        source: 'ninja_enriched',
+        value: raw.value,
+        status: String(raw.value || '').toLowerCase() === 'unknown' ? 'unknown' : 'inferred',
+        confidence: Number(raw.confidence || 0),
+        evidence_refs: Array.isArray(raw.evidence_refs) ? raw.evidence_refs.map((r) => `ninja.${r}`) : [],
+      });
+    }
+
+    push({
+      path: 'endpoint.device_name',
+      source: 'ninja_selected_device',
+      value: String(input.device?.hostname || input.device?.systemName || ''),
+      status: input.device ? 'confirmed' : 'unknown',
+      confidence: input.device ? 0.9 : 0,
+      evidence_refs: ['ninja.selected_device.hostname'],
+    });
+    push({
+      path: 'endpoint.os_name',
+      source: 'ninja_selected_device',
+      value: String(input.deviceDetails?.osName || input.device?.osName || ''),
+      status: (input.deviceDetails || input.device) ? 'confirmed' : 'unknown',
+      confidence: (input.deviceDetails || input.device) ? 0.88 : 0,
+      evidence_refs: ['ninja.selected_device_details.osName'],
+    });
+    push({
+      path: 'endpoint.os_version',
+      source: 'ninja_selected_device',
+      value: String(input.deviceDetails?.osVersion || input.device?.osVersion || ''),
+      status: (input.deviceDetails || input.device) ? 'confirmed' : 'unknown',
+      confidence: (input.deviceDetails || input.device) ? 0.85 : 0,
+      evidence_refs: ['ninja.selected_device_details.osVersion'],
+    });
+    push({
+      path: 'endpoint.last_check_in',
+      source: 'ninja_selected_device',
+      value: String(input.device?.lastContact || input.device?.lastActivityTime || input.loggedInAt || ''),
+      status: input.device ? 'confirmed' : 'unknown',
+      confidence: input.device ? 0.85 : 0,
+      evidence_refs: ['ninja.selected_device.lastContact'],
+    });
+    push({
+      path: 'endpoint.user_signed_in',
+      source: 'ninja_last_login',
+      value: String(input.loggedInUser || ''),
+      status: input.loggedInUser ? 'inferred' : 'unknown',
+      confidence: input.loggedInUser ? 0.8 : 0,
+      evidence_refs: ['ninja.last_logged_on_user'],
+    });
+    push({
+      path: 'identity.user_principal_name',
+      source: 'ticket_normalized',
+      value: String(input.normalizedTicket?.affectedUserEmail || input.normalizedTicket?.requesterEmail || ''),
+      status: input.normalizedTicket?.affectedUserEmail || input.normalizedTicket?.requesterEmail ? 'inferred' : 'unknown',
+      confidence: input.normalizedTicket?.affectedUserEmail || input.normalizedTicket?.requesterEmail ? 0.7 : 0,
+      evidence_refs: ['ticket.normalized.round0'],
+    });
+
+    return out
+      .sort((a, b) => b.confidence - a.confidence)
+      .slice(0, 200);
+  }
+
+  private buildFusionLinksAndInferences(input: {
+    ticket: TicketLike;
+    ticketNarrative: string;
+    itglueContacts: any[];
+    ninjaSoftwareInventory: any[];
+    device: any | null;
+    loggedInUser: string;
+  }): { links: FusionLink[]; inferences: FusionInference[] } {
+    const links: FusionLink[] = [];
+    const inferences: FusionInference[] = [];
+    const loggedUser = this.normalizeSimpleToken(input.loggedInUser || '');
+
+    const requesterName = this.normalizeName(String(input.ticket.canonicalRequesterName || input.ticket.requester || ''));
+    const affectedName = this.normalizeName(String(input.ticket.canonicalAffectedName || ''));
+    const actorName = affectedName && affectedName.toLowerCase() !== 'unknown' ? affectedName : requesterName;
+    const actorAliases = this.generateNameAliases(actorName);
+
+    if (loggedUser && input.itglueContacts.length > 0) {
+      let best: { contact: any; score: number; refs: string[]; note: string } | null = null;
+      for (const contact of input.itglueContacts.slice(0, 200)) {
+        const attrs = contact?.attributes || contact || {};
+        const contactName = this.normalizeName(String(attrs.name || [attrs.first_name, attrs.last_name].filter(Boolean).join(' ')));
+        const email = String(attrs.primary_email || '').toLowerCase().trim();
+        const emailLocal = this.normalizeSimpleToken(email.split('@')[0] || '');
+        const aliases = this.generateNameAliases(contactName);
+        let score = 0;
+        const refs: string[] = [];
+        if (emailLocal && emailLocal === loggedUser) { score += 0.95; refs.push(`itglue.contact:${contact?.id}.primary_email`); }
+        if (aliases.has(loggedUser)) { score = Math.max(score, 0.88); refs.push(`itglue.contact:${contact?.id}.name_alias`); }
+        if (actorAliases.has(loggedUser)) { score = Math.max(score, 0.82); refs.push('ticket.actor_alias'); }
+        if (emailLocal && actorAliases.has(emailLocal)) { score = Math.max(score, 0.86); refs.push('ticket.actor_email_alias'); }
+        if (score > 0 && (!best || score > best.score)) {
+          best = { contact, score, refs: [...new Set(refs)], note: `${contactName || 'contact'} ↔ ${loggedUser}` };
+        }
+      }
+      if (best) {
+        const contactId = String(best.contact?.id || 'unknown');
+        links.push({
+          id: `link-identity-${contactId}-${loggedUser}`,
+          kind: 'identity_alias',
+          from_entity: `itglue_contact:${contactId}`,
+          to_entity: `ninja_user:${loggedUser}`,
+          confidence: Number(best.score.toFixed(3)),
+          evidence_refs: [...best.refs, 'ninja.last_logged_on_user'],
+          note: best.note,
+        });
+        inferences.push({
+          id: `inf-identity-${contactId}`,
+          claim: `IT Glue contact likely matches Ninja last logged-on user ${loggedUser}`,
+          type: 'identity_link',
+          confidence: Number(best.score.toFixed(3)),
+          evidence_chain: [...best.refs, 'ninja.last_logged_on_user'],
+        });
+      }
+    }
+
+    if (input.device && loggedUser) {
+      links.push({
+        id: `link-device-user-${String(input.device.id || 'selected')}`,
+        kind: 'device_user',
+        from_entity: `device:${String(input.device.id || 'selected')}`,
+        to_entity: `ninja_user:${loggedUser}`,
+        confidence: 0.84,
+        evidence_refs: ['ninja.selected_device', 'ninja.last_logged_on_user'],
+        note: 'Selected device and last logged-on user observed in same org scope',
+      });
+    }
+
+    const ticketSoftwareMentions = this.extractSoftwareHintsFromTicket(input.ticketNarrative);
+    if (ticketSoftwareMentions.length > 0 && Array.isArray(input.ninjaSoftwareInventory) && input.ninjaSoftwareInventory.length > 0) {
+      const byDevice = new Map<string, { hits: string[]; score: number }>();
+      for (const row of input.ninjaSoftwareInventory.slice(0, 500)) {
+        const softwareName = String(row?.name || '').toLowerCase();
+        if (!softwareName) continue;
+        for (const mention of ticketSoftwareMentions) {
+          if (softwareName.includes(mention) || mention.includes(softwareName)) {
+            const did = String(row?.deviceId || 'unknown');
+            const current = byDevice.get(did) || { hits: [], score: 0 };
+            current.hits.push(String(row?.name || mention));
+            current.score += 0.4;
+            byDevice.set(did, current);
+          }
+        }
+      }
+      for (const [deviceId, hit] of Array.from(byDevice.entries()).sort((a, b) => b[1].score - a[1].score).slice(0, 5)) {
+        const confidence = Math.max(0.45, Math.min(0.9, hit.score));
+        links.push({
+          id: `link-ticket-soft-${deviceId}`,
+          kind: 'ticket_software_device',
+          from_entity: 'ticket:current',
+          to_entity: `device:${deviceId}`,
+          confidence: Number(confidence.toFixed(3)),
+          evidence_refs: ['ticket.software_mentions', `ninja.software_inventory_query.device:${deviceId}`],
+          note: `Ticket software hints matched Ninja software inventory (${[...new Set(hit.hits)].slice(0, 3).join(', ')})`,
+        });
+        inferences.push({
+          id: `inf-soft-${deviceId}`,
+          claim: `Ticket may relate to device ${deviceId} based on software inventory matches`,
+          type: 'software_relevance',
+          confidence: Number(confidence.toFixed(3)),
+          evidence_chain: ['ticket.software_mentions', `ninja.software_inventory_query.device:${deviceId}`],
+        });
+      }
+    }
+
+    return { links, inferences };
+  }
+
+  private buildFusionAdjudicationPrompt(input: {
+    ticket: TicketLike;
+    ticketNarrative: string;
+    fieldCandidates: FusionFieldCandidate[];
+    links: FusionLink[];
+    inferences: FusionInference[];
+  }): string {
+    const grouped: Record<string, FusionFieldCandidate[]> = {};
+    for (const c of input.fieldCandidates) {
+      const bucket = grouped[c.path] || (grouped[c.path] = []);
+      if (bucket.length < 6) bucket.push(c);
+    }
+    return `You are a cross-source data fusion adjudicator for IT support triage.
+
+Task:
+- Resolve fields using complementary evidence across ticket/email, IT Glue, and NinjaOne.
+- DO NOT use "winner source" thinking; sources may complement each other.
+- You MAY infer using multi-hop evidence chains (e.g., user name <-> alias <-> last login <-> software on device), but only if you provide evidence_refs and (when inferential) inference_refs.
+
+Rules:
+1. Return ONLY valid JSON.
+2. If uncertain, prefer status="unknown" or "conflict".
+3. For non-unknown resolutions, evidence_refs must be non-empty.
+4. Use resolution_mode:
+   - direct (single-source direct observation)
+   - assembled (complementary multi-source assembly)
+   - inferred (heuristic / multi-hop inference)
+   - fallback
+   - unknown
+5. Do not remove existing strong values unless your evidence is stronger or complementary.
+6. Enum constraints:
+   - identity.account_status: enabled|locked|disabled|unknown
+   - identity.mfa_state: enrolled|not_enrolled|unknown
+   - endpoint.device_type: desktop|laptop|mobile|unknown
+   - network.vpn_state: connected|disconnected|unknown
+   - network.location_context: office|remote|unknown
+
+Ticket summary:
+${JSON.stringify({
+      id: input.ticket.ticketNumber || input.ticket.id || '',
+      title: input.ticket.title || '',
+      requester: input.ticket.requester || '',
+      company: input.ticket.company || '',
+    })}
+
+Ticket narrative (normalized+raw context excerpt):
+${input.ticketNarrative.slice(0, 2200)}
+
+Field candidates by path:
+${JSON.stringify(grouped, null, 2).slice(0, 14000)}
+
+Link candidates:
+${JSON.stringify(input.links, null, 2).slice(0, 6000)}
+
+Inference candidates:
+${JSON.stringify(input.inferences, null, 2).slice(0, 6000)}
+
+Output schema:
+{
+  "resolutions": [
+    {
+      "path": "ticket.affected_user_name",
+      "value": "Alex Hall",
+      "status": "confirmed|inferred|unknown|conflict",
+      "confidence": 0.0,
+      "resolution_mode": "direct|assembled|inferred|fallback|unknown",
+      "evidence_refs": ["..."],
+      "inference_refs": ["inf-..."],
+      "note": "optional"
+    }
+  ],
+  "links": [],
+  "inferences": [],
+  "conflicts": [{"field":"path","note":"...", "evidence_refs":["..."]}]
+}`;
+  }
+
+  private sanitizeFusionAdjudicationOutput(parsed: any, supportedPaths: Set<string>): FusionAdjudicationOutput {
+    const resolutions: FusionFieldResolution[] = Array.isArray(parsed?.resolutions)
+      ? parsed.resolutions
+        .map((r: any): FusionFieldResolution | null => {
+          const path = String(r?.path || '').trim();
+          if (!supportedPaths.has(path)) return null;
+          const status = ['confirmed', 'inferred', 'unknown', 'conflict'].includes(String(r?.status))
+            ? String(r.status) as FusionFieldResolution['status']
+            : 'unknown';
+          const resolutionMode = ['direct', 'assembled', 'inferred', 'fallback', 'unknown'].includes(String(r?.resolution_mode))
+            ? String(r.resolution_mode) as FusionFieldResolution['resolution_mode']
+            : 'unknown';
+          const confidence = Number.isFinite(Number(r?.confidence)) ? Math.max(0, Math.min(1, Number(r.confidence))) : 0;
+          const evidenceRefs = Array.isArray(r?.evidence_refs) ? r.evidence_refs.map(String).filter(Boolean).slice(0, 20) : [];
+          const inferenceRefs = Array.isArray(r?.inference_refs) ? r.inference_refs.map(String).filter(Boolean).slice(0, 20) : undefined;
+          return {
+            path,
+            value: r?.value,
+            status,
+            confidence,
+            resolution_mode: resolutionMode,
+            evidence_refs: evidenceRefs,
+            ...(inferenceRefs && inferenceRefs.length ? { inference_refs: inferenceRefs } : {}),
+            ...(r?.note ? { note: String(r.note).slice(0, 300) } : {}),
+          };
+        })
+        .filter(Boolean) as FusionFieldResolution[]
+      : [];
+    return {
+      resolutions,
+      links: Array.isArray(parsed?.links) ? parsed.links as FusionLink[] : [],
+      inferences: Array.isArray(parsed?.inferences) ? parsed.inferences as FusionInference[] : [],
+      conflicts: Array.isArray(parsed?.conflicts) ? parsed.conflicts.map((c: any) => ({
+        field: String(c?.field || ''),
+        note: String(c?.note || ''),
+        evidence_refs: Array.isArray(c?.evidence_refs) ? c.evidence_refs.map(String) : undefined,
+      })) : [],
+    };
+  }
+
+  private buildDeterministicFusionFallbackResolutions(input: {
+    sections: IterativeEnrichmentSections;
+    itglueContacts: any[];
+    loggedInUser: string;
+  }, links: FusionLink[]): FusionFieldResolution[] {
+    const out: FusionFieldResolution[] = [];
+    const identityLink = links
+      .filter((l) => l.kind === 'identity_alias')
+      .sort((a, b) => b.confidence - a.confidence)[0];
+    if (!identityLink || identityLink.confidence < 0.8) return out;
+    const contactId = identityLink.from_entity.replace('itglue_contact:', '');
+    const contact = input.itglueContacts.find((c: any) => String(c?.id || '') === contactId);
+    const attrs = contact?.attributes || {};
+    const name = this.normalizeName(String(attrs.name || [attrs.first_name, attrs.last_name].filter(Boolean).join(' ')));
+    const email = String(attrs.primary_email || '').trim().toLowerCase();
+    if (name) {
+      out.push({
+        path: 'ticket.affected_user_name',
+        value: name,
+        status: 'inferred',
+        confidence: Math.min(0.9, identityLink.confidence),
+        resolution_mode: 'assembled',
+        evidence_refs: identityLink.evidence_refs,
+        inference_refs: [`inf-identity-${contactId}`],
+        note: 'Deterministic fallback from IT Glue contact ↔ Ninja last-login alias link',
+      });
+    }
+    if (email) {
+      out.push({
+        path: 'ticket.affected_user_email',
+        value: email,
+        status: 'inferred',
+        confidence: Math.min(0.9, identityLink.confidence),
+        resolution_mode: 'assembled',
+        evidence_refs: identityLink.evidence_refs,
+        inference_refs: [`inf-identity-${contactId}`],
+        note: 'Deterministic fallback from IT Glue contact ↔ Ninja last-login alias link',
+      });
+      out.push({
+        path: 'identity.user_principal_name',
+        value: email,
+        status: 'inferred',
+        confidence: Math.min(0.88, identityLink.confidence),
+        resolution_mode: 'assembled',
+        evidence_refs: identityLink.evidence_refs,
+        inference_refs: [`inf-identity-${contactId}`],
+      });
+    }
+    return out;
+  }
+
+  private applyFusionResolutionsToSections(
+    sections: IterativeEnrichmentSections,
+    resolutions: FusionFieldResolution[]
+  ): { sections: IterativeEnrichmentSections; appliedCount: number; appliedPaths: string[] } {
+    const next: IterativeEnrichmentSections = {
+      ticket: { ...sections.ticket },
+      identity: { ...sections.identity },
+      endpoint: { ...sections.endpoint },
+      network: { ...sections.network },
+      infra: { ...sections.infra },
+    };
+    let appliedCount = 0;
+    const appliedPaths: string[] = [];
+
+    for (const resolution of resolutions) {
+      const current = this.getEnrichmentFieldByPath(next, resolution.path);
+      if (!current) continue;
+      const normalized = this.normalizeFusionResolutionValue(resolution.path, resolution.value);
+      const isUnknown = this.isFusionUnknownValue(normalized);
+      if (!isUnknown && (!Array.isArray(resolution.evidence_refs) || resolution.evidence_refs.length === 0)) {
+        continue;
+      }
+      const nextStatus = isUnknown ? 'unknown' : resolution.status;
+      const nextConfidence = isUnknown ? 0 : Number(resolution.confidence || 0);
+
+      const currentIsStrong = current.status === 'confirmed' && Number(current.confidence || 0) >= 0.85;
+      const incomingIsWeaker =
+        nextStatus !== 'conflict' &&
+        nextStatus !== 'confirmed' &&
+        nextConfidence < Number(current.confidence || 0);
+      if (currentIsStrong && incomingIsWeaker) continue;
+      if (isUnknown && current.status !== 'unknown') continue;
+
+      const sourceRef = [
+        ...(resolution.evidence_refs || []),
+        ...((resolution.inference_refs || []).slice(0, 3)),
+      ].join(' | ');
+      const updated = this.buildField({
+        value: normalized as any,
+        status: nextStatus as any,
+        confidence: nextConfidence,
+        sourceSystem: resolution.resolution_mode === 'assembled' || resolution.resolution_mode === 'inferred'
+          ? 'fusion_graph_llm'
+          : 'fusion_direct_llm',
+        sourceRef: sourceRef || undefined,
+        round: 7,
+      });
+      this.setEnrichmentFieldByPath(next, resolution.path, updated);
+      appliedCount += 1;
+      appliedPaths.push(resolution.path);
+    }
+
+    return { sections: next, appliedCount, appliedPaths };
+  }
+
+  private getEnrichmentFieldByPath(
+    sections: IterativeEnrichmentSections,
+    path: string
+  ): EnrichmentField<unknown> | null {
+    const [section, key] = path.split('.');
+    if (!section || !key) return null;
+    const sec = (sections as any)[section];
+    if (!sec || typeof sec !== 'object') return null;
+    return (sec as any)[key] || null;
+  }
+
+  private setEnrichmentFieldByPath(
+    sections: IterativeEnrichmentSections,
+    path: string,
+    field: EnrichmentField<any>
+  ): void {
+    const [section, key] = path.split('.');
+    if (!section || !key) return;
+    const sec = (sections as any)[section];
+    if (!sec || typeof sec !== 'object') return;
+    (sec as any)[key] = field;
+  }
+
+  private normalizeFusionResolutionValue(path: string, value: unknown): unknown {
+    if (value === null || value === undefined) return 'unknown';
+    const raw = typeof value === 'string' ? value.trim() : value;
+    const str = typeof raw === 'string' ? raw : '';
+    if (!str && typeof raw !== 'string') return raw;
+
+    if (path === 'identity.account_status') {
+      const v = str.toLowerCase();
+      if (['enabled', 'locked', 'disabled', 'unknown'].includes(v)) return v;
+      if (v.includes('disable')) return 'disabled';
+      if (v.includes('lock')) return 'locked';
+      if (v.includes('enable') || v.includes('active')) return 'enabled';
+      return 'unknown';
+    }
+    if (path === 'identity.mfa_state') {
+      const v = str.toLowerCase();
+      if (['enrolled', 'not_enrolled', 'unknown'].includes(v)) return v;
+      if (v.includes('not') || v.includes('disable')) return 'not_enrolled';
+      if (v.includes('enroll') || v.includes('enabled')) return 'enrolled';
+      return 'unknown';
+    }
+    if (path === 'endpoint.device_type') {
+      const v = str.toLowerCase();
+      if (['desktop', 'laptop', 'mobile', 'unknown'].includes(v)) return v;
+      if (/(notebook|laptop)/.test(v)) return 'laptop';
+      if (/(iphone|ipad|android|mobile)/.test(v)) return 'mobile';
+      if (/(desktop|workstation|pc)/.test(v)) return 'desktop';
+      return 'unknown';
+    }
+    if (path === 'network.vpn_state') {
+      const v = str.toLowerCase();
+      if (['connected', 'disconnected', 'unknown'].includes(v)) return v;
+      if (/(connected|up|established)/.test(v)) return 'connected';
+      if (/(disconnected|down|not connected)/.test(v)) return 'disconnected';
+      return 'unknown';
+    }
+    if (path === 'network.location_context') {
+      const v = str.toLowerCase();
+      if (['office', 'remote', 'unknown'].includes(v)) return v;
+      if (/(office|onsite|on-site|site)/.test(v)) return 'office';
+      if (/(remote|home|vpn)/.test(v)) return 'remote';
+      return 'unknown';
+    }
+    return typeof raw === 'string' ? str || 'unknown' : raw;
+  }
+
+  private isFusionUnknownValue(value: unknown): boolean {
+    if (value === null || value === undefined) return true;
+    if (typeof value === 'string') {
+      const v = value.trim().toLowerCase();
+      return !v || v === 'unknown' || v === 'n/a' || v === 'null';
+    }
+    return false;
+  }
+
+  private normalizeSimpleToken(value: string): string {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
+  private generateNameAliases(name: string): Set<string> {
+    const aliases = new Set<string>();
+    const normalized = this.normalizeName(name);
+    const parts = normalized.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return aliases;
+    const first = parts[0];
+    const last = parts[parts.length - 1];
+    aliases.add(this.normalizeSimpleToken(normalized));
+    if (first) aliases.add(first);
+    if (last) aliases.add(last);
+    if (first && last) {
+      aliases.add(`${first[0]}${last}`);
+      aliases.add(`${first}.${last}`);
+      aliases.add(`${first}_${last}`);
+      aliases.add(`${first}${last[0]}`);
+    }
+    return new Set([...aliases].map((a) => this.normalizeSimpleToken(a)).filter(Boolean));
+  }
+
+  private extractSoftwareHintsFromTicket(text: string): string[] {
+    const lower = String(text || '').toLowerCase();
+    const hints = new Set<string>();
+    const known = [
+      'autocad', 'acad', 'outlook', 'teams', 'excel', 'word', 'quickbooks', 'adobe', 'acrobat',
+      'forticlient', 'vpn', 'chrome', 'edge', 'zoom', 'gotoconnect', 'goto'
+    ];
+    for (const k of known) {
+      if (lower.includes(k)) hints.add(k);
+    }
+    const quoted = lower.match(/\b[a-z][a-z0-9.+_-]{3,}\b/g) || [];
+    for (const token of quoted.slice(0, 50)) {
+      if (/(ticket|hello|please|thanks|support|issue|internet|office|user)/.test(token)) continue;
+      if (known.some((k) => token.includes(k) || k.includes(token))) hints.add(token);
+    }
+    return [...hints].slice(0, 12);
+  }
+
   private parseMakeModel(value: string): { vendor: string; model: string } | null {
     const normalized = String(value || '').trim();
     if (!normalized || normalized.toLowerCase() === 'unknown') return null;
@@ -3145,6 +4394,9 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
     if (round === 4) return 'history_correlation';
     if (round === 5) return 'itglue_refinement';
     if (round === 6) return 'ninja_refinement';
+    if (round === 7) return 'cross_source_fusion';
+    if (round === 8) return 'history_correlation_broad';
+    if (round === 9) return 'final_refinement_verify_backfill';
     return `round_${round}`;
   }
 
@@ -3457,37 +4709,635 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
     return this.findRelatedCasesByTerms([ticketTitle], orgId);
   }
 
-  private async findRelatedCasesByTerms(terms: string[], orgId?: string): Promise<RelatedCase[]> {
+  private buildBroadHistorySearchPlan(input: {
+    ticket: TicketLike;
+    ticketNarrative: string;
+    normalizedTicket: any | null;
+    sections: IterativeEnrichmentSections;
+    docs: Doc[];
+    fusionAudit?: Record<string, unknown>;
+  }): { terms: string[]; strategies: string[] } {
+    const termScores = new Map<string, number>();
+    const strategies = new Set<string>(['email-fallback-local-history']);
+
+    const addPhrase = (value: unknown, weight: number, strategy: string) => {
+      const text = String(value || '').replace(/\s+/g, ' ').trim();
+      if (!text) return;
+      const lower = text.toLowerCase();
+      if (lower === 'unknown' || lower === 'none' || lower === 'n/a') return;
+      if (text.length > 120) return;
+      termScores.set(text, Math.max(weight, termScores.get(text) || 0));
+      strategies.add(strategy);
+    };
+    const addTokenized = (value: unknown, weight: number, strategy: string) => {
+      const tokens = String(value || '')
+        .toLowerCase()
+        .split(/[^a-z0-9._-]+/)
+        .map((t) => t.trim())
+        .filter((t) => t.length >= 3);
+      for (const token of tokens.slice(0, 12)) {
+        if (/^(the|and|for|with|from|this|that|ticket|issue|hello|please|thanks|support|team|user|email|outside)$/i.test(token)) {
+          continue;
+        }
+        addPhrase(token, weight, strategy);
+      }
+    };
+
+    const fields = this.flattenEnrichmentFields(input.sections);
+    const preferredPaths = new Set([
+      'ticket.company',
+      'ticket.requester_name',
+      'ticket.requester_email',
+      'ticket.affected_user_name',
+      'ticket.affected_user_email',
+      'identity.user_principal_name',
+      'endpoint.device_name',
+      'endpoint.user_signed_in',
+      'network.isp_name',
+      'network.public_ip',
+      'infra.firewall_make_model',
+      'infra.wifi_make_model',
+      'infra.switch_make_model',
+    ]);
+    for (const record of fields) {
+      if (!preferredPaths.has(record.path)) continue;
+      if (record.field.status === 'unknown') continue;
+      addPhrase(record.field.value, 1, 'fused_ssot');
+      addTokenized(record.field.value, 0.8, 'fused_ssot');
+      if (String(record.path).includes('user_name')) {
+        for (const alias of this.generateNameAliases(String(record.field.value || ''))) {
+          addPhrase(alias, 0.95, 'identity_alias');
+        }
+      }
+      if (String(record.path).includes('email')) {
+        const email = String(record.field.value || '').toLowerCase();
+        addPhrase(email, 1, 'identity_email');
+        addPhrase(email.split('@')[0] || '', 0.95, 'identity_email_local');
+      }
+    }
+
+    addPhrase(input.ticket.title, 0.95, 'ticket_title');
+    addPhrase(input.normalizedTicket?.descriptionClean, 0.8, 'ticket_clean');
+    addPhrase(input.normalizedTicket?.descriptionUi, 0.75, 'ticket_ui');
+    for (const symptom of (input.normalizedTicket?.symptoms || []).slice(0, 12)) addPhrase(symptom, 0.9, 'ticket_symptom');
+    for (const tech of (input.normalizedTicket?.technologyFacets || []).slice(0, 12)) addPhrase(tech, 0.85, 'ticket_tech');
+    for (const hint of (input.normalizedTicket?.deviceHints || []).slice(0, 8)) addPhrase(hint, 0.85, 'ticket_device_hint');
+
+    for (const domain of this.extractEmailDomains(`${input.ticketNarrative} ${input.normalizedTicket?.descriptionClean || ''}`)) {
+      addPhrase(domain, 0.95, 'domain');
+      addPhrase(domain.split('.')[0] || '', 0.8, 'domain_root');
+    }
+    for (const software of this.extractSoftwareHintsFromTicket(input.ticketNarrative)) {
+      addPhrase(software, 0.95, 'software_hint');
+    }
+    for (const doc of input.docs.slice(0, 10)) {
+      addPhrase(doc.title, 0.6, 'itglue_doc_title');
+      addTokenized(doc.title, 0.45, 'itglue_doc_title');
+    }
+
+    const fusionLinks = Array.isArray((input.fusionAudit as any)?.links) ? (input.fusionAudit as any).links : [];
+    const fusionInferences = Array.isArray((input.fusionAudit as any)?.inferences) ? (input.fusionAudit as any).inferences : [];
+    const fusionResolutions = Array.isArray((input.fusionAudit as any)?.resolutions) ? (input.fusionAudit as any).resolutions : [];
+    for (const link of fusionLinks.slice(0, 20)) {
+      addPhrase(link?.note, 0.6, 'fusion_link_note');
+      addTokenized(link?.from_entity, 0.55, 'fusion_link_entity');
+      addTokenized(link?.to_entity, 0.55, 'fusion_link_entity');
+    }
+    for (const inf of fusionInferences.slice(0, 20)) {
+      addPhrase(inf?.claim, 0.65, 'fusion_inference_claim');
+    }
+    for (const res of fusionResolutions.slice(0, 20)) {
+      addPhrase(res?.value, 0.75, 'fusion_resolution');
+    }
+
+    const ranked = [...termScores.entries()]
+      .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
+      .map(([term]) => term)
+      .filter(Boolean);
+
+    return {
+      terms: ranked.slice(0, 28),
+      strategies: [...strategies],
+    };
+  }
+
+  private buildFinalRefinementPlan(input: {
+    sections: IterativeEnrichmentSections;
+    missingData: Array<{ field: string; why: string }>;
+    fusionAudit?: Record<string, unknown>;
+    historyCalibration?: TicketContextAppendix['history_confidence_calibration'];
+    historyCorrelation?: TicketContextAppendix['history_correlation'];
+  }): { targets: string[]; terms: string[] } {
+    const targets = new Set<string>();
+    const terms = new Set<string>();
+
+    for (const m of input.missingData.slice(0, 20)) {
+      if (m?.field) targets.add(String(m.field));
+      for (const token of String(m?.why || '').toLowerCase().split(/[^a-z0-9._-]+/)) {
+        if (token.length >= 4 && !/(failed|error|unknown|resolve|deterministically)/.test(token)) terms.add(token);
+      }
+    }
+    for (const record of this.flattenEnrichmentFields(input.sections)) {
+      if (record.field.status === 'unknown' || record.field.status === 'conflict') {
+        targets.add(record.path);
+      }
+    }
+    const conflicts = Array.isArray((input.fusionAudit as any)?.conflicts) ? (input.fusionAudit as any).conflicts : [];
+    for (const c of conflicts.slice(0, 10)) {
+      if (c?.field) targets.add(String(c.field));
+      for (const token of String(c?.note || '').toLowerCase().split(/[^a-z0-9._-]+/)) {
+        if (token.length >= 4) terms.add(token);
+      }
+    }
+    for (const adj of input.historyCalibration?.field_adjustments || []) {
+      if (adj.action === 'decrease' || adj.action === 'context_only') targets.add(adj.path);
+    }
+    for (const contradiction of input.historyCalibration?.contradictions || []) {
+      targets.add(contradiction.path);
+      for (const v of contradiction.observed_values) {
+        for (const token of String(v || '').toLowerCase().split(/[^a-z0-9._-]+/)) {
+          if (token.length >= 3) terms.add(token);
+        }
+      }
+    }
+    for (const t of input.historyCorrelation?.search_terms?.slice(0, 12) || []) {
+      if (String(t || '').trim()) terms.add(String(t));
+    }
+    return {
+      targets: [...targets].slice(0, 20),
+      terms: [...terms].map((t) => t.trim()).filter(Boolean).sort((a, b) => b.length - a.length).slice(0, 24),
+    };
+  }
+
+  private shouldRunFinalNinjaRefinement(input: {
+    sections: IterativeEnrichmentSections;
+    finalRefinementPlanTargets: string[];
+    currentDevice: any | null;
+  }): boolean {
+    if (!input.currentDevice) return true;
+    if (input.finalRefinementPlanTargets.some((target) => /(device|endpoint|vpn|public_ip|user_signed_in)/.test(target))) {
+      return true;
+    }
+    return (
+      input.sections.endpoint.device_name.status !== 'confirmed' ||
+      input.sections.endpoint.user_signed_in.status === 'unknown' ||
+      input.sections.network.public_ip.status === 'unknown' ||
+      input.sections.network.vpn_state.status === 'unknown'
+    );
+  }
+
+  private async findRelatedCasesBroad(input: {
+    ticketId?: string;
+    orgId?: string;
+    terms: string[];
+  }): Promise<RelatedCase[]> {
+    const normalizedTerms = this.normalizeHistoryTerms(input.terms);
+    if (normalizedTerms.length === 0) return [];
     try {
-      const keyword = this.pickHistoryKeyword(terms);
-      const cases = await query<{ ticket_id: string; summary: string; resolution: string; resolved_at: string }>(
+      const rows = await query<{
+        ticket_id: string;
+        symptom_text: string;
+        resolution_text: string;
+        resolved_at: string;
+      }>(
         `
-        SELECT 
+        SELECT
           t.ticket_id,
-          array_agg(DISTINCT l.payload->>'summary') as summary,
-          array_agg(DISTINCT l.payload->>'content') as resolution,
-          max(t.updated_at) as resolved_at
+          COALESCE(string_agg(DISTINCT l.payload->>'summary', ' || '), '') AS symptom_text,
+          COALESCE(string_agg(DISTINCT l.payload->>'content', ' || '), '') AS resolution_text,
+          max(t.updated_at) AS resolved_at
         FROM triage_sessions t
         LEFT JOIN llm_outputs l ON t.id = l.session_id
-        WHERE t.status = 'approved' 
-        AND (t.ticket_id ILIKE $1 OR l.payload->>'summary' ILIKE $2)
-        ${orgId ? 'AND t.org_id = $3' : ''}
+        WHERE t.status = 'approved'
+        ${input.orgId ? 'AND t.org_id = $1' : ''}
+        ${input.ticketId ? `AND t.ticket_id <> $${input.orgId ? 2 : 1}` : ''}
         GROUP BY t.ticket_id
-        LIMIT 3
+        ORDER BY max(t.updated_at) DESC
+        LIMIT 250
         `,
-        orgId ? [`%${keyword}%`, `%${keyword}%`, orgId] : [`%${keyword}%`, `%${keyword}%`]
+        [
+          ...(input.orgId ? [input.orgId] : []),
+          ...(input.ticketId ? [input.ticketId] : []),
+        ]
       );
 
-      return cases.map((c) => ({
-        ticket_id: c.ticket_id,
-        symptom: Array.isArray(c.summary) ? c.summary[0] : String(c.summary),
-        resolution: Array.isArray(c.resolution) ? c.resolution[0] : String(c.resolution),
-        resolved_at: c.resolved_at,
+      const scored = rows
+        .map((row) => {
+          const haystack = `${row.ticket_id} ${row.symptom_text} ${row.resolution_text}`.toLowerCase();
+          const match = this.scoreHistoryCandidate(haystack, normalizedTerms);
+          return {
+            row,
+            score: match.score,
+            matchedTerms: match.matchedTerms,
+          };
+        })
+        .filter((entry) => entry.score > 0 && entry.matchedTerms.length > 0)
+        .sort((a, b) => b.score - a.score || String(b.row.resolved_at || '').localeCompare(String(a.row.resolved_at || '')))
+        .slice(0, 6);
+
+      return scored.map(({ row }) => ({
+        ticket_id: row.ticket_id,
+        symptom: String(row.symptom_text || '').slice(0, 1200),
+        resolution: String(row.resolution_text || '').slice(0, 1600),
+        resolved_at: row.resolved_at,
       }));
+    } catch (error) {
+      console.log('[PrepareContext] Could not run broad related case search:', error);
+      return [];
+    }
+  }
+
+  private async findRelatedCasesByTerms(terms: string[], orgId?: string): Promise<RelatedCase[]> {
+    try {
+      const broad = await this.findRelatedCasesBroad({ ...(orgId ? { orgId } : {}), terms });
+      if (broad.length > 0) return broad.slice(0, 3);
+
+      const keyword = this.pickHistoryKeyword(terms);
+      const fallback = await this.findRelatedCasesBroad({ ...(orgId ? { orgId } : {}), terms: [keyword] });
+      return fallback.slice(0, 3);
     } catch (error) {
       console.log('[PrepareContext] Could not find related cases:', error);
       return [];
     }
+  }
+
+  private normalizeHistoryTerms(terms: string[]): Array<{ term: string; normalized: string; weight: number }> {
+    const out = new Map<string, { term: string; normalized: string; weight: number }>();
+    for (const rawTerm of terms) {
+      const term = String(rawTerm || '').replace(/\s+/g, ' ').trim();
+      if (!term) continue;
+      if (term.length < 3) continue;
+      if (term.length > 120) continue;
+      const lower = term.toLowerCase();
+      if (['unknown', 'none', 'n/a', 'null', 'false', 'true'].includes(lower)) continue;
+      const normalized = lower.replace(/[^a-z0-9.@_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!normalized) continue;
+      let weight = 1;
+      if (/@/.test(term)) weight += 0.35;
+      if (/\./.test(term) && /[a-z]/i.test(term)) weight += 0.25;
+      if (term.includes(' ')) weight += 0.2;
+      if (normalized.length >= 8) weight += 0.1;
+      const existing = out.get(normalized);
+      if (!existing || weight > existing.weight) {
+        out.set(normalized, { term, normalized, weight: Number(Math.min(2, weight).toFixed(2)) });
+      }
+    }
+    return [...out.values()]
+      .sort((a, b) => b.weight - a.weight || b.normalized.length - a.normalized.length)
+      .slice(0, 32);
+  }
+
+  private scoreHistoryCandidate(
+    haystack: string,
+    terms: Array<{ term: string; normalized: string; weight: number }>
+  ): { score: number; matchedTerms: string[] } {
+    let score = 0;
+    const matchedTerms: string[] = [];
+    const tokenSet = new Set(
+      haystack
+        .split(/[^a-z0-9.@_-]+/)
+        .map((t) => t.trim())
+        .filter(Boolean)
+    );
+
+    for (const term of terms) {
+      const exactPhrase = haystack.includes(term.normalized);
+      const tokenParts = term.normalized.split(' ').filter(Boolean);
+      const allParts = tokenParts.length > 1 && tokenParts.every((part) => tokenSet.has(part));
+      const anyToken = tokenParts.some((part) => tokenSet.has(part));
+      if (exactPhrase) {
+        score += 1.2 * term.weight;
+        matchedTerms.push(term.term);
+        continue;
+      }
+      if (allParts) {
+        score += 0.75 * term.weight;
+        matchedTerms.push(term.term);
+        continue;
+      }
+      if (anyToken && term.normalized.length >= 6) {
+        score += 0.35 * term.weight;
+        matchedTerms.push(term.term);
+      }
+    }
+
+    const uniqueMatches = [...new Set(matchedTerms)];
+    if (uniqueMatches.length >= 3) score += 0.8;
+    if (uniqueMatches.length >= 5) score += 0.6;
+    return {
+      score: Number(score.toFixed(3)),
+      matchedTerms: uniqueMatches.slice(0, 12),
+    };
+  }
+
+  private applyFinalRefinementToEnrichment(input: {
+    sections: IterativeEnrichmentSections;
+    ticketNarrative: string;
+    docs: Doc[];
+    itglueConfigs: any[];
+    itgluePasswords: any[];
+    signals: Signal[];
+    device: any | null;
+    deviceDetails: any | null;
+    loggedInUser: string;
+    loggedInAt: string;
+  }): string[] {
+    const updatedPaths: string[] = [];
+    const patchIfBetter = (path: string, nextField: EnrichmentField<any>) => {
+      const current = this.getEnrichmentFieldByPath(input.sections, path);
+      if (!current) return;
+      const nextUnknown = nextField.status === 'unknown' || Number(nextField.confidence || 0) <= 0;
+      if (nextUnknown) return;
+      const currentWeak =
+        current.status === 'unknown' ||
+        current.status === 'conflict' ||
+        Number(current.confidence || 0) < 0.5;
+      const improves = currentWeak || Number(nextField.confidence || 0) > Number(current.confidence || 0) + 0.05;
+      if (!improves) return;
+      this.setEnrichmentFieldByPath(input.sections, path, nextField);
+      updatedPaths.push(path);
+    };
+
+    const firewall = this.extractInfraMakeModel('firewall', input.itglueConfigs, input.docs);
+    patchIfBetter('infra.firewall_make_model', this.buildField({
+      value: firewall.value,
+      status: firewall.status,
+      confidence: firewall.confidence,
+      sourceSystem: firewall.sourceSystem,
+      sourceRef: firewall.sourceRef,
+      round: 9,
+    }));
+    const wifi = this.extractInfraMakeModel('wifi', input.itglueConfigs, input.docs);
+    patchIfBetter('infra.wifi_make_model', this.buildField({
+      value: wifi.value,
+      status: wifi.status,
+      confidence: wifi.confidence,
+      sourceSystem: wifi.sourceSystem,
+      sourceRef: wifi.sourceRef,
+      round: 9,
+    }));
+    const sw = this.extractInfraMakeModel('switch', input.itglueConfigs, input.docs);
+    patchIfBetter('infra.switch_make_model', this.buildField({
+      value: sw.value,
+      status: sw.status,
+      confidence: sw.confidence,
+      sourceSystem: sw.sourceSystem,
+      sourceRef: sw.sourceRef,
+      round: 9,
+    }));
+
+    const isp = this.inferIspName({ ticketNarrative: input.ticketNarrative, docs: input.docs, itglueConfigs: input.itglueConfigs });
+    if (isp) {
+      patchIfBetter('network.isp_name', this.buildField({
+        value: isp,
+        status: 'inferred',
+        confidence: 0.78,
+        sourceSystem: 'final_refinement',
+        sourceRef: 'itglue configs+docs + ticket narrative (round9)',
+        round: 9,
+      }));
+    }
+    const phoneProviderName = this.inferPhoneProvider({
+      ticketText: input.ticketNarrative,
+      docs: input.docs,
+      itglueConfigs: input.itglueConfigs,
+      itgluePasswords: input.itgluePasswords,
+      signals: input.signals,
+    });
+    if (phoneProviderName) {
+      patchIfBetter('network.phone_provider', this.buildField({
+        value: 'connected',
+        status: 'inferred',
+        confidence: 0.73,
+        sourceSystem: 'final_refinement',
+        sourceRef: 'ticket+itglue+ninja signals round9',
+        round: 9,
+      }));
+      patchIfBetter('network.phone_provider_name', this.buildField({
+        value: phoneProviderName,
+        status: 'inferred',
+        confidence: 0.76,
+        sourceSystem: 'final_refinement',
+        sourceRef: 'provider keyword match round9',
+        round: 9,
+      }));
+    }
+
+    if (input.device || input.deviceDetails) {
+      const endpointSection = this.buildEndpointEnrichmentSection({
+        ticketNarrative: input.ticketNarrative,
+        device: input.device,
+        deviceDetails: input.deviceDetails,
+        loggedInUser: input.loggedInUser,
+        loggedInAt: input.loggedInAt,
+        ninjaChecks: input.signals.filter((s) => s.source === 'ninja'),
+      });
+      patchIfBetter('endpoint.device_name', { ...endpointSection.device_name, round: 9 });
+      patchIfBetter('endpoint.device_type', { ...endpointSection.device_type, round: 9 });
+      patchIfBetter('endpoint.os_name', { ...endpointSection.os_name, round: 9 });
+      patchIfBetter('endpoint.os_version', { ...endpointSection.os_version, round: 9 });
+      patchIfBetter('endpoint.last_check_in', { ...endpointSection.last_check_in, round: 9 });
+      patchIfBetter('endpoint.user_signed_in', { ...endpointSection.user_signed_in, round: 9 });
+    }
+
+    patchIfBetter('network.vpn_state', this.buildField({
+      value: this.inferVpnState(input.signals, input.ticketNarrative),
+      status: this.inferVpnState(input.signals, input.ticketNarrative) === 'unknown' ? 'unknown' : 'inferred',
+      confidence: this.inferVpnState(input.signals, input.ticketNarrative) === 'unknown' ? 0 : 0.68,
+      sourceSystem: 'final_refinement',
+      sourceRef: 'ninja signals round9',
+      round: 9,
+    }));
+    const publicIp = this.resolvePublicIp(input.device, input.deviceDetails);
+    if (publicIp) {
+      patchIfBetter('network.public_ip', this.buildField({
+        value: publicIp,
+        status: 'confirmed',
+        confidence: 0.84,
+        sourceSystem: 'ninjaone',
+        sourceRef: 'ninja final refinement selected device',
+        round: 9,
+      }));
+    }
+
+    return [...new Set(updatedPaths)];
+  }
+
+  private applyHistoryConfidenceCalibration(input: {
+    sections: IterativeEnrichmentSections;
+    relatedCases: RelatedCase[];
+  }): HistoryCalibrationResult {
+    const next: IterativeEnrichmentSections = {
+      ticket: { ...input.sections.ticket },
+      identity: { ...input.sections.identity },
+      endpoint: { ...input.sections.endpoint },
+      network: { ...input.sections.network },
+      infra: { ...input.sections.infra },
+    };
+    const fields = this.flattenEnrichmentFields(next);
+    const trackedPaths = new Set([
+      'ticket.affected_user_name',
+      'ticket.affected_user_email',
+      'identity.user_principal_name',
+      'endpoint.device_name',
+      'endpoint.user_signed_in',
+      'network.isp_name',
+      'infra.firewall_make_model',
+      'infra.wifi_make_model',
+      'infra.switch_make_model',
+    ]);
+    const caseHaystacks = input.relatedCases.map((rc) => ({
+      ticket_id: rc.ticket_id,
+      text: `${rc.ticket_id} ${rc.symptom || ''} ${rc.resolution || ''}`.toLowerCase(),
+    }));
+
+    const fieldAdjustments: NonNullable<TicketContextAppendix['history_confidence_calibration']>['field_adjustments'] = [];
+    const contradictions: NonNullable<TicketContextAppendix['history_confidence_calibration']>['contradictions'] = [];
+
+    for (const record of fields) {
+      if (!trackedPaths.has(record.path)) continue;
+      const currentValue = String(record.field.value || '').trim();
+      if (!currentValue || currentValue.toLowerCase() === 'unknown') continue;
+
+      const supportTerms = this.buildHistorySupportTermsForField(record.path, currentValue);
+      if (supportTerms.length === 0) continue;
+
+      const supportCaseIds: string[] = [];
+      for (const hc of caseHaystacks) {
+        const hits = supportTerms.filter((term) => hc.text.includes(term));
+        if (hits.length === 0) continue;
+        const phraseHit = hc.text.includes(currentValue.toLowerCase());
+        if (phraseHit || hits.length >= Math.min(2, supportTerms.length)) {
+          supportCaseIds.push(hc.ticket_id);
+        }
+      }
+
+      let contradictionCaseIds: string[] = [];
+      if (record.path === 'network.isp_name') {
+        const currentIsp = this.inferIspName({ ticketNarrative: currentValue, docs: [], itglueConfigs: [] });
+        if (currentIsp) {
+          const altProviders = new Set<string>();
+          for (const hc of caseHaystacks) {
+            const observed = this.inferIspName({ ticketNarrative: hc.text, docs: [], itglueConfigs: [] });
+            if (!observed) continue;
+            const providerContextLikely =
+              hc.text.includes('dns') ||
+              hc.text.includes('internet') ||
+              hc.text.includes('comcast') ||
+              hc.text.includes('xfinity') ||
+              hc.text.includes('verizon');
+            if (observed !== currentIsp && providerContextLikely) {
+              altProviders.add(observed);
+              contradictionCaseIds.push(hc.ticket_id);
+            }
+          }
+          if (altProviders.size > 0) {
+            contradictions.push({
+              path: record.path,
+              current_value: currentValue,
+              observed_values: [...altProviders].slice(0, 5),
+              case_ids: [...new Set(contradictionCaseIds)].slice(0, 8),
+              note: 'Historical cases mention a different ISP/provider in similar context; verify current site/provider before diagnosis.',
+            });
+          }
+        }
+      }
+
+      const prevConfidence = Number(record.field.confidence || 0);
+      let delta = 0;
+      let action: 'boost' | 'decrease' | 'context_only' = 'context_only';
+      let reason = 'Historical cases are contextual only';
+      if (supportCaseIds.length > 0) {
+        delta += Math.min(0.15, 0.04 * supportCaseIds.length);
+        action = 'boost';
+        reason = `Historical matches support ${record.path} via repeated terms (${supportCaseIds.length} case(s))`;
+      }
+      if (contradictionCaseIds.length > 0) {
+        const penalty = Math.min(0.12, 0.05 * contradictionCaseIds.length);
+        delta -= penalty;
+        action = delta >= 0 ? action : 'decrease';
+        reason = supportCaseIds.length > 0
+          ? 'Historical support exists but contradictory provider evidence reduced confidence'
+          : 'Historical contradictions reduced confidence pending confirmation';
+      }
+
+      if (Math.abs(delta) < 0.0001) {
+        fieldAdjustments.push({
+          path: record.path,
+          action: 'context_only',
+          delta_confidence: 0,
+          previous_confidence: Number(prevConfidence.toFixed(3)),
+          new_confidence: Number(prevConfidence.toFixed(3)),
+          support_case_ids: [...new Set(supportCaseIds)].slice(0, 8),
+          ...(contradictionCaseIds.length ? { contradiction_case_ids: [...new Set(contradictionCaseIds)].slice(0, 8) } : {}),
+          reason,
+        });
+        continue;
+      }
+
+      const newConfidence = Number(Math.max(0, Math.min(1, prevConfidence + delta)).toFixed(3));
+      const adjustedField = this.buildField({
+        value: record.field.value as any,
+        status: record.field.status,
+        confidence: newConfidence,
+        sourceSystem: String(record.field.source_system || 'history_calibrated'),
+        sourceRef: [
+          record.field.source_ref || record.path,
+          `history_calibration:${action}`,
+          ...[...new Set(supportCaseIds)].slice(0, 3).map((id) => `case:${id}`),
+        ].join(' | '),
+        round: Math.max(8, Number(record.field.round || 1)),
+        observedAt: record.field.observed_at,
+      });
+      this.setEnrichmentFieldByPath(next, record.path, adjustedField);
+      fieldAdjustments.push({
+        path: record.path,
+        action,
+        delta_confidence: Number(delta.toFixed(3)),
+        previous_confidence: Number(prevConfidence.toFixed(3)),
+        new_confidence: newConfidence,
+        support_case_ids: [...new Set(supportCaseIds)].slice(0, 8),
+        ...(contradictionCaseIds.length ? { contradiction_case_ids: [...new Set(contradictionCaseIds)].slice(0, 8) } : {}),
+        reason,
+      });
+    }
+
+    return {
+      sections: next,
+      appendix: {
+        round: 8,
+        field_adjustments: fieldAdjustments,
+        contradictions,
+      },
+    };
+  }
+
+  private buildHistorySupportTermsForField(path: string, currentValue: string): string[] {
+    const terms = new Set<string>();
+    const raw = String(currentValue || '').trim().toLowerCase();
+    if (!raw || raw === 'unknown') return [];
+    terms.add(raw);
+    for (const token of raw.split(/[^a-z0-9.@_-]+/).filter(Boolean)) {
+      if (token.length >= 3) terms.add(token);
+    }
+    if (path.includes('user_name')) {
+      for (const alias of this.generateNameAliases(currentValue)) {
+        if (alias.length >= 3) terms.add(alias);
+      }
+    }
+    if (path.includes('email')) {
+      const local = raw.split('@')[0] || '';
+      const domain = raw.split('@')[1] || '';
+      if (local.length >= 3) terms.add(local);
+      if (domain.length >= 3) terms.add(domain);
+    }
+    if (path === 'network.isp_name') {
+      const canonical = this.inferIspName({ ticketNarrative: currentValue, docs: [], itglueConfigs: [] });
+      if (canonical) terms.add(canonical.toLowerCase());
+      if (/comcast/i.test(currentValue)) terms.add('xfinity');
+      if (/xfinity/i.test(currentValue)) terms.add('comcast');
+    }
+    return [...terms].slice(0, 12);
   }
 
   private pickHistoryKeyword(terms: string[]): string {
@@ -4033,6 +5883,44 @@ export async function getTicketTextArtifact(
     return row || null;
   } catch (error) {
     console.error('[DB] Failed to fetch ticket text artifact:', error);
+    return null;
+  }
+}
+
+export async function persistTicketContextAppendix(
+  ticketId: string,
+  sessionId: string,
+  payload: TicketContextAppendix
+): Promise<void> {
+  try {
+    await execute(
+      `INSERT INTO ticket_context_appendix (ticket_id, session_id, payload, created_at, updated_at)
+       VALUES ($1, $2, $3, NOW(), NOW())
+       ON CONFLICT (ticket_id)
+       DO UPDATE SET payload = EXCLUDED.payload, session_id = EXCLUDED.session_id, updated_at = NOW()`,
+      [ticketId, sessionId, JSON.stringify(payload)]
+    );
+    console.log(`[DB] Persisted ticket context appendix for ticket ${ticketId}`);
+  } catch (error) {
+    console.error('[DB] Failed to persist ticket context appendix:', error);
+  }
+}
+
+export async function getTicketContextAppendix(
+  ticketId: string
+): Promise<{ payload: TicketContextAppendix; created_at: string; updated_at: string } | null> {
+  try {
+    const row = await queryOne<{ payload: TicketContextAppendix; created_at: string; updated_at: string }>(
+      `SELECT payload, created_at, updated_at
+       FROM ticket_context_appendix
+       WHERE ticket_id = $1
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [ticketId]
+    );
+    return row || null;
+  } catch (error) {
+    console.error('[DB] Failed to fetch ticket context appendix:', error);
     return null;
   }
 }

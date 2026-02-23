@@ -7,6 +7,7 @@ import type { PlaybookOutput, ValidationOutput } from '@playbook-brain/types';
 import { generatePlaybook } from '../services/playbook-writer.js';
 import {
   getEvidencePack,
+  getTicketContextAppendix,
   getTicketTextArtifact,
   persistEvidencePack,
 } from '../services/prepare-context.js';
@@ -154,6 +155,15 @@ router.get('/full-flow', async (req, res) => {
           [ticketId]
         );
       }
+      const hasTicketContextAppendix = await queryOne<{ exists: boolean }>(
+        `SELECT to_regclass('public.ticket_context_appendix') IS NOT NULL AS exists`
+      );
+      if (hasTicketContextAppendix?.exists) {
+        await execute(
+          `DELETE FROM ticket_context_appendix WHERE ticket_id = $1`,
+          [ticketId]
+        );
+      }
       const hasTicketSSOT = await queryOne<{ exists: boolean }>(
         `SELECT to_regclass('public.ticket_ssot') IS NOT NULL AS exists`
       );
@@ -262,6 +272,7 @@ router.get('/full-flow', async (req, res) => {
     );
     const ssot = ssotResult?.payload || null;
     const ticketTextArtifact = await getTicketTextArtifact(String(ticketId || rawId || ''));
+    const ticketContextAppendix = await getTicketContextAppendix(String(ticketId || rawId || ''));
     const normalizedDescription = String(
       normalizedTicketSection?.description_clean?.value || ''
     ).trim();
@@ -560,6 +571,7 @@ router.get('/full-flow', async (req, res) => {
         ticket: canonicalTicket,
         ssot,
         ticket_text_artifact: ticketTextArtifact?.payload || null,
+        ticket_context_appendix: ticketContextAppendix?.payload || null,
         pack,
         diagnosis,
         validation,

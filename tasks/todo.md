@@ -1,5 +1,5 @@
 # Task: Corrigir contrato dos Passos 1-2 (Despertar + Prepare Context)
-**Status**: implementing
+**Status**: verifying
 **Started**: 2026-02-23
 
 ## Plan
@@ -16,6 +16,9 @@
 - Se a “reinterpretação para UI” deve ser persistida no SSOT ou apenas em artifact derivado para frontend
 
 ## Progress Notes
+- 2d (cross-source fusion) implementado: candidatos determinísticos + links/inferences + adjudicação LLM estruturada + aplicação pós-validação em round 7 antes do SSOT.
+- `ticket_ssot` agora pode carregar `fusion_audit` opcional (audit trail de evidências/inferências aplicadas).
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após 2d.
 - 2c (Ninja) entregue no padrão 2b: `ninja_org_snapshot` + `ninja_org_enriched` + refresh cleanup best-effort.
 - Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após 2c.
 - Inventário criado em `wiki/architecture/2026-02-23-ninjaone-itglue-capture-inventory-for-step2b-2c.md` (IT Glue oficial confirmado; NinjaOne parcial via Postman/apidocs públicos + gaps).
@@ -25,6 +28,9 @@
 - Usuário corrigiu o contrato funcional do Prepare Context com definição explícita de 2a..2f.
 
 ## Progress Notes
+- 2d (cross-source fusion) implementado: candidatos determinísticos + links/inferences + adjudicação LLM estruturada + aplicação pós-validação em round 7 antes do SSOT.
+- `ticket_ssot` agora pode carregar `fusion_audit` opcional (audit trail de evidências/inferências aplicadas).
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após 2d.
 - 2c (Ninja) entregue no padrão 2b: `ninja_org_snapshot` + `ninja_org_enriched` + refresh cleanup best-effort.
 - Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após 2c.
 - Inventário criado em `wiki/architecture/2026-02-23-ninjaone-itglue-capture-inventory-for-step2b-2c.md` (IT Glue oficial confirmado; NinjaOne parcial via Postman/apidocs públicos + gaps).
@@ -33,6 +39,15 @@
 - Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após mudança.
 - 2a entregue: artefato separado `ticket_text_artifacts` + `data.ticket_text_artifact` no full-flow + toggle Reframed/Original no evento Autotask.
 - Verificação: `pnpm --filter @playbook-brain/api typecheck` e `pnpm --filter @playbook-brain/web typecheck` OK.
+- 2e (histórico amplo) implementado como segunda correlação pós-fusão (round 8): termos ponderados vindos de SSOT/fusion/ticket/docs + scoring local sobre casos aprovados (Autotask/email fallback).
+- `related_cases` final e `evidence_digest` agora são recompostos após a busca ampla de histórico; `iterative_enrichment.rounds` passa a refletir `history_correlation_broad`.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após 2e.
+- Extensão do 2e aprovada e implementada: histórico agora também calibra confiança dos campos do enrichment/SSOT (boost/decrease/context-only) e registra contradictions de ISP em appendix separado.
+- Novo artefato `ticket_context_appendix` persistido por ticket (history correlation + history confidence calibration + fusion summary) e exposto no `/playbook/full-flow`.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após artifact appendix + calibration.
+- 2f implementado: passada final IT Glue + Ninja guiada por gaps/conflicts/history appendix (`round 9`) com backfill conservador de campos no enrichment e recalculo de evidence/coverage/rounds.
+- `ticket_context_appendix.final_refinement` agora registra targets, termos, docs adicionados, sinais Ninja adicionados e campos atualizados.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após 2f.
 
 ## Review
 (fill in after completion)

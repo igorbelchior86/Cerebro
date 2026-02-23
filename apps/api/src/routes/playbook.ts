@@ -20,13 +20,21 @@ const fullFlowInFlight = new Set<string>();
 
 function isTransientProviderError(error: unknown): boolean {
   const message = String((error as any)?.message || error || '').toLowerCase();
+  if ((error as any)?.name === 'LLMQuotaExceededError') return true;
   return message.includes('[geminilimiter]') ||
     message.includes('rpd limit reached') ||
     message.includes('resource_exhausted') ||
     message.includes('429') ||
     message.includes('rate limit') ||
     message.includes('timeout') ||
-    message.includes('temporarily unavailable');
+    message.includes('temporarily unavailable') ||
+    message.includes('service unavailable') ||
+    message.includes('econnreset') ||
+    message.includes('etimedout') ||
+    message.includes('network error') ||
+    message.includes('api key not set') ||
+    message.includes('invalid api key') ||
+    message.includes('access is denied');
 }
 
 // ─── GET /playbook/full-flow ──────────────────────────────
@@ -407,7 +415,7 @@ router.get('/full-flow', async (req, res) => {
           `UPDATE triage_sessions
            SET status = $1, updated_at = NOW()
            WHERE id = $2`,
-          [isTransientProviderError(bgErr) ? 'blocked' : 'failed', sessionId]
+          [isTransientProviderError(bgErr) ? 'pending' : 'failed', sessionId]
         );
       }
     };

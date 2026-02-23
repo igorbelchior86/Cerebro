@@ -44,13 +44,13 @@ const PRIORITY_COLOR: Record<string, string> = {
 const STATUS_CONFIG = {
   completed: { color: '#1DB98A', bg: 'rgba(29,185,138,0.09)', border: 'rgba(29,185,138,0.2)', dot: '#1DB98A', localeKey: 'statusDone', pulse: false },
   processing: { color: '#5B7FFF', bg: 'rgba(91,127,255,0.10)', border: 'rgba(91,127,255,0.22)', dot: '#5B7FFF', localeKey: 'statusProcessing', pulse: true },
-  pending: { color: 'rgba(228,234,248,0.28)', bg: 'rgba(255,255,255,0.05)', border: 'rgba(255,255,255,0.055)', dot: 'rgba(228,234,248,0.14)', localeKey: 'statusPending', pulse: false },
+  pending: { color: '#EAB308', bg: 'rgba(234,179,8,0.10)', border: 'rgba(234,179,8,0.22)', dot: '#EAB308', localeKey: 'statusPending', pulse: true },
   failed: { color: '#F87171', bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.18)', dot: '#F87171', localeKey: 'statusFailed', pulse: false },
 };
 
 const FILTERS = [
   { id: 'all', localeKey: 'filterAll' },
-  { id: 'processing', localeKey: 'filterActive' },
+  { id: 'processing', localeKey: 'statusProcessing' },
   { id: 'completed', localeKey: 'statusDone' },
   { id: 'failed', localeKey: 'statusFailed' },
 ];
@@ -58,8 +58,8 @@ const FILTER_IDS = new Set(FILTERS.map((f) => f.id));
 
 const STATUS_LABEL: Record<ActiveTicket['status'], string> = {
   completed: 'DONE',
-  processing: 'ACTIVE',
-  pending: 'PENDING',
+  processing: 'PROCESSING',
+  pending: 'WAITING',
   failed: 'FAILED',
 };
 

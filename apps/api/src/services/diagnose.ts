@@ -83,16 +83,16 @@ ${digest.missing_critical.map((m) => `- ${m.field}: ${m.why}`).join('\n') || '- 
 
 ### candidate_actions_with_evidence_refs
 ${digest.candidate_actions
-  .map((a) => `- ${a.action} | evidence_refs: ${a.evidence_refs.join(', ')}`)
-  .join('\n') || '- none'}
+          .map((a) => `- ${a.action} | evidence_refs: ${a.evidence_refs.join(', ')}`)
+          .join('\n') || '- none'}
 
 ### tech_context_detected
 ${digest.tech_context_detected.map((t) => `- ${t}`).join('\n') || '- none'}
 
 ### sources_consulted_by_facet
 ${Object.entries(digest.sources_consulted_by_facet || {})
-  .map(([facet, sources]) => `- ${facet}: ${(sources || []).join(', ')}`)
-  .join('\n') || '- none'}
+          .map(([facet, sources]) => `- ${facet}: ${(sources || []).join(', ')}`)
+          .join('\n') || '- none'}
 
 ### rejected_evidence
 ${(digest.rejected_evidence || []).map((r) => `- ${r.id}: ${r.reason} (${r.summary})`).join('\n') || '- none'}
@@ -103,16 +103,16 @@ ${(digest.rejected_evidence || []).map((r) => `- ${r.id}: ${r.reason} (${r.summa
       ? `
 ## RAW FALLBACK CONTEXT (ONLY WHEN DIGEST IS MISSING)
 ${pack.signals.length > 0
-  ? `### Signals\n${pack.signals
-      .map((s) => `- [${s.source.toUpperCase()}] ${s.type}: ${s.summary} (${s.timestamp})`)
-      .join('\n')}`
-  : ''}
+          ? `### Signals\n${pack.signals
+            .map((s) => `- [${s.source.toUpperCase()}] ${s.type}: ${s.summary} (${s.timestamp})`)
+            .join('\n')}`
+          : ''}
 ${pack.docs.length > 0
-  ? `\n### Docs\n${pack.docs.map((d) => `- [${d.source}] ${d.title}`).join('\n')}`
-  : ''}
+          ? `\n### Docs\n${pack.docs.map((d) => `- [${d.source}] ${d.title}`).join('\n')}`
+          : ''}
 ${pack.related_cases.length > 0
-  ? `\n### Related Cases\n${pack.related_cases.map((c) => `- ${c.symptom} -> ${c.resolution}`).join('\n')}`
-  : ''}
+          ? `\n### Related Cases\n${pack.related_cases.map((c) => `- ${c.symptom} -> ${c.resolution}`).join('\n')}`
+          : ''}
       `.trim()
       : '';
 
@@ -178,7 +178,7 @@ Rules:
   }
 
   /**
-   * Parse Claude's JSON response into DiagnosisOutput
+   * Parse LLM response into DiagnosisOutput
    */
   private parseResponse(responseText: string, pack: EvidencePack): DiagnosisOutput {
     try {
@@ -196,20 +196,28 @@ Rules:
       }
 
       const parsed = JSON.parse(cleanJson);
+      const algorithmicBaseline = this.calculateAlgorithmicBaseline(pack);
 
       const parsedDiagnosis: DiagnosisOutput = {
         summary: String(parsed.summary || 'Diagnosis complete.'),
         top_hypotheses: (parsed.top_hypotheses || []).map(
-          (h: any, idx: number) => ({
-            rank: h.rank || idx + 1,
-            hypothesis: h.hypothesis || 'Unknown hypothesis',
-            confidence: Math.min(1, Math.max(0, h.confidence || 0)),
-            evidence: Array.isArray(h.evidence) ? h.evidence : [],
-            tests: Array.isArray(h.tests) ? h.tests : [],
-            next_questions: Array.isArray(h.next_questions)
-              ? h.next_questions
-              : [],
-          })
+          (h: any, idx: number) => {
+            const llmConfidence = Math.min(1, Math.max(0, h.confidence || 0));
+            // BLENDING LOGIC: 60% LLM, 40% Algorithmic Baseline
+            // If internal identifier match is strong, baseline pushes it up.
+            const blendedConfidence = Number((0.6 * llmConfidence + 0.4 * algorithmicBaseline).toFixed(3));
+
+            return {
+              rank: h.rank || idx + 1,
+              hypothesis: h.hypothesis || 'Unknown hypothesis',
+              confidence: blendedConfidence,
+              evidence: Array.isArray(h.evidence) ? h.evidence : [],
+              tests: Array.isArray(h.tests) ? h.tests : [],
+              next_questions: Array.isArray(h.next_questions)
+                ? h.next_questions
+                : [],
+            };
+          }
         ),
         missing_data: Array.isArray(parsed.missing_data)
           ? parsed.missing_data
@@ -233,11 +241,51 @@ Rules:
 
       return parsedDiagnosis;
     } catch (err) {
-      console.error('[DIAGNOSE] Failed to parse Claude response:', err);
+      console.error('[DIAGNOSE] Failed to parse response:', err);
       throw new Error(
         `Diagnosis parse failed for ticket ${pack.ticket.id}: ${(err as Error)?.message || String(err)}`
       );
     }
+  }
+
+  /**
+   * Weighted Linear Model for deterministic confidence baseline
+   */
+  private calculateAlgorithmicBaseline(pack: EvidencePack): number {
+    let score = 0;
+    const capability = pack.capability_verification;
+    const entity = pack.entity_resolution;
+
+    // Asset Identification (Total max 0.6)
+    const reason = String(capability?.device_match_reason || '').toLowerCase();
+    if (reason.includes('serial') || reason.includes('asset tag')) {
+      score += 0.5; // Strong ID match
+    } else if (capability?.device_match_strong) {
+      score += 0.3; // Hostname/Generic match
+    }
+
+    if (pack.device && capability?.model_spec_confirmed) {
+      score += 0.1; // Hardware spec confirmation
+    }
+
+    // Actor Resolution (Total max 0.2)
+    if (entity?.resolved_actor?.confidence === 'strong') {
+      score += 0.2;
+    } else if (entity?.resolved_actor?.confidence === 'medium') {
+      score += 0.1;
+    }
+
+    // Org Context (Total max 0.1)
+    if (pack.org?.id && pack.org.id !== 'unknown') {
+      score += 0.1;
+    }
+
+    // History Correlation (Total max 0.1)
+    if ((pack.related_cases || []).length > 0) {
+      score += 0.1;
+    }
+
+    return Math.min(1.0, score);
   }
 }
 

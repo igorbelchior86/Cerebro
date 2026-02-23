@@ -15,6 +15,13 @@ export interface LLMResponse {
   costUsd: number;
 }
 
+export class LLMQuotaExceededError extends Error {
+  constructor(provider: string, message: string) {
+    super(`[${provider.toUpperCase()}_QUOTA_EXCEEDED] ${message}`);
+    this.name = 'LLMQuotaExceededError';
+  }
+}
+
 export interface LLMOptions {
   /** Override max_tokens for this call (useful for low-output tasks like tool planning). */
   maxTokens?: number;
@@ -482,8 +489,8 @@ class GeminiProvider implements LLMProvider {
       parts: [{ text: m.content }]
     }));
 
-    const rpm = parseInt(process.env.GEMINI_LIMIT_RPM || '5', 10);
-    const rpd = parseInt(process.env.GEMINI_LIMIT_RPD || '20', 10);
+    const rpm = parseInt(process.env.GEMINI_LIMIT_RPM || '15', 10);
+    const rpd = parseInt(process.env.GEMINI_LIMIT_RPD || '1500', 10);
     const tpm = parseInt(process.env.GEMINI_LIMIT_TPM || '250000', 10);
     const retryMax = parseInt(process.env.GEMINI_RETRY_MAX || '2', 10);
     const estimatedInputTokens = Math.max(500, Math.ceil(JSON.stringify(contents).length / 4));
@@ -522,6 +529,9 @@ class GeminiProvider implements LLMProvider {
     }
 
     if (!response || !response.ok) {
+      if (response?.status === 429) {
+        throw new LLMQuotaExceededError(this.name, lastError || 'Gemini quota limit reached');
+      }
       throw new Error(lastError || 'Gemini API call failed');
     }
 

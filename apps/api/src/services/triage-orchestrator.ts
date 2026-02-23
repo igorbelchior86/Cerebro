@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { execute, queryOne } from '../db/index.js';
+import { execute, queryOne, query } from '../db/index.js';
 import { tenantContext } from '../lib/tenantContext.js';
 import { PrepareContextService, persistEvidencePack } from './prepare-context.js';
 import { DiagnoseService } from './diagnose.js';
@@ -11,6 +11,7 @@ export class TriageOrchestrator {
     private diagnoseService: DiagnoseService;
     private validateService: ValidatePolicyService;
     private playbookService: PlaybookWriterService;
+    private retryIntervalId: NodeJS.Timeout | null = null;
 
     constructor() {
         this.prepareService = new PrepareContextService();
@@ -20,12 +21,72 @@ export class TriageOrchestrator {
     }
 
     /**
+     * Start a background listener to retry pending/stale sessions.
+     */
+    startRetryListener() {
+        if (this.retryIntervalId) return;
+        console.log('[Orchestrator] Starting background retry listener (every 2 mins)');
+
+        // Execute immediately on startup
+        this.processPendingSessions().catch(err =>
+            console.error('[Orchestrator] Initial pending sessions processing failed:', err)
+        );
+
+        this.retryIntervalId = setInterval(() => {
+            this.processPendingSessions().catch(err =>
+                console.error('[Orchestrator] Pending sessions processing failed:', err)
+            );
+        }, 2 * 60 * 1000);
+    }
+
+    private async processPendingSessions() {
+        return tenantContext.run({ tenantId: undefined, bypassRLS: true }, async () => {
+            // Find sessions that are 'pending' or 'processing' but stale (> 10 mins)
+            // Limit to 5 per cycle to avoid hammering the API
+            const staleSessions = await query<{ ticket_id: string }>(
+                `SELECT ticket_id FROM triage_sessions 
+                 WHERE status = 'pending' 
+                 OR (status = 'processing' AND updated_at < NOW() - INTERVAL '10 minutes')
+                 ORDER BY updated_at ASC
+                 LIMIT 5`
+            );
+
+            if (staleSessions.length === 0) return;
+
+            console.log(`[Orchestrator] Found ${staleSessions.length} stale/pending sessions. Processing batch...`);
+            let quotaHit = false;
+
+            for (const s of staleSessions) {
+                if (quotaHit) {
+                    console.log(`[Orchestrator] Quota was hit, skipping remaining tickets in this cycle.`);
+                    break;
+                }
+
+                try {
+                    await this.runPipeline(s.ticket_id, undefined, 'autotask');
+                } catch (err: any) {
+                    const message = String(err?.message || err || '').toLowerCase();
+                    console.error(`[Orchestrator] Error processing ${s.ticket_id}:`, message);
+                    if (this.isTransientProviderError(message) || err?.name === 'LLMQuotaExceededError') {
+                        quotaHit = true;
+                    }
+                }
+
+                // Delay 10s between tickets to avoid rate-limiting bursts
+                if (!quotaHit) {
+                    await new Promise(resolve => setTimeout(resolve, 10_000));
+                }
+            }
+        });
+    }
+
+    /**
      * Run the full triage pipeline for a ticket.
      * System-triggered pipeline always bypasses tenant RLS checks.
      */
     async runPipeline(ticketId: string, orgId?: string, source: 'email' | 'autotask' = 'autotask') {
         return tenantContext.run({ tenantId: undefined, bypassRLS: true }, async () => {
-            console.log(`[Orchestrator] Starting zero-click pipeline for ticket ${ticketId} (source: ${source})`);
+            console.log(`[Orchestrator] Starting pipeline for ticket ${ticketId} (source: ${source})`);
 
             const existingSession = await queryOne<{ id: string; status: string; updated_at: string }>(
                 `SELECT id, status, updated_at FROM triage_sessions WHERE ticket_id = $1 ORDER BY created_at DESC LIMIT 1`,
@@ -163,9 +224,9 @@ export class TriageOrchestrator {
             } catch (error: any) {
                 console.error(`[Orchestrator] [${sid}] Pipeline failed:`, error);
                 const message = String(error?.message || error || '');
-                if (this.isTransientProviderError(message)) {
-                    await this.updateSessionStatus(sid, 'blocked');
-                    console.warn(`[Orchestrator] [${sid}] Marked as blocked (transient provider error): ${message}`);
+                if (this.isTransientProviderError(message) || error.name === 'LLMQuotaExceededError') {
+                    await this.updateSessionStatus(sid, 'pending');
+                    console.warn(`[Orchestrator] [${sid}] Marked as pending for retry (quota/transient error): ${message}`);
                 } else {
                     await this.updateSessionStatus(sid, 'failed');
                 }
@@ -181,7 +242,15 @@ export class TriageOrchestrator {
             normalized.includes('429') ||
             normalized.includes('rate limit') ||
             normalized.includes('timeout') ||
-            normalized.includes('temporarily unavailable');
+            normalized.includes('temporarily unavailable') ||
+            normalized.includes('service unavailable') ||
+            normalized.includes('econnreset') ||
+            normalized.includes('etimedout') ||
+            normalized.includes('network error') ||
+            normalized.includes('api key not set') ||
+            normalized.includes('invalid api key') ||
+            normalized.includes('quota_exceeded') ||
+            normalized.includes('access is denied');
     }
 
     private async updateSessionStatus(

@@ -20,6 +20,7 @@ import emailIngestionRoutes from './routes/email-ingestion.js';
 import authRoutes from './routes/auth.js';
 import { requireAuth } from './middleware/auth.js';
 import { autoSeedAdmin } from './db/seed-admin.js';
+import { triageOrchestrator } from './services/triage-orchestrator.js';
 import { autotaskPollingService } from './services/autotask-polling.js';
 import { emailIngestionPollingService } from './services/email-ingestion-polling.js';
 import { bootstrapWorkspaceRuntimeSettings } from './services/runtime-settings.js';
@@ -129,6 +130,9 @@ app.listen(PORT, '0.0.0.0', async () => {
   );
   await autoSeedAdmin();
   await bootstrapWorkspaceRuntimeSettings();
+
+  // Start Triage Retry Listener (retries pending/stale sessions)
+  triageOrchestrator.startRetryListener();
 
   // Start Autotask Polling Service
   autotaskPollingService.start();

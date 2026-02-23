@@ -37,7 +37,7 @@ export class PlaybookWriterService {
     if (!validation.safe_to_generate_playbook) {
       throw new Error(
         `Cannot generate playbook - validation status: ${validation.status}. ` +
-          `Violations: ${validation.violations.map((v) => v.detail).join(', ')}`
+        `Violations: ${validation.violations.map((v) => v.detail).join(', ')}`
       );
     }
 
@@ -143,8 +143,8 @@ ${digest.facts_confirmed.map((fact) => `- [${fact.id}] ${fact.fact}`).join('\n')
 
 ### Candidate actions with refs
 ${digest.candidate_actions
-  .map((action) => `- ${action.action} | refs: ${action.evidence_refs.join(', ')}`)
-  .join('\n') || '- none'}
+          .map((action) => `- ${action.action} | refs: ${action.evidence_refs.join(', ')}`)
+          .join('\n') || '- none'}
 
 ### Missing critical
 ${digest.missing_critical.map((m) => `- ${m.field}: ${m.why}`).join('\n') || '- none'}
@@ -153,7 +153,8 @@ ${digest.missing_critical.map((m) => `- ${m.field}: ${m.why}`).join('\n') || '- 
 ${digest.rejected_evidence.map((r) => `- ${r.id}: ${r.reason} (${r.summary})`).join('\n') || '- none'}
 ` : ''}
 
-## VALIDATION GATES
+## VALIDATION GATES & ADVISOR WARNINGS
+${validation.violations.length > 0 ? `\n### 🛡️ ADVISOR NOTES (MANDATORY WARNINGS)\n${validation.violations.map(v => `- [${v.type}] ${v.detail}`).join('\n')}` : ''}
 
 ✅ Status: ${validation.status}
 ✅ Safe to generate: ${validation.safe_to_generate_playbook}
@@ -236,9 +237,9 @@ ${(diagnosis.do_not_do || []).map((action) => `- ❌ ${action}`).join('\n')}
 
 ## 📚 References
 ${pack.docs
-  .slice(0, 3)
-  .map((d) => `- [${d.title}](${d.id})`)
-  .join('\n')}
+        .slice(0, 3)
+        .map((d) => `- [${d.title}](${d.id})`)
+        .join('\n')}
 
 ---
 
@@ -248,6 +249,13 @@ ${pack.docs
 2. Be safe: Include warnings, verification steps, rollback
 3. Be clear: Use code blocks, formatting, step-by-step
 4. Be practical: Estimated time, prerequisites, dependencies
+
+## MANDATORY ADVISOR WARNING INJECTION
+If there are ADVISOR NOTES provided above, you MUST include a "🛡️ Advisor Notes" section immediately after the "📋 Overview" section in your Markdown output.
+For each note, use this format:
+> [!WARNING]
+> [Detail of the advisor note]
+
 5. No hallucinations: Only reference things in the evidence digest and validated diagnosis
 6. Do not turn missing integration credentials (401/invalid_client/auth failures) into root cause unless ticket explicitly mentions those integrations
 7. Do not introduce security-compromise narratives unless directly evidenced in this ticket/signals/docs

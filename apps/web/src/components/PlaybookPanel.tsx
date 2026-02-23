@@ -40,6 +40,7 @@ interface PlaybookPanelProps {
   status?: 'loading' | 'ready' | 'error';
   error?: string;
   data?: PlaybookData;
+  sessionStatus?: 'pending' | 'processing' | 'approved' | 'failed' | 'needs_more_info' | 'blocked' | undefined;
   children?: ReactNode;
 }
 
@@ -93,52 +94,54 @@ function formatEvidenceChipLabel(raw: string | { id: string; label?: string }): 
   return value.length > 44 ? `${value.slice(0, 41)}...` : value;
 }
 
-function parseChecklistFromMarkdown(content: string): ChecklistItem[] {
-  const lines = content.split('\n');
+function parseChecklistFromMarkdown(md: string): ChecklistItem[] {
+  if (!md) return [];
+  const lines = md.split('\n');
   const items: ChecklistItem[] = [];
-  let current: { id: string; text: string; details: string[] } | null = null;
-  let idx = 0;
+  let inSteps = false;
+  let currentItem: ChecklistItem | null = null;
+  let currentDetails: string[] = [];
 
-  const flush = () => {
-    if (!current) return;
-    const baseItem: ChecklistItem = {
-      id: current.id,
-      text: current.text.trim(),
-    };
-    const details = current.details.join('\n').trim();
-    if (details) baseItem.details_md = details;
-    items.push(baseItem);
-    current = null;
-  };
-
-  for (const rawLine of lines) {
-    const line = rawLine.replace(/\r/g, '');
-    const stepMatch = line.match(/^\s*(\d+)\.\s+(.+)$/);
-    if (stepMatch) {
-      flush();
-      current = {
-        id: `c${idx++}`,
-        text: String(stepMatch[2] || '').trim(),
-        details: [],
-      };
+  for (const line of lines) {
+    if (line.toLowerCase().includes('resolution steps') || line.toLowerCase().includes('steps')) {
+      inSteps = true;
       continue;
     }
-    if (current) {
-      if (line.trim().length === 0) {
-        const last = current.details.length > 0 ? current.details[current.details.length - 1] : null;
-        if (last !== null && last !== '') {
-          current.details.push('');
+    if (inSteps && line.startsWith('## ')) {
+      if (currentItem) {
+        if (currentDetails.length) currentItem.details_md = currentDetails.join('\n').trim();
+        items.push(currentItem);
+      }
+      break;
+    }
+
+    if (inSteps) {
+      const match = line.match(/^\d+\.\s+(.*)/);
+      if (match) {
+        if (currentItem) {
+          if (currentDetails.length) currentItem.details_md = currentDetails.join('\n').trim();
+          items.push(currentItem);
         }
-      } else {
-        current.details.push(line);
+        currentItem = {
+          id: `chk-${items.length}`,
+          text: match[1] || '',
+        };
+        currentDetails = [];
+      } else if (currentItem && line.trim()) {
+        currentDetails.push(line);
       }
     }
   }
-  flush();
+
+  if (currentItem) {
+    if (currentDetails.length) currentItem.details_md = currentDetails.join('\n').trim();
+    items.push(currentItem);
+  }
+
   return items;
 }
 
-export default function PlaybookPanel({ content, status = 'ready', data, children }: PlaybookPanelProps) {
+export default function PlaybookPanel({ content, status = 'ready', data, sessionStatus, children }: PlaybookPanelProps) {
   const [copied, setCopied] = useState(false);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [openEvidenceFor, setOpenEvidenceFor] = useState<number | null>(null);
@@ -150,27 +153,9 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
     });
   };
 
-  if (status === 'loading') {
-    return (
-      <div className="animate-slideInRight" style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0, flexShrink: 0, background: 'var(--bg-panel)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-        <div style={{ width: '32px', height: '32px', borderRadius: '50%', border: '2px solid rgba(91,127,255,0.25)', borderTopColor: '#5B7FFF', animation: 'spin 0.8s linear infinite' }} />
-        <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Generating playbook...</p>
-      </div>
-    );
-  }
-
-  if (!content && !data) {
-    return (
-      <div className="animate-slideInRight" style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0, flexShrink: 0, background: 'var(--bg-panel)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
-        <div style={{ width: '40px', height: '40px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', background: 'var(--bg-card)', border: '1px dashed var(--border-strong)' }}>📄</div>
-        <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Playbook will appear here</p>
-      </div>
-    );
-  }
-
   const ctx = data?.context ?? [];
   const hyps = data?.hypotheses ?? [];
-  const chk: ChecklistItem[] = data?.checklist
+  const chk: ChecklistItem[] = data?.checklist?.length
     ? data.checklist.map((item, i) => {
       const out: ChecklistItem = {
         id: item.id || `c${i}`,
@@ -179,7 +164,7 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
       if (item.details_md) out.details_md = item.details_md;
       return out;
     })
-    : (content ? parseChecklistFromMarkdown(content) : []);
+    : content ? parseChecklistFromMarkdown(content) : [];
   const esc = data?.escalate ?? [];
   const ticketId = data?.ticketId;
 
@@ -190,23 +175,28 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
       {/* Topbar */}
       <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, position: 'relative', zIndex: 1, background: 'var(--bg-panel)' }}>
         <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ color: '#1DB98A', flexShrink: 0 }}>
-          <rect x="1" y="1" width="12" height="12" rx="3" stroke="currentColor" strokeWidth="1.4"/>
-          <path d="M4 5h6M4 7.5h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+          <rect x="1" y="1" width="12" height="12" rx="3" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M4 5h6M4 7.5h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
         </svg>
         <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', flex: 1 }}>
           Network Playbook{ticketId ? ` — ${ticketId}` : ''}
+          {sessionStatus === 'pending' && (
+            <span style={{ marginLeft: '8px', color: '#EAB308', fontSize: '9px', fontWeight: 500, background: 'rgba(234,179,8,0.1)', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(234,179,8,0.2)' }}>
+              WAITING FOR QUOTA
+            </span>
+          )}
         </span>
         <button onClick={handleCopy}
           style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px', borderRadius: '6px', fontSize: '10.5px', fontWeight: 600, border: `1px solid ${copied ? 'var(--green-border)' : 'var(--border)'}`, background: 'var(--bg-card)', color: copied ? 'var(--green)' : 'var(--text-secondary)', cursor: 'pointer', transition: 'var(--transition)' }}
         >
           {copied ? (
             <span className="animate-check-pop" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
               Copied!
             </span>
           ) : (
             <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.3"><rect x="4" y="4" width="7" height="7" rx="1.5"/><path d="M8 4V2.5A1.5 1.5 0 006.5 1h-4A1.5 1.5 0 001 2.5v4A1.5 1.5 0 002.5 8H4"/></svg>
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.3"><rect x="4" y="4" width="7" height="7" rx="1.5" /><path d="M8 4V2.5A1.5 1.5 0 006.5 1h-4A1.5 1.5 0 001 2.5v4A1.5 1.5 0 002.5 8H4" /></svg>
               Copy
             </span>
           )}
@@ -232,10 +222,11 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
           </div>
         )}
 
-        {hyps.length > 0 && (
-          <div style={{ marginBottom: '22px' }}>
-            <SectionLabel>Hypotheses</SectionLabel>
-            {hyps.map((h) => {
+        {/* HYPOTHESES SECTION */}
+        <div style={{ marginBottom: '22px' }}>
+          <SectionLabel>Hypotheses</SectionLabel>
+          {hyps.length > 0 ? (
+            hyps.map((h) => {
               const c = confColor(h.confidence);
               const tone = confidenceTone(h.confidence);
               const category = hypothesisCategory(h.hypothesis);
@@ -338,13 +329,23 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
                   </div>
                 </div>
               );
-            })}
-          </div>
-        )}
+            })
+          ) : (status === 'loading' || sessionStatus === 'processing' || sessionStatus === 'pending') ? (
+            <div style={{ padding: '20px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px dashed var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '1.5px solid rgba(91,127,255,0.2)', borderTopColor: '#5B7FFF', animation: 'spin 0.8s linear infinite' }} />
+              <span style={{ fontSize: '10.5px', color: 'var(--text-faint)' }}>Generating hypotheses...</span>
+            </div>
+          ) : (
+            <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-faint)', fontSize: '11px' }}>
+              No hypotheses generated yet.
+            </div>
+          )}
+        </div>
 
-        {chk.length > 0 && (
-          <div style={{ marginBottom: '22px' }}>
-            <SectionLabel>Checklist</SectionLabel>
+        {/* CHECKLIST SECTION */}
+        <div style={{ marginBottom: '22px' }}>
+          <SectionLabel>Checklist</SectionLabel>
+          {chk.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
               {chk.map((item, i) => {
                 const done = !!checked[item.id];
@@ -355,7 +356,7 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
                     onMouseLeave={(e) => { if (!done) (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)'; }}
                   >
                     <div style={{ width: '15px', height: '15px', borderRadius: '4px', border: `1.5px solid ${done ? '#1DB98A' : 'var(--border-strong)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '0.5px', background: done ? '#1DB98A' : 'transparent', transition: 'var(--transition)' }}>
-                      {done && <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      {done && <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                     </div>
                     <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)', flexShrink: 0, marginTop: '0.5px', minWidth: '14px' }}>{i + 1}.</span>
                     <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -372,8 +373,17 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
                 );
               })}
             </div>
-          </div>
-        )}
+          ) : (status === 'loading' || sessionStatus === 'processing' || sessionStatus === 'pending') ? (
+            <div style={{ padding: '20px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px dashed var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+              <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '1.5px solid rgba(91,127,255,0.2)', borderTopColor: '#5B7FFF', animation: 'spin 0.8s linear infinite' }} />
+              <span style={{ fontSize: '10.5px', color: 'var(--text-faint)' }}>Creating checklist...</span>
+            </div>
+          ) : (
+            <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-faint)', fontSize: '11px' }}>
+              No checklist items available.
+            </div>
+          )}
+        </div>
 
         {esc.length > 0 && (
           <div style={{ marginBottom: '22px' }}>
@@ -389,7 +399,7 @@ export default function PlaybookPanel({ content, status = 'ready', data, childre
           </div>
         )}
 
-        {chk.length === 0 && hyps.length === 0 && content && (
+        {chk.length === 0 && hyps.length === 0 && content && sessionStatus === 'approved' && (
           <div style={{ fontSize: '12.5px', color: 'var(--text-secondary)', lineHeight: 1.65 }}>
             <MarkdownRenderer content={content} />
           </div>

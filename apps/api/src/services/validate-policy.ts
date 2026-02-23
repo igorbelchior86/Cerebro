@@ -228,13 +228,13 @@ export class ValidatePolicyService {
       });
       requiredQuestions.add(
         pack.entity_resolution?.disambiguation_question ||
-          'Confirm exact affected actor (name/email/phone) inside ticket org scope'
+        'Confirm exact affected actor (name/email/phone) inside ticket org scope'
       );
       blockingReasons.push('named_entity_unresolved');
     } else if (qualityGates.named_entity_unresolved) {
       requiredQuestions.add(
         pack.entity_resolution?.disambiguation_question ||
-          'Confirm actor identity (name/email/phone) before closure'
+        'Confirm actor identity (name/email/phone) before closure'
       );
     }
 
@@ -360,16 +360,16 @@ export class ValidatePolicyService {
     const hasRiskGate = violations.some((v) => v.type === 'risk_gate');
     const hasNoEvidence = violations.some((v) => v.type === 'no_evidence');
     const hasHardQualityStop =
-      blockingReasons.includes('cross_tenant_candidate_detected') ||
-      blockingReasons.includes('domain_required_source_missing') ||
-      blockingReasons.includes('mandatory_ticket_fields_missing');
+      blockingReasons.includes('cross_tenant_candidate_detected');
 
-    const safeToGenerate =
-      diagnosis.top_hypotheses.length > 0 &&
-      !hasRiskGate &&
-      !hasNoEvidence &&
-      !hasHardQualityStop &&
-      (this.profile === 'strict' ? status === 'approved' : true);
+    // ADVISOR MODE: We only block if there's a hard risk gate (destructive/org mismatch)
+    // Coverage and confidence issues are now ADVISORY.
+    const safeToGenerate = !hasRiskGate && !hasHardQualityStop;
+
+    if (safeToGenerate && status !== 'approved') {
+      // If it's safe but has violations, we allow it but keep the status to flag it
+      // PlaybookWriter will see the violations and can add warnings.
+    }
 
     return {
       status,
@@ -500,11 +500,11 @@ export class ValidatePolicyService {
     const assetCoverage =
       capability?.required
         ? Number(
-            (
-              (capability.device_match_strong ? 0.5 : 0) +
-              (capability.model_spec_confirmed ? 0.5 : 0)
-            ).toFixed(2)
-          )
+          (
+            (capability.device_match_strong ? 0.5 : 0) +
+            (capability.model_spec_confirmed ? 0.5 : 0)
+          ).toFixed(2)
+        )
         : 1;
 
     return {

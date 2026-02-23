@@ -11,7 +11,7 @@ import ResizableLayout from '@/components/ResizableLayout';
 import { usePathname } from 'next/navigation';
 
 interface SessionData {
-  session: { id: string; ticket_id: string; status: string };
+  session: { id: string; ticket_id: string; status: 'pending' | 'processing' | 'approved' | 'failed' | 'needs_more_info' | 'blocked' };
   ticket?: {
     id?: string;
     title?: string;
@@ -176,7 +176,7 @@ export default function SessionDetail({
           session: {
             id: String(resolvedSession.id || selectedTicketId),
             ticket_id: resolvedTicketId,
-            status: String(resolvedSession.status || 'active'),
+            status: (resolvedSession.status || 'processing') as 'pending' | 'processing' | 'approved' | 'failed' | 'needs_more_info' | 'blocked',
           },
           ticket: resolvedTicket || null,
           diagnosis: flowData.diagnosis ?? null,
@@ -453,11 +453,11 @@ export default function SessionDetail({
   );
   const selectedTicketView = selectedTicket
     ? {
-        ...selectedTicket,
-        requester: canonicalRequesterUi,
-        company: canonicalCompanyUi,
-        org: canonicalCompanyUi,
-      }
+      ...selectedTicket,
+      requester: canonicalRequesterUi,
+      company: canonicalCompanyUi,
+      org: canonicalCompanyUi,
+    }
     : undefined;
 
   const ticketTitle = cleanTitle(selectedTicketView?.title) || 'Untitled ticket';
@@ -473,42 +473,42 @@ export default function SessionDetail({
   const normalizeFact = (value: string) => value.replace(/\s+/g, ' ').trim();
   const playbookPanelData = data
     ? {
-        ticketId: ticketNumber,
-        context: [
-          { key: 'Org', val: selectedTicketView?.company || selectedTicketView?.org || 'Unknown org' },
-          { key: 'Site', val: selectedTicketView?.site || 'Unknown site' },
-          {
-            key: 'ISP',
-            val: data.evidence_pack?.external_status?.[0]?.provider || 'Unknown',
-            ...(data.evidence_pack?.external_status?.[0]?.status ? { highlight: '#F97316' } : {}),
-          },
-          { key: 'Firewall', val: data.evidence_pack?.config?.firewall || 'Unknown' },
-          { key: 'User device', val: data.evidence_pack?.device?.hostname || selectedTicketView?.requester || 'Unknown' },
-          { key: 'SLA', val: selectedTicketView?.priority || 'Standard', highlight: 'var(--accent)' },
-        ],
-        hypotheses: Array.isArray(data.diagnosis?.top_hypotheses)
-          ? data.diagnosis.top_hypotheses.slice(0, 3).map((h: any, i: number) => ({
-              rank: Number(h?.rank) || i + 1,
-              hypothesis: String(h?.hypothesis || 'Hypothesis'),
-              confidence: Number(h?.confidence) || 0,
-              evidence: Array.isArray(h?.evidence)
-                ? h.evidence
-                    .slice(0, 4)
-                    .map((e: any) => {
-                      const id = String(e || '');
-                      const fact = normalizeFact(String(digestFactMap.get(id) || ''));
-                      return {
-                        id,
-                        label: fact || undefined,
-                      };
-                    })
-                    .filter((e: any, idx: number, arr: any[]) =>
-                      arr.findIndex((x) => String(x.label || x.id) === String(e.label || e.id)) === idx
-                    )
-                : [],
-            }))
-          : [],
-      }
+      ticketId: ticketNumber,
+      context: [
+        { key: 'Org', val: selectedTicketView?.company || selectedTicketView?.org || 'Unknown org' },
+        { key: 'Site', val: selectedTicketView?.site || 'Unknown site' },
+        {
+          key: 'ISP',
+          val: data.evidence_pack?.external_status?.[0]?.provider || 'Unknown',
+          ...(data.evidence_pack?.external_status?.[0]?.status ? { highlight: '#F97316' } : {}),
+        },
+        { key: 'Firewall', val: data.evidence_pack?.config?.firewall || 'Unknown' },
+        { key: 'User device', val: data.evidence_pack?.device?.hostname || selectedTicketView?.requester || 'Unknown' },
+        { key: 'SLA', val: selectedTicketView?.priority || 'Standard', highlight: 'var(--accent)' },
+      ],
+      hypotheses: Array.isArray(data.diagnosis?.top_hypotheses)
+        ? data.diagnosis.top_hypotheses.slice(0, 3).map((h: any, i: number) => ({
+          rank: Number(h?.rank) || i + 1,
+          hypothesis: String(h?.hypothesis || 'Hypothesis'),
+          confidence: Number(h?.confidence) || 0,
+          evidence: Array.isArray(h?.evidence)
+            ? h.evidence
+              .slice(0, 4)
+              .map((e: any) => {
+                const id = String(e || '');
+                const fact = normalizeFact(String(digestFactMap.get(id) || ''));
+                return {
+                  id,
+                  label: fact || undefined,
+                };
+              })
+              .filter((e: any, idx: number, arr: any[]) =>
+                arr.findIndex((x) => String(x.label || x.id) === String(e.label || e.id)) === idx
+              )
+            : [],
+        }))
+        : [],
+    }
     : undefined;
 
   return (
@@ -530,6 +530,7 @@ export default function SessionDetail({
         <PlaybookPanel
           content={data?.playbook?.content_md || null}
           status={playbookStatus}
+          sessionStatus={data?.session?.status}
           {...(playbookPanelData ? { data: playbookPanelData } : {})}
         />
       }
@@ -551,8 +552,8 @@ export default function SessionDetail({
               {ticketLabel}
             </p>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 600, color: 'var(--green)', background: 'var(--green-muted)', border: '1px solid var(--green-border)', visibility: playbookReady ? 'visible' : 'hidden' }}>
-                <svg width="8" height="8" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                {t('statusPlaybookReady')}
+              <svg width="8" height="8" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              {t('statusPlaybookReady')}
             </span>
             <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-jetbrains-mono)', marginLeft: playbookReady ? '0' : 'auto' }}>
               {playbookReady ? '' : loading ? t('statusInitializing') : t('statusProcessing')}

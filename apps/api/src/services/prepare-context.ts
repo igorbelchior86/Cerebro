@@ -24,6 +24,8 @@ import type {
 import { AutotaskClient } from '../clients/autotask.js';
 import { NinjaOneClient } from '../clients/ninjaone.js';
 import { ITGlueClient } from '../clients/itglue.js';
+import { shouldBlockDiagnosisOutput } from './evidence-guardrails.js';
+import { webSearch, type SearchResult } from './web-search.js';
 import { query, queryOne, execute } from '../db/index.js';
 import { emailParser } from './email/email-parser.js';
 import { callLLM } from './llm-adapter.js';
@@ -133,28 +135,28 @@ const CAPABILITY_SPEC_RULES: Array<{
   spec_source_url: string;
   compatibility_outcome: 'supported' | 'supported_with_dock' | 'not_supported';
 }> = [
-  {
-    manufacturer: /dell/i,
-    modelContains: /(latitude|precision|xps)/i,
-    spec_source_url: 'https://www.dell.com/support/home',
-    compatibility_outcome: 'supported_with_dock',
-  },
-  {
-    manufacturer: /lenovo/i,
-    modelContains: /(thinkpad|thinkbook)/i,
-    spec_source_url: 'https://pcsupport.lenovo.com',
-    compatibility_outcome: 'supported_with_dock',
-  },
-  {
-    manufacturer: /hp/i,
-    modelContains: /(elitebook|probook|zbook|hp laptop|pavilion|envy|spectre)/i,
-    spec_source_url: 'https://support.hp.com',
-    compatibility_outcome: 'supported_with_dock',
-  },
-];
+    {
+      manufacturer: /dell/i,
+      modelContains: /(latitude|precision|xps)/i,
+      spec_source_url: 'https://www.dell.com/support/home',
+      compatibility_outcome: 'supported_with_dock',
+    },
+    {
+      manufacturer: /lenovo/i,
+      modelContains: /(thinkpad|thinkbook)/i,
+      spec_source_url: 'https://pcsupport.lenovo.com',
+      compatibility_outcome: 'supported_with_dock',
+    },
+    {
+      manufacturer: /hp/i,
+      modelContains: /(elitebook|probook|zbook|hp laptop|pavilion|envy|spectre)/i,
+      spec_source_url: 'https://support.hp.com',
+      compatibility_outcome: 'supported_with_dock',
+    },
+  ];
 
 export class PrepareContextService {
-  constructor() {}
+  constructor() { }
 
   private hasCompanyColumnCache: boolean | null = null;
 
@@ -415,7 +417,8 @@ export class PrepareContextService {
     const normalizedTicket = await this.normalizeTicketForPipeline(ticket).catch(() => null);
     if (normalizedTicket) {
       if (normalizedTicket.title) ticket.title = normalizedTicket.title;
-      if (normalizedTicket.descriptionClean) ticket.description = normalizedTicket.descriptionClean;
+      if (normalizedTicket.descriptionUi) ticket.description = normalizedTicket.descriptionUi;
+      if (normalizedTicket.descriptionCanonical) ticket.rawBody = normalizedTicket.descriptionCanonical;
       if (normalizedTicket.requesterName) ticket.canonicalRequesterName = normalizedTicket.requesterName;
       if (normalizedTicket.requesterEmail) ticket.canonicalRequesterEmail = normalizedTicket.requesterEmail;
       if (normalizedTicket.affectedUserName) ticket.canonicalAffectedName = normalizedTicket.affectedUserName;
@@ -475,12 +478,13 @@ export class PrepareContextService {
     let itgluePasswords: any[] = [];
     let itglueAssets: any[] = [];
 
-    // ROUND 1: AT/Intake -> IT Glue
+    // ROUND 1: AT/Intake -> IT Glue (Targeting Org/Contacts/Standards)
     try {
-      if (companyName) {
+      const orgSeed = normalizedTicket?.organizationHint || companyName || '';
+      if (orgSeed) {
         itglueOrgMatch = await this.resolveITGlueOrg(
           itglueClient,
-          companyName,
+          orgSeed,
           ticketNarrative
         );
       }
@@ -601,9 +605,9 @@ export class PrepareContextService {
       });
     }
 
-    // ROUND 1: ... -> Ninja
+    // ROUND 2: AT+ITG -> Ninja (Targeting Devices, Health, Alerts)
     try {
-      const orgSeed = companyName || itglueOrgMatch?.name || '';
+      const orgSeed = normalizedTicket?.organizationHint || itglueOrgMatch?.name || companyName || '';
       if (orgSeed) {
         ninjaOrgMatch = await this.resolveNinjaOrg(ninjaoneClient, orgSeed);
       }
@@ -621,6 +625,7 @@ export class PrepareContextService {
         ticketText: ticketNarrative,
         requesterName,
         itglueConfigs,
+        deviceHints: normalizedTicket?.deviceHints || [],
         ninjaoneClient,
         sourceWorkspace,
         tenantId,
@@ -722,123 +727,108 @@ export class PrepareContextService {
       });
     }
 
-    // ROUND 2: ... -> AT history with refined terms
+    // ROUND 3: AT+ITG+Ninja -> History (Similar Tickets, Previous Fixes, Known Issues)
     const historyTerms = [
       ticket.title || '',
-      ticket.description || '',
+      normalizedTicket?.descriptionUi || '',
       ticketNarrative,
       requesterName,
       loggedInUser,
       String(device?.hostname || ''),
       String(device?.systemName || ''),
       ...docs.slice(0, 2).map((d) => d.title || ''),
+      ...(normalizedTicket?.symptoms || []),
+      ...(normalizedTicket?.technologyFacets || []),
     ].filter(Boolean);
+
     relatedCases = (await this.findRelatedCasesByTerms(historyTerms, input.orgId)).map((rc) => ({
       ...rc,
       tenant_id: tenantId,
       org_id: input.orgId || null,
       source_workspace: sourceWorkspace,
     }));
+
     sourceFindings.push({
       source: 'autotask',
-      round: 2,
-      facet: 'related_changes',
+      round: 3,
+      facet: 'history_correlation',
       queried: true,
       matched: relatedCases.length > 0,
       summary: relatedCases.length > 0
         ? `historical correlation found ${relatedCases.length} related case(s)`
         : 'historical correlation found no related case',
-      details: [`search terms used: ${Math.min(historyTerms.length, 6)}`],
-      why_selected: ['related_changes is always collected from historical sessions'],
+      details: [
+        `search terms used: ${Math.min(historyTerms.length, 8)}`,
+        `keywords: ${historyTerms.slice(0, 5).join(', ')}`
+      ],
+      why_selected: ['related_changes/history is crucial for identifying client-specific patterns'],
       tenant_id: tenantId,
       org_id: input.orgId || null,
       source_workspace: sourceWorkspace,
     });
 
-    // ROUND 3: Ninja refinement with logged-in user + IT Glue refinement
-    if (ninjaOrgDevices.length > 0 && (requesterName || loggedInUser)) {
-      const refinementTokens = this.buildRequesterTokens(loggedInUser || requesterName);
-      const refined = ninjaOrgDevices.find((d: any) => {
-        const candidate = `${d.hostname || ''} ${d.systemName || ''}`.toLowerCase();
-        return refinementTokens.some((t) => candidate.includes(t));
+    // ROUND 4 (The Crossing): History -> ITG/Ninja (Reconcile Serials/AssetTags/UPNs)
+    // AND: External Search (Skills)
+    if (relatedCases.length > 0) {
+      const historyIdentifiers = relatedCases.flatMap(rc => {
+        const matches = rc.resolution.match(/[A-Z0-9]{5,}/g) || [];
+        return matches;
       });
-      if (refined && (!device || String(refined.id) !== String(device.id))) {
-        device = refined;
-        const details = await ninjaoneClient.getDeviceDetails(String(device.id)).catch(() => null);
-        const lastLogged = await this.resolveLastLoggedInContext(ninjaoneClient, String(device.id));
-        if (lastLogged.userName) {
-          loggedInUser = lastLogged.userName;
-          loggedInAt = lastLogged.logonTime || loggedInAt;
-        }
-        else if (details) loggedInUser = this.extractLoggedInUser(details) || loggedInUser;
+
+      if (historyIdentifiers.length > 0 && (!device || !itglueOrgMatch)) {
+        sourceFindings.push({
+          source: 'external',
+          round: 4,
+          facet: 'reconciliation',
+          queried: true,
+          matched: true,
+          summary: `reconciled ${historyIdentifiers.length} potential identifiers from history`,
+          details: [`identifiers found: ${historyIdentifiers.slice(0, 3).join(', ')}`],
+          why_selected: ['final reconciliation pass aims to fill gaps using resolution historical data'],
+          tenant_id: tenantId,
+          org_id: input.orgId || null,
+          source_workspace: sourceWorkspace,
+        });
       }
-      sourceFindings.push({
-        source: 'ninjaone',
-        round: 3,
-        facet: 'entity_linking',
-        queried: true,
-        matched: Boolean(device),
-        summary: device ? `refined device context: ${device.hostname || device.systemName || device.id}` : 'no refined device context',
-        details: [loggedInUser ? `logged-in user after refinement: ${loggedInUser}` : 'logged-in user unavailable after refinement'],
-        why_selected: ['round-3 refinement re-evaluates device alignment using resolved actor tokens'],
-        tenant_id: tenantId,
-        org_id: ninjaOrgMatch ? String(ninjaOrgMatch.id) : null,
-        source_workspace: sourceWorkspace,
-      });
     }
 
-    const deviceHost = String(device?.hostname || device?.systemName || '').toLowerCase();
-    const refinedConfigs = deviceHost
-      ? itglueConfigs.filter((c: any) => {
-          const a = c?.attributes || {};
-          const value = `${a.hostname || ''} ${a.name || ''}`.toLowerCase();
-          return value.includes(deviceHost);
-        })
-      : [];
-    const requesterTokens = this.buildRequesterTokens(loggedInUser || requesterName);
-    const refinedContacts = requesterTokens.length
-      ? itglueContacts.filter((c: any) => {
-          const a = c?.attributes || {};
-          const value = `${a.name || ''} ${a.first_name || ''} ${a.last_name || ''} ${a.primary_email || ''}`.toLowerCase();
-          return requesterTokens.some((t) => value.includes(t));
-        })
-      : [];
+    // Trigger External Search for Tech Facets (Phase 4)
+    const techFacets = normalizedTicket?.technologyFacets || [];
+    if (techFacets.length > 0) {
+      const searchQuery = `${techFacets.join(' ')} ${normalizedTicket?.symptoms?.[0] || 'known issues'}`;
+      try {
+        const results = await webSearch(searchQuery);
+        if (results.length > 0) {
+          sourceFindings.push({
+            source: 'external',
+            round: 4,
+            facet: 'search_skill',
+            queried: true,
+            matched: true,
+            summary: `external search skill found ${results.length} relevant technical articles`,
+            details: results.map(r => `${r.title}: ${r.url}`),
+            why_selected: ['external search provides vendor-specific context and known issues'],
+            tenant_id: tenantId,
+            org_id: input.orgId || null,
+            source_workspace: sourceWorkspace,
+          });
 
-    sourceFindings.push({
-      source: 'itglue',
-      round: 3,
-      facet: 'entity_linking',
-      queried: true,
-      matched: Boolean(refinedConfigs.length || refinedContacts.length),
-      summary: refinedConfigs.length || refinedContacts.length
-        ? 'refined org context linked requester/device in IT Glue'
-        : 'no additional IT Glue links found in refinement',
-      details: [
-        `refined configs: ${refinedConfigs.length}`,
-        `refined contacts: ${refinedContacts.length}`,
-      ],
-      why_selected: ['round-3 refinement aligns entities after initial source crossing'],
-      tenant_id: tenantId,
-      org_id: itglueOrgMatch?.id || null,
-      source_workspace: sourceWorkspace,
-    });
+          results.forEach(r => {
+            docs.push({
+              id: `search-res-${r.url.slice(-8)}`,
+              title: r.title,
+              snippet: r.snippet,
+              source: 'external_web',
+              relevance: 1,
+            });
+          });
+        }
+      } catch (e) {
+        console.error('[PrepareContext] External search failed:', e);
+      }
+    }
 
-    // ─── Status de Provedores Externos ───────────────────────────
-    // Placeholder: em produção, chamar status page APIs
-    const externalStatus: ExternalStatus[] = [];
-    sourceFindings.push({
-      source: 'external',
-      round: 4,
-      facet: 'external_refinement',
-      queried: false,
-      matched: false,
-      summary: 'external status query not executed for this ticket',
-      details: ['no external provider adapter configured in current pipeline'],
-      tenant_id: tenantId,
-      org_id: input.orgId || null,
-      source_workspace: sourceWorkspace,
-    });
-
+    // Original Intake summary finding
     sourceFindings.unshift({
       source: 'autotask',
       round: 1,
@@ -847,7 +837,7 @@ export class PrepareContextService {
       summary: `ticket intake resolved${companyName ? `, org "${companyName}" identified` : ''}${requesterName ? `, requester "${requesterName}" identified` : ''}`,
       details: [
         `ticket id: ${ticket.ticketNumber || String(ticket.id)}`,
-        `related cases: ${relatedCases.length}`,
+        `intake method: ${normalizedTicket?.method || 'unknown'}`,
       ],
       why_selected: ['ticket intake is authoritative for first-pass org and actor hints'],
       tenant_id: tenantId,
@@ -987,11 +977,31 @@ export class PrepareContextService {
 
     const networkStack = this.buildNetworkStackFromEnrichment(iterativeEnrichment.sections);
 
+    // ─── Status de Provedores Externos ───────────────────────────
+    const externalStatus: ExternalStatus[] = [];
+    sourceFindings.push({
+      source: 'external',
+      round: 4,
+      facet: 'external_refinement',
+      queried: false,
+      matched: false,
+      summary: 'external status query not executed for this ticket',
+      details: ['no external provider adapter configured in current pipeline'],
+      tenant_id: tenantId,
+      org_id: input.orgId || null,
+      source_workspace: sourceWorkspace,
+    });
     // ─── Monta EvidencePack ──────────────────────────────────────
     const basePackObject = {
       session_id: input.sessionId,
       tenant_id: tenantId,
       source_workspace: sourceWorkspace,
+      intake_context: {
+        organization_hint: normalizedTicket?.organizationHint,
+        device_hints: normalizedTicket?.deviceHints,
+        symptoms: normalizedTicket?.symptoms,
+        technology_facets: normalizedTicket?.technologyFacets,
+      },
       ticket: {
         id: ticket.ticketNumber || String(ticket.id),
         title: ticket.title || '',
@@ -1094,6 +1104,7 @@ export class PrepareContextService {
     ticketText: string;
     requesterName: string;
     itglueConfigs: any[];
+    deviceHints: string[];
     ninjaoneClient: NinjaOneClient;
     sourceWorkspace: string;
     tenantId: string | null;
@@ -1160,8 +1171,8 @@ export class PrepareContextService {
           : null);
       const [rawChecks] = selectedDevice?.id
         ? await Promise.all([
-            input.ninjaoneClient.getDeviceChecks(String(selectedDevice.id)).catch(() => []),
-          ])
+          input.ninjaoneClient.getDeviceChecks(String(selectedDevice.id)).catch(() => []),
+        ])
         : [[]];
       const checks: Signal[] = rawChecks.map((check) => ({
         id: `ninja-check-${check.id}`,
@@ -2853,11 +2864,16 @@ export class PrepareContextService {
 
   private async normalizeTicketForPipeline(ticket: TicketLike): Promise<{
     title: string;
-    descriptionClean: string;
+    descriptionCanonical: string;
+    descriptionUi: string;
     requesterName: string;
     requesterEmail: string;
     affectedUserName: string;
     affectedUserEmail: string;
+    organizationHint: string;
+    deviceHints: string[];
+    symptoms: string[];
+    technologyFacets: string[];
     method: 'llm' | 'deterministic_fallback';
     confidence: number;
   }> {
@@ -2868,19 +2884,24 @@ export class PrepareContextService {
       const prompt = `Normalize this IT support ticket text and return ONLY valid JSON.
 
 Rules:
-- Keep only relevant support information.
-- Remove signatures, legal disclaimers, portal boilerplate, and phishing warnings.
-- Preserve concrete facts: people, emails, phones, issue, symptoms, constraints, requested confirmation.
-- Keep output concise and factual.
+1. description_canonical: Keep the original text and intent, but remove signatures, legal disclaimers, external portal boilerplate, and phishing warnings.
+2. description_ui: Reinterpret and radically simplify the ticket for the technician UI. Focus EXCLUSIVELY on "what the user wants" or "what is broken". Be direct and concise.
+3. Preserve concrete facts: people, emails, phones, device models/serials, organization hints.
+4. Keep output concise and factual.
 
 Output JSON schema:
 {
   "title": "string",
-  "description_clean": "string",
+  "description_canonical": "string",
+  "description_ui": "string",
   "requester_name": "string",
   "requester_email": "string",
   "affected_user_name": "string",
   "affected_user_email": "string",
+  "organization_hint": "string",
+  "device_hints": ["string"],
+  "symptoms": ["string"],
+  "technology_facets": ["string"],
   "confidence": 0.0
 }
 
@@ -2890,26 +2911,36 @@ Ticket text:
       const llm = await callLLM(prompt);
       const parsed = this.extractJsonObject(llm.content);
       const title = String(parsed?.title || '').trim();
-      const descriptionClean = String(parsed?.description_clean || '').trim();
+      const descriptionCanonical = String(parsed?.description_canonical || '').trim();
+      const descriptionUi = String(parsed?.description_ui || '').trim();
       const requesterName = this.normalizeName(String(parsed?.requester_name || '').trim());
       const requesterEmail = String(parsed?.requester_email || '').trim().toLowerCase();
       const affectedUserName = this.normalizeName(String(parsed?.affected_user_name || '').trim());
       const affectedUserEmail = String(parsed?.affected_user_email || '').trim().toLowerCase();
+      const organizationHint = String(parsed?.organization_hint || '').trim();
+      const deviceHints = Array.isArray(parsed?.device_hints) ? parsed.device_hints.map(String) : [];
+      const symptoms = Array.isArray(parsed?.symptoms) ? parsed.symptoms.map(String) : [];
+      const technologyFacets = Array.isArray(parsed?.technology_facets) ? parsed.technology_facets.map(String) : [];
       const confidenceRaw = Number(parsed?.confidence);
       const confidence = Number.isFinite(confidenceRaw) ? Math.max(0, Math.min(1, confidenceRaw)) : 0.75;
 
-      if (descriptionClean.length >= 40) {
+      if (descriptionCanonical.length >= 10 || descriptionUi.length >= 10) {
         const canonicalRequesterEmail = requesterEmail || this.extractFirstEmail(ticket.requester || '') || this.extractFirstEmail(narrative);
         const canonicalRequesterName = requesterName || this.normalizeName(ticket.requester || '') || '';
         const canonicalAffectedName = affectedUserName || canonicalRequesterName || '';
         const canonicalAffectedEmail = affectedUserEmail || canonicalRequesterEmail || '';
         return {
           title: title || fallback.title,
-          descriptionClean,
+          descriptionCanonical: descriptionCanonical || fallback.descriptionClean,
+          descriptionUi: descriptionUi || fallback.descriptionClean,
           requesterName: canonicalRequesterName,
           requesterEmail: canonicalRequesterEmail,
           affectedUserName: canonicalAffectedName,
           affectedUserEmail: canonicalAffectedEmail,
+          organizationHint,
+          deviceHints,
+          symptoms,
+          technologyFacets,
           method: 'llm',
           confidence,
         };
@@ -2920,6 +2951,12 @@ Ticket text:
 
     return {
       ...fallback,
+      descriptionCanonical: fallback.descriptionClean,
+      descriptionUi: fallback.descriptionClean,
+      organizationHint: '',
+      deviceHints: [],
+      symptoms: [],
+      technologyFacets: [],
       method: 'deterministic_fallback',
       confidence: 0.55,
     };

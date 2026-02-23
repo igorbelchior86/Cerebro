@@ -40,7 +40,7 @@ export interface ExternalStatus {
 
 export interface Doc {
   id: string;
-  source: 'itglue' | 'autotask_note' | 'manual';
+  source: 'itglue' | 'autotask_note' | 'manual' | 'external_web';
   title: string;
   snippet: string;
   relevance: number;
@@ -272,19 +272,27 @@ export interface IterativeEnrichmentProfile {
   schema_version: '1.0.0';
   completed_rounds: number;
   stop_reason:
-    | 'max_rounds_reached'
-    | 'marginal_gain'
-    | 'coverage_target_reached'
-    | 'source_exhausted';
+  | 'max_rounds_reached'
+  | 'marginal_gain'
+  | 'coverage_target_reached'
+  | 'source_exhausted';
   rounds: EnrichmentRoundSummary[];
   sections: IterativeEnrichmentSections;
   coverage: EnrichmentCoverageSummary;
+}
+
+export interface IntakeContext {
+  organization_hint?: string;
+  device_hints?: string[];
+  symptoms?: string[];
+  technology_facets?: string[];
 }
 
 export interface EvidencePack {
   session_id: string;
   tenant_id?: string | null;
   source_workspace?: string;
+  intake_context?: IntakeContext;
   ticket: {
     id: string;
     title: string;
@@ -369,12 +377,12 @@ export type ValidationStatus = 'approved' | 'needs_more_info' | 'blocked';
 
 export interface Violation {
   type:
-    | 'no_evidence'
-    | 'risk_gate'
-    | 'coherence'
-    | 'missing_checklist'
-    | 'quality_gate'
-    | 'coverage_gate';
+  | 'no_evidence'
+  | 'risk_gate'
+  | 'coherence'
+  | 'missing_checklist'
+  | 'quality_gate'
+  | 'coverage_gate';
   detail: string;
 }
 

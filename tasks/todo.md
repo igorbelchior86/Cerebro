@@ -48,6 +48,22 @@
 - 2f implementado: passada final IT Glue + Ninja guiada por gaps/conflicts/history appendix (`round 9`) com backfill conservador de campos no enrichment e recalculo de evidence/coverage/rounds.
 - `ticket_context_appendix.final_refinement` agora registra targets, termos, docs adicionados, sinais Ninja adicionados e campos atualizados.
 - Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após 2f.
+- 2.5 (novo) implementado: UI de triagem passa a priorizar `SSOT` + `ticket_context_appendix` para header/meta/timeline/context cards (com fallback em `evidence_pack` somente quando necessário).
+- `PlaybookPanel` contexto agora mostra infraestrutura do SSOT (firewall/wifi/switch/device) e metadados de pipeline via appendix (history matches + final refinement fields).
+- Verificação: `pnpm --filter @playbook-brain/web typecheck` OK após 2.5.
+- Refresh pipeline (`/playbook/full-flow?refresh=1`) agora reinicia de verdade no Passo 1: limpa artefatos, marca sessão atual como reiniciada (`failed/manual refresh restart`) e cria uma **nova** `triage_session` pendente para o mesmo ticket.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após mudança de refresh restart.
+- Correção pós-validação do usuário: refresh ainda podia mostrar dados antigos por race de sessão antiga + cache local de UI.
+- Fix aplicado: guardas de persistência para artefatos por ticket (`ticket_ssot`, `ticket_text_artifact`, `ticket_context_appendix`) rejeitam sessões superseded; frontend invalida `ticketSnapshotRef`, pausa polling durante refresh e descarta respostas em voo.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` e `pnpm --filter @playbook-brain/web typecheck` OK após fix de race/cache no refresh.
+- Hotfix 2a aplicado: `text_clean` agora passa por pós-processamento determinístico agressivo (anti-HTML/portal boilerplate/assinatura/disclaimer/safelinks) mesmo quando a LLM deixa ruído passar.
+- Hotfix UI aplicado: linha “New ticket detected ... at org, site” evita redundância quando `site == requester` ou `site == org`.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` e `pnpm --filter @playbook-brain/web typecheck` OK após hotfix de normalização/UI.
+- Fix de troubleshooting 2a (UI): evento Autotask na center column agora expõe `text_clean` no toggle premium (`Reframed / Clean / Original`), usando `ticket_text_artifact.text_clean`.
+- Verificação: `pnpm --filter @playbook-brain/web typecheck` OK após ajuste de passagem `text_clean` + assinatura da timeline.
+- Fix de troubleshooting 2a (semântica): reinterpretação do ticket agora aplica guard determinístico de papéis (requester vs affected user) para evitar atribuir o nome do requester ao "new employee".
+- Prompt de normalização LLM reforçado com regra explícita: não confundir requester e affected user; manter affected unnamed quando não houver nome explícito.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após guard de role assignment no `description_ui`.
 
 ## Review
 (fill in after completion)

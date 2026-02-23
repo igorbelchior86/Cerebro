@@ -99,7 +99,7 @@ router.get('/full-flow', async (req, res) => {
     }
 
     console.log(`[FULL-FLOW] Using sessionId: ${sessionId}`);
-    const sessionRow = await queryOne<{
+    let sessionRow = await queryOne<{
       id: string;
       ticket_id: string;
       status: string;
@@ -214,10 +214,35 @@ router.get('/full-flow', async (req, res) => {
       }
       await execute(
         `UPDATE triage_sessions
-         SET status = 'pending', retry_count = 0, next_retry_at = NULL, last_error = NULL, updated_at = NOW()
+         SET status = 'failed', last_error = 'manual refresh restart', updated_at = NOW()
          WHERE id = $1`,
         [sessionId]
       );
+
+      const refreshTenantId = req.auth?.tid || null;
+      const restartedSession = await queryOne<{ id: string }>(
+        `INSERT INTO triage_sessions (id, ticket_id, status, created_by, tenant_id, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+         RETURNING id`,
+        [uuidv4(), ticketId, 'pending', '00000000-0000-0000-0000-000000000000', refreshTenantId]
+      );
+      if (restartedSession?.id) {
+        sessionId = restartedSession.id;
+        sessionRow = await queryOne<{
+          id: string;
+          ticket_id: string;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        }>(
+          `SELECT id, ticket_id, status, created_at, updated_at
+           FROM triage_sessions
+           WHERE id = $1
+           LIMIT 1`,
+          [sessionId]
+        );
+        console.log(`[FULL-FLOW] Force refresh restarted pipeline with new session ${sessionId} for ticket ${ticketId}`);
+      }
     }
 
     // Get all the data

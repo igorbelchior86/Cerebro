@@ -229,8 +229,26 @@
 **Rule**: Any user-facing 'refresh pipeline' action must explicitly define and enforce cache invalidation scope needed for true pipeline restart.
 **Pattern**: If pipeline output reappears immediately after refresh, audit upstream caches (`*_snapshot`, `*_enriched`) and invalidate at ticket/org scope.
 
+## Lesson: 2026-02-23 (manual refresh restart needs race guards + UI cache invalidation)
+**Mistake**: Even after creating a new triage session on refresh, stale data still reappeared in the UI.
+**Root cause**: Two surviving cache/race paths remained: (1) older background sessions could still repersist ticket-level artifacts (`ticket_ssot` / ticket artifacts), and (2) frontend local snapshot/poll responses were not invalidated during hard refresh.
+**Rule**: For manual pipeline restart, protect ticket-scoped artifact persistence against superseded sessions and explicitly invalidate frontend local caches/in-flight polling responses.
+**Pattern**: If refresh creates a new session but old data returns, check both async writer races (old session persisting global-by-ticket artifacts) and client-side memo/snapshot state.
+
 ## Lesson: 2026-02-23
 **Mistake**: Considerei o fluxo atual como aderente sem validar o contrato detalhado do Prepare Context (2a..2f).
 **Root cause**: Auditoria orientada por semelhança narrativa, não por especificação funcional exata.
 **Rule**: Quando o usuário define contrato operacional detalhado, validar aderência item a item antes de concluir “ok”.
 **Pattern**: Pipeline multi-fonte com LLM exige checagem por artefato persistido (snapshot, enriched, SSOT UI), não só por nomes de serviços.
+
+## Lesson: 2026-02-23 (fix aplicado no código, mas runtime não recarregado)
+**Mistake**: Declarei o toggle `Clean` como corrigido sem confirmar que o frontend em execução estava servindo o bundle atualizado.
+**Root cause**: Validei source + typecheck, mas não validei runtime process/hot-reload para a tela real usada pelo usuário.
+**Rule**: Em bug de UI “continua igual”, após patch e typecheck, verificar processo runtime (`:3000`) e reiniciar antes de marcar como resolvido.
+**Pattern**: `code fixed + data exists + user still sees old UI` => checar bundle/runtime stale (Next dev/prod process) antes de reabrir backend investigação.
+
+## Lesson: 2026-02-23 (reframed summary can invert ticket roles)
+**Mistake**: Aceitei uma reinterpretação que atribuiu o nome do requester ao affected user em um ticket de "new employee".
+**Root cause**: A normalização 2a priorizava resumo curto, mas sem guard explícito de papéis (requester vs affected user) quando o ticket fala de terceiro não nomeado.
+**Rule**: Em `description_ui`, nunca usar `requester_name` como affected user sem evidência explícita; em onboarding/third-party requests, manter o affected user como "name not provided" quando ausente.
+**Pattern**: Frases como "we have a new employee... he will need..." + assinatura do requester exigem guard de role assignment pós-LLM.

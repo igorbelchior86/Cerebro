@@ -45,6 +45,8 @@ interface SessionData {
     device_name?: string;
     isp_name?: string;
     firewall_make_model?: string;
+    wifi_make_model?: string;
+    switch_make_model?: string;
   };
   ticket_text_artifact?: {
     ticket_id?: string;
@@ -58,6 +60,28 @@ interface SessionData {
     normalization_method?: 'llm' | 'deterministic_fallback';
     normalization_confidence?: number;
     created_at?: string;
+  } | null;
+  ticket_context_appendix?: {
+    history_correlation?: {
+      matched_case_count?: number;
+      search_terms?: string[];
+      strategies?: string[];
+    };
+    history_confidence_calibration?: {
+      field_adjustments?: Array<{ action?: 'boost' | 'decrease' | 'context_only' }>;
+      contradictions?: Array<{ path?: string; note?: string }>;
+    };
+    fusion_summary?: {
+      applied_resolution_count?: number;
+      link_count?: number;
+      inference_count?: number;
+      used_llm?: boolean;
+    };
+    final_refinement?: {
+      fields_updated?: string[];
+      itglue_docs_added?: number;
+      ninja_signals_added?: number;
+    };
   } | null;
   evidence_pack?: any;
   diagnosis?: any;
@@ -89,6 +113,7 @@ export default function SessionDetail({
   const [playbookStatus, setPlaybookStatus] = useState<'loading' | 'ready' | 'error'>('ready');
   const timelineSignatureRef = useRef('');
   const flowRequestSeqRef = useRef(0);
+  const hardRefreshInProgressRef = useRef(false);
   const sidebarTicketsRef = useRef<ActiveTicket[]>([]);
   const ticketSnapshotRef = useRef<Record<string, {
     ticketId: string;
@@ -179,13 +204,13 @@ export default function SessionDetail({
     let inFlight = false;
 
     const fetchData = async () => {
-      if (inFlight) return;
+      if (inFlight || hardRefreshInProgressRef.current) return;
       inFlight = true;
       const reqSeq = ++flowRequestSeqRef.current;
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
         const res = await axios.get(`${apiUrl}/playbook/full-flow`, {
-          params: { sessionId: selectedTicketId },
+          params: { sessionId: selectedTicketId, _ts: Date.now() },
           withCredentials: true,
         });
         if (cancelled || reqSeq !== flowRequestSeqRef.current) return;
@@ -214,6 +239,7 @@ export default function SessionDetail({
           playbook: flowData.playbook ?? null,
           evidence_pack: flowData.evidence_pack ?? flowData.pack ?? null,
           ticket_text_artifact: flowData.ticket_text_artifact ?? null,
+          ticket_context_appendix: flowData.ticket_context_appendix ?? null,
         };
 
         setData(newData);
@@ -289,12 +315,29 @@ export default function SessionDetail({
         const ts = (offsetSec: number) => new Date(firstEventTime.getTime() + offsetSec * 1000);
 
         const ticketTextArtifact = newData.ticket_text_artifact || null;
+        const ticketContextAppendix = newData.ticket_context_appendix || null;
+        const appendixHistoryMatches = Number(ticketContextAppendix?.history_correlation?.matched_case_count || 0);
+        const appendixFusionApplied = Number(ticketContextAppendix?.fusion_summary?.applied_resolution_count || 0);
+        const appendixFinalFieldsUpdated = Array.isArray(ticketContextAppendix?.final_refinement?.fields_updated)
+          ? ticketContextAppendix.final_refinement.fields_updated.length
+          : 0;
+        const normalizedOrgForLine = normalizePlainText(org, '');
+        const normalizedSiteForLine = normalizePlainText(site, '');
+        const normalizedRequesterForLine = normalizePlainText(requester, '');
+        const siteIsRedundant =
+          !normalizedSiteForLine ||
+          normalizedSiteForLine.toLowerCase() === normalizedOrgForLine.toLowerCase() ||
+          normalizedSiteForLine.toLowerCase() === normalizedRequesterForLine.toLowerCase();
+        const locationLabelForLine = siteIsRedundant ? org : `${org}, ${site}`;
         const autoTaskPrimaryText = ticketTextArtifact?.text_reinterpreted
-          ? `New ticket detected: \`${ticketId}\` — "${normalizePlainText(ticketTextArtifact.text_reinterpreted, problemDescription)}" from ${requester} at ${org}, ${site}. Priority: **${priorityLabel}**. Starting context collection.`
-          : `New ticket detected: \`${ticketId}\` — "${problemDescription}" from ${requester} at ${org}, ${site}. Priority: **${priorityLabel}**. Starting context collection.`;
+          ? `New ticket detected: \`${ticketId}\` — "${normalizePlainText(ticketTextArtifact.text_reinterpreted, problemDescription)}" from ${requester} at ${locationLabelForLine}. Priority: **${priorityLabel}**. Starting context collection.`
+          : `New ticket detected: \`${ticketId}\` — "${problemDescription}" from ${requester} at ${locationLabelForLine}. Priority: **${priorityLabel}**. Starting context collection.`;
         const autoTaskOriginalText = ticketTextArtifact?.text_original
           ? `Original ticket text (Autotask/email intake):\n\n${ticketTextArtifact.text_original}`
           : autoTaskPrimaryText;
+        const autoTaskCleanText = ticketTextArtifact?.text_clean
+          ? `Cleaned ticket text (noise removed, meaning preserved):\n\n${ticketTextArtifact.text_clean}`
+          : undefined;
 
         const timeline: Message[] = [
           {
@@ -309,6 +352,7 @@ export default function SessionDetail({
                     primary: 'reinterpreted' as const,
                     reinterpreted: autoTaskPrimaryText,
                     original: autoTaskOriginalText,
+                    ...(autoTaskCleanText ? { clean: autoTaskCleanText } : {}),
                   },
                 }
               : {}),
@@ -348,7 +392,7 @@ export default function SessionDetail({
           type: 'evidence',
           timestamp: ts(1),
           content: hasSourceFindings
-            ? 'Running iterative cross-source correlation (intake → IT Glue → Ninja → history → refine).'
+            ? `Running iterative cross-source correlation (intake → IT Glue → Ninja → history → refine)${appendixFusionApplied > 0 ? ` · fusion ${appendixFusionApplied} field${appendixFusionApplied === 1 ? '' : 's'}` : ''}${appendixHistoryMatches > 0 ? ` · ${appendixHistoryMatches} historical match${appendixHistoryMatches === 1 ? '' : 'es'}` : ''}${appendixFinalFieldsUpdated > 0 ? ` · final refinement ${appendixFinalFieldsUpdated} field${appendixFinalFieldsUpdated === 1 ? '' : 's'} updated` : ''}.`
             : 'Pulling data from 3 sources simultaneously.',
           steps: prepareSteps,
         });
@@ -392,6 +436,7 @@ export default function SessionDetail({
                 ? {
                     primary: m.ticketTextVariant.primary,
                     reinterpreted: m.ticketTextVariant.reinterpreted,
+                    clean: m.ticketTextVariant.clean,
                     original: m.ticketTextVariant.original,
                   }
                 : null,
@@ -505,6 +550,9 @@ export default function SessionDetail({
 
   const handleRefreshPipeline = async () => {
     const ticket = selectedTicketId;
+    hardRefreshInProgressRef.current = true;
+    flowRequestSeqRef.current += 1; // invalidate in-flight polling responses
+    delete ticketSnapshotRef.current[ticket];
     setLoading(true);
     setError('');
     setPlaybookReady(false);
@@ -524,13 +572,16 @@ export default function SessionDetail({
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
       await axios.get(`${apiUrl}/playbook/full-flow`, {
-        params: { sessionId: ticket, refresh: 1 },
+        params: { sessionId: ticket, refresh: 1, _ts: Date.now() },
         withCredentials: true,
       });
     } catch (err) {
       setError(axios.isAxiosError(err) ? err.message : String(err));
       setPlaybookStatus('error');
       setLoading(false);
+    } finally {
+      flowRequestSeqRef.current += 1; // drop any stale response that completed during refresh call
+      hardRefreshInProgressRef.current = false;
     }
   };
 
@@ -550,19 +601,28 @@ export default function SessionDetail({
     data?.ssot?.company || data?.ticket?.company || selectedTicket?.company || selectedTicket?.org,
     'Unknown org'
   );
+  const canonicalSiteUi = normalizePlainText(
+    selectedTicket?.site || selectedTicket?.org || data?.ssot?.company || data?.ticket?.company,
+    'Unknown site'
+  );
   const selectedTicketView = selectedTicket
     ? {
       ...selectedTicket,
       requester: canonicalRequesterUi,
       company: canonicalCompanyUi,
       org: canonicalCompanyUi,
+      site: canonicalSiteUi,
     }
     : undefined;
 
-  const ticketTitle = cleanTitle(selectedTicketView?.title) || 'Untitled ticket';
+  const ticketTitle = cleanTitle(data?.ssot?.title || data?.ticket?.title || selectedTicketView?.title) || 'Untitled ticket';
   const ticketNumber = data?.session.ticket_id || selectedTicketView?.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`;
   const ticketLabel = `${ticketNumber} — ${ticketTitle}`;
-  const ticketMetaLabel = getTicketContextMeta(selectedTicketView);
+  const ticketMetaLabel = [
+    ticketNumber,
+    canonicalCompanyUi,
+    canonicalRequesterUi,
+  ].filter(Boolean).join(' · ') || getTicketContextMeta(selectedTicketView);
   const digestFacts = Array.isArray(data?.evidence_pack?.evidence_digest?.facts_confirmed)
     ? data?.evidence_pack?.evidence_digest?.facts_confirmed
     : [];
@@ -575,6 +635,15 @@ export default function SessionDetail({
       ticketId: ticketNumber,
       context: [
         { key: 'Org', val: data?.ssot?.company || selectedTicketView?.company || selectedTicketView?.org || 'Unknown org' },
+        {
+          key: 'User',
+          val: normalizePlainText(
+            data?.ssot?.affected_user_name ||
+            data?.ssot?.requester_name ||
+            selectedTicketView?.requester,
+            'Unknown user'
+          ),
+        },
         { key: 'Site', val: selectedTicketView?.site || 'Unknown site' },
         {
           key: 'ISP',
@@ -582,7 +651,24 @@ export default function SessionDetail({
           ...(data.evidence_pack?.external_status?.[0]?.status ? { highlight: '#F97316' } : {}),
         },
         { key: 'Firewall', val: data?.ssot?.firewall_make_model || data.evidence_pack?.config?.firewall || 'Unknown' },
-        { key: 'User device', val: data?.ssot?.device_name || data.evidence_pack?.device?.hostname || selectedTicketView?.requester || 'Unknown' },
+        { key: 'WiFi', val: data?.ssot?.wifi_make_model || 'Unknown' },
+        { key: 'Switch', val: data?.ssot?.switch_make_model || 'Unknown' },
+        { key: 'User device', val: data?.ssot?.device_name || data.evidence_pack?.device?.hostname || 'Unknown' },
+        {
+          key: 'History',
+          val: `${Number(data?.ticket_context_appendix?.history_correlation?.matched_case_count || 0)} matches`,
+          ...(Number(data?.ticket_context_appendix?.history_correlation?.matched_case_count || 0) > 0
+            ? { highlight: '#5B7FFF' }
+            : {}),
+        },
+        {
+          key: 'Refinement',
+          val: `${Array.isArray(data?.ticket_context_appendix?.final_refinement?.fields_updated) ? data.ticket_context_appendix?.final_refinement?.fields_updated?.length || 0 : 0} fields`,
+          ...(Array.isArray(data?.ticket_context_appendix?.final_refinement?.fields_updated) &&
+          (data.ticket_context_appendix?.final_refinement?.fields_updated?.length || 0) > 0
+            ? { highlight: '#1DB98A' }
+            : {}),
+        },
         { key: 'SLA', val: selectedTicketView?.priority || 'Standard', highlight: 'var(--accent)' },
       ],
       hypotheses: Array.isArray(data.diagnosis?.top_hypotheses)

@@ -9,8 +9,9 @@ export interface Message {
   type?: 'text' | 'status' | 'autotask' | 'evidence' | 'diagnosis' | 'validation';
   steps?: { label: string; status: 'done' | 'running' | 'idle' }[];
   ticketTextVariant?: {
-    primary: 'reinterpreted' | 'original';
+    primary: 'reinterpreted' | 'clean' | 'original';
     reinterpreted: string;
+    clean?: string;
     original: string;
   };
 }
@@ -37,7 +38,7 @@ function MsgTag({ children, color, bg }: { children: ReactNode; color?: string; 
 }
 
 export default function ChatMessage({ message, children }: ChatMessageProps) {
-  const [ticketTextMode, setTicketTextMode] = useState<'reinterpreted' | 'original'>(
+  const [ticketTextMode, setTicketTextMode] = useState<'reinterpreted' | 'clean' | 'original'>(
     message.ticketTextVariant?.primary || 'reinterpreted'
   );
   const isSystem = message.role === 'system' || message.type === 'status';
@@ -75,10 +76,16 @@ export default function ChatMessage({ message, children }: ChatMessageProps) {
     message.type === 'autotask' &&
     Boolean(message.ticketTextVariant?.reinterpreted?.trim()) &&
     Boolean(message.ticketTextVariant?.original?.trim());
+  const hasCleanTicketText = Boolean(message.ticketTextVariant?.clean?.trim());
+  const ticketTextModes: Array<'reinterpreted' | 'clean' | 'original'> = hasCleanTicketText
+    ? ['reinterpreted', 'clean', 'original']
+    : ['reinterpreted', 'original'];
   const renderedContent = canToggleTicketText
     ? ticketTextMode === 'original'
       ? message.ticketTextVariant!.original
-      : message.ticketTextVariant!.reinterpreted
+      : ticketTextMode === 'clean' && hasCleanTicketText
+        ? message.ticketTextVariant!.clean!
+        : message.ticketTextVariant!.reinterpreted
     : message.content;
   return (
     <div className="animate-msgIn" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '10px' }}>
@@ -90,36 +97,47 @@ export default function ChatMessage({ message, children }: ChatMessageProps) {
           <span style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>{src.label}</span>
           {message.timestamp && <span suppressHydrationWarning style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)' }}>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>}
           {canToggleTicketText && (
-            <button
-              type="button"
-              onClick={() => setTicketTextMode((prev) => (prev === 'reinterpreted' ? 'original' : 'reinterpreted'))}
-              title={ticketTextMode === 'reinterpreted' ? 'Show original ticket text' : 'Show reinterpreted ticket text'}
-              aria-label={ticketTextMode === 'reinterpreted' ? 'Show original ticket text' : 'Show reinterpreted ticket text'}
+            <div
               style={{
                 marginLeft: '2px',
                 display: 'inline-flex',
                 alignItems: 'center',
-                gap: '5px',
-                padding: '2px 8px',
+                gap: '3px',
+                padding: '2px',
                 borderRadius: '999px',
                 border: '1px solid rgba(91,127,255,0.20)',
                 background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(91,127,255,0.10) 100%)',
                 boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 8px rgba(0,0,0,0.10)',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-                fontFamily: 'var(--font-jetbrains-mono, monospace)',
-                fontSize: '9px',
-                fontWeight: 700,
-                letterSpacing: '0.03em',
               }}
             >
-              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="M2.5 8a5.5 5.5 0 019.6-3.7M13.5 8a5.5 5.5 0 01-9.6 3.7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                <path d="M10.8 2.7h2v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M5.2 13.3h-2v-2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              {ticketTextMode === 'reinterpreted' ? 'Reframed' : 'Original'}
-            </button>
+              {ticketTextModes.map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setTicketTextMode(mode)}
+                  title={mode === 'reinterpreted' ? 'Show reframed ticket text' : mode === 'clean' ? 'Show cleaned ticket text' : 'Show original ticket text'}
+                  aria-label={mode === 'reinterpreted' ? 'Show reframed ticket text' : mode === 'clean' ? 'Show cleaned ticket text' : 'Show original ticket text'}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    padding: '2px 7px',
+                    borderRadius: '999px',
+                    border: '1px solid transparent',
+                    background: ticketTextMode === mode ? 'rgba(91,127,255,0.16)' : 'transparent',
+                    color: ticketTextMode === mode ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-jetbrains-mono, monospace)',
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    letterSpacing: '0.03em',
+                  }}
+                >
+                  {mode === 'reinterpreted' ? 'Reframed' : mode === 'clean' ? 'Clean' : 'Original'}
+                </button>
+              ))}
+            </div>
           )}
         </div>
         <MarkdownRenderer content={renderedContent + (message.type === 'validation' ? ' **Status:** `approved`' : '')} />

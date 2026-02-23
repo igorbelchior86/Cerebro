@@ -5465,7 +5465,8 @@ Rules:
 1. description_canonical: Keep the original text and intent, but remove signatures, legal disclaimers, external portal boilerplate, and phishing warnings.
 2. description_ui: Reinterpret and radically simplify the ticket for the technician UI. Focus EXCLUSIVELY on "what the user wants" or "what is broken". Be direct and concise.
 3. Preserve concrete facts: people, emails, phones, device models/serials, organization hints.
-4. Keep output concise and factual.
+4. DO NOT confuse requester and affected user. If requester is asking on behalf of a different/new employee and the affected employee name is not explicitly stated, keep the affected employee unnamed (e.g., "new employee (name not provided)").
+5. Keep output concise and factual.
 
 Output JSON schema:
 {
@@ -5489,8 +5490,8 @@ Ticket text:
       const llm = await callLLM(prompt);
       const parsed = this.extractJsonObject(llm.content);
       const title = String(parsed?.title || '').trim();
-      const descriptionCanonical = String(parsed?.description_canonical || '').trim();
-      const descriptionUi = String(parsed?.description_ui || '').trim();
+      const descriptionCanonical = this.postProcessCanonicalTicketText(String(parsed?.description_canonical || ''));
+      let descriptionUi = this.postProcessUiTicketText(String(parsed?.description_ui || ''));
       const requesterName = this.normalizeName(String(parsed?.requester_name || '').trim());
       const requesterEmail = String(parsed?.requester_email || '').trim().toLowerCase();
       const affectedUserName = this.normalizeName(String(parsed?.affected_user_name || '').trim());
@@ -5501,6 +5502,13 @@ Ticket text:
       const technologyFacets = Array.isArray(parsed?.technology_facets) ? parsed.technology_facets.map(String) : [];
       const confidenceRaw = Number(parsed?.confidence);
       const confidence = Number.isFinite(confidenceRaw) ? Math.max(0, Math.min(1, confidenceRaw)) : 0.75;
+      descriptionUi = this.guardTicketUiRoleAssignment({
+        descriptionUi,
+        requesterName,
+        ticketRequester: ticket.requester || '',
+        canonicalText: descriptionCanonical || fallback.descriptionClean,
+        narrative,
+      });
 
       if (descriptionCanonical.length >= 10 || descriptionUi.length >= 10) {
         const canonicalRequesterEmail = requesterEmail || this.extractFirstEmail(ticket.requester || '') || this.extractFirstEmail(narrative);
@@ -5509,8 +5517,16 @@ Ticket text:
         const canonicalAffectedEmail = affectedUserEmail || canonicalRequesterEmail || '';
         return {
           title: title || fallback.title,
-          descriptionCanonical: descriptionCanonical || fallback.descriptionClean,
-          descriptionUi: descriptionUi || fallback.descriptionClean,
+          descriptionCanonical: descriptionCanonical || this.postProcessCanonicalTicketText(fallback.descriptionClean),
+          descriptionUi:
+            descriptionUi ||
+            this.guardTicketUiRoleAssignment({
+              descriptionUi: this.postProcessUiTicketText(fallback.descriptionClean),
+              requesterName: canonicalRequesterName,
+              ticketRequester: ticket.requester || '',
+              canonicalText: descriptionCanonical || fallback.descriptionClean,
+              narrative,
+            }),
           requesterName: canonicalRequesterName,
           requesterEmail: canonicalRequesterEmail,
           affectedUserName: canonicalAffectedName,
@@ -5529,8 +5545,14 @@ Ticket text:
 
     return {
       ...fallback,
-      descriptionCanonical: fallback.descriptionClean,
-      descriptionUi: fallback.descriptionClean,
+      descriptionCanonical: this.postProcessCanonicalTicketText(fallback.descriptionClean),
+      descriptionUi: this.guardTicketUiRoleAssignment({
+        descriptionUi: this.postProcessUiTicketText(fallback.descriptionClean),
+        requesterName: fallback.requesterName,
+        ticketRequester: ticket.requester || '',
+        canonicalText: fallback.descriptionClean,
+        narrative,
+      }),
       organizationHint: '',
       deviceHints: [],
       symptoms: [],
@@ -5571,6 +5593,124 @@ Ticket text:
       affectedUserName: requesterName,
       affectedUserEmail: requesterEmail,
     };
+  }
+
+  private postProcessCanonicalTicketText(value: string): string {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    let text = raw;
+
+    // Strip obvious HTML leftovers and encoded noise
+    text = text
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<img\b[^>]*>/gi, ' ')
+      .replace(/<a\b[^>]*>(.*?)<\/a>/gi, '$1')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'");
+
+    // Drop boilerplate and disclaimers (Autotask/email wrappers)
+    text = text
+      .replace(/\*{3}\s*please enter replies above this line\s*\*{3}[\s\S]*$/i, ' ')
+      .replace(/thank you for contacting us[\s\S]*?the details of the ticket are listed below\.?/i, ' ')
+      .replace(/you can access your service ticket via our client portal by clicking the following link:[\s\S]*$/i, ' ')
+      .replace(/if you do not have access to the client portal[\s\S]*$/i, ' ')
+      .replace(/sincerely,\s*refresh support team[\s\S]*$/i, ' ')
+      .replace(/caution[\s\S]*?this email originated outside the organization[\s\S]*$/i, ' ')
+      .replace(/do not click any links? or attachments? unless you know the sender[\s\S]*$/i, ' ');
+
+    // Remove safe links / raw URLs while preserving nearby text
+    text = text
+      .replace(/https?:\/\/nam\d+\.safelinks\.protection\.outlook\.com\/\S+/gi, ' ')
+      .replace(/https?:\/\/\S+/gi, ' ');
+
+    // Keep the likely user request portion if an embedded "Description:" exists
+    const descMatch = text.match(/\bdescription\s*:\s*([\s\S]+)$/i);
+    if (descMatch?.[1]) {
+      text = descMatch[1];
+    }
+
+    // Trim auto-ack ticket metadata that often precedes the real request
+    text = text
+      .replace(/\bticket\s*#?\s*:\s*T\d{8}\.\d+\b/gi, ' ')
+      .replace(/\bcreated on\s+\d{1,2}\/\d{1,2}\/\d{4}[\s\S]*?\bby\s+[A-Za-z .'-]+/gi, ' ')
+      .replace(/\btitle\s*:\s*[^.:\n]+/gi, ' ');
+
+    // Normalize whitespace and cut trailing repeated signatures/disclaimers again after transforms
+    text = text
+      .replace(/\s+/g, ' ')
+      .replace(/\b(you can access your service ticket|sincerely|caution)\b[\s\S]*$/i, '')
+      .trim();
+
+    return text;
+  }
+
+  private postProcessUiTicketText(value: string): string {
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    return text
+      .replace(/^new ticket detected:\s*/i, '')
+      .replace(/^ticket\s*#?\s*T\d{8}\.\d+\s*[:\-]\s*/i, '')
+      .replace(/\s*(from|at)\s+[A-Z][\s\S]*$/i, '')
+      .trim();
+  }
+
+  private guardTicketUiRoleAssignment(input: {
+    descriptionUi: string;
+    requesterName: string;
+    ticketRequester: string;
+    canonicalText: string;
+    narrative: string;
+  }): string {
+    let ui = String(input.descriptionUi || '').trim();
+    if (!ui) return ui;
+
+    const requesterName = this.normalizeName(input.requesterName || input.ticketRequester || '').trim();
+    if (!requesterName) return ui;
+
+    const requesterLower = requesterName.toLowerCase();
+    const uiLower = ui.toLowerCase();
+    const canonical = String(input.canonicalText || input.narrative || '').toLowerCase();
+
+    const mentionsNewEmployee = /\b(new|another)\s+(maintenance\s+)?employee\b/.test(canonical);
+    const requesterAsksForThirdParty =
+      /\bwe have a new\b/.test(canonical) ||
+      /\bhe will need\b/.test(canonical) ||
+      /\bshe will need\b/.test(canonical) ||
+      /\bthey will need\b/.test(canonical) ||
+      /\bfor (a|an|our)\s+(new\s+)?(employee|hire|user)\b/.test(canonical) ||
+      /\bon behalf of\b/.test(canonical);
+
+    const uiAssignsRequesterToNewEmployee =
+      uiLower.includes(requesterLower) &&
+      /\bnew\s+(maintenance\s+)?employee\b/.test(uiLower) &&
+      !/\brequests?\b/.test(uiLower);
+
+    if (!(mentionsNewEmployee && requesterAsksForThirdParty && uiAssignsRequesterToNewEmployee)) {
+      return ui;
+    }
+
+    // Rewrite to preserve requester role and keep affected user unnamed unless explicitly present.
+    ui = ui.replace(new RegExp(`\\b${this.escapeRegex(requesterName)}\\b`, 'ig'), '').replace(/\s+/g, ' ').trim();
+    ui = ui.replace(/\bfor\s+new\s+(maintenance\s+)?employee\b/gi, 'for a new $1employee (name not provided)');
+    ui = ui.replace(/\bnew\s+(maintenance\s+)?employee\b/i, 'new $1employee (name not provided)');
+    ui = ui.replace(/\s+/g, ' ').trim();
+    ui = ui.replace(/^[,.;:\-\s]+|[,.;:\-\s]+$/g, '');
+
+    const requesterLead = `${requesterName} requests`;
+    if (!ui.toLowerCase().startsWith(requesterLead.toLowerCase())) {
+      ui = `${requesterLead} ${ui.charAt(0).toLowerCase()}${ui.slice(1)}`;
+    }
+    return ui;
+  }
+
+  private escapeRegex(value: string): string {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   private extractJsonObject(raw: string): Record<string, unknown> {
@@ -5835,6 +5975,11 @@ export async function persistTicketSSOT(
   payload: TicketSSOT
 ): Promise<void> {
   try {
+    const canPersist = await canPersistTicketScopedArtifact(ticketId, sessionId, 'ticket_ssot');
+    if (!canPersist) {
+      console.log(`[DB] Skipped SSOT persist for superseded session ${sessionId} ticket ${ticketId}`);
+      return;
+    }
     await execute(
       `INSERT INTO ticket_ssot (ticket_id, session_id, payload, created_at, updated_at)
        VALUES ($1, $2, $3, NOW(), NOW())
@@ -5855,6 +6000,11 @@ export async function persistTicketTextArtifact(
   payload: TicketTextArtifact
 ): Promise<void> {
   try {
+    const canPersist = await canPersistTicketScopedArtifact(ticketId, sessionId, 'ticket_text_artifact');
+    if (!canPersist) {
+      console.log(`[DB] Skipped ticket text artifact persist for superseded session ${sessionId} ticket ${ticketId}`);
+      return;
+    }
     await execute(
       `INSERT INTO ticket_text_artifacts (ticket_id, session_id, payload, created_at, updated_at)
        VALUES ($1, $2, $3, NOW(), NOW())
@@ -5893,6 +6043,11 @@ export async function persistTicketContextAppendix(
   payload: TicketContextAppendix
 ): Promise<void> {
   try {
+    const canPersist = await canPersistTicketScopedArtifact(ticketId, sessionId, 'ticket_context_appendix');
+    if (!canPersist) {
+      console.log(`[DB] Skipped ticket context appendix persist for superseded session ${sessionId} ticket ${ticketId}`);
+      return;
+    }
     await execute(
       `INSERT INTO ticket_context_appendix (ticket_id, session_id, payload, created_at, updated_at)
        VALUES ($1, $2, $3, NOW(), NOW())
@@ -5903,6 +6058,53 @@ export async function persistTicketContextAppendix(
     console.log(`[DB] Persisted ticket context appendix for ticket ${ticketId}`);
   } catch (error) {
     console.error('[DB] Failed to persist ticket context appendix:', error);
+  }
+}
+
+async function canPersistTicketScopedArtifact(
+  ticketId: string,
+  sessionId: string,
+  artifactKind: 'ticket_ssot' | 'ticket_text_artifact' | 'ticket_context_appendix'
+): Promise<boolean> {
+  try {
+    const session = await queryOne<{
+      id: string;
+      ticket_id: string;
+      status: string;
+      last_error: string | null;
+    }>(
+      `SELECT id, ticket_id, status, last_error
+       FROM triage_sessions
+       WHERE id = $1
+       LIMIT 1`,
+      [sessionId]
+    );
+    if (!session) return false;
+    if (String(session.ticket_id || '') !== String(ticketId || '')) return false;
+
+    const status = String(session.status || '').toLowerCase();
+    const lastError = String(session.last_error || '').toLowerCase();
+    if (status === 'failed' && lastError.includes('manual refresh restart')) {
+      return false;
+    }
+
+    const latest = await queryOne<{ id: string }>(
+      `SELECT id
+       FROM triage_sessions
+       WHERE ticket_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [ticketId]
+    );
+    const isLatest = String(latest?.id || '') === String(sessionId || '');
+    if (!isLatest) {
+      console.log(`[DB] Guard rejected ${artifactKind} persist: session ${sessionId} is not latest for ticket ${ticketId}`);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error(`[DB] Artifact guard failed for ${artifactKind}; allowing persist as fallback:`, error);
+    return true;
   }
 }
 

@@ -59,6 +59,38 @@ type TicketLike = {
   canonicalAffectedEmail?: string;
 };
 
+interface TicketSSOT {
+  ticket_id: string;
+  company: string;
+  requester_name: string;
+  requester_email: string;
+  affected_user_name: string;
+  affected_user_email: string;
+  created_at: string;
+  title: string;
+  description_clean: string;
+  user_principal_name: string;
+  account_status: string;
+  mfa_state: string;
+  licenses_summary: string;
+  groups_top: string;
+  device_name: string;
+  device_type: string;
+  os_name: string;
+  os_version: string;
+  last_check_in: string;
+  security_agent: SecurityAgentSummary | { state: 'unknown'; name?: string };
+  user_signed_in: string;
+  location_context: string;
+  public_ip: string;
+  isp_name: string;
+  vpn_state: string;
+  phone_provider: string;
+  firewall_make_model: string;
+  wifi_make_model: string;
+  switch_make_model: string;
+}
+
 interface ScopeMeta {
   tenant_id: string | null;
   org_id: string | null;
@@ -472,6 +504,7 @@ export class PrepareContextService {
     let ninjaOrgMatch: { id: number; name: string } | null = null;
     let ninjaOrgDevices: any[] = [];
     let ninjaAlerts: any[] = [];
+    let resolvedDeviceScore = 0;
     let itglueOrgMatch: { id: string; name: string } | null = null;
     let itglueConfigs: any[] = [];
     let itglueContacts: any[] = [];
@@ -559,7 +592,7 @@ export class PrepareContextService {
 
       sourceFindings.push({
         source: 'itglue',
-        round: 1,
+        round: 2,
         facet: 'base',
         queried: true,
         matched: Boolean(itglueOrgMatch || docs.length || itglueConfigs.length || itglueContacts.length),
@@ -592,7 +625,7 @@ export class PrepareContextService {
       });
       sourceFindings.push({
         source: 'itglue',
-        round: 1,
+        round: 2,
         facet: 'base',
         queried: true,
         matched: false,
@@ -605,7 +638,7 @@ export class PrepareContextService {
       });
     }
 
-    // ROUND 2: AT+ITG -> Ninja (Targeting Devices, Health, Alerts)
+    // ROUND 3: AT+ITG -> Ninja (Targeting Devices, Health, Alerts)
     try {
       const orgSeed = normalizedTicket?.organizationHint || itglueOrgMatch?.name || companyName || '';
       if (orgSeed) {
@@ -633,6 +666,7 @@ export class PrepareContextService {
       });
 
       device = resolvedDevice.device;
+      resolvedDeviceScore = resolvedDevice.score;
       ninjaChecks = resolvedDevice.checks;
       loggedInUser = resolvedDevice.loggedInUser;
       loggedInAt = resolvedDevice.loggedInAt || '';
@@ -652,7 +686,7 @@ export class PrepareContextService {
 
       sourceFindings.push({
         source: 'ninjaone',
-        round: 1,
+        round: 3,
         facet: 'base',
         queried: true,
         matched: Boolean(device || ninjaOrgMatch || ninjaOrgDevices.length),
@@ -686,7 +720,7 @@ export class PrepareContextService {
       });
       sourceFindings.push({
         source: 'ninjaone',
-        round: 1,
+        round: 3,
         facet: 'base',
         queried: true,
         matched: false,
@@ -709,7 +743,7 @@ export class PrepareContextService {
     if (inferredPhoneProvider) {
       sourceFindings.push({
         source: 'external',
-        round: 1,
+        round: 3,
         facet: 'telephony',
         queried: true,
         matched: true,
@@ -727,7 +761,7 @@ export class PrepareContextService {
       });
     }
 
-    // ROUND 3: AT+ITG+Ninja -> History (Similar Tickets, Previous Fixes, Known Issues)
+    // ROUND 4: AT+ITG+Ninja -> History (Similar Tickets, Previous Fixes, Known Issues)
     const historyTerms = [
       ticket.title || '',
       normalizedTicket?.descriptionUi || '',
@@ -750,7 +784,7 @@ export class PrepareContextService {
 
     sourceFindings.push({
       source: 'autotask',
-      round: 3,
+      round: 4,
       facet: 'history_correlation',
       queried: true,
       matched: relatedCases.length > 0,
@@ -767,32 +801,165 @@ export class PrepareContextService {
       source_workspace: sourceWorkspace,
     });
 
-    // ROUND 4 (The Crossing): History -> ITG/Ninja (Reconcile Serials/AssetTags/UPNs)
-    // AND: External Search (Skills)
-    if (relatedCases.length > 0) {
-      const historyIdentifiers = relatedCases.flatMap(rc => {
-        const matches = rc.resolution.match(/[A-Z0-9]{5,}/g) || [];
-        return matches;
-      });
+    const historyIdentifiers = relatedCases.flatMap((rc) => {
+      const matches = rc.resolution.match(/[A-Z0-9]{5,}/g) || [];
+      return matches;
+    });
 
-      if (historyIdentifiers.length > 0 && (!device || !itglueOrgMatch)) {
-        sourceFindings.push({
-          source: 'external',
-          round: 4,
-          facet: 'reconciliation',
-          queried: true,
-          matched: true,
-          summary: `reconciled ${historyIdentifiers.length} potential identifiers from history`,
-          details: [`identifiers found: ${historyIdentifiers.slice(0, 3).join(', ')}`],
-          why_selected: ['final reconciliation pass aims to fill gaps using resolution historical data'],
+    // ROUND 5: History -> ITG (refine docs/configs with historical terms)
+    if (itglueOrgMatch && historyTerms.length > 0) {
+      try {
+        const historyDocs = await Promise.all(
+          historyTerms.slice(0, 4).map((term) =>
+            itglueClient.searchDocuments(term, itglueOrgMatch!.id).catch(() => [])
+          )
+        );
+        const flattened = historyDocs.flat().slice(0, 6);
+        const extraDocs = flattened.map((doc: any, idx: number) => ({
+          id: String(doc.id),
+          source: 'itglue' as const,
+          title: String(doc.name || `History doc ${idx + 1}`),
+          snippet: String((doc as any).body || '').substring(0, 500),
+          relevance: 0.4 - idx * 0.05,
+          raw_ref: doc as unknown as Record<string, unknown>,
           tenant_id: tenantId,
-          org_id: input.orgId || null,
+          org_id: itglueOrgMatch?.id || null,
+          source_workspace: sourceWorkspace,
+        }));
+        docs = this.mergeDocsById(docs, extraDocs);
+        sourceFindings.push({
+          source: 'itglue',
+          round: 5,
+          facet: 'history_cross',
+          queried: true,
+          matched: extraDocs.length > 0,
+          summary: extraDocs.length > 0
+            ? `history refinement added ${extraDocs.length} document(s)`
+            : 'history refinement did not add new documents',
+          details: [
+            `terms: ${historyTerms.slice(0, 4).join(', ')}`,
+            `added_docs: ${extraDocs.length}`,
+          ],
+          why_selected: ['second IT Glue pass uses historical terms to close documentation gaps'],
+          tenant_id: tenantId,
+          org_id: itglueOrgMatch?.id || null,
+          source_workspace: sourceWorkspace,
+        });
+      } catch (error) {
+        sourceFindings.push({
+          source: 'itglue',
+          round: 5,
+          facet: 'history_cross',
+          queried: true,
+          matched: false,
+          summary: 'history refinement failed',
+          details: [`error: ${(error as Error).message}`],
+          why_rejected: ['itglue history refinement error'],
+          tenant_id: tenantId,
+          org_id: itglueOrgMatch?.id || null,
           source_workspace: sourceWorkspace,
         });
       }
     }
 
-    // Trigger External Search for Tech Facets (Phase 4)
+    // ROUND 6: History -> Ninja (re-resolve device using history hints)
+    if (historyTerms.length > 0) {
+      try {
+        const refinedDevice = await this.resolveDeviceDeterministically({
+          devices: ninjaOrgDevices,
+          ticketText: `${ticketNarrative} ${historyTerms.slice(0, 4).join(' ')}`,
+          requesterName,
+          itglueConfigs,
+          deviceHints: [...(normalizedTicket?.deviceHints || []), ...historyIdentifiers.slice(0, 4)],
+          ninjaoneClient,
+          sourceWorkspace,
+          tenantId,
+          orgId: ninjaOrgMatch ? String(ninjaOrgMatch.id) : itglueOrgMatch?.id || null,
+        });
+
+        if (refinedDevice.device && refinedDevice.score >= resolvedDeviceScore) {
+          device = refinedDevice.device;
+          resolvedDeviceScore = refinedDevice.score;
+          ninjaChecks = refinedDevice.checks;
+          loggedInUser = refinedDevice.loggedInUser;
+          loggedInAt = refinedDevice.loggedInAt || '';
+          deviceDetails = refinedDevice.details ?? null;
+          if (device?.id) {
+            ninjaContextSignals = await this.buildNinjaContextSignals({
+              ninjaoneClient,
+              deviceId: String(device.id),
+              orgId:
+                input.orgId ||
+                itglueOrgMatch?.id ||
+                (ninjaOrgMatch ? String(ninjaOrgMatch.id) : null),
+              tenantId,
+              sourceWorkspace,
+            });
+          }
+
+          for (let i = missingData.length - 1; i >= 0; i -= 1) {
+            const entry = missingData[i];
+            if (!entry) continue;
+            if (entry.field === 'device_unresolved' || entry.field === 'ninjaone_device') {
+              missingData.splice(i, 1);
+            }
+          }
+        }
+
+        sourceFindings.push({
+          source: 'ninjaone',
+          round: 6,
+          facet: 'history_cross',
+          queried: true,
+          matched: Boolean(refinedDevice.device),
+          summary: refinedDevice.device
+            ? `history refinement selected device ${refinedDevice.device.hostname || refinedDevice.device.systemName || refinedDevice.device.id}`
+            : 'history refinement did not find a better device',
+          details: [
+            `score: ${refinedDevice.score.toFixed(2)}`,
+            `history_terms: ${historyTerms.slice(0, 4).join(', ')}`,
+          ],
+          why_selected: [refinedDevice.reason],
+          tenant_id: tenantId,
+          org_id: ninjaOrgMatch ? String(ninjaOrgMatch.id) : null,
+          source_workspace: sourceWorkspace,
+        });
+      } catch (error) {
+        sourceFindings.push({
+          source: 'ninjaone',
+          round: 6,
+          facet: 'history_cross',
+          queried: true,
+          matched: false,
+          summary: 'history refinement failed',
+          details: [`error: ${(error as Error).message}`],
+          why_rejected: ['ninjaone history refinement error'],
+          tenant_id: tenantId,
+          org_id: ninjaOrgMatch ? String(ninjaOrgMatch.id) : null,
+          source_workspace: sourceWorkspace,
+        });
+      }
+    }
+
+    // ROUND 5 (The Crossing): History -> ITG/Ninja (Reconcile Serials/AssetTags/UPNs)
+    // AND: External Search (Skills)
+    if (historyIdentifiers.length > 0 && (!device || !itglueOrgMatch)) {
+      sourceFindings.push({
+        source: 'external',
+        round: 5,
+        facet: 'reconciliation',
+        queried: true,
+        matched: true,
+        summary: `reconciled ${historyIdentifiers.length} potential identifiers from history`,
+        details: [`identifiers found: ${historyIdentifiers.slice(0, 3).join(', ')}`],
+        why_selected: ['final reconciliation pass aims to fill gaps using resolution historical data'],
+        tenant_id: tenantId,
+        org_id: input.orgId || null,
+        source_workspace: sourceWorkspace,
+      });
+    }
+
+    // Trigger External Search for Tech Facets (Phase 5)
     const techFacets = normalizedTicket?.technologyFacets || [];
     if (techFacets.length > 0) {
       const searchQuery = `${techFacets.join(' ')} ${normalizedTicket?.symptoms?.[0] || 'known issues'}`;
@@ -976,6 +1143,8 @@ export class PrepareContextService {
     });
 
     const networkStack = this.buildNetworkStackFromEnrichment(iterativeEnrichment.sections);
+    const ssot = this.buildTicketSSOT(iterativeEnrichment.sections);
+    await persistTicketSSOT(input.ticketId, input.sessionId, ssot);
 
     // ─── Status de Provedores Externos ───────────────────────────
     const externalStatus: ExternalStatus[] = [];
@@ -2323,6 +2492,58 @@ export class PrepareContextService {
     return stack;
   }
 
+  private mergeDocsById(base: Doc[], extra: Doc[]): Doc[] {
+    const map = new Map<string, Doc>();
+    base.forEach((doc) => map.set(String(doc.id), doc));
+    extra.forEach((doc) => {
+      const key = String(doc.id);
+      if (!map.has(key)) {
+        map.set(key, doc);
+      }
+    });
+    return Array.from(map.values());
+  }
+
+  private buildTicketSSOT(sections: IterativeEnrichmentSections): TicketSSOT {
+    const ticket = sections.ticket;
+    const identity = sections.identity;
+    const endpoint = sections.endpoint;
+    const network = sections.network;
+    const infra = sections.infra;
+
+    return {
+      ticket_id: String(ticket.ticket_id.value || 'unknown'),
+      company: String(ticket.company.value || 'unknown'),
+      requester_name: String(ticket.requester_name.value || 'unknown'),
+      requester_email: String(ticket.requester_email.value || 'unknown'),
+      affected_user_name: String(ticket.affected_user_name.value || ticket.requester_name.value || 'unknown'),
+      affected_user_email: String(ticket.affected_user_email.value || ticket.requester_email.value || 'unknown'),
+      created_at: String(ticket.created_at.value || 'unknown'),
+      title: String(ticket.title.value || 'unknown'),
+      description_clean: String(ticket.description_clean.value || 'unknown'),
+      user_principal_name: String(identity.user_principal_name.value || 'unknown'),
+      account_status: String(identity.account_status.value || 'unknown'),
+      mfa_state: String(identity.mfa_state.value || 'unknown'),
+      licenses_summary: String(identity.licenses_summary.value || 'Unknown'),
+      groups_top: String(identity.groups_top.value || 'unknown'),
+      device_name: String(endpoint.device_name.value || 'unknown'),
+      device_type: String(endpoint.device_type.value || 'unknown'),
+      os_name: String(endpoint.os_name.value || 'unknown'),
+      os_version: String(endpoint.os_version.value || 'unknown'),
+      last_check_in: String(endpoint.last_check_in.value || 'unknown'),
+      security_agent: endpoint.security_agent.value as TicketSSOT['security_agent'],
+      user_signed_in: String(endpoint.user_signed_in.value || 'unknown'),
+      location_context: String(network.location_context.value || 'unknown'),
+      public_ip: String(network.public_ip.value || 'unknown'),
+      isp_name: String(network.isp_name.value || 'unknown'),
+      vpn_state: String(network.vpn_state.value || 'unknown'),
+      phone_provider: String(network.phone_provider.value || 'unknown'),
+      firewall_make_model: String(infra.firewall_make_model.value || 'unknown'),
+      wifi_make_model: String(infra.wifi_make_model.value || 'unknown'),
+      switch_make_model: String(infra.switch_make_model.value || 'unknown'),
+    };
+  }
+
   private parseMakeModel(value: string): { vendor: string; model: string } | null {
     const normalized = String(value || '').trim();
     if (!normalized || normalized.toLowerCase() === 'unknown') return null;
@@ -2412,11 +2633,12 @@ export class PrepareContextService {
   }
 
   private roundLabel(round: number): string {
-    if (round === 1) return 'intake_to_org_cross';
-    if (round === 2) return 'history_correlation';
-    if (round === 3) return 'identity_endpoint_refinement';
-    if (round === 4) return 'external_refinement';
-    if (round === 5) return 'final_reconciliation';
+    if (round === 1) return 'intake';
+    if (round === 2) return 'itglue';
+    if (round === 3) return 'ninja';
+    if (round === 4) return 'history_correlation';
+    if (round === 5) return 'itglue_refinement';
+    if (round === 6) return 'ninja_refinement';
     return `round_${round}`;
   }
 
@@ -3244,6 +3466,29 @@ export async function persistEvidencePack(sessionId: string, pack: EvidencePack)
     console.log(`[DB] Persisted EvidencePack for session ${sessionId}`);
   } catch (error) {
     console.error('[DB] Failed to persist EvidencePack:', error);
+    throw error;
+  }
+}
+
+/**
+ * Persist SSOT cache for a ticket
+ */
+export async function persistTicketSSOT(
+  ticketId: string,
+  sessionId: string,
+  payload: TicketSSOT
+): Promise<void> {
+  try {
+    await execute(
+      `INSERT INTO ticket_ssot (ticket_id, session_id, payload, created_at, updated_at)
+       VALUES ($1, $2, $3, NOW(), NOW())
+       ON CONFLICT (ticket_id)
+       DO UPDATE SET payload = EXCLUDED.payload, session_id = EXCLUDED.session_id, updated_at = NOW()`,
+      [ticketId, sessionId, JSON.stringify(payload)]
+    );
+    console.log(`[DB] Persisted SSOT for ticket ${ticketId}`);
+  } catch (error) {
+    console.error('[DB] Failed to persist SSOT:', error);
     throw error;
   }
 }

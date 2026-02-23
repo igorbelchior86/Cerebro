@@ -155,6 +155,11 @@ router.get('/full-flow', async (req, res) => {
       round0Details.find((d: string) => String(d).startsWith('confidence:')) || ''
     ).replace('confidence:', '').trim();
     const dbTicket = ticketResult?.payload || {};
+    const ssotResult = await queryOne<{ payload: any }>(
+      `SELECT payload FROM ticket_ssot WHERE ticket_id = $1 ORDER BY updated_at DESC LIMIT 1`,
+      [String(ticketId || rawId || '')]
+    );
+    const ssot = ssotResult?.payload || null;
     const normalizedDescription = String(
       normalizedTicketSection?.description_clean?.value || ''
     ).trim();
@@ -172,17 +177,17 @@ router.get('/full-flow', async (req, res) => {
     ).trim();
 
     const canonicalTicket = {
-      id: String(ticketId || dbTicket.id || rawId),
-      title: dbTicket.title ?? packTicket.title ?? null,
-      description: dbTicket.description ?? packTicket.description ?? null,
-      description_normalized: normalizedDescription || null,
-      requester: dbTicket.requester ?? packUser.name ?? null,
-      requester_normalized: normalizedRequesterName || null,
-      requester_email_normalized: normalizedRequesterEmail || null,
-      affected_user_normalized: normalizedAffectedName || null,
-      affected_user_email_normalized: normalizedAffectedEmail || null,
-      company: dbTicket.company ?? packOrg.name ?? null,
-      created_at: dbTicket.created_at ?? sessionRow?.created_at ?? null,
+      id: String(ssot?.ticket_id || ticketId || dbTicket.id || rawId),
+      title: ssot?.title ?? dbTicket.title ?? packTicket.title ?? null,
+      description: ssot?.description_clean ?? dbTicket.description ?? packTicket.description ?? null,
+      description_normalized: ssot?.description_clean ?? normalizedDescription || null,
+      requester: ssot?.requester_name ?? dbTicket.requester ?? packUser.name ?? null,
+      requester_normalized: ssot?.requester_name ?? normalizedRequesterName || null,
+      requester_email_normalized: ssot?.requester_email ?? normalizedRequesterEmail || null,
+      affected_user_normalized: ssot?.affected_user_name ?? normalizedAffectedName || null,
+      affected_user_email_normalized: ssot?.affected_user_email ?? normalizedAffectedEmail || null,
+      company: ssot?.company ?? dbTicket.company ?? packOrg.name ?? null,
+      created_at: ssot?.created_at ?? dbTicket.created_at ?? sessionRow?.created_at ?? null,
       priority: dbTicket.priority ?? 'P3',
       normalization_audit: {
         round: round0Finding ? 0 : null,
@@ -451,6 +456,7 @@ router.get('/full-flow', async (req, res) => {
       },
       data: {
         ticket: canonicalTicket,
+        ssot,
         pack,
         diagnosis,
         validation,

@@ -1,21 +1,19 @@
-# Task: Robust pending retry queue behavior
-**Status**: completed
+# Task: SSOT as source for evidencePack + UI panels
+**Status**: planning
 **Started**: 2026-02-23
 
 ## Plan
-- [x] Step 1: Review current retry logic and status transitions for transient failures.
-- [x] Step 2: Add bounded retry/backoff metadata and adjust transient classification.
-- [x] Step 3: Verify behavior via focused script or tests and update wiki.
+- [ ] Step 1: Trace UI data flow for left/center/right panels and identify ticket fields sources.
+- [ ] Step 2: Update API full-flow payload to surface SSOT consistently for UI and evidence pack.
+- [ ] Step 3: Ensure EvidencePack ticket/identity fields prefer SSOT values.
+- [ ] Step 4: Update UI consumers to read SSOT for ticket-level display data.
+- [ ] Step 5: Verify behavior and update wiki.
 
 ## Open Questions
 - None.
 
-## Progress Notes
-- Step 1 complete: retry loop uses `pending` + stale `processing`, and transient errors map to `pending`.
-- Step 2 complete: added retry metadata, backoff scheduling, and non-transient credential classification.
-- Step 3 complete: ran focused Jest test; wiki updated.
-
 ## Review
-- What worked: Retry backoff metadata made the retry loop observable and schedule-driven.
-- What was tricky: Ensuring transient classification didn’t swallow credential/configuration errors.
-- Time taken: ~30 minutes.
+(filled in after completion)
+- What worked:
+- What was tricky:
+- Time taken:

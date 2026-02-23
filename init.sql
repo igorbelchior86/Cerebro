@@ -38,6 +38,21 @@ CREATE TABLE evidence_packs (
 CREATE INDEX idx_evidence_session ON evidence_packs(session_id);
 
 -- ─────────────────────────────────────────
+-- Ticket SSOT Cache
+-- ─────────────────────────────────────────
+CREATE TABLE ticket_ssot (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id  TEXT NOT NULL,
+  session_id UUID REFERENCES triage_sessions(id) ON DELETE SET NULL,
+  payload    JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX idx_ticket_ssot_ticket_id ON ticket_ssot(ticket_id);
+CREATE INDEX idx_ticket_ssot_session_id ON ticket_ssot(session_id);
+
+-- ─────────────────────────────────────────
 -- LLM Outputs (diagnose + playbook)
 -- ─────────────────────────────────────────
 CREATE TABLE llm_outputs (

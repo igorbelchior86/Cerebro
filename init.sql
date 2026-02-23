@@ -12,6 +12,9 @@ CREATE TABLE triage_sessions (
   org_name      TEXT,
   status        TEXT NOT NULL DEFAULT 'pending'
                   CHECK (status IN ('pending','processing','approved','needs_more_info','blocked','failed')),
+  retry_count   INT NOT NULL DEFAULT 0,
+  next_retry_at TIMESTAMPTZ,
+  last_error    TEXT,
   created_by    TEXT NOT NULL,
   created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()

@@ -12,6 +12,8 @@ export class TriageOrchestrator {
     private validateService: ValidatePolicyService;
     private playbookService: PlaybookWriterService;
     private retryIntervalId: NodeJS.Timeout | null = null;
+    private readonly retryBaseDelayMs = 2 * 60 * 1000;
+    private readonly retryMaxDelayMs = 30 * 60 * 1000;
 
     constructor() {
         this.prepareService = new PrepareContextService();
@@ -45,7 +47,7 @@ export class TriageOrchestrator {
             // Limit to 5 per cycle to avoid hammering the API
             const staleSessions = await query<{ ticket_id: string }>(
                 `SELECT ticket_id FROM triage_sessions 
-                 WHERE status = 'pending' 
+                 WHERE (status = 'pending' AND (next_retry_at IS NULL OR next_retry_at <= NOW()))
                  OR (status = 'processing' AND updated_at < NOW() - INTERVAL '10 minutes')
                  ORDER BY updated_at ASC
                  LIMIT 5`
@@ -118,7 +120,7 @@ export class TriageOrchestrator {
                     console.warn(`[Orchestrator] Session ${sessionId} is approved but has no playbook. Reprocessing.`);
                 }
                 console.log(`[Orchestrator] Resuming/retrying existing session ${sessionId}`);
-                await this.updateSessionStatus(sessionId as string, 'processing');
+                await this.updateSessionStatus(sessionId as string, 'processing', { lastError: null });
             } else {
                 sessionId = uuidv4();
                 const defaultTenant = await queryOne<{ id: string }>(
@@ -193,7 +195,7 @@ export class TriageOrchestrator {
 
                 if (!validation.safe_to_generate_playbook) {
                     console.warn(`[Orchestrator] [${sid}] Pipeline stopped at validation. Status: ${validation.status}`);
-                    await this.updateSessionStatus(sid, validation.status as any);
+                    await this.updateSessionStatus(sid, validation.status as any, { clearRetry: true, lastError: null });
                     return;
                 }
 
@@ -219,16 +221,16 @@ export class TriageOrchestrator {
                     ]
                 );
 
-                await this.updateSessionStatus(sid, 'approved');
+                await this.updateSessionStatus(sid, 'approved', { clearRetry: true, lastError: null });
                 console.log(`[Orchestrator] [${sid}] Pipeline completed successfully. Playbook ready.`);
             } catch (error: any) {
                 console.error(`[Orchestrator] [${sid}] Pipeline failed:`, error);
                 const message = String(error?.message || error || '');
                 if (this.isTransientProviderError(message) || error.name === 'LLMQuotaExceededError') {
-                    await this.updateSessionStatus(sid, 'pending');
+                    await this.markPendingForRetry(sid, message);
                     console.warn(`[Orchestrator] [${sid}] Marked as pending for retry (quota/transient error): ${message}`);
                 } else {
-                    await this.updateSessionStatus(sid, 'failed');
+                    await this.updateSessionStatus(sid, 'failed', { lastError: message, clearRetry: true });
                 }
             }
         });
@@ -247,19 +249,58 @@ export class TriageOrchestrator {
             normalized.includes('econnreset') ||
             normalized.includes('etimedout') ||
             normalized.includes('network error') ||
-            normalized.includes('api key not set') ||
-            normalized.includes('invalid api key') ||
-            normalized.includes('quota_exceeded') ||
-            normalized.includes('access is denied');
+            normalized.includes('quota_exceeded');
+    }
+
+    private computeBackoffDelayMs(retryCount: number): number {
+        const exponent = Math.max(0, retryCount - 1);
+        const delay = this.retryBaseDelayMs * Math.pow(2, Math.min(exponent, 6));
+        return Math.min(delay, this.retryMaxDelayMs);
+    }
+
+    private async markPendingForRetry(sessionId: string, errorMessage: string) {
+        const current = await queryOne<{ retry_count: number | null }>(
+            `SELECT retry_count FROM triage_sessions WHERE id = $1`,
+            [sessionId]
+        );
+        const nextRetryCount = (current?.retry_count ?? 0) + 1;
+        const delayMs = this.computeBackoffDelayMs(nextRetryCount);
+        const nextRetryAt = new Date(Date.now() + delayMs);
+
+        await execute(
+            `UPDATE triage_sessions
+             SET status = 'pending',
+                 retry_count = $1,
+                 next_retry_at = $2,
+                 last_error = $3,
+                 updated_at = NOW()
+             WHERE id = $4`,
+            [nextRetryCount, nextRetryAt, errorMessage, sessionId]
+        );
     }
 
     private async updateSessionStatus(
         sessionId: string,
-        status: 'pending' | 'processing' | 'approved' | 'needs_more_info' | 'blocked' | 'failed'
+        status: 'pending' | 'processing' | 'approved' | 'needs_more_info' | 'blocked' | 'failed',
+        options?: { clearRetry?: boolean; lastError?: string | null }
     ) {
+        const updates: string[] = ['status = $1', 'updated_at = NOW()'];
+        const params: Array<string | null | boolean> = [status];
+        let paramIndex = 2;
+
+        if (options?.lastError !== undefined) {
+            updates.push(`last_error = $${paramIndex}`);
+            params.push(options.lastError ?? null);
+            paramIndex += 1;
+        }
+        if (options?.clearRetry) {
+            updates.push('retry_count = 0');
+            updates.push('next_retry_at = NULL');
+        }
+        params.push(sessionId);
         await execute(
-            `UPDATE triage_sessions SET status = $1, updated_at = NOW() WHERE id = $2`,
-            [status, sessionId]
+            `UPDATE triage_sessions SET ${updates.join(', ')} WHERE id = $${paramIndex}`,
+            params
         );
     }
 }

@@ -1,25 +1,21 @@
-# Task: Align diagnose -> playbook checklist contract
-
+# Task: Robust pending retry queue behavior
 **Status**: completed
-**Started**: 2026-02-21
+**Started**: 2026-02-23
 
 ## Plan
-- [x] Step 1: Audit diagnose/playbook contract and locate mismatch points
-- [x] Step 2: Implement deterministic hypothesis-to-checklist alignment in playbook generation path
-- [x] Step 3: Verify with typecheck and targeted behavioral inspection
-- [x] Step 4: Update wiki docs (feature + changelog)
+- [x] Step 1: Review current retry logic and status transitions for transient failures.
+- [x] Step 2: Add bounded retry/backoff metadata and adjust transient classification.
+- [x] Step 3: Verify behavior via focused script or tests and update wiki.
 
 ## Open Questions
-- Should checklist enforce at least one action per top-3 hypothesis or only top-1/top-2?
+- None.
 
 ## Progress Notes
-- Initialized workflow-orchestrator artifacts.
-- Root cause confirmed: playbook prompt was centered on primary hypothesis and did not enforce checklist coverage across H2/H3.
-- Implemented mandatory checklist hypothesis tags ([H1]/[H2]/[H3]) and post-generation alignment validation with one repair pass.
-- API typecheck passed.
-- Wiki updated with feature and changelog entries.
+- Step 1 complete: retry loop uses `pending` + stale `processing`, and transient errors map to `pending`.
+- Step 2 complete: added retry metadata, backoff scheduling, and non-transient credential classification.
+- Step 3 complete: ran focused Jest test; wiki updated.
 
 ## Review
-- What worked: Contract-level enforcement in the writer solved the mismatch without changing diagnosis schema.
-- What was tricky: Keep enforcement deterministic while still allowing model flexibility; solved with tag rule + validator + single repair pass.
-- Time taken: ~30 min.
+- What worked: Retry backoff metadata made the retry loop observable and schedule-driven.
+- What was tricky: Ensuring transient classification didn’t swallow credential/configuration errors.
+- Time taken: ~30 minutes.

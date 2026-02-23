@@ -228,3 +228,9 @@
 **Root cause**: Hard refresh semantics were incomplete (did not clear IT Glue org caches) and button UX did not match expectation.
 **Rule**: Any user-facing 'refresh pipeline' action must explicitly define and enforce cache invalidation scope needed for true pipeline restart.
 **Pattern**: If pipeline output reappears immediately after refresh, audit upstream caches (`*_snapshot`, `*_enriched`) and invalidate at ticket/org scope.
+
+## Lesson: 2026-02-23
+**Mistake**: Considerei o fluxo atual como aderente sem validar o contrato detalhado do Prepare Context (2a..2f).
+**Root cause**: Auditoria orientada por semelhança narrativa, não por especificação funcional exata.
+**Rule**: Quando o usuário define contrato operacional detalhado, validar aderência item a item antes de concluir “ok”.
+**Pattern**: Pipeline multi-fonte com LLM exige checagem por artefato persistido (snapshot, enriched, SSOT UI), não só por nomes de serviços.

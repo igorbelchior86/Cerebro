@@ -92,6 +92,20 @@ interface TicketSSOT {
   switch_make_model: string;
 }
 
+export interface TicketTextArtifact {
+  ticket_id: string;
+  session_id: string;
+  source: 'autotask' | 'email' | 'unknown';
+  title_original: string;
+  title_reinterpreted: string;
+  text_original: string;
+  text_clean: string;
+  text_reinterpreted: string;
+  normalization_method: 'llm' | 'deterministic_fallback';
+  normalization_confidence: number;
+  created_at: string;
+}
+
 interface ScopeMeta {
   tenant_id: string | null;
   org_id: string | null;
@@ -148,6 +162,20 @@ interface ItglueEnrichedPayload {
   created_at: string;
 }
 
+interface NinjaEnrichedField {
+  value: string;
+  confidence: number;
+  source_system: string;
+  evidence_refs: string[];
+}
+
+interface NinjaEnrichedPayload {
+  org_id: string;
+  source_hash: string;
+  fields: Record<string, NinjaEnrichedField>;
+  created_at: string;
+}
+
 const NINJAONE_BASE: Record<string, string> = {
   us: 'https://app.ninjarmm.com',
   eu: 'https://eu.ninjarmm.com',
@@ -161,6 +189,7 @@ const ITGLUE_BASE: Record<string, string> = {
 };
 
 const ITGLUE_EXTRACTOR_VERSION = 'v2-summary-2026-02-23';
+const NINJA_EXTRACTOR_VERSION = 'v1-summary-2026-02-23';
 
 const FACET_TERMS = {
   symptom: {
@@ -463,8 +492,27 @@ export class PrepareContextService {
     }
     const sourceFindings: SourceFinding[] = [];
     const rejectedEvidence: RejectedEvidence[] = [];
+    const originalTicketTitle = String(ticket.title || '').trim();
+    const originalTicketNarrative = this.buildTicketNarrative(ticket);
     const normalizedTicket = await this.normalizeTicketForPipeline(ticket).catch(() => null);
     if (normalizedTicket) {
+      await persistTicketTextArtifact(input.ticketId, input.sessionId, {
+        ticket_id: input.ticketId,
+        session_id: input.sessionId,
+        source: input.ticketId.toString().startsWith('EMAIL-')
+          ? 'email'
+          : !Number.isNaN(Number(input.ticketId))
+            ? 'autotask'
+            : 'unknown',
+        title_original: originalTicketTitle,
+        title_reinterpreted: normalizedTicket.title || originalTicketTitle,
+        text_original: originalTicketNarrative,
+        text_clean: normalizedTicket.descriptionCanonical,
+        text_reinterpreted: normalizedTicket.descriptionUi,
+        normalization_method: normalizedTicket.method,
+        normalization_confidence: normalizedTicket.confidence,
+        created_at: new Date().toISOString(),
+      });
       if (normalizedTicket.title) ticket.title = normalizedTicket.title;
       if (normalizedTicket.descriptionUi) ticket.description = normalizedTicket.descriptionUi;
       if (normalizedTicket.descriptionCanonical) ticket.rawBody = normalizedTicket.descriptionCanonical;
@@ -521,6 +569,9 @@ export class PrepareContextService {
     let ninjaOrgMatch: { id: number; name: string } | null = null;
     let ninjaOrgDevices: any[] = [];
     let ninjaAlerts: any[] = [];
+    let ninjaOrgDetails: Record<string, unknown> | null = null;
+    let ninjaCollectionErrors: string[] = [];
+    let ninjaEnriched: NinjaEnrichedPayload | null = null;
     let resolvedDeviceScore = 0;
     let itglueOrgMatch: { id: string; name: string } | null = null;
     let itglueOrgDetails: Record<string, unknown> | null = null;
@@ -531,6 +582,10 @@ export class PrepareContextService {
     let itglueLocations: any[] = [];
     let itglueDomains: any[] = [];
     let itglueSslCertificates: any[] = [];
+    let itglueDocumentsRaw: any[] = [];
+    let itglueDocumentAttachmentsById: Record<string, any[]> = {};
+    let itglueDocumentRelatedItemsById: Record<string, any[]> = {};
+    let itglueCollectionErrors: string[] = [];
     let itglueEnriched: ItglueEnrichedPayload | null = null;
 
     // ROUND 1: AT/Intake -> IT Glue (Targeting Org/Contacts/Standards)
@@ -563,22 +618,65 @@ export class PrepareContextService {
       if (itglueOrgMatch) {
         [itglueOrgDetails, itglueConfigs, itglueContacts, itgluePasswords, itglueLocations, itglueDomains, itglueSslCertificates] = await Promise.all([
           itglueClient.getOrganizationById(itglueOrgMatch.id).then((org) => org?.attributes || {}).catch(() => ({})),
-          itglueClient.getConfigurations(itglueOrgMatch.id).catch(() => []),
-          itglueClient.getContacts(itglueOrgMatch.id).catch(() => []),
-          itglueClient.getPasswords(itglueOrgMatch.id).catch(() => []),
-          itglueClient.getLocations(itglueOrgMatch.id).catch(() => []),
-          itglueClient.getDomains(itglueOrgMatch.id).catch(() => []),
-          itglueClient.getSslCertificates(itglueOrgMatch.id).catch(() => []),
+          itglueClient.getConfigurations(itglueOrgMatch.id, 200).catch(() => []),
+          itglueClient.getContacts(itglueOrgMatch.id, 200).catch(() => []),
+          itglueClient.getPasswords(itglueOrgMatch.id, 200).catch(() => []),
+          itglueClient.getLocations(itglueOrgMatch.id, 200).catch(() => []),
+          itglueClient.getDomains(itglueOrgMatch.id, 200).catch(() => []),
+          itglueClient.getSslCertificates(itglueOrgMatch.id, 200).catch(() => []),
         ]);
-        if (facetContext.symptom.includes('hardware')) {
-          const assetTypes = await itglueClient.getFlexibleAssetTypes(20).catch(() => []);
-          const assetCandidates = await Promise.all(
-            assetTypes.slice(0, 3).map((t: any) =>
-              itglueClient.getFlexibleAssets(String(t.id), itglueOrgMatch!.id, 30).catch(() => [])
+        const [documentsRawResult, assetTypesResult] = await Promise.allSettled([
+          itglueClient.getOrganizationDocumentsRaw(itglueOrgMatch.id, 200),
+          itglueClient.getFlexibleAssetTypes(200),
+        ]);
+
+        if (documentsRawResult.status === 'fulfilled') {
+          itglueDocumentsRaw = documentsRawResult.value;
+        } else {
+          itglueCollectionErrors.push(`documents_raw: ${(documentsRawResult.reason as Error)?.message || String(documentsRawResult.reason)}`);
+        }
+        if (assetTypesResult.status === 'fulfilled') {
+          const assetCandidates = await Promise.allSettled(
+            assetTypesResult.value.map((t: any) =>
+              itglueClient.getFlexibleAssets(String(t.id), itglueOrgMatch!.id, 200)
             )
           );
-          itglueAssets = assetCandidates.flat();
+          const assetErrors: string[] = [];
+          itglueAssets = assetCandidates.flatMap((result, idx) => {
+            if (result.status === 'fulfilled') return result.value;
+            const assetTypeName = String(assetTypesResult.value[idx]?.attributes?.name || assetTypesResult.value[idx]?.id || `type_${idx}`);
+            assetErrors.push(`flexible_assets(${assetTypeName}): ${(result.reason as Error)?.message || String(result.reason)}`);
+            return [];
+          });
+          itglueCollectionErrors.push(...assetErrors);
+        } else {
+          itglueCollectionErrors.push(`flexible_asset_types: ${(assetTypesResult.reason as Error)?.message || String(assetTypesResult.reason)}`);
         }
+
+        const docIdsForExpansion = itglueDocumentsRaw
+          .map((doc: any) => String(doc?.id || '').trim())
+          .filter(Boolean)
+          .slice(0, 50);
+        const attachmentResults = await Promise.allSettled(
+          docIdsForExpansion.map((docId) => itglueClient.getDocumentAttachments(docId, 100))
+        );
+        const relatedItemResults = await Promise.allSettled(
+          docIdsForExpansion.map((docId) => itglueClient.getDocumentRelatedItems(docId, 100))
+        );
+        docIdsForExpansion.forEach((docId, idx) => {
+          const attach = attachmentResults[idx];
+          const rel = relatedItemResults[idx];
+          if (attach?.status === 'fulfilled') {
+            itglueDocumentAttachmentsById[docId] = attach.value;
+          } else if (attach) {
+            itglueCollectionErrors.push(`document_attachments(${docId}): ${(attach.reason as Error)?.message || String(attach.reason)}`);
+          }
+          if (rel?.status === 'fulfilled') {
+            itglueDocumentRelatedItemsById[docId] = rel.value;
+          } else if (rel) {
+            itglueCollectionErrors.push(`document_related_items(${docId}): ${(rel.reason as Error)?.message || String(rel.reason)}`);
+          }
+        });
       }
 
       docs = runbooks.slice(0, 5).map((doc, idx) => ({
@@ -636,7 +734,11 @@ export class PrepareContextService {
           `locations: ${itglueLocations.length}`,
           `domains: ${itglueDomains.length}`,
           `ssl_certs: ${itglueSslCertificates.length}`,
+          `documents_raw: ${itglueDocumentsRaw.length}`,
+          `document_attachments: ${Object.keys(itglueDocumentAttachmentsById).length} docs expanded`,
+          `document_related_items: ${Object.keys(itglueDocumentRelatedItemsById).length} docs expanded`,
           runbooksEndpointUnavailable ? 'runbooks endpoint: unavailable (404)' : `runbooks: ${docs.length}`,
+          ...(itglueCollectionErrors.length ? [`partial errors: ${itglueCollectionErrors.length}`] : []),
           `credential scope: ${credentialScope}`,
         ],
         why_selected: [
@@ -659,6 +761,10 @@ export class PrepareContextService {
           locations: itglueLocations,
           domains: itglueDomains,
           ssl_certificates: itglueSslCertificates,
+          documents_raw: itglueDocumentsRaw,
+          document_attachments_by_id: itglueDocumentAttachmentsById,
+          document_related_items_by_id: itglueDocumentRelatedItemsById,
+          collection_errors: itglueCollectionErrors,
           organization_details: itglueOrgDetails || {},
           docs,
         };
@@ -697,10 +803,28 @@ export class PrepareContextService {
         ninjaOrgMatch = await this.resolveNinjaOrg(ninjaoneClient, orgSeed);
       }
       if (ninjaOrgMatch) {
-        [ninjaOrgDevices, ninjaAlerts] = await Promise.all([
-          ninjaoneClient.listDevicesByOrganization(String(ninjaOrgMatch.id), { limit: 100 }),
+        const ninjaOrgFetch = await Promise.allSettled([
+          ninjaoneClient.getOrganization(String(ninjaOrgMatch.id)),
+          ninjaoneClient.listDevicesByOrganization(String(ninjaOrgMatch.id), { limit: 200 }),
           ninjaoneClient.listAlerts(String(ninjaOrgMatch.id)),
         ]);
+        if (ninjaOrgFetch[0].status === 'fulfilled') {
+          ninjaOrgDetails = ninjaOrgFetch[0].value as Record<string, unknown>;
+        } else {
+          ninjaCollectionErrors.push(`organization: ${(ninjaOrgFetch[0].reason as Error)?.message || String(ninjaOrgFetch[0].reason)}`);
+        }
+        if (ninjaOrgFetch[1].status === 'fulfilled') {
+          ninjaOrgDevices = ninjaOrgFetch[1].value;
+        } else {
+          ninjaOrgDevices = [];
+          ninjaCollectionErrors.push(`devices: ${(ninjaOrgFetch[1].reason as Error)?.message || String(ninjaOrgFetch[1].reason)}`);
+        }
+        if (ninjaOrgFetch[2].status === 'fulfilled') {
+          ninjaAlerts = ninjaOrgFetch[2].value;
+        } else {
+          ninjaAlerts = [];
+          ninjaCollectionErrors.push(`alerts: ${(ninjaOrgFetch[2].reason as Error)?.message || String(ninjaOrgFetch[2].reason)}`);
+        }
       } else {
         ninjaOrgDevices = await ninjaoneClient.listDevices({ limit: 100 });
       }
@@ -736,6 +860,31 @@ export class PrepareContextService {
         });
       }
 
+      if (ninjaOrgMatch) {
+        const ninjaRawSnapshot = {
+          org_id: String(ninjaOrgMatch.id),
+          org_name: String(ninjaOrgMatch.name || ''),
+          organization_details: ninjaOrgDetails || {},
+          devices: ninjaOrgDevices,
+          alerts: ninjaAlerts,
+          selected_device: device || null,
+          selected_device_details: deviceDetails || null,
+          selected_device_checks: ninjaChecks,
+          selected_device_context_signals: ninjaContextSignals,
+          logged_in_user: loggedInUser || '',
+          logged_in_at: loggedInAt || '',
+          resolved_device_score: resolvedDeviceScore,
+          collection_errors: ninjaCollectionErrors,
+        };
+        const ninjaSnapshotHash = this.hashSnapshotWithVersion(ninjaRawSnapshot, NINJA_EXTRACTOR_VERSION);
+        await persistNinjaOrgSnapshot(String(ninjaOrgMatch.id), ninjaRawSnapshot, ninjaSnapshotHash);
+        ninjaEnriched = await this.getOrRefreshNinjaEnriched({
+          orgId: String(ninjaOrgMatch.id),
+          snapshot: ninjaRawSnapshot,
+          sourceHash: ninjaSnapshotHash,
+        });
+      }
+
       sourceFindings.push({
         source: 'ninjaone',
         round: 3,
@@ -751,6 +900,8 @@ export class PrepareContextService {
           `alerts: ${ninjaAlerts.length}`,
           `health checks: ${ninjaChecks.length}`,
           `extended signals: ${ninjaContextSignals.length}`,
+          `ninja_enriched: ${ninjaEnriched ? 'cached/generated' : 'not available'}`,
+          ...(ninjaCollectionErrors.length ? [`partial errors: ${ninjaCollectionErrors.length}`] : []),
           loggedInUser ? `logged-in user: ${loggedInUser}` : 'logged-in user: not available',
           `credential scope: ${credentialScope}`,
         ],
@@ -2588,6 +2739,11 @@ export class PrepareContextService {
     return crypto.createHash('sha256').update(`${ITGLUE_EXTRACTOR_VERSION}:${json}`).digest('hex');
   }
 
+  private hashSnapshotWithVersion(snapshot: Record<string, unknown>, version: string): string {
+    const json = JSON.stringify(snapshot);
+    return crypto.createHash('sha256').update(`${version}:${json}`).digest('hex');
+  }
+
   private pickEnrichedValue(payload: ItglueEnrichedPayload | null, key: string): string | null {
     if (!payload || !payload.fields || !payload.fields[key]) return null;
     const value = String(payload.fields[key]?.value || '').trim();
@@ -2600,6 +2756,13 @@ export class PrepareContextService {
     const passwords = Array.isArray((snapshot as any).passwords) ? (snapshot as any).passwords : [];
     const assets = Array.isArray((snapshot as any).assets) ? (snapshot as any).assets : [];
     const docs = Array.isArray((snapshot as any).docs) ? (snapshot as any).docs : [];
+    const documentsRaw = Array.isArray((snapshot as any).documents_raw) ? (snapshot as any).documents_raw : [];
+    const documentAttachmentsById = ((snapshot as any).document_attachments_by_id && typeof (snapshot as any).document_attachments_by_id === 'object')
+      ? (snapshot as any).document_attachments_by_id
+      : {};
+    const documentRelatedItemsById = ((snapshot as any).document_related_items_by_id && typeof (snapshot as any).document_related_items_by_id === 'object')
+      ? (snapshot as any).document_related_items_by_id
+      : {};
     const locations = Array.isArray((snapshot as any).locations) ? (snapshot as any).locations : [];
     const domains = Array.isArray((snapshot as any).domains) ? (snapshot as any).domains : [];
     const sslCertificates = Array.isArray((snapshot as any).ssl_certificates) ? (snapshot as any).ssl_certificates : [];
@@ -2656,6 +2819,92 @@ export class PrepareContextService {
         id: d?.id,
         title: d?.title || d?.name,
       })),
+      documents_raw: documentsRaw.slice(0, 100).map((d: any) => ({
+        id: d?.id,
+        name: d?.attributes?.name || d?.name,
+        type: d?.attributes?.document_type_name || d?.attributes?.document_type || d?.documentType,
+        updated_at: d?.attributes?.updated_at || d?.updatedAt,
+      })),
+      document_attachments_sample: Object.entries(documentAttachmentsById)
+        .slice(0, 50)
+        .map(([docId, items]: [string, any]) => ({
+          document_id: docId,
+          count: Array.isArray(items) ? items.length : 0,
+          names: Array.isArray(items)
+            ? items.slice(0, 5).map((x: any) => x?.attributes?.name || x?.attributes?.file_name || x?.name).filter(Boolean)
+            : [],
+        })),
+      document_related_items_sample: Object.entries(documentRelatedItemsById)
+        .slice(0, 50)
+        .map(([docId, items]: [string, any]) => ({
+          document_id: docId,
+          count: Array.isArray(items) ? items.length : 0,
+          item_types: Array.isArray(items)
+            ? [...new Set(items.slice(0, 20).map((x: any) => x?.attributes?.resource_type || x?.attributes?.item_type || 'unknown'))]
+            : [],
+        })),
+      collection_errors: Array.isArray((snapshot as any).collection_errors) ? (snapshot as any).collection_errors.slice(0, 20) : [],
+    };
+  }
+
+  private buildNinjaExtractionInput(snapshot: Record<string, unknown>): Record<string, unknown> {
+    const devices = Array.isArray((snapshot as any).devices) ? (snapshot as any).devices : [];
+    const alerts = Array.isArray((snapshot as any).alerts) ? (snapshot as any).alerts : [];
+    const checks = Array.isArray((snapshot as any).selected_device_checks) ? (snapshot as any).selected_device_checks : [];
+    const contextSignals = Array.isArray((snapshot as any).selected_device_context_signals) ? (snapshot as any).selected_device_context_signals : [];
+    const selectedDevice = (snapshot as any).selected_device || {};
+    const selectedDeviceDetails = (snapshot as any).selected_device_details || {};
+
+    return {
+      org_id: (snapshot as any).org_id,
+      org_name: (snapshot as any).org_name,
+      organization_details: (snapshot as any).organization_details || {},
+      device_count: devices.length,
+      alert_count: alerts.length,
+      selected_device: {
+        id: selectedDevice.id,
+        hostname: selectedDevice.hostname || selectedDevice.systemName,
+        os_name: selectedDevice.osName,
+        os_version: selectedDevice.osVersion,
+        ip_address: selectedDevice.ipAddress,
+        last_contact: selectedDevice.lastContact || selectedDevice.lastActivityTime,
+        online: selectedDevice.online,
+      },
+      selected_device_details: {
+        hostname: selectedDeviceDetails.hostname,
+        os_name: selectedDeviceDetails.osName,
+        os_version: selectedDeviceDetails.osVersion,
+        ip_address: selectedDeviceDetails.ipAddress,
+        last_activity_time: selectedDeviceDetails.lastActivityTime,
+        properties: selectedDeviceDetails.properties || {},
+      },
+      selected_device_checks: checks.slice(0, 100),
+      selected_device_context_signals: contextSignals.slice(0, 100).map((s: any) => ({
+        id: s?.id,
+        type: s?.type,
+        summary: s?.summary,
+        timestamp: s?.timestamp,
+      })),
+      recent_alerts: alerts.slice(0, 100).map((a: any) => ({
+        uid: a?.uid,
+        severity: a?.severity,
+        message: a?.message,
+        device_id: a?.deviceId,
+        device_name: a?.deviceName,
+      })),
+      devices_sample: devices.slice(0, 200).map((d: any) => ({
+        id: d?.id,
+        hostname: d?.hostname || d?.systemName,
+        os_name: d?.osName,
+        os_version: d?.osVersion,
+        ip_address: d?.ipAddress,
+        last_contact: d?.lastContact || d?.lastActivityTime,
+        online: d?.online,
+      })),
+      logged_in_user: (snapshot as any).logged_in_user || '',
+      logged_in_at: (snapshot as any).logged_in_at || '',
+      resolved_device_score: (snapshot as any).resolved_device_score ?? null,
+      collection_errors: Array.isArray((snapshot as any).collection_errors) ? (snapshot as any).collection_errors.slice(0, 20) : [],
     };
   }
 
@@ -2694,6 +2943,70 @@ export class PrepareContextService {
     } catch (error) {
       console.error('[PrepareContext] IT Glue enrichment failed:', error);
       return cached ? (cached.payload as unknown as ItglueEnrichedPayload) : null;
+    }
+  }
+
+  private async getOrRefreshNinjaEnriched(input: {
+    orgId: string;
+    snapshot: Record<string, unknown>;
+    sourceHash: string;
+  }): Promise<NinjaEnrichedPayload | null> {
+    const cached = await getNinjaOrgEnriched(input.orgId);
+    const ttlMs = 24 * 60 * 60 * 1000;
+    if (cached) {
+      const updatedAt = new Date(cached.updated_at || cached.created_at || 0).getTime();
+      const isFresh = Number.isFinite(updatedAt) && (Date.now() - updatedAt) < ttlMs;
+      if (isFresh && cached.source_hash === input.sourceHash) {
+        return cached.payload as unknown as NinjaEnrichedPayload;
+      }
+    }
+
+    const summary = this.buildNinjaExtractionInput(input.snapshot);
+    const prompt = `You are a NinjaOne data extractor. Given a JSON summary of endpoint and organization telemetry, extract ONLY the fields below and return valid JSON.
+
+Rules:
+1. If value unknown, set value to "unknown" and confidence to 0.
+2. Include evidence_refs as JSON path hints (e.g., "selected_device.hostname", "selected_device_checks[2].name").
+3. Return ONLY JSON.
+
+Output schema:
+{
+  "org_id": "string",
+  "source_hash": "string",
+  "fields": {
+    "device_name": { "value": "string", "confidence": 0.0, "source_system": "ninjaone", "evidence_refs": ["string"] },
+    "device_type": { "value": "desktop|laptop|mobile|unknown", "confidence": 0.0, "source_system": "ninjaone", "evidence_refs": ["string"] },
+    "os_name": { "value": "string", "confidence": 0.0, "source_system": "ninjaone", "evidence_refs": ["string"] },
+    "os_version": { "value": "string", "confidence": 0.0, "source_system": "ninjaone", "evidence_refs": ["string"] },
+    "last_check_in": { "value": "string", "confidence": 0.0, "source_system": "ninjaone", "evidence_refs": ["string"] },
+    "security_agent_name": { "value": "string", "confidence": 0.0, "source_system": "ninjaone", "evidence_refs": ["string"] },
+    "security_agent_present": { "value": "present|absent|unknown", "confidence": 0.0, "source_system": "ninjaone", "evidence_refs": ["string"] },
+    "user_signed_in": { "value": "string", "confidence": 0.0, "source_system": "ninjaone", "evidence_refs": ["string"] },
+    "public_ip": { "value": "string", "confidence": 0.0, "source_system": "ninjaone", "evidence_refs": ["string"] },
+    "vpn_state": { "value": "connected|disconnected|unknown", "confidence": 0.0, "source_system": "ninjaone", "evidence_refs": ["string"] }
+  }
+}
+
+Snapshot JSON:
+${JSON.stringify(summary).slice(0, 14000)}`;
+
+    try {
+      const llm = await callLLM(prompt);
+      const parsed = this.extractJsonObject(llm.content);
+      const fields = (parsed?.fields && typeof parsed.fields === 'object')
+        ? (parsed.fields as Record<string, NinjaEnrichedField>)
+        : {};
+      const payload: NinjaEnrichedPayload = {
+        org_id: String(parsed?.org_id || input.orgId),
+        source_hash: String(parsed?.source_hash || input.sourceHash),
+        fields,
+        created_at: new Date().toISOString(),
+      };
+      await upsertNinjaOrgEnriched(input.orgId, payload as unknown as Record<string, unknown>, input.sourceHash);
+      return payload;
+    } catch (error) {
+      console.error('[PrepareContext] Ninja enrichment failed:', error);
+      return cached ? (cached.payload as unknown as NinjaEnrichedPayload) : null;
     }
   }
 
@@ -3686,6 +3999,44 @@ export async function persistTicketSSOT(
   }
 }
 
+export async function persistTicketTextArtifact(
+  ticketId: string,
+  sessionId: string,
+  payload: TicketTextArtifact
+): Promise<void> {
+  try {
+    await execute(
+      `INSERT INTO ticket_text_artifacts (ticket_id, session_id, payload, created_at, updated_at)
+       VALUES ($1, $2, $3, NOW(), NOW())
+       ON CONFLICT (ticket_id)
+       DO UPDATE SET payload = EXCLUDED.payload, session_id = EXCLUDED.session_id, updated_at = NOW()`,
+      [ticketId, sessionId, JSON.stringify(payload)]
+    );
+    console.log(`[DB] Persisted ticket text artifact for ticket ${ticketId}`);
+  } catch (error) {
+    console.error('[DB] Failed to persist ticket text artifact:', error);
+  }
+}
+
+export async function getTicketTextArtifact(
+  ticketId: string
+): Promise<{ payload: TicketTextArtifact; created_at: string; updated_at: string } | null> {
+  try {
+    const row = await queryOne<{ payload: TicketTextArtifact; created_at: string; updated_at: string }>(
+      `SELECT payload, created_at, updated_at
+       FROM ticket_text_artifacts
+       WHERE ticket_id = $1
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [ticketId]
+    );
+    return row || null;
+  } catch (error) {
+    console.error('[DB] Failed to fetch ticket text artifact:', error);
+    return null;
+  }
+}
+
 export async function persistItglueOrgSnapshot(
   orgId: string,
   payload: Record<string, unknown>,
@@ -3738,6 +4089,61 @@ export async function upsertItglueOrgEnriched(
     );
   } catch (error) {
     console.error('[DB] Failed to persist IT Glue enriched cache:', error);
+  }
+}
+
+export async function persistNinjaOrgSnapshot(
+  orgId: string,
+  payload: Record<string, unknown>,
+  sourceHash: string
+): Promise<void> {
+  try {
+    await execute(
+      `INSERT INTO ninja_org_snapshot (org_id, payload, source_hash, created_at, updated_at)
+       VALUES ($1, $2, $3, NOW(), NOW())
+       ON CONFLICT (org_id)
+       DO UPDATE SET payload = EXCLUDED.payload, source_hash = EXCLUDED.source_hash, updated_at = NOW()`,
+      [orgId, JSON.stringify(payload), sourceHash]
+    );
+  } catch (error) {
+    console.error('[DB] Failed to persist Ninja snapshot:', error);
+  }
+}
+
+export async function getNinjaOrgEnriched(
+  orgId: string
+): Promise<{ payload: Record<string, unknown>; source_hash: string; created_at: string; updated_at: string } | null> {
+  try {
+    const row = await queryOne<{ payload: Record<string, unknown>; source_hash: string; created_at: string; updated_at: string }>(
+      `SELECT payload, source_hash, created_at, updated_at
+       FROM ninja_org_enriched
+       WHERE org_id = $1
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [orgId]
+    );
+    return row || null;
+  } catch (error) {
+    console.error('[DB] Failed to fetch Ninja enriched cache:', error);
+    return null;
+  }
+}
+
+export async function upsertNinjaOrgEnriched(
+  orgId: string,
+  payload: Record<string, unknown>,
+  sourceHash: string
+): Promise<void> {
+  try {
+    await execute(
+      `INSERT INTO ninja_org_enriched (org_id, payload, source_hash, created_at, updated_at)
+       VALUES ($1, $2, $3, NOW(), NOW())
+       ON CONFLICT (org_id)
+       DO UPDATE SET payload = EXCLUDED.payload, source_hash = EXCLUDED.source_hash, updated_at = NOW()`,
+      [orgId, JSON.stringify(payload), sourceHash]
+    );
+  } catch (error) {
+    console.error('[DB] Failed to persist Ninja enriched cache:', error);
   }
 }
 

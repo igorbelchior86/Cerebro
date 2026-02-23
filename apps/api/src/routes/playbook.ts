@@ -7,6 +7,7 @@ import type { PlaybookOutput, ValidationOutput } from '@playbook-brain/types';
 import { generatePlaybook } from '../services/playbook-writer.js';
 import {
   getEvidencePack,
+  getTicketTextArtifact,
   persistEvidencePack,
 } from '../services/prepare-context.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -123,6 +124,11 @@ router.get('/full-flow', async (req, res) => {
         [sessionId]
       );
       const existingOrgId = String(existingPack?.payload?.org?.id || '').trim();
+      const existingNinjaOrgId = String(
+        existingPack?.payload?.device?.organizationId ||
+        existingPack?.payload?.device?.organization_id ||
+        ''
+      ).trim();
       await execute(
         `DELETE FROM playbooks WHERE session_id = $1`,
         [sessionId]
@@ -139,6 +145,15 @@ router.get('/full-flow', async (req, res) => {
         `DELETE FROM evidence_packs WHERE session_id = $1`,
         [sessionId]
       );
+      const hasTicketTextArtifacts = await queryOne<{ exists: boolean }>(
+        `SELECT to_regclass('public.ticket_text_artifacts') IS NOT NULL AS exists`
+      );
+      if (hasTicketTextArtifacts?.exists) {
+        await execute(
+          `DELETE FROM ticket_text_artifacts WHERE ticket_id = $1`,
+          [ticketId]
+        );
+      }
       const hasTicketSSOT = await queryOne<{ exists: boolean }>(
         `SELECT to_regclass('public.ticket_ssot') IS NOT NULL AS exists`
       );
@@ -166,6 +181,25 @@ router.get('/full-flow', async (req, res) => {
             `DELETE FROM itglue_org_snapshot WHERE org_id = $1`,
             [existingOrgId]
           );
+        }
+      }
+      const ninjaOrgIds = [...new Set([existingNinjaOrgId, existingOrgId].filter((v) => v && v !== 'unknown'))];
+      if (ninjaOrgIds.length > 0) {
+        const hasNinjaEnriched = await queryOne<{ exists: boolean }>(
+          `SELECT to_regclass('public.ninja_org_enriched') IS NOT NULL AS exists`
+        );
+        if (hasNinjaEnriched?.exists) {
+          for (const orgId of ninjaOrgIds) {
+            await execute(`DELETE FROM ninja_org_enriched WHERE org_id = $1`, [orgId]);
+          }
+        }
+        const hasNinjaSnapshot = await queryOne<{ exists: boolean }>(
+          `SELECT to_regclass('public.ninja_org_snapshot') IS NOT NULL AS exists`
+        );
+        if (hasNinjaSnapshot?.exists) {
+          for (const orgId of ninjaOrgIds) {
+            await execute(`DELETE FROM ninja_org_snapshot WHERE org_id = $1`, [orgId]);
+          }
         }
       }
       await execute(
@@ -227,6 +261,7 @@ router.get('/full-flow', async (req, res) => {
       [String(ticketId || rawId || '')]
     );
     const ssot = ssotResult?.payload || null;
+    const ticketTextArtifact = await getTicketTextArtifact(String(ticketId || rawId || ''));
     const normalizedDescription = String(
       normalizedTicketSection?.description_clean?.value || ''
     ).trim();
@@ -247,12 +282,12 @@ router.get('/full-flow', async (req, res) => {
       id: String(ssot?.ticket_id || ticketId || dbTicket.id || rawId),
       title: ssot?.title ?? dbTicket.title ?? packTicket.title ?? null,
       description: ssot?.description_clean ?? dbTicket.description ?? packTicket.description ?? null,
-      description_normalized: ssot?.description_clean ?? normalizedDescription || null,
+      description_normalized: ssot?.description_clean ?? (normalizedDescription || null),
       requester: ssot?.requester_name ?? dbTicket.requester ?? packUser.name ?? null,
-      requester_normalized: ssot?.requester_name ?? normalizedRequesterName || null,
-      requester_email_normalized: ssot?.requester_email ?? normalizedRequesterEmail || null,
-      affected_user_normalized: ssot?.affected_user_name ?? normalizedAffectedName || null,
-      affected_user_email_normalized: ssot?.affected_user_email ?? normalizedAffectedEmail || null,
+      requester_normalized: ssot?.requester_name ?? (normalizedRequesterName || null),
+      requester_email_normalized: ssot?.requester_email ?? (normalizedRequesterEmail || null),
+      affected_user_normalized: ssot?.affected_user_name ?? (normalizedAffectedName || null),
+      affected_user_email_normalized: ssot?.affected_user_email ?? (normalizedAffectedEmail || null),
       company: ssot?.company ?? dbTicket.company ?? packOrg.name ?? null,
       created_at: ssot?.created_at ?? dbTicket.created_at ?? sessionRow?.created_at ?? null,
       priority: dbTicket.priority ?? 'P3',
@@ -524,6 +559,7 @@ router.get('/full-flow', async (req, res) => {
       data: {
         ticket: canonicalTicket,
         ssot,
+        ticket_text_artifact: ticketTextArtifact?.payload || null,
         pack,
         diagnosis,
         validation,

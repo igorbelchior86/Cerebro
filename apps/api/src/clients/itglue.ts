@@ -95,6 +95,17 @@ export class ITGlueClient {
     return response.data;
   }
 
+  async getOrganizationDocumentsRaw(organizationId: string, pageSize: number = 200) {
+    const response = await this.request<{
+      data: Array<{ id: string; attributes: Record<string, unknown>; relationships?: Record<string, unknown> }>;
+      meta?: { pages?: number; total_count?: number };
+    }>('/documents', {
+      'filter[organization_id]': organizationId,
+      'page[size]': pageSize,
+    });
+    return response.data;
+  }
+
   async getDocumentsByType(documentType: string, pageSize: number = 50) {
     const response = await this.request<{ data: ITGlueDocument[] }>('/documents', {
       'filter[document_type]': documentType,
@@ -213,5 +224,49 @@ export class ITGlueClient {
       'page[size]': pageSize,
     });
     return response.data;
+  }
+
+  async getDocumentAttachments(documentId: string, pageSize: number = 100) {
+    try {
+      const response = await this.request<{
+        data: Array<{ id: string; attributes?: Record<string, unknown>; relationships?: Record<string, unknown> }>;
+      }>(`/documents/${documentId}/relationships/attachments`, {
+        'page[size]': pageSize,
+      });
+      return response.data;
+    } catch (error) {
+      const message = String((error as Error)?.message || '').toLowerCase();
+      if (!message.includes('404')) throw error;
+      const fallback = await this.request<{
+        data: Array<{ id: string; attributes?: Record<string, unknown>; relationships?: Record<string, unknown> }>;
+      }>('/attachments', {
+        'filter[resource_type]': 'Document',
+        'filter[resource_id]': documentId,
+        'page[size]': pageSize,
+      });
+      return fallback.data;
+    }
+  }
+
+  async getDocumentRelatedItems(documentId: string, pageSize: number = 100) {
+    try {
+      const response = await this.request<{
+        data: Array<{ id: string; attributes?: Record<string, unknown>; relationships?: Record<string, unknown> }>;
+      }>(`/documents/${documentId}/relationships/related_items`, {
+        'page[size]': pageSize,
+      });
+      return response.data;
+    } catch (error) {
+      const message = String((error as Error)?.message || '').toLowerCase();
+      if (!message.includes('404')) throw error;
+      const fallback = await this.request<{
+        data: Array<{ id: string; attributes?: Record<string, unknown>; relationships?: Record<string, unknown> }>;
+      }>('/related_items', {
+        'filter[resource_type]': 'Document',
+        'filter[resource_id]': documentId,
+        'page[size]': pageSize,
+      });
+      return fallback.data;
+    }
   }
 }

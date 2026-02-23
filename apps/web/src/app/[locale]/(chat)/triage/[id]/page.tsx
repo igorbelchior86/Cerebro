@@ -46,6 +46,19 @@ interface SessionData {
     isp_name?: string;
     firewall_make_model?: string;
   };
+  ticket_text_artifact?: {
+    ticket_id?: string;
+    session_id?: string;
+    source?: 'autotask' | 'email' | 'unknown';
+    title_original?: string;
+    title_reinterpreted?: string;
+    text_original?: string;
+    text_clean?: string;
+    text_reinterpreted?: string;
+    normalization_method?: 'llm' | 'deterministic_fallback';
+    normalization_confidence?: number;
+    created_at?: string;
+  } | null;
   evidence_pack?: any;
   diagnosis?: any;
   validation?: any;
@@ -200,6 +213,7 @@ export default function SessionDetail({
           validation: flowData.validation ?? null,
           playbook: flowData.playbook ?? null,
           evidence_pack: flowData.evidence_pack ?? flowData.pack ?? null,
+          ticket_text_artifact: flowData.ticket_text_artifact ?? null,
         };
 
         setData(newData);
@@ -274,13 +288,30 @@ export default function SessionDetail({
         const firstEventTime = parseDate(createdAt);
         const ts = (offsetSec: number) => new Date(firstEventTime.getTime() + offsetSec * 1000);
 
+        const ticketTextArtifact = newData.ticket_text_artifact || null;
+        const autoTaskPrimaryText = ticketTextArtifact?.text_reinterpreted
+          ? `New ticket detected: \`${ticketId}\` — "${normalizePlainText(ticketTextArtifact.text_reinterpreted, problemDescription)}" from ${requester} at ${org}, ${site}. Priority: **${priorityLabel}**. Starting context collection.`
+          : `New ticket detected: \`${ticketId}\` — "${problemDescription}" from ${requester} at ${org}, ${site}. Priority: **${priorityLabel}**. Starting context collection.`;
+        const autoTaskOriginalText = ticketTextArtifact?.text_original
+          ? `Original ticket text (Autotask/email intake):\n\n${ticketTextArtifact.text_original}`
+          : autoTaskPrimaryText;
+
         const timeline: Message[] = [
           {
             id: `autotask-${selectedTicketId}`,
             role: 'assistant',
             type: 'autotask',
             timestamp: ts(0),
-            content: `New ticket detected: \`${ticketId}\` — "${problemDescription}" from ${requester} at ${org}, ${site}. Priority: **${priorityLabel}**. Starting context collection.`,
+            content: autoTaskPrimaryText,
+            ...(ticketTextArtifact?.text_reinterpreted && ticketTextArtifact?.text_original
+              ? {
+                  ticketTextVariant: {
+                    primary: 'reinterpreted' as const,
+                    reinterpreted: autoTaskPrimaryText,
+                    original: autoTaskOriginalText,
+                  },
+                }
+              : {}),
           },
         ];
 
@@ -356,6 +387,14 @@ export default function SessionDetail({
             id: m.id,
             type: m.type,
             content: m.content,
+            ticketTextVariant:
+              m.ticketTextVariant
+                ? {
+                    primary: m.ticketTextVariant.primary,
+                    reinterpreted: m.ticketTextVariant.reinterpreted,
+                    original: m.ticketTextVariant.original,
+                  }
+                : null,
             steps: m.steps?.map((s) => `${s.label}:${s.status}`) ?? [],
           }))
         );

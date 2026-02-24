@@ -64,6 +64,27 @@
 - Fix de troubleshooting 2a (semântica): reinterpretação do ticket agora aplica guard determinístico de papéis (requester vs affected user) para evitar atribuir o nome do requester ao "new employee".
 - Prompt de normalização LLM reforçado com regra explícita: não confundir requester e affected user; manter affected unnamed quando não houver nome explícito.
 - Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após guard de role assignment no `description_ui`.
+- Fix de troubleshooting 2 (scope): extração de `company` endurecida a partir do corpo HTML/email (ex.: “created for CAT Resources, LLC”) antes do fallback por domínio.
+- Fix de troubleshooting 2e (histórico): broad history agora exige escopo confiável (`orgId` ou `companyName`) e filtra por `tickets_processed.company` quando org não está resolvida, evitando related cases cross-company.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após hardening de company + history scope.
+- Fix arquitetural (anti-regressão intake -> SSOT): `ticket_ssot` agora aplica merge protetivo pós-builder para impedir downgrade de campos conhecidos do intake (`company`, requester, title, description, created_at, emails) para `unknown`.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após anti-regressão no SSOT.
+- Fix residual de empresa: inferência de `company` agora também usa o `originalTicketNarrative` (pré-normalização), preservando pistas removidas do `rawBody` limpo (ex.: “created for CAT Resources, LLC”).
+- Fix residual de history carryover: no round 8, `relatedCases` é reatribuído sempre (inclusive vazio) e não herda resultados antigos quando o broad history é bloqueado por falta de escopo.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após fixes residuais de company/history.
+- Melhoria genérica de modelagem (IT Glue extractor): adicionado slice determinístico para extrair candidatos de WAN/ISP (assets/configs/docs), infra via metadata de passwords/configs/assets (firewall/wifi/switch) e ranking genérico de docs por intenção do ticket.
+- Hardening de matching de org: `fuzzyMatch` agora normaliza pontuação/sufixos legais (`LLC`, `Inc`, etc.) e usa overlap de tokens, melhorando resolução de orgs (IT Glue/Ninja) sem hardcode por cliente.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após extractor genérico + org matching.
+- Troubleshooting de validação em `T20260223.0006` revelou falso positivo de org IT Glue: `CAT Resources, LLC` estava caindo em `Composite Resources, Inc.`, gerando `passwords/docs/assets = 0` e impedindo enrich real de rede/infra.
+- Fix genérico aplicado no resolver de org IT Glue/Ninja: ranking por score (em vez de `find()` booleano), penalidade para overlap só em tokens genéricos (`resources`, `solutions`, etc.), e `getOrganizations(1000)` para respeitar inventário amplo do tenant.
+- Hardening adicional no fallback por domínio (IT Glue): filtra domínios de serviço/boilerplate (`outlook`, `autotask`, `itclientportal`, `refreshtech`) antes de resolver org por `primary_domain`.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após fix de ranking/page-size/fallback de org.
+- Bug runtime descoberto na validação: broad history usava `tickets_processed.company` (coluna inexistente), causando erro `42703` em `findRelatedCasesBroad`.
+- Fix aplicado: filtro por empresa do histórico agora usa `ticket_ssot.payload->>'company'` via `LEFT JOIN ticket_ssot`, mantendo scope por SSOT e evitando quebra do round 8.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após fix de query de histórico por empresa.
+- Root cause confirmado por probe direto no IT Glue: empresa/match estavam corretos, mas dados relevantes estavam distribuídos entre org parent (`Composite`) e child (`CAT Resources`); além disso `/documents` global retornava 404 para o tenant e parte da extração lia attrs ITG em `snake_case` enquanto a API devolve `kebab-case`.
+- Fix aplicado: coleta IT Glue round 2 agora suporta `family scopes` (matched + parent/ancestors + children relevantes), `documents/passwords` com fallback nested-first no `ITGlueClient`, agregação multi-scope com `collection_errors`, e helper genérico `itgAttr(...)` para ler attrs ITG em kebab/snake/camel (+ traits).
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após hardening multi-org + normalização de attrs ITG.
 
 ## Review
 (fill in after completion)

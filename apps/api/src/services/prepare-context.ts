@@ -118,6 +118,7 @@ export interface TicketContextAppendix {
     strategies: string[];
     matched_case_ids: string[];
     matched_case_count: number;
+    blocked_reason?: 'missing_org_or_company_scope';
   };
   history_confidence_calibration?: {
     round: number;
@@ -160,6 +161,23 @@ interface ScopeMeta {
   tenant_id: string | null;
   org_id: string | null;
   source_workspace: string;
+}
+
+interface ITGlueWanCandidate {
+  isp_name?: string;
+  location_hint?: string;
+  public_ip?: string;
+  confidence: number;
+  source_ref: string;
+  source_system: 'itglue_asset' | 'itglue_config' | 'itglue_doc';
+}
+
+interface ITGlueInfraCandidate {
+  kind: 'firewall' | 'wifi' | 'switch';
+  value: string;
+  confidence: number;
+  source_ref: string;
+  source_system: 'itglue_password_metadata' | 'itglue_config' | 'itglue_doc';
 }
 
 interface FacetContext {
@@ -647,7 +665,7 @@ export class PrepareContextService {
     }
 
     const ticketNarrative = this.buildTicketNarrative(ticket);
-    const inferredCompany = this.inferCompanyNameFromTicketText(ticketNarrative);
+    const inferredCompany = this.inferCompanyNameFromTicketText(ticketNarrative) || this.inferCompanyNameFromTicketText(originalTicketNarrative);
     const companyName = this.normalizeName(ticket.company || inferredCompany || '');
     const requesterName = this.normalizeName(ticket.canonicalRequesterName || ticket.requester || '');
     const facetContext = this.detectFacetContext(
@@ -689,6 +707,7 @@ export class PrepareContextService {
     let itglueDocumentAttachmentsById: Record<string, any[]> = {};
     let itglueDocumentRelatedItemsById: Record<string, any[]> = {};
     let itglueCollectionErrors: string[] = [];
+    let itglueScopeOrgs: Array<{ id: string; name: string; reason: string }> = [];
     let itglueEnriched: ItglueEnrichedPayload | null = null;
 
     // ROUND 1: AT/Intake -> IT Glue (Targeting Org/Contacts/Standards)
@@ -719,47 +738,117 @@ export class PrepareContextService {
       }
 
       if (itglueOrgMatch) {
-        [itglueOrgDetails, itglueConfigs, itglueContacts, itgluePasswords, itglueLocations, itglueDomains, itglueSslCertificates] = await Promise.all([
-          itglueClient.getOrganizationById(itglueOrgMatch.id).then((org) => org?.attributes || {}).catch(() => ({})),
-          itglueClient.getConfigurations(itglueOrgMatch.id, 200).catch(() => []),
-          itglueClient.getContacts(itglueOrgMatch.id, 200).catch(() => []),
-          itglueClient.getPasswords(itglueOrgMatch.id, 200).catch(() => []),
-          itglueClient.getLocations(itglueOrgMatch.id, 200).catch(() => []),
-          itglueClient.getDomains(itglueOrgMatch.id, 200).catch(() => []),
-          itglueClient.getSslCertificates(itglueOrgMatch.id, 200).catch(() => []),
-        ]);
-        const [documentsRawResult, assetTypesResult] = await Promise.allSettled([
-          itglueClient.getOrganizationDocumentsRaw(itglueOrgMatch.id, 200),
-          itglueClient.getFlexibleAssetTypes(200),
-        ]);
-
-        if (documentsRawResult.status === 'fulfilled') {
-          itglueDocumentsRaw = documentsRawResult.value;
-        } else {
-          itglueCollectionErrors.push(`documents_raw: ${(documentsRawResult.reason as Error)?.message || String(documentsRawResult.reason)}`);
-        }
-        if (assetTypesResult.status === 'fulfilled') {
-          const assetCandidates = await Promise.allSettled(
-            assetTypesResult.value.map((t: any) =>
-              itglueClient.getFlexibleAssets(String(t.id), itglueOrgMatch!.id, 200)
-            )
-          );
-          const assetErrors: string[] = [];
-          itglueAssets = assetCandidates.flatMap((result, idx) => {
-            if (result.status === 'fulfilled') return result.value;
-            const assetTypeName = String(assetTypesResult.value[idx]?.attributes?.name || assetTypesResult.value[idx]?.id || `type_${idx}`);
-            assetErrors.push(`flexible_assets(${assetTypeName}): ${(result.reason as Error)?.message || String(result.reason)}`);
-            return [];
+        itglueScopeOrgs = await this.resolveITGlueOrgFamilyScopes(itglueClient, itglueOrgMatch, companyName)
+          .catch((err: unknown) => {
+            itglueCollectionErrors.push(`scope_resolution: ${(err as Error)?.message || String(err)}`);
+            return [{ id: itglueOrgMatch!.id, name: itglueOrgMatch!.name, reason: 'matched' }];
           });
-          itglueCollectionErrors.push(...assetErrors);
-        } else {
-          itglueCollectionErrors.push(`flexible_asset_types: ${(assetTypesResult.reason as Error)?.message || String(assetTypesResult.reason)}`);
+
+        const assetTypesResult = await Promise.allSettled([
+          itglueClient.getFlexibleAssetTypes(200),
+        ]).then((results) => results[0]);
+
+        if (assetTypesResult.status !== 'fulfilled') {
+          itglueCollectionErrors.push(
+            `flexible_asset_types: ${(assetTypesResult.reason as Error)?.message || String(assetTypesResult.reason)}`
+          );
         }
 
-        const docIdsForExpansion = itglueDocumentsRaw
-          .map((doc: any) => String(doc?.id || '').trim())
-          .filter(Boolean)
-          .slice(0, 50);
+        for (const scope of itglueScopeOrgs) {
+          const scopeLabel = `${scope.name} (${scope.id})`;
+          const coreResults = await Promise.allSettled([
+            itglueClient.getOrganizationById(scope.id).then((org) => org?.attributes || {}),
+            itglueClient.getConfigurations(scope.id, 200),
+            itglueClient.getContacts(scope.id, 200),
+            itglueClient.getPasswords(scope.id, 200),
+            itglueClient.getLocations(scope.id, 200),
+            itglueClient.getDomains(scope.id, 200),
+            itglueClient.getSslCertificates(scope.id, 200),
+            itglueClient.getOrganizationDocumentsRaw(scope.id, 200),
+          ]);
+
+          const [
+            orgDetailsResult,
+            configsResult,
+            contactsResult,
+            passwordsResult,
+            locationsResult,
+            domainsResult,
+            sslResult,
+            documentsRawResult,
+          ] = coreResults;
+
+          if (orgDetailsResult.status === 'fulfilled') {
+            if (!itglueOrgDetails || scope.id === itglueOrgMatch.id) {
+              itglueOrgDetails = orgDetailsResult.value;
+            }
+          } else {
+            itglueCollectionErrors.push(`org_details[${scopeLabel}]: ${(orgDetailsResult.reason as Error)?.message || String(orgDetailsResult.reason)}`);
+          }
+
+          if (configsResult.status === 'fulfilled') {
+            itglueConfigs = this.mergeRowsById(itglueConfigs, configsResult.value);
+          } else {
+            itglueCollectionErrors.push(`configs[${scopeLabel}]: ${(configsResult.reason as Error)?.message || String(configsResult.reason)}`);
+          }
+          if (contactsResult.status === 'fulfilled') {
+            itglueContacts = this.mergeRowsById(itglueContacts, contactsResult.value);
+          } else {
+            itglueCollectionErrors.push(`contacts[${scopeLabel}]: ${(contactsResult.reason as Error)?.message || String(contactsResult.reason)}`);
+          }
+          if (passwordsResult.status === 'fulfilled') {
+            itgluePasswords = this.mergeRowsById(itgluePasswords, passwordsResult.value);
+          } else {
+            itglueCollectionErrors.push(`passwords[${scopeLabel}]: ${(passwordsResult.reason as Error)?.message || String(passwordsResult.reason)}`);
+          }
+          if (locationsResult.status === 'fulfilled') {
+            itglueLocations = this.mergeRowsById(itglueLocations, locationsResult.value);
+          } else {
+            itglueCollectionErrors.push(`locations[${scopeLabel}]: ${(locationsResult.reason as Error)?.message || String(locationsResult.reason)}`);
+          }
+          if (domainsResult.status === 'fulfilled') {
+            itglueDomains = this.mergeRowsById(itglueDomains, domainsResult.value);
+          } else {
+            itglueCollectionErrors.push(`domains[${scopeLabel}]: ${(domainsResult.reason as Error)?.message || String(domainsResult.reason)}`);
+          }
+          if (sslResult.status === 'fulfilled') {
+            itglueSslCertificates = this.mergeRowsById(itglueSslCertificates, sslResult.value);
+          } else {
+            itglueCollectionErrors.push(`ssl_certificates[${scopeLabel}]: ${(sslResult.reason as Error)?.message || String(sslResult.reason)}`);
+          }
+          if (documentsRawResult.status === 'fulfilled') {
+            itglueDocumentsRaw = this.mergeRowsById(itglueDocumentsRaw, documentsRawResult.value);
+          } else {
+            itglueCollectionErrors.push(`documents_raw[${scopeLabel}]: ${(documentsRawResult.reason as Error)?.message || String(documentsRawResult.reason)}`);
+          }
+
+          if (assetTypesResult.status === 'fulfilled') {
+            const assetCandidates = await Promise.allSettled(
+              assetTypesResult.value.map((t: any) => itglueClient.getFlexibleAssets(String(t.id), scope.id, 200))
+            );
+            assetCandidates.forEach((result, idx) => {
+              if (result.status === 'fulfilled') {
+                itglueAssets = this.mergeRowsById(itglueAssets, result.value);
+                return;
+              }
+              const assetTypeName = String(
+                assetTypesResult.value[idx]?.attributes?.name ||
+                assetTypesResult.value[idx]?.attributes?.['name'] ||
+                assetTypesResult.value[idx]?.id ||
+                `type_${idx}`
+              );
+              itglueCollectionErrors.push(
+                `flexible_assets[${scopeLabel}](${assetTypeName}): ${(result.reason as Error)?.message || String(result.reason)}`
+              );
+            });
+          }
+        }
+
+        const docIdsForExpansion = [...new Set(
+          itglueDocumentsRaw
+            .map((doc: any) => String(doc?.id || '').trim())
+            .filter(Boolean)
+        )].slice(0, 50);
         const attachmentResults = await Promise.allSettled(
           docIdsForExpansion.map((docId) => itglueClient.getDocumentAttachments(docId, 100))
         );
@@ -817,6 +906,30 @@ export class PrepareContextService {
         );
       }
 
+      if (docs.length === 0 && itglueDocumentsRaw.length > 0) {
+        docs = itglueDocumentsRaw.slice(0, 8).map((doc: any, idx: number) => {
+          const attrs = doc?.attributes || {};
+          const title = String(
+            this.itgAttr(attrs, 'name') ||
+            this.itgAttr(attrs, 'cached_resource_name') ||
+            `IT Glue Document ${idx + 1}`
+          );
+          const snippet = String(this.itgAttr(attrs, 'content') || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+          const orgId = String(this.itgAttr(attrs, 'organization_id') || itglueOrgMatch?.id || '');
+          return {
+            id: String(doc?.id || `itg-doc-${idx}`),
+            source: 'itglue' as const,
+            title,
+            snippet,
+            relevance: Number((0.42 - idx * 0.03).toFixed(3)),
+            raw_ref: doc as Record<string, unknown>,
+            tenant_id: tenantId,
+            org_id: orgId || null,
+            source_workspace: sourceWorkspace,
+          };
+        });
+      }
+
       sourceFindings.push({
         source: 'itglue',
         round: 2,
@@ -830,6 +943,7 @@ export class PrepareContextService {
             : 'organization context had no runbook/document',
         details: [
           itglueOrgMatch ? `org match: ${itglueOrgMatch.name} (${itglueOrgMatch.id})` : 'org match: none',
+          ...(itglueScopeOrgs.length > 0 ? [`scope orgs: ${itglueScopeOrgs.map((s) => `${s.name} (${s.id}) [${s.reason}]`).join(' | ')}`] : []),
           `configs: ${itglueConfigs.length}`,
           `contacts: ${itglueContacts.length}`,
           `passwords: ${itgluePasswords.length}`,
@@ -857,6 +971,7 @@ export class PrepareContextService {
         const rawSnapshot = {
           org_id: itglueOrgMatch.id,
           org_name: itglueOrgMatch.name,
+          scope_orgs: itglueScopeOrgs,
           configs: itglueConfigs,
           contacts: itglueContacts,
           passwords: itgluePasswords,
@@ -1094,7 +1209,8 @@ export class PrepareContextService {
       ...(normalizedTicket?.technologyFacets || []),
     ].filter(Boolean);
 
-    relatedCases = (await this.findRelatedCasesByTerms(historyTerms, input.orgId)).map((rc) => ({
+    const historyScopeCompany = companyName && companyName.toLowerCase() !== 'unknown' ? companyName : undefined;
+    relatedCases = (await this.findRelatedCasesByTerms(historyTerms, input.orgId, historyScopeCompany)).map((rc) => ({
       ...rc,
       tenant_id: tenantId,
       org_id: input.orgId || null,
@@ -1396,6 +1512,7 @@ export class PrepareContextService {
       if (decision.rejected) rejectedEvidence.push(decision.rejected);
       return decision.accepted;
     });
+    scopedDocs = this.rankITGlueDocsForTicket(ticketNarrative, scopedDocs);
 
     let scopedSignals = [...signals, ...ninjaChecks, ...ninjaContextSignals].filter((signal) => {
       const candidateOrgId = signal.org_id || resolvedOrgId || null;
@@ -1456,6 +1573,8 @@ export class PrepareContextService {
       inferredPhoneProvider,
       sourceFindings,
       itglueConfigs,
+      itgluePasswords,
+      itglueAssets,
       itglueEnriched,
       docs: scopedDocs,
       ninjaChecks: scopedSignals.filter((signal) => signal.source === 'ninja'),
@@ -1528,19 +1647,28 @@ export class PrepareContextService {
         ...(fusionAudit ? { fusionAudit } : {}),
       });
       const broadHistoryOrgId = resolvedOrgId || input.orgId;
-      const broadRelatedCases = await this.findRelatedCasesBroad({
-        ticketId: String(ticket.ticketNumber || ticket.id || input.ticketId || ''),
-        ...(broadHistoryOrgId ? { orgId: broadHistoryOrgId } : {}),
-        terms: historySearchPlan.terms,
-      });
-      if (broadRelatedCases.length > 0) {
-        relatedCases = broadRelatedCases.map((rc) => ({
-          ...rc,
-          tenant_id: tenantId,
-          org_id: resolvedOrgId || input.orgId || null,
-          source_workspace: sourceWorkspace,
-        }));
-      }
+      const broadHistoryCompany =
+        this.normalizeName(String(iterativeEnrichment.sections.ticket.company.value || '')) || companyName || '';
+      const hasHistoryScope = Boolean(
+        broadHistoryOrgId ||
+        (broadHistoryCompany && !/^unknown$/i.test(broadHistoryCompany))
+      );
+      const broadRelatedCases = hasHistoryScope
+        ? await this.findRelatedCasesBroad({
+            ticketId: String(ticket.ticketNumber || ticket.id || input.ticketId || ''),
+            ...(broadHistoryOrgId ? { orgId: broadHistoryOrgId } : {}),
+            ...(!broadHistoryOrgId && broadHistoryCompany && !/^unknown$/i.test(broadHistoryCompany)
+              ? { companyName: broadHistoryCompany }
+              : {}),
+            terms: historySearchPlan.terms,
+          })
+        : [];
+      relatedCases = broadRelatedCases.map((rc) => ({
+        ...rc,
+        tenant_id: tenantId,
+        org_id: resolvedOrgId || input.orgId || null,
+        source_workspace: sourceWorkspace,
+      }));
 
       historyAppendixCorrelation = {
         mode: 'autotask_email_fallback',
@@ -1549,6 +1677,7 @@ export class PrepareContextService {
         strategies: historySearchPlan.strategies,
         matched_case_ids: broadRelatedCases.map((c) => c.ticket_id).slice(0, 10),
         matched_case_count: broadRelatedCases.length,
+        ...(!hasHistoryScope ? { blocked_reason: 'missing_org_or_company_scope' as const } : {}),
       };
 
       scopedRelatedCases = relatedCases.filter((relatedCase) => {
@@ -1569,14 +1698,17 @@ export class PrepareContextService {
         round: 8,
         facet: 'history_correlation_broad',
         queried: true,
-        matched: scopedRelatedCases.length > 0,
+        matched: hasHistoryScope && scopedRelatedCases.length > 0,
         summary: scopedRelatedCases.length > 0
           ? `broad historical correlation found ${scopedRelatedCases.length} related case(s)`
-          : 'broad historical correlation found no related case',
+          : !hasHistoryScope
+            ? 'broad historical correlation blocked (missing org/company scope)'
+            : 'broad historical correlation found no related case',
         details: [
           `term_count: ${historySearchPlan.terms.length}`,
           `top_terms: ${historySearchPlan.terms.slice(0, 8).join(', ') || 'none'}`,
           `strategies: ${historySearchPlan.strategies.join(' -> ')}`,
+          ...(!hasHistoryScope ? ['blocked: missing org/company scope'] : []),
         ],
         why_selected: ['history search must use fused org/user/device/software/network context, not a single keyword'],
         tenant_id: tenantId,
@@ -1874,7 +2006,14 @@ export class PrepareContextService {
     }
 
     const networkStack = this.buildNetworkStackFromEnrichment(iterativeEnrichment.sections);
-    const ssot = this.buildTicketSSOT(iterativeEnrichment.sections);
+    const ssot = this.applyIntakeAntiRegressionToSSOT(
+      this.buildTicketSSOT(iterativeEnrichment.sections),
+      {
+        ticket,
+        normalizedTicket,
+        companyName,
+      }
+    );
     if (fusionAudit) {
       ssot.fusion_audit = fusionAudit;
     }
@@ -2307,10 +2446,14 @@ export class PrepareContextService {
       .map((contact: any) => {
         const attrs = contact?.attributes || {};
         const name = this.normalizeName(
-          String(attrs.name || `${attrs.first_name || ''} ${attrs.last_name || ''}` || '').trim()
+          String(
+            this.itgAttr(attrs, 'name') ||
+            `${String(this.itgAttr(attrs, 'first_name') || '')} ${String(this.itgAttr(attrs, 'last_name') || '')}` ||
+            ''
+          ).trim()
         );
-        const email = String(attrs.primary_email || '').toLowerCase();
-        const phone = String(attrs.primary_phone || '');
+        const email = String(this.itgAttr(attrs, 'primary_email') || '').toLowerCase();
+        const phone = String(this.itgAttr(attrs, 'primary_phone') || '');
         const normalizedContactCompany = this.normalizeName(
           String(attrs.organization_name || attrs.company_name || attrs.organization || '')
         ).toLowerCase();
@@ -2741,6 +2884,8 @@ export class PrepareContextService {
     inferredPhoneProvider: string | null;
     sourceFindings: SourceFinding[];
     itglueConfigs: any[];
+    itgluePasswords: any[];
+    itglueAssets: any[];
     itglueEnriched?: ItglueEnrichedPayload | null;
     docs: Doc[];
     ninjaChecks: Signal[];
@@ -2768,12 +2913,16 @@ export class PrepareContextService {
       deviceDetails: input.deviceDetails,
       docs: input.docs,
       itglueConfigs: input.itglueConfigs,
+      itgluePasswords: input.itgluePasswords,
+      itglueAssets: input.itglueAssets,
       itglueEnriched: input.itglueEnriched || null,
       ninjaChecks: input.ninjaChecks,
       inferredPhoneProvider: input.inferredPhoneProvider,
     });
     const infraSection = this.buildInfraEnrichmentSection({
       itglueConfigs: input.itglueConfigs,
+      itgluePasswords: input.itgluePasswords,
+      itglueAssets: input.itglueAssets,
       itglueEnriched: input.itglueEnriched || null,
       docs: input.docs,
     });
@@ -3110,13 +3259,27 @@ export class PrepareContextService {
     deviceDetails: any | null;
     docs: Doc[];
     itglueConfigs: any[];
+    itgluePasswords: any[];
+    itglueAssets: any[];
     itglueEnriched: ItglueEnrichedPayload | null;
     ninjaChecks: Signal[];
     inferredPhoneProvider: string | null;
   }): IterativeEnrichmentSections['network'] {
-    const locationContext = this.inferLocationContext(input.ticketNarrative);
+    const wanCandidate = this.extractITGlueWanCandidate({
+      ticketNarrative: input.ticketNarrative,
+      itglueAssets: input.itglueAssets,
+      itglueConfigs: input.itglueConfigs,
+      docs: input.docs,
+    });
+    const narrativeLocationContext = this.inferLocationContext(input.ticketNarrative);
+    const locationContext = narrativeLocationContext !== 'unknown'
+      ? narrativeLocationContext
+      : wanCandidate?.location_hint
+        ? 'office'
+        : 'unknown';
     const publicIp = this.resolvePublicIp(input.device, input.deviceDetails);
-    const ispName = this.pickEnrichedValue(input.itglueEnriched, 'isp_name') || this.inferIspName({
+    const itglueLlmIsp = this.pickEnrichedValue(input.itglueEnriched, 'isp_name');
+    const ispName = itglueLlmIsp || wanCandidate?.isp_name || this.inferIspName({
       ticketNarrative: input.ticketNarrative,
       docs: input.docs,
       itglueConfigs: input.itglueConfigs,
@@ -3128,10 +3291,10 @@ export class PrepareContextService {
       location_context: this.buildField({
         value: locationContext,
         status: locationContext === 'unknown' ? 'unknown' : 'inferred',
-        confidence: locationContext === 'unknown' ? 0 : 0.65,
-        sourceSystem: locationContext === 'unknown' ? 'unknown' : 'ticket_narrative',
-        sourceRef: locationContext === 'unknown' ? undefined : 'ticket.text',
-        round: 1,
+        confidence: locationContext === 'unknown' ? 0 : narrativeLocationContext !== 'unknown' ? 0.65 : 0.75,
+        sourceSystem: locationContext === 'unknown' ? 'unknown' : narrativeLocationContext !== 'unknown' ? 'ticket_narrative' : 'itglue',
+        sourceRef: locationContext === 'unknown' ? undefined : narrativeLocationContext !== 'unknown' ? 'ticket.text' : wanCandidate?.source_ref,
+        round: narrativeLocationContext !== 'unknown' ? 1 : 2,
       }),
       public_ip: this.buildField({
         value: publicIp || 'unknown',
@@ -3144,9 +3307,9 @@ export class PrepareContextService {
       isp_name: this.buildField({
         value: ispName || 'unknown',
         status: ispName ? 'inferred' : 'unknown',
-        confidence: ispName ? 0.6 : 0,
-        sourceSystem: this.pickEnrichedValue(input.itglueEnriched, 'isp_name') ? 'itglue_llm' : ispName ? 'cross_correlation' : 'unknown',
-        sourceRef: this.pickEnrichedValue(input.itglueEnriched, 'isp_name') ? 'itglue_org_snapshot' : ispName ? 'ticket/docs/itglue keyword' : undefined,
+        confidence: itglueLlmIsp ? 0.75 : wanCandidate?.isp_name ? Math.max(0.65, wanCandidate.confidence) : ispName ? 0.6 : 0,
+        sourceSystem: itglueLlmIsp ? 'itglue_llm' : wanCandidate?.isp_name ? 'itglue' : ispName ? 'cross_correlation' : 'unknown',
+        sourceRef: itglueLlmIsp ? 'itglue_org_snapshot' : wanCandidate?.isp_name ? wanCandidate.source_ref : ispName ? 'ticket/docs/itglue keyword' : undefined,
         round: ispName ? 2 : 1,
       }),
       vpn_state: this.buildField({
@@ -3178,9 +3341,17 @@ export class PrepareContextService {
 
   private buildInfraEnrichmentSection(input: {
     itglueConfigs: any[];
+    itgluePasswords: any[];
+    itglueAssets: any[];
     itglueEnriched: ItglueEnrichedPayload | null;
     docs: Doc[];
   }): IterativeEnrichmentSections['infra'] {
+    const metadataCandidates = this.extractITGlueInfraCandidates({
+      itgluePasswords: input.itgluePasswords,
+      itglueConfigs: input.itglueConfigs,
+      itglueAssets: input.itglueAssets,
+      docs: input.docs,
+    });
     const firewallValue = this.pickEnrichedValue(input.itglueEnriched, 'firewall_make_model');
     const wifiValue = this.pickEnrichedValue(input.itglueEnriched, 'wifi_make_model');
     const switchValue = this.pickEnrichedValue(input.itglueEnriched, 'switch_make_model');
@@ -3194,13 +3365,13 @@ export class PrepareContextService {
     });
     const firewall = firewallValue
       ? makeEnriched(firewallValue)
-      : this.extractInfraMakeModel('firewall', input.itglueConfigs, input.docs);
+      : metadataCandidates.firewall || this.extractInfraMakeModel('firewall', input.itglueConfigs, input.docs);
     const wifi = wifiValue
       ? makeEnriched(wifiValue)
-      : this.extractInfraMakeModel('wifi', input.itglueConfigs, input.docs);
+      : metadataCandidates.wifi || this.extractInfraMakeModel('wifi', input.itglueConfigs, input.docs);
     const sw = switchValue
       ? makeEnriched(switchValue)
-      : this.extractInfraMakeModel('switch', input.itglueConfigs, input.docs);
+      : metadataCandidates.switch || this.extractInfraMakeModel('switch', input.itglueConfigs, input.docs);
 
     return {
       firewall_make_model: this.buildField({
@@ -3274,6 +3445,30 @@ export class PrepareContextService {
     return Array.from(map.values());
   }
 
+  private mergeRowsById<T extends { id?: string | number }>(base: T[], extra: T[]): T[] {
+    const map = new Map<string, T>();
+    const scoreRow = (row: T | undefined | null) => {
+      if (!row || typeof row !== 'object') return 0;
+      const attrs = (row as any)?.attributes;
+      const attrKeys = attrs && typeof attrs === 'object' ? Object.keys(attrs).length : 0;
+      return attrKeys + Object.keys(row as any).length * 0.01;
+    };
+    for (const row of base || []) {
+      const id = String((row as any)?.id || '').trim();
+      if (!id) continue;
+      map.set(id, row);
+    }
+    for (const row of extra || []) {
+      const id = String((row as any)?.id || '').trim();
+      if (!id) continue;
+      const existing = map.get(id);
+      if (!existing || scoreRow(row) >= scoreRow(existing)) {
+        map.set(id, row);
+      }
+    }
+    return Array.from(map.values());
+  }
+
   private mergeSignalsById(base: Signal[], extra: Signal[]): Signal[] {
     const map = new Map<string, Signal>();
     base.forEach((signal) => map.set(String(signal.id), signal));
@@ -3282,6 +3477,158 @@ export class PrepareContextService {
       if (!map.has(key)) map.set(key, signal);
     });
     return Array.from(map.values());
+  }
+
+  private itgAttr(attrs: Record<string, unknown> | null | undefined, key: string): unknown {
+    if (!attrs || typeof attrs !== 'object') return undefined;
+    const source = attrs as Record<string, unknown>;
+    const rawKey = String(key || '').trim();
+    if (!rawKey) return undefined;
+
+    const toCamel = (value: string) => value.replace(/[-_ ]+([a-zA-Z0-9])/g, (_, c) => String(c).toUpperCase());
+    const toKebab = (value: string) =>
+      value
+        .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+        .replace(/[_ ]+/g, '-')
+        .toLowerCase();
+    const toSnake = (value: string) =>
+      value
+        .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+        .replace(/[- ]+/g, '_')
+        .toLowerCase();
+
+    const candidates = [
+      rawKey,
+      toKebab(rawKey),
+      toSnake(rawKey),
+      toCamel(rawKey),
+      toCamel(toSnake(rawKey)),
+      toCamel(toKebab(rawKey)),
+      rawKey.replace(/[-_]/g, ' '),
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+      if (Object.prototype.hasOwnProperty.call(source, candidate)) {
+        return source[candidate];
+      }
+    }
+
+    const traits = source.traits;
+    if (traits && typeof traits === 'object') {
+      // IT Glue flexible assets can store trait values in nested objects/arrays.
+      const pairs = this.collectTextPairs(traits, 'traits');
+      const keyNorm = toSnake(rawKey);
+      const found = pairs.find((pair) => {
+        const pairKey = toSnake(String(pair.key).split('.').pop() || pair.key);
+        return pairKey === keyNorm || pairKey.endsWith(`_${keyNorm}`) || pairKey.includes(keyNorm);
+      });
+      if (found?.value) return found.value;
+    }
+
+    return undefined;
+  }
+
+  private parseITGlueOrgParentId(org: any): string | null {
+    const attrs = org?.attributes || {};
+    const value = this.itgAttr(attrs, 'parent_id');
+    const text = String(value ?? '').trim();
+    return text ? text : null;
+  }
+
+  private parseITGlueOrgAncestorIds(org: any): string[] {
+    const attrs = org?.attributes || {};
+    const raw = this.itgAttr(attrs, 'ancestor_ids');
+    if (Array.isArray(raw)) {
+      return raw.map((v) => String(v || '').trim()).filter(Boolean);
+    }
+    const text = String(raw ?? '').trim();
+    if (!text) return [];
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) return parsed.map((v) => String(v || '').trim()).filter(Boolean);
+    } catch {
+      // no-op
+    }
+    return text
+      .split(/[,\s|]+/)
+      .map((v) => String(v || '').trim())
+      .filter(Boolean);
+  }
+
+  private async resolveITGlueOrgFamilyScopes(
+    itglueClient: ITGlueClient,
+    matchedOrg: { id: string; name: string },
+    companyName?: string
+  ): Promise<Array<{ id: string; name: string; reason: string }>> {
+    const orgs = await itglueClient.getOrganizations(1000);
+    const byId = new Map<string, any>(
+      orgs
+        .map((org: any): [string, any] => [String(org?.id || '').trim(), org])
+        .filter(([id]) => Boolean(id))
+    );
+    const matched = byId.get(String(matchedOrg.id)) || null;
+    if (!matched) {
+      return [{ id: matchedOrg.id, name: matchedOrg.name, reason: 'matched' }];
+    }
+
+    const matchedId = String(matchedOrg.id);
+    const matchedAncestors = new Set(this.parseITGlueOrgAncestorIds(matched));
+    const matchedParentId = this.parseITGlueOrgParentId(matched);
+    const familyCandidates: Array<{ org: any; score: number; reason: string; priority: number }> = [];
+    const push = (org: any, reason: string, priority: number) => {
+      const id = String(org?.id || '').trim();
+      if (!id) return;
+      const attrs = org?.attributes || {};
+      const name = String(this.itgAttr(attrs, 'name') || '').trim() || id;
+      const shortName = String(this.itgAttr(attrs, 'short_name') || '').trim();
+      const score = companyName ? this.scoreOrgNameMatch(companyName, name, shortName) : 0;
+      familyCandidates.push({ org, score, reason, priority });
+    };
+
+    push(matched, 'matched', 100);
+
+    if (matchedParentId) {
+      const parent = byId.get(matchedParentId);
+      if (parent) push(parent, 'parent', 90);
+    }
+    for (const ancestorId of matchedAncestors) {
+      const ancestor = byId.get(ancestorId);
+      if (ancestor) push(ancestor, 'ancestor', 80);
+    }
+
+    for (const org of orgs) {
+      const id = String(org?.id || '').trim();
+      if (!id || id === matchedId) continue;
+      const parentId = this.parseITGlueOrgParentId(org);
+      const ancestors = this.parseITGlueOrgAncestorIds(org);
+      if (parentId === matchedId || ancestors.includes(matchedId)) {
+        push(org, 'descendant', 70);
+        continue;
+      }
+      if (matchedParentId && (id === matchedParentId || parentId === matchedParentId || ancestors.includes(matchedParentId))) {
+        push(org, 'sibling_family', 50);
+      }
+    }
+
+    const deduped = new Map<string, { id: string; name: string; reason: string; score: number; priority: number }>();
+    for (const candidate of familyCandidates) {
+      const id = String(candidate.org?.id || '').trim();
+      const attrs = candidate.org?.attributes || {};
+      const name = String(this.itgAttr(attrs, 'name') || id);
+      const existing = deduped.get(id);
+      const next = { id, name, reason: candidate.reason, score: candidate.score, priority: candidate.priority };
+      if (!existing || candidate.priority > existing.priority || (candidate.priority === existing.priority && candidate.score > existing.score)) {
+        deduped.set(id, next);
+      }
+    }
+
+    const scored = Array.from(deduped.values())
+      .filter((x) => x.reason === 'matched' || x.reason === 'parent' || x.reason === 'ancestor' || x.score >= 0.45)
+      .sort((a, b) => b.priority - a.priority || b.score - a.score || a.name.localeCompare(b.name))
+      .slice(0, 8)
+      .map(({ id, name, reason }) => ({ id, name, reason }));
+
+    return scored.length > 0 ? scored : [{ id: matchedOrg.id, name: matchedOrg.name, reason: 'matched' }];
   }
 
   private hashSnapshot(snapshot: Record<string, unknown>): string {
@@ -3324,46 +3671,85 @@ export class PrepareContextService {
       organization_details: (snapshot as any).organization_details || {},
       configs: configs.slice(0, 200).map((c: any) => ({
         id: c?.id,
-        name: c?.attributes?.name || c?.name,
-        manufacturer: c?.attributes?.manufacturer_name || c?.attributes?.manufacturer || c?.manufacturer,
-        model: c?.attributes?.model_name || c?.attributes?.model || c?.model,
-        type: c?.attributes?.configuration_type_name || c?.attributes?.type,
+        name: this.itgAttr(c?.attributes || {}, 'name') || c?.name,
+        manufacturer:
+          this.itgAttr(c?.attributes || {}, 'manufacturer_name') ||
+          this.itgAttr(c?.attributes || {}, 'manufacturer') ||
+          c?.manufacturer,
+        model:
+          this.itgAttr(c?.attributes || {}, 'model_name') ||
+          this.itgAttr(c?.attributes || {}, 'model') ||
+          c?.model,
+        type:
+          this.itgAttr(c?.attributes || {}, 'configuration_type_name') ||
+          this.itgAttr(c?.attributes || {}, 'type'),
       })),
       passwords: passwords.slice(0, 200).map((p: any) => ({
         id: p?.id,
-        name: p?.attributes?.name || p?.name,
-        username: p?.attributes?.username || p?.attributes?.user_name || p?.username,
-        resource: p?.attributes?.resource_name || p?.attributes?.resource || p?.resource,
-        category: p?.attributes?.password_category_name || p?.attributes?.category || p?.category,
+        name: this.itgAttr(p?.attributes || {}, 'name') || p?.name,
+        username:
+          this.itgAttr(p?.attributes || {}, 'username') ||
+          this.itgAttr(p?.attributes || {}, 'user_name') ||
+          p?.username,
+        resource:
+          this.itgAttr(p?.attributes || {}, 'resource_name') ||
+          this.itgAttr(p?.attributes || {}, 'resource') ||
+          p?.resource,
+        category:
+          this.itgAttr(p?.attributes || {}, 'password_category_name') ||
+          this.itgAttr(p?.attributes || {}, 'category') ||
+          p?.category,
       })),
       contacts: contacts.slice(0, 200).map((x: any) => ({
         id: x?.id,
-        name: x?.attributes?.name || [x?.attributes?.first_name, x?.attributes?.last_name].filter(Boolean).join(' '),
-        email: x?.attributes?.primary_email,
-        phone: x?.attributes?.primary_phone,
-        type: x?.attributes?.contact_type_name,
+        name:
+          this.itgAttr(x?.attributes || {}, 'name') ||
+          [
+            this.itgAttr(x?.attributes || {}, 'first_name'),
+            this.itgAttr(x?.attributes || {}, 'last_name'),
+          ]
+            .filter(Boolean)
+            .join(' '),
+        email: this.itgAttr(x?.attributes || {}, 'primary_email'),
+        phone: this.itgAttr(x?.attributes || {}, 'primary_phone'),
+        type: this.itgAttr(x?.attributes || {}, 'contact_type_name'),
       })),
       assets: assets.slice(0, 200).map((a: any) => ({
         id: a?.id,
-        name: a?.attributes?.name || a?.name,
-        type: a?.attributes?.flexible_asset_type_name || a?.attributes?.type,
+        name: this.itgAttr(a?.attributes || {}, 'name') || a?.name,
+        type:
+          this.itgAttr(a?.attributes || {}, 'flexible_asset_type_name') ||
+          this.itgAttr(a?.attributes || {}, 'type'),
+        provider:
+          this.itgAttr(a?.attributes || {}, 'provider') ||
+          this.itgAttr(a?.attributes || {}, 'isp') ||
+          this.itgAttr(a?.attributes || {}, 'carrier'),
+        location:
+          this.itgAttr(a?.attributes || {}, 'location') ||
+          this.itgAttr(a?.attributes || {}, 'locations') ||
+          this.itgAttr(a?.attributes || {}, 'site') ||
+          this.itgAttr(a?.attributes || {}, 'address'),
       })),
       locations: locations.slice(0, 200).map((x: any) => ({
         id: x?.id,
-        name: x?.attributes?.name || x?.name,
-        city: x?.attributes?.city,
-        state: x?.attributes?.region_name || x?.attributes?.state,
-        country: x?.attributes?.country_name || x?.attributes?.country,
+        name: this.itgAttr(x?.attributes || {}, 'name') || x?.name,
+        city: this.itgAttr(x?.attributes || {}, 'city'),
+        state:
+          this.itgAttr(x?.attributes || {}, 'region_name') ||
+          this.itgAttr(x?.attributes || {}, 'state'),
+        country:
+          this.itgAttr(x?.attributes || {}, 'country_name') ||
+          this.itgAttr(x?.attributes || {}, 'country'),
       })),
       domains: domains.slice(0, 200).map((x: any) => ({
         id: x?.id,
-        name: x?.attributes?.name || x?.name,
+        name: this.itgAttr(x?.attributes || {}, 'name') || x?.name,
       })),
       ssl_certificates: sslCertificates.slice(0, 200).map((x: any) => ({
         id: x?.id,
-        name: x?.attributes?.name || x?.name,
-        active: x?.attributes?.active,
-        issued_by: x?.attributes?.issued_by,
+        name: this.itgAttr(x?.attributes || {}, 'name') || x?.name,
+        active: this.itgAttr(x?.attributes || {}, 'active'),
+        issued_by: this.itgAttr(x?.attributes || {}, 'issued_by'),
       })),
       docs: docs.slice(0, 50).map((d: any) => ({
         id: d?.id,
@@ -3371,9 +3757,12 @@ export class PrepareContextService {
       })),
       documents_raw: documentsRaw.slice(0, 100).map((d: any) => ({
         id: d?.id,
-        name: d?.attributes?.name || d?.name,
-        type: d?.attributes?.document_type_name || d?.attributes?.document_type || d?.documentType,
-        updated_at: d?.attributes?.updated_at || d?.updatedAt,
+        name: this.itgAttr(d?.attributes || {}, 'name') || d?.name,
+        type:
+          this.itgAttr(d?.attributes || {}, 'document_type_name') ||
+          this.itgAttr(d?.attributes || {}, 'document_type') ||
+          d?.documentType,
+        updated_at: this.itgAttr(d?.attributes || {}, 'updated_at') || d?.updatedAt,
       })),
       document_attachments_sample: Object.entries(documentAttachmentsById)
         .slice(0, 50)
@@ -3381,7 +3770,10 @@ export class PrepareContextService {
           document_id: docId,
           count: Array.isArray(items) ? items.length : 0,
           names: Array.isArray(items)
-            ? items.slice(0, 5).map((x: any) => x?.attributes?.name || x?.attributes?.file_name || x?.name).filter(Boolean)
+            ? items
+              .slice(0, 5)
+              .map((x: any) => this.itgAttr(x?.attributes || {}, 'name') || this.itgAttr(x?.attributes || {}, 'file_name') || x?.name)
+              .filter(Boolean)
             : [],
         })),
       document_related_items_sample: Object.entries(documentRelatedItemsById)
@@ -3390,7 +3782,9 @@ export class PrepareContextService {
           document_id: docId,
           count: Array.isArray(items) ? items.length : 0,
           item_types: Array.isArray(items)
-            ? [...new Set(items.slice(0, 20).map((x: any) => x?.attributes?.resource_type || x?.attributes?.item_type || 'unknown'))]
+            ? [...new Set(items
+              .slice(0, 20)
+              .map((x: any) => this.itgAttr(x?.attributes || {}, 'resource_type') || this.itgAttr(x?.attributes || {}, 'item_type') || 'unknown'))]
             : [],
         })),
       collection_errors: Array.isArray((snapshot as any).collection_errors) ? (snapshot as any).collection_errors.slice(0, 20) : [],
@@ -3606,6 +4000,94 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
       wifi_make_model: String(infra.wifi_make_model.value || 'unknown'),
       switch_make_model: String(infra.switch_make_model.value || 'unknown'),
     };
+  }
+
+  private applyIntakeAntiRegressionToSSOT(
+    ssot: TicketSSOT,
+    input: {
+      ticket: TicketLike;
+      normalizedTicket: {
+        requesterName?: string;
+        requesterEmail?: string;
+        affectedUserName?: string;
+        affectedUserEmail?: string;
+        title?: string;
+        descriptionCanonical?: string;
+        descriptionUi?: string;
+      } | null;
+      companyName?: string;
+    }
+  ): TicketSSOT {
+    const out: TicketSSOT = { ...ssot };
+
+    const isUnknown = (v: unknown) => {
+      const s = String(v ?? '').trim().toLowerCase();
+      return !s || s === 'unknown' || s === 'n/a' || s === 'none' || s === 'null';
+    };
+    const pickBetter = (current: unknown, ...candidates: unknown[]) => {
+      if (!isUnknown(current)) return String(current).trim();
+      for (const c of candidates) {
+        if (!isUnknown(c)) return String(c).trim();
+      }
+      return String(current || 'unknown').trim() || 'unknown';
+    };
+
+    const ticket = input.ticket;
+    const normalized = input.normalizedTicket || null;
+
+    out.company = pickBetter(
+      out.company,
+      this.normalizeName(ticket.company || ''),
+      this.normalizeName(input.companyName || '')
+    );
+
+    out.requester_name = pickBetter(
+      out.requester_name,
+      this.normalizeName(ticket.canonicalRequesterName || ''),
+      this.normalizeName(normalized?.requesterName || ''),
+      this.normalizeName(ticket.requester || '')
+    );
+
+    out.requester_email = pickBetter(
+      out.requester_email,
+      String(ticket.canonicalRequesterEmail || '').trim().toLowerCase(),
+      String(normalized?.requesterEmail || '').trim().toLowerCase(),
+      this.extractFirstEmail(ticket.requester || ''),
+      this.extractFirstEmail(ticket.rawBody || ''),
+      this.extractFirstEmail(ticket.description || '')
+    );
+
+    out.affected_user_name = pickBetter(
+      out.affected_user_name,
+      this.normalizeName(ticket.canonicalAffectedName || ''),
+      this.normalizeName(normalized?.affectedUserName || '')
+    );
+
+    out.affected_user_email = pickBetter(
+      out.affected_user_email,
+      String(ticket.canonicalAffectedEmail || '').trim().toLowerCase(),
+      String(normalized?.affectedUserEmail || '').trim().toLowerCase()
+    );
+
+    out.title = pickBetter(
+      out.title,
+      String(normalized?.title || '').trim(),
+      String(ticket.title || '').trim()
+    );
+
+    out.description_clean = pickBetter(
+      out.description_clean,
+      String(normalized?.descriptionUi || '').trim(),
+      String(normalized?.descriptionCanonical || '').trim(),
+      String(ticket.description || '').trim()
+    );
+
+    out.created_at = pickBetter(
+      out.created_at,
+      String(ticket.createDate || '').trim()
+    );
+
+    return out;
   }
 
   private async runCrossSourceFusion(input: {
@@ -3870,8 +4352,11 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
       let best: { contact: any; score: number; refs: string[]; note: string } | null = null;
       for (const contact of input.itglueContacts.slice(0, 200)) {
         const attrs = contact?.attributes || contact || {};
-        const contactName = this.normalizeName(String(attrs.name || [attrs.first_name, attrs.last_name].filter(Boolean).join(' ')));
-        const email = String(attrs.primary_email || '').toLowerCase().trim();
+        const contactName = this.normalizeName(String(
+          this.itgAttr(attrs, 'name') ||
+          [this.itgAttr(attrs, 'first_name'), this.itgAttr(attrs, 'last_name')].filter(Boolean).join(' ')
+        ));
+        const email = String(this.itgAttr(attrs, 'primary_email') || '').toLowerCase().trim();
         const emailLocal = this.normalizeSimpleToken(email.split('@')[0] || '');
         const aliases = this.generateNameAliases(contactName);
         let score = 0;
@@ -4087,8 +4572,11 @@ Output schema:
     const contactId = identityLink.from_entity.replace('itglue_contact:', '');
     const contact = input.itglueContacts.find((c: any) => String(c?.id || '') === contactId);
     const attrs = contact?.attributes || {};
-    const name = this.normalizeName(String(attrs.name || [attrs.first_name, attrs.last_name].filter(Boolean).join(' ')));
-    const email = String(attrs.primary_email || '').trim().toLowerCase();
+    const name = this.normalizeName(String(
+      this.itgAttr(attrs, 'name') ||
+      [this.itgAttr(attrs, 'first_name'), this.itgAttr(attrs, 'last_name')].filter(Boolean).join(' ')
+    ));
+    const email = String(this.itgAttr(attrs, 'primary_email') || '').trim().toLowerCase();
     if (name) {
       out.push({
         path: 'ticket.affected_user_name',
@@ -4578,6 +5066,293 @@ Output schema:
     return found ? found.name : '';
   }
 
+  private extractITGlueWanCandidate(input: {
+    ticketNarrative: string;
+    itglueAssets: any[];
+    itglueConfigs: any[];
+    docs: Doc[];
+  }): ITGlueWanCandidate | null {
+    const candidates: ITGlueWanCandidate[] = [];
+
+    const scanRecord = (record: any, sourceSystem: ITGlueWanCandidate['source_system'], sourceRef: string) => {
+      const attrs = record?.attributes || record || {};
+      const pairs = this.collectTextPairs(attrs);
+      const allText = pairs.map((p) => `${p.key}:${p.value}`).join(' | ');
+      if (!/\b(internet|wan|isp|provider|carrier|broadband|fiber|cable|upload speed|download speed|link type)\b/i.test(allText)) {
+        return;
+      }
+
+      let ispName = '';
+      let locationHint = '';
+      let publicIp = '';
+      let score = 0.42;
+
+      for (const pair of pairs) {
+        const key = pair.key.toLowerCase();
+        const value = pair.value.trim();
+        if (!value) continue;
+        if (/(^|[._\s-])(provider|isp|carrier)(name)?$/.test(key) && !/^(yes|no|true|false)$/i.test(value)) {
+          ispName = this.normalizeVendorPhrase(value) || ispName;
+          score += 0.28;
+        }
+        if (/(^|[._\s-])(location|site|address)(s)?$/.test(key) && value.length >= 4) {
+          locationHint = locationHint || value;
+          score += 0.08;
+        }
+        if ((/(^|[._\s-])(ip|public ip)( address)?(es)?$/.test(key) || this.isPublicIPv4(value)) && this.isPublicIPv4(value)) {
+          publicIp = publicIp || value;
+          score += 0.08;
+        }
+      }
+
+      const label = this.normalizeName(String(attrs.name || attrs.title || attrs.hostname || ''));
+      if (!ispName && label) {
+        const labelMatch = label.match(/^(.+?)\s+(cable|fiber|internet|broadband|communications?|telecom)$/i);
+        if (labelMatch?.[1]) {
+          ispName = this.normalizeVendorPhrase(labelMatch[1]) || '';
+          score += 0.14;
+        }
+      }
+
+      if (!ispName && label) {
+        const fallbackIsp = this.inferIspName({
+          ticketNarrative: `${input.ticketNarrative}\n${label}\n${allText}`.slice(0, 2000),
+          docs: [],
+          itglueConfigs: [],
+        });
+        if (fallbackIsp) {
+          ispName = fallbackIsp;
+          score += 0.08;
+        }
+      }
+
+      if (!ispName && !locationHint && !publicIp) return;
+      candidates.push({
+        ...(ispName ? { isp_name: ispName } : {}),
+        ...(locationHint ? { location_hint: locationHint } : {}),
+        ...(publicIp ? { public_ip: publicIp } : {}),
+        confidence: Number(Math.min(0.92, score).toFixed(3)),
+        source_ref: sourceRef,
+        source_system: sourceSystem,
+      });
+    };
+
+    for (const asset of input.itglueAssets.slice(0, 400)) {
+      scanRecord(asset, 'itglue_asset', `itglue_asset:${String(asset?.id || 'unknown')}`);
+    }
+    for (const cfg of input.itglueConfigs.slice(0, 300)) {
+      scanRecord(cfg, 'itglue_config', `itglue_config:${String(cfg?.id || 'unknown')}`);
+    }
+    for (const doc of input.docs.slice(0, 20)) {
+      const text = `${doc.title} ${doc.snippet}`;
+      const m = text.match(/\b([A-Z][A-Za-z0-9&.' -]{1,40})\s+(cable|fiber|internet)\b/i);
+      const isp = m?.[1] ? this.normalizeVendorPhrase(m[1]) : '';
+      if (!isp) continue;
+      candidates.push({
+        isp_name: isp,
+        confidence: 0.52,
+        source_ref: `itglue_doc:${String(doc.id)}`,
+        source_system: 'itglue_doc',
+      });
+    }
+
+    return candidates.sort((a, b) => b.confidence - a.confidence)[0] || null;
+  }
+
+  private extractITGlueInfraCandidates(input: {
+    itgluePasswords: any[];
+    itglueConfigs: any[];
+    itglueAssets: any[];
+    docs: Doc[];
+  }): {
+    firewall: {
+      value: string;
+      status: EnrichmentField<string>['status'];
+      confidence: number;
+      sourceSystem: string;
+      sourceRef?: string;
+      round: number;
+    } | null;
+    wifi: {
+      value: string;
+      status: EnrichmentField<string>['status'];
+      confidence: number;
+      sourceSystem: string;
+      sourceRef?: string;
+      round: number;
+    } | null;
+    switch: {
+      value: string;
+      status: EnrichmentField<string>['status'];
+      confidence: number;
+      sourceSystem: string;
+      sourceRef?: string;
+      round: number;
+    } | null;
+  } {
+    const candidates: ITGlueInfraCandidate[] = [];
+    const vendorPatterns: Array<{ kind: ITGlueInfraCandidate['kind'] | 'multi'; canonical: string; pattern: RegExp }> = [
+      { kind: 'firewall', canonical: 'Fortinet FortiGate', pattern: /\bfortigate\b|\bfortinet\b|\bfg-\d+[a-z-]*\b/i },
+      { kind: 'firewall', canonical: 'SonicWall', pattern: /\bsonicwall\b/i },
+      { kind: 'firewall', canonical: 'Palo Alto', pattern: /\bpalo\s?alto\b|\bpa-\d+\b/i },
+      { kind: 'firewall', canonical: 'WatchGuard', pattern: /\bwatchguard\b/i },
+      { kind: 'firewall', canonical: 'Sophos', pattern: /\bsophos\b/i },
+      { kind: 'wifi', canonical: 'UniFi', pattern: /\bunifi\b|\bubiquiti\b/i },
+      { kind: 'wifi', canonical: 'Meraki', pattern: /\bmeraki\b/i },
+      { kind: 'wifi', canonical: 'Aruba', pattern: /\baruba\b|\binstant on\b/i },
+      { kind: 'wifi', canonical: 'Ruckus', pattern: /\bruckus\b/i },
+      { kind: 'switch', canonical: 'Cisco', pattern: /\bcisco\b|\bcatalyst\b/i },
+      { kind: 'switch', canonical: 'Aruba', pattern: /\baruba\b|\bprocurve\b/i },
+      { kind: 'switch', canonical: 'Netgear', pattern: /\bnetgear\b/i },
+      { kind: 'switch', canonical: 'UniFi', pattern: /\bunifi\b.*\bswitch\b|\bswitch\b.*\bunifi\b/i },
+      { kind: 'multi', canonical: 'UniFi', pattern: /\bunifi\b/i },
+    ];
+    const inferKind = (text: string): ITGlueInfraCandidate['kind'] | null => {
+      if (/\bfirewall\b|\bfortigate\b|\bsonicwall\b|\bwatchguard\b|\bpalo\s?alto\b/.test(text)) return 'firewall';
+      if (/\bwifi\b|\bwireless\b|\bssid\b|\baccess point\b|\bcontroller\b/.test(text)) return 'wifi';
+      if (/\bswitch\b|\bcatalyst\b|\bprocurve\b|\bstacking\b/.test(text)) return 'switch';
+      return null;
+    };
+    const maybePush = (sourceSystem: ITGlueInfraCandidate['source_system'], sourceRef: string, label: string, contextHint: string, baseScore: number) => {
+      const combined = `${label} ${contextHint}`.toLowerCase();
+      if (!combined.trim()) return;
+      const inferredKind = inferKind(combined);
+      for (const vp of vendorPatterns) {
+        if (!vp.pattern.test(combined)) continue;
+        const kind = vp.kind === 'multi' ? (inferredKind || 'wifi') : vp.kind;
+        if (!kind) continue;
+        let value = vp.canonical;
+        const modelMatch =
+          label.match(/\b(FortiGate\s+[A-Z0-9-]+)\b/i) ||
+          label.match(/\b(FG-\d+[A-Z-]*)\b/i) ||
+          label.match(/\b(CAT-FG-\d+[A-Z-]*)\b/i) ||
+          label.match(/\b(SonicWall(?:\s*\([^)]+\))?)\b/i) ||
+          label.match(/\b(UniFi\s+(Controller|Switch|Cloud Portal|Video))\b/i);
+        if (modelMatch?.[1]) value = this.normalizeName(modelMatch[1]);
+        let score = baseScore;
+        if (/\b(local access|controller|ssid)\b/.test(combined)) score += 0.08;
+        if (/\bfirewall\b/.test(contextHint.toLowerCase()) && kind === 'firewall') score += 0.1;
+        if (/\bwifi\b/.test(contextHint.toLowerCase()) && kind === 'wifi') score += 0.1;
+        candidates.push({
+          kind,
+          value,
+          confidence: Number(Math.min(0.9, score).toFixed(3)),
+          source_ref: sourceRef,
+          source_system: sourceSystem,
+        });
+      }
+    };
+
+    for (const p of input.itgluePasswords.slice(0, 500)) {
+      const a = p?.attributes || {};
+      const name = this.normalizeName(String(a.name || a['resource-name'] || a.title || ''));
+      const category = this.normalizeName(String(
+        a.category || a.password_category || a.passwordCategory || a.password_category_name || a['password-category-name'] || ''
+      ));
+      const username = this.normalizeName(String(a.username || ''));
+      maybePush('itglue_password_metadata', `itglue_password:${String(p?.id || name || 'unknown')}`, name, `${category} ${username}`, 0.6);
+    }
+    for (const cfg of input.itglueConfigs.slice(0, 300)) {
+      const a = cfg?.attributes || {};
+      const name = this.normalizeName(String(this.itgAttr(a, 'name') || this.itgAttr(a, 'hostname') || ''));
+      const vendor = this.normalizeName(String(
+        this.itgAttr(a, 'manufacturer') ||
+        this.itgAttr(a, 'manufacturer_name') ||
+        this.itgAttr(a, 'vendor') ||
+        this.itgAttr(a, 'brand') ||
+        ''
+      ));
+      const model = this.normalizeName(String(
+        this.itgAttr(a, 'model') ||
+        this.itgAttr(a, 'model_name') ||
+        this.itgAttr(a, 'product_model') ||
+        ''
+      ));
+      const typeName = this.normalizeName(String(this.itgAttr(a, 'configuration_type_name') || this.itgAttr(a, 'type') || ''));
+      maybePush('itglue_config', `itglue_config:${String(cfg?.id || name || 'unknown')}`, [vendor, model, name].filter(Boolean).join(' '), typeName, 0.72);
+    }
+    for (const asset of input.itglueAssets.slice(0, 300)) {
+      const a = asset?.attributes || {};
+      const text = JSON.stringify(a || {}).slice(0, 1000);
+      const name = this.normalizeName(String(a.name || a.title || ''));
+      const typeName = this.normalizeName(String(a['flexible-asset-type-name'] || a.type || ''));
+      maybePush('itglue_config', `itglue_asset:${String(asset?.id || name || 'unknown')}`, `${name} ${text}`, typeName, 0.66);
+    }
+    for (const doc of input.docs.slice(0, 20)) {
+      maybePush('itglue_doc', `itglue_doc:${String(doc.id)}`, `${doc.title} ${doc.snippet}`.slice(0, 700), '', 0.46);
+    }
+
+    const pick = (kind: ITGlueInfraCandidate['kind']) => {
+      const best = candidates.filter((c) => c.kind === kind).sort((a, b) => b.confidence - a.confidence)[0];
+      if (!best) return null;
+      return {
+        value: best.value,
+        status: 'inferred' as const,
+        confidence: best.confidence,
+        sourceSystem: best.source_system,
+        sourceRef: best.source_ref,
+        round: 2,
+      };
+    };
+    return { firewall: pick('firewall'), wifi: pick('wifi'), switch: pick('switch') };
+  }
+
+  private rankITGlueDocsForTicket(ticketNarrative: string, docs: Doc[]): Doc[] {
+    if (!Array.isArray(docs) || docs.length <= 1) return docs;
+    const ticketLower = String(ticketNarrative || '').toLowerCase();
+    const hints = new Set([
+      ...this.extractSoftwareHintsFromTicket(ticketNarrative),
+      ...ticketLower.split(/[^a-z0-9]+/).filter((t) => t.length >= 4).slice(0, 60),
+    ]);
+    return docs
+      .map((doc, idx) => {
+        const text = `${String(doc.title || '')} ${String(doc.snippet || '')}`.toLowerCase();
+        let score = Number(doc.relevance || 0);
+        if (/\b(sop|new hire|new employee|onboarding|install|setup|instructions?)\b/.test(text)) score += 0.28;
+        if (/\b(network|internet|wan|wifi|firewall|switch)\b/.test(text)) score += 0.12;
+        for (const hint of hints) {
+          if (text.includes(hint)) score += hint.length >= 8 ? 0.04 : 0.02;
+        }
+        score += Math.max(0, 0.02 - idx * 0.002);
+        return { ...doc, relevance: Number(Math.max(Number(doc.relevance || 0), score).toFixed(3)) };
+      })
+      .sort((a, b) => Number(b.relevance || 0) - Number(a.relevance || 0));
+  }
+
+  private collectTextPairs(
+    obj: unknown,
+    prefix = '',
+    depth = 0,
+    out: Array<{ key: string; value: string }> = []
+  ): Array<{ key: string; value: string }> {
+    if (obj === null || obj === undefined || depth > 4) return out;
+    if (Array.isArray(obj)) {
+      for (const item of obj.slice(0, 20)) this.collectTextPairs(item, prefix, depth + 1, out);
+      return out;
+    }
+    if (typeof obj !== 'object') return out;
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>).slice(0, 200)) {
+      const key = prefix ? `${prefix}.${k}` : k;
+      if (v === null || v === undefined) continue;
+      if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+        const value = String(v).replace(/\s+/g, ' ').trim();
+        if (value) out.push({ key, value });
+      } else {
+        this.collectTextPairs(v, key, depth + 1, out);
+      }
+    }
+    return out;
+  }
+
+  private normalizeVendorPhrase(value: string): string {
+    const text = this.normalizeName(String(value || ''))
+      .replace(/\b(primary|secondary|backup)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!text || text.length > 80) return '';
+    return text;
+  }
+
   private extractInfraMakeModel(
     kind: 'firewall' | 'wifi' | 'switch',
     configs: any[],
@@ -4600,9 +5375,20 @@ Output schema:
       const attrs = config?.attributes || {};
       const text = JSON.stringify(attrs);
       if (!configMatchers[kind].test(text)) continue;
-      const vendor = String(attrs.manufacturer || attrs.vendor || attrs.brand || '').trim();
-      const model = String(attrs.model || attrs.product_model || '').trim();
-      const name = String(attrs.name || attrs.hostname || '').trim();
+      const vendor = String(
+        this.itgAttr(attrs, 'manufacturer') ||
+        this.itgAttr(attrs, 'manufacturer_name') ||
+        this.itgAttr(attrs, 'vendor') ||
+        this.itgAttr(attrs, 'brand') ||
+        ''
+      ).trim();
+      const model = String(
+        this.itgAttr(attrs, 'model') ||
+        this.itgAttr(attrs, 'model_name') ||
+        this.itgAttr(attrs, 'product_model') ||
+        ''
+      ).trim();
+      const name = String(this.itgAttr(attrs, 'name') || this.itgAttr(attrs, 'hostname') || '').trim();
       const value = [vendor, model].filter(Boolean).join(' ').trim() || name || 'unknown';
       if (!value || value === 'unknown') continue;
       return {
@@ -4705,8 +5491,8 @@ Output schema:
   /**
    * Busca casos passados similares no banco
    */
-  private async findRelatedCases(ticketTitle: string, orgId?: string): Promise<RelatedCase[]> {
-    return this.findRelatedCasesByTerms([ticketTitle], orgId);
+  private async findRelatedCases(ticketTitle: string, orgId?: string, companyName?: string): Promise<RelatedCase[]> {
+    return this.findRelatedCasesByTerms([ticketTitle], orgId, companyName);
   }
 
   private buildBroadHistorySearchPlan(input: {
@@ -4889,6 +5675,7 @@ Output schema:
   private async findRelatedCasesBroad(input: {
     ticketId?: string;
     orgId?: string;
+    companyName?: string;
     terms: string[];
   }): Promise<RelatedCase[]> {
     const normalizedTerms = this.normalizeHistoryTerms(input.terms);
@@ -4908,15 +5695,19 @@ Output schema:
           max(t.updated_at) AS resolved_at
         FROM triage_sessions t
         LEFT JOIN llm_outputs l ON t.id = l.session_id
+        LEFT JOIN tickets_processed tp ON tp.id = t.ticket_id
+        LEFT JOIN ticket_ssot tsot ON tsot.ticket_id = t.ticket_id
         WHERE t.status = 'approved'
         ${input.orgId ? 'AND t.org_id = $1' : ''}
-        ${input.ticketId ? `AND t.ticket_id <> $${input.orgId ? 2 : 1}` : ''}
+        ${input.companyName ? `AND lower(coalesce(tsot.payload->>'company', '')) = lower($${input.orgId ? 2 : 1})` : ''}
+        ${input.ticketId ? `AND t.ticket_id <> $${input.orgId ? (input.companyName ? 3 : 2) : (input.companyName ? 2 : 1)}` : ''}
         GROUP BY t.ticket_id
         ORDER BY max(t.updated_at) DESC
         LIMIT 250
         `,
         [
           ...(input.orgId ? [input.orgId] : []),
+          ...(input.companyName ? [input.companyName] : []),
           ...(input.ticketId ? [input.ticketId] : []),
         ]
       );
@@ -4947,13 +5738,21 @@ Output schema:
     }
   }
 
-  private async findRelatedCasesByTerms(terms: string[], orgId?: string): Promise<RelatedCase[]> {
+  private async findRelatedCasesByTerms(terms: string[], orgId?: string, companyName?: string): Promise<RelatedCase[]> {
     try {
-      const broad = await this.findRelatedCasesBroad({ ...(orgId ? { orgId } : {}), terms });
+      const broad = await this.findRelatedCasesBroad({
+        ...(orgId ? { orgId } : {}),
+        ...(!orgId && companyName ? { companyName } : {}),
+        terms,
+      });
       if (broad.length > 0) return broad.slice(0, 3);
 
       const keyword = this.pickHistoryKeyword(terms);
-      const fallback = await this.findRelatedCasesBroad({ ...(orgId ? { orgId } : {}), terms: [keyword] });
+      const fallback = await this.findRelatedCasesBroad({
+        ...(orgId ? { orgId } : {}),
+        ...(!orgId && companyName ? { companyName } : {}),
+        terms: [keyword],
+      });
       return fallback.slice(0, 3);
     } catch (error) {
       console.log('[PrepareContext] Could not find related cases:', error);
@@ -5375,6 +6174,24 @@ Output schema:
   }
 
   private inferCompanyNameFromTicketText(text: string): string {
+    const raw = String(text || '');
+    const bodyPatterns = [
+      /\bhas been created for\s+([A-Z][A-Za-z0-9&.,'()\-\s]{2,80}?)\s*\.\s*we will attend/i,
+      /\bcreated for\s+([A-Z][A-Za-z0-9&.,'()\-\s]{2,80}?)\s*\.\s*/i,
+      /\bfor\s+([A-Z][A-Za-z0-9&.,'()\-\s]{2,80}?,\s*(?:LLC|Inc\.?|Corp\.?|Corporation|Ltd\.?|Co\.?))\b/i,
+    ];
+    for (const pattern of bodyPatterns) {
+      const match = raw.match(pattern);
+      const candidate = this.normalizeName(String(match?.[1] || ''))
+        .replace(/\s+/g, ' ')
+        .replace(/\b(we will attend|the details of the ticket are listed below)\b[\s\S]*$/i, '')
+        .trim()
+        .replace(/[.,;:\s]+$/g, '');
+      if (candidate && candidate.length >= 3 && !/^unknown$/i.test(candidate)) {
+        return candidate;
+      }
+    }
+
     const domains = this.extractEmailDomains(text || '');
     if (!domains.length) return '';
 
@@ -5891,11 +6708,103 @@ Ticket text:
     return signals;
   }
 
+  private normalizeOrgNameForMatch(value: string): string {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/&/g, ' and ')
+      .replace(/[.,()[\]{}'"/\\_-]+/g, ' ')
+      .replace(
+        /\b(incorporated|corporation|corp|company|co|limited|ltd|llc|llp|pllc|inc)\b/g,
+        ' '
+      )
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private scoreOrgNameMatch(name: string, candidate: string, candidateShortName?: string): number {
+    const rawN = this.normalizeName(name).toLowerCase();
+    const variants = [candidate, candidateShortName || '']
+      .map((v) => this.normalizeName(String(v || '')))
+      .filter(Boolean);
+    if (!rawN || variants.length === 0) return 0;
+
+    const genericTokens = new Set([
+      'resource',
+      'resources',
+      'technology',
+      'technologies',
+      'solution',
+      'solutions',
+      'service',
+      'services',
+      'system',
+      'systems',
+      'group',
+      'global',
+      'international',
+      'management',
+      'consulting',
+      'support',
+      'partners',
+      'network',
+      'networks',
+      'communications',
+      'communication',
+      'company',
+      'companies',
+      'holdings',
+    ]);
+
+    let best = 0;
+    for (const variant of variants) {
+      const rawC = variant.toLowerCase();
+      if (!rawC) continue;
+      if (rawC === rawN) return 1;
+
+      const n = this.normalizeOrgNameForMatch(rawN);
+      const c = this.normalizeOrgNameForMatch(rawC);
+      if (!n || !c) continue;
+      if (c === n) return 0.99;
+      if (c.includes(n) || n.includes(c)) {
+        best = Math.max(best, 0.95);
+      }
+
+      const nTokens = [...new Set(n.split(' ').filter((t) => t.length >= 2))];
+      const cTokens = [...new Set(c.split(' ').filter((t) => t.length >= 2))];
+      if (nTokens.length === 0 || cTokens.length === 0) continue;
+
+      const overlap = nTokens.filter((t) => cTokens.includes(t));
+      if (overlap.length === 0) continue;
+
+      const nDistinct = nTokens.filter((t) => !genericTokens.has(t));
+      const cDistinct = cTokens.filter((t) => !genericTokens.has(t));
+      const distinctOverlap = nDistinct.filter((t) => cDistinct.includes(t));
+
+      // Prevent false positives like "CAT Resources" -> "Composite Resources" (shared generic token only).
+      if (nDistinct.length > 0 && cDistinct.length > 0 && distinctOverlap.length === 0) {
+        continue;
+      }
+
+      const coverageMin = overlap.length / Math.max(Math.min(nTokens.length, cTokens.length), 1);
+      const coverageMax = overlap.length / Math.max(Math.max(nTokens.length, cTokens.length), 1);
+      const distinctCoverage =
+        distinctOverlap.length / Math.max(Math.min(Math.max(nDistinct.length, 1), Math.max(cDistinct.length, 1)), 1);
+
+      let score = 0.35 * coverageMin + 0.25 * coverageMax + 0.4 * distinctCoverage;
+
+      const acronym = nDistinct.map((t) => t[0]).join('');
+      if (acronym && (c.includes(acronym) || rawC.includes(acronym))) {
+        score = Math.max(score, 0.72);
+      }
+
+      best = Math.max(best, score);
+    }
+
+    return best;
+  }
+
   private fuzzyMatch(name: string, candidate: string): boolean {
-    const n = this.normalizeName(name).toLowerCase();
-    const c = this.normalizeName(candidate).toLowerCase();
-    if (!n || !c) return false;
-    return c === n || c.includes(n) || n.includes(c);
+    return this.scoreOrgNameMatch(name, candidate) >= 0.8;
   }
 
   private extractEmailDomains(text: string): string[] {
@@ -5913,7 +6822,14 @@ Ticket text:
     companyName: string
   ): Promise<{ id: number; name: string } | null> {
     const orgs = await ninjaoneClient.listOrganizations();
-    const found = orgs.find((o: any) => this.fuzzyMatch(companyName, String(o?.name || '')));
+    const ranked = orgs
+      .map((o: any) => ({
+        org: o,
+        score: this.scoreOrgNameMatch(companyName, String(o?.name || '')),
+      }))
+      .filter((r) => r.score >= 0.8)
+      .sort((a, b) => b.score - a.score);
+    const found = ranked[0]?.org || null;
     return found ? { id: Number(found.id), name: String(found.name) } : null;
   }
 
@@ -5922,21 +6838,59 @@ Ticket text:
     companyName: string,
     hintText?: string
   ): Promise<{ id: string; name: string } | null> {
-    const orgs = await itglueClient.getOrganizations();
-    const byName = orgs.find((o: any) => this.fuzzyMatch(companyName, String(o?.attributes?.name || '')));
+    const orgs = await itglueClient.getOrganizations(1000);
+    const rankedByName = orgs
+      .map((o: any) => ({
+        org: o,
+        score: this.scoreOrgNameMatch(
+          companyName,
+          String(this.itgAttr(o?.attributes || {}, 'name') || ''),
+          String(this.itgAttr(o?.attributes || {}, 'short_name') || '')
+        ),
+      }))
+      .filter((r) => r.score >= 0.8)
+      .sort((a, b) => b.score - a.score);
+    const byName = rankedByName[0]?.org;
     if (byName) {
-      return { id: String(byName.id), name: String(byName.attributes?.name || companyName) };
+      return { id: String(byName.id), name: String(this.itgAttr(byName?.attributes || {}, 'name') || companyName) };
     }
 
-    const domains = this.extractEmailDomains(hintText || '');
+    const ignoreDomainSuffixes = [
+      'outlook.com',
+      'office.com',
+      'microsoft.com',
+      'autotask.net',
+      'itclientportal.com',
+      'safelinks.protection.outlook.com',
+      'protection.outlook.com',
+      'refreshtech.com',
+    ];
+    const domains = this.extractEmailDomains(hintText || '').filter(
+      (d) => !ignoreDomainSuffixes.some((suffix) => d === suffix || d.endsWith(`.${suffix}`))
+    );
     if (domains.length === 0) return null;
 
-    const byDomain = orgs.find((o: any) => {
-      const primaryDomain = String(o?.attributes?.primary_domain || '').toLowerCase();
-      return primaryDomain && domains.some((d) => d === primaryDomain || d.endsWith(`.${primaryDomain}`) || primaryDomain.endsWith(`.${d}`));
-    });
+    const rankedByDomain = orgs
+      .map((o: any) => {
+        const primaryDomain = String(this.itgAttr(o?.attributes || {}, 'primary_domain') || '').toLowerCase();
+        const domainScore =
+          primaryDomain && domains.some((d) => d === primaryDomain)
+            ? 1
+            : primaryDomain && domains.some((d) => d.endsWith(`.${primaryDomain}`) || primaryDomain.endsWith(`.${d}`))
+              ? 0.8
+              : 0;
+        const nameScore = this.scoreOrgNameMatch(
+          companyName,
+          String(this.itgAttr(o?.attributes || {}, 'name') || ''),
+          String(this.itgAttr(o?.attributes || {}, 'short_name') || '')
+        );
+        return { org: o, score: domainScore > 0 ? domainScore * 0.75 + nameScore * 0.25 : 0 };
+      })
+      .filter((r) => r.score >= 0.75)
+      .sort((a, b) => b.score - a.score);
 
-    return byDomain ? { id: String(byDomain.id), name: String(byDomain.attributes?.name || companyName) } : null;
+    const byDomain = rankedByDomain[0]?.org;
+    return byDomain ? { id: String(byDomain.id), name: String(this.itgAttr(byDomain?.attributes || {}, 'name') || companyName) } : null;
   }
 }
 

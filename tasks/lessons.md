@@ -252,3 +252,51 @@
 **Root cause**: A normalização 2a priorizava resumo curto, mas sem guard explícito de papéis (requester vs affected user) quando o ticket fala de terceiro não nomeado.
 **Rule**: Em `description_ui`, nunca usar `requester_name` como affected user sem evidência explícita; em onboarding/third-party requests, manter o affected user como "name not provided" quando ausente.
 **Pattern**: Frases como "we have a new employee... he will need..." + assinatura do requester exigem guard de role assignment pós-LLM.
+
+## Lesson: 2026-02-23 (history without scope pollutes Prepare Context)
+**Mistake**: O 2e retornou casos históricos de outras empresas quando `org` ficou `unknown`.
+**Root cause**: A busca ampla de histórico fazia fallback no tenant inteiro sem exigir boundary de escopo (org/company) e o filtro posterior de org não protegia quando o alvo também era `unknown`.
+**Rule**: Histórico só pode retornar related cases com escopo confiável (`orgId` ou `companyName`); sem escopo, bloquear a correlação e registrar o motivo.
+**Pattern**: `org=unknown` + `related_cases > 0` em ambiente multi-tenant quase sempre indica contaminação cross-company.
+
+## Lesson: 2026-02-23 (SSOT cannot regress known intake fields)
+**Mistake**: O SSOT final saiu com `company=unknown` e outros campos básicos degradados, apesar de a sidebar (intake) já possuir valores corretos.
+**Root cause**: O builder do SSOT aceitava `sections.*` finais como fonte única, sem merge protetivo contra regressão para `unknown`.
+**Rule**: Campos conhecidos no intake (empresa, requester, título, descrição, created_at, emails) são baseline; SSOT pode enriquecer, mas não degradar para `unknown`.
+**Pattern**: Se sidebar/raw mostra valor e center/right (SSOT) mostra `unknown`, existe regressão de merge no pipeline final.
+
+## Lesson: 2026-02-23 (normalization can remove org clues before org inference)
+**Mistake**: A inferência de empresa continuou falhando mesmo com regex melhor, porque o pipeline limpava `rawBody` antes de inferir `company`.
+**Root cause**: A ordem das etapas usava narrativa pós-normalização para inferir org/company, perdendo boilerplate útil como “ticket created for <company>”.
+**Rule**: Inferência de org/company deve considerar a narrativa original (pré-normalização) além da narrativa limpa.
+**Pattern**: Se `text_original` contém empresa e `company=unknown`, verificar mutação prematura do `rawBody`/narrative.
+
+## Lesson: 2026-02-23 (broader extraction problem > client-specific fix)
+**Mistake**: A tentação inicial foi corrigir a ausência de ISP/firewall/WiFi olhando um caso específico (CAT) em vez de melhorar a modelagem genérica da extração do IT Glue.
+**Root cause**: Foco excessivo em output de um ticket sem formalizar classes de evidência reutilizáveis (WAN assets, password metadata, docs relevantes, alias de org).
+**Rule**: Quando um ticket revela dados claros em IT Glue mas SSOT sai `unknown`, corrigir primeiro a capacidade genérica de extrair/normalizar/classificar evidências por tipo — nunca hardcode por org.
+**Pattern**: `screenshots show rich ITG data` + `round2 counts zero/unknown` => revisar org resolver + extractors genéricos (WAN/password metadata/doc ranking), não valores específicos do cliente.
+
+## Lesson: 2026-02-23 (false-positive org match can silently nullify enrichment)
+**Mistake**: Considerei a extração IT Glue como principal culpada, mas o pipeline estava consultando a org errada (`Composite Resources, Inc.`) para um ticket de `CAT Resources, LLC`.
+**Root cause**: Resolver de org usava `find()` sobre lista parcial (`getOrganizations()` default 100) com matching permissivo/fallback por domínio com ruído, permitindo falso positivo por similaridade corporativa.
+**Rule**: Resolução de org multi-tenant deve usar inventário amplo (`page[size]=1000` quando suportado), ranking por score (não primeiro match booleano) e penalidade para overlap só em tokens genéricos.
+**Pattern**: `SSOT.company correto` + `round2 org match nome diferente` + `ITG passwords/docs/assets = 0` => bug no org resolver, não (apenas) no extractor.
+
+## Lesson: 2026-02-23 (schema assumptions in SQL filters must be runtime-verified)
+**Mistake**: O filtro de histórico broad por empresa foi implementado usando `tickets_processed.company`, mas a coluna não existe no schema real.
+**Root cause**: Assumi que o campo `company` estava persistido em `tickets_processed` sem confirmar `information_schema`/migrations locais.
+**Rule**: Toda nova query SQL que depende de coluna recém-assumida deve ser validada contra o schema real (ou usar fonte já confirmada, ex.: `ticket_ssot.payload`).
+**Pattern**: Se `typecheck` passa e o runtime falha com `42703`, revisar suposições de schema imediatamente antes de depurar lógica de negócio.
+
+## Lesson: 2026-02-23 (IT Glue parent org can be valid while UI screenshots come from child org)
+**Mistake**: Marquei o match `Composite Resources, Inc.` como incorreto sem validar a relação parent/child no IT Glue.
+**Root cause**: Interpretei o nome exibido no snapshot como mismatch, mas o tenant usa `Composite` (parent) e `CAT Resources` (child) com dados distribuídos por recursos diferentes.
+**Rule**: Em IT Glue, validar a árvore de organizações (`parent-id` / `ancestor-ids`) antes de concluir que um match é “errado”; screenshots de UI podem estar no child org enquanto o pipeline resolveu o parent.
+**Pattern**: `org snapshot name != company display name` + endereços/configs batem => investigar parent/child split e onde cada tipo de dado (passwords/docs/WAN) está armazenado.
+
+## Lesson: 2026-02-24 (IT Glue tenant endpoints and attribute naming must be runtime-probed)
+**Mistake**: Tratei `documents_raw: 0` e `passwords: 0` como ausência de dados antes de validar endpoint behavior e shape real do tenant.
+**Root cause**: O tenant retornava `404` no endpoint global `/documents` filtrado por org (mas o nested funcionava), e parte da extração lia attrs em `snake_case` enquanto a API devolvia `kebab-case`; além disso erros viravam `[]` em alguns paths.
+**Rule**: Em troubleshooting de IT Glue, sempre confirmar endpoint (global vs nested), permissões e naming (`kebab/snake`) com probe real antes de concluir “sem dados”.
+**Pattern**: UI mostra dados + snapshot API mostra zeros => verificar primeiro `404/403 masked`, rota nested, e parser de atributos.

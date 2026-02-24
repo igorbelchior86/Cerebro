@@ -53,7 +53,22 @@ export class ITGlueClient {
 
   async getOrganizations(pageSize: number = 100) {
     const response = await this.request<{
-      data: Array<{ id: string; attributes: { name: string; short_name?: string; primary_domain?: string; organization_status_name?: string } }>;
+      data: Array<{
+        id: string;
+        attributes: {
+          name: string;
+          short_name?: string;
+          'short-name'?: string;
+          primary_domain?: string;
+          'primary-domain'?: string;
+          organization_status_name?: string;
+          'organization-status-name'?: string;
+          parent_id?: number | string | null;
+          'parent-id'?: number | string | null;
+          ancestor_ids?: Array<number | string> | string | null;
+          'ancestor-ids'?: Array<number | string> | string | null;
+        };
+      }>;
       meta: { total_count: number };
     }>('/organizations', {
       'page[size]': pageSize,
@@ -85,25 +100,49 @@ export class ITGlueClient {
   }
 
   async getOrganizationDocuments(organizationId: string, pageSize: number = 50) {
-    const response = await this.request<{
-      data: ITGlueDocument[];
-      meta: { pages: number };
-    }>('/documents', {
-      'filter[organization_id]': organizationId,
-      'page[size]': pageSize,
-    });
-    return response.data;
+    try {
+      const response = await this.request<{
+        data: ITGlueDocument[];
+        meta: { pages: number };
+      }>(`/organizations/${organizationId}/relationships/documents`, {
+        'page[size]': pageSize,
+      });
+      return response.data;
+    } catch (error) {
+      const message = String((error as Error)?.message || '').toLowerCase();
+      if (!message.includes('404')) throw error;
+      const response = await this.request<{
+        data: ITGlueDocument[];
+        meta: { pages: number };
+      }>('/documents', {
+        'filter[organization_id]': organizationId,
+        'page[size]': pageSize,
+      });
+      return response.data;
+    }
   }
 
   async getOrganizationDocumentsRaw(organizationId: string, pageSize: number = 200) {
-    const response = await this.request<{
-      data: Array<{ id: string; attributes: Record<string, unknown>; relationships?: Record<string, unknown> }>;
-      meta?: { pages?: number; total_count?: number };
-    }>('/documents', {
-      'filter[organization_id]': organizationId,
-      'page[size]': pageSize,
-    });
-    return response.data;
+    try {
+      const response = await this.request<{
+        data: Array<{ id: string; attributes: Record<string, unknown>; relationships?: Record<string, unknown>; type?: string }>;
+        meta?: { pages?: number; total_count?: number };
+      }>(`/organizations/${organizationId}/relationships/documents`, {
+        'page[size]': pageSize,
+      });
+      return response.data;
+    } catch (error) {
+      const message = String((error as Error)?.message || '').toLowerCase();
+      if (!message.includes('404')) throw error;
+      const response = await this.request<{
+        data: Array<{ id: string; attributes: Record<string, unknown>; relationships?: Record<string, unknown>; type?: string }>;
+        meta?: { pages?: number; total_count?: number };
+      }>('/documents', {
+        'filter[organization_id]': organizationId,
+        'page[size]': pageSize,
+      });
+      return response.data;
+    }
   }
 
   async getDocumentsByType(documentType: string, pageSize: number = 50) {
@@ -183,14 +222,26 @@ export class ITGlueClient {
   }
 
   async getPasswords(organizationId: string, pageSize: number = 50) {
-    const response = await this.request<{
-      data: Array<{ id: string; attributes: { name: string; username?: string; url?: string; notes?: string } }>;
-      meta: { total_count: number };
-    }>('/passwords', {
-      'filter[organization_id]': organizationId,
-      'page[size]': pageSize,
-    });
-    return response.data;
+    try {
+      const response = await this.request<{
+        data: Array<{ id: string; attributes: Record<string, unknown> }>;
+        meta: { total_count: number };
+      }>(`/organizations/${organizationId}/relationships/passwords`, {
+        'page[size]': pageSize,
+      });
+      return response.data;
+    } catch (error) {
+      const message = String((error as Error)?.message || '').toLowerCase();
+      if (!message.includes('404')) throw error;
+      const response = await this.request<{
+        data: Array<{ id: string; attributes: Record<string, unknown> }>;
+        meta: { total_count: number };
+      }>('/passwords', {
+        'filter[organization_id]': organizationId,
+        'page[size]': pageSize,
+      });
+      return response.data;
+    }
   }
 
   async getLocations(organizationId: string, pageSize: number = 50) {

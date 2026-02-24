@@ -87,6 +87,7 @@ interface TicketSSOT {
   isp_name: string;
   vpn_state: string;
   phone_provider: string;
+  phone_provider_name: string;
   firewall_make_model: string;
   wifi_make_model: string;
   switch_make_model: string;
@@ -4042,6 +4043,7 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
       isp_name: String(network.isp_name.value || 'unknown'),
       vpn_state: String(network.vpn_state.value || 'unknown'),
       phone_provider: String(network.phone_provider.value || 'unknown'),
+      phone_provider_name: String(network.phone_provider_name.value || 'unknown'),
       firewall_make_model: String(infra.firewall_make_model.value || 'unknown'),
       wifi_make_model: String(infra.wifi_make_model.value || 'unknown'),
       switch_make_model: String(infra.switch_make_model.value || 'unknown'),

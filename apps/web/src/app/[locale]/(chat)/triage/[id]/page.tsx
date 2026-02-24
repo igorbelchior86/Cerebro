@@ -47,6 +47,7 @@ interface SessionData {
     firewall_make_model?: string;
     wifi_make_model?: string;
     switch_make_model?: string;
+    phone_provider_name?: string;
   };
   ticket_text_artifact?: {
     ticket_id?: string;
@@ -676,6 +677,10 @@ export default function SessionDetail({
         { key: 'Switch', val: data?.ssot?.switch_make_model || 'Unknown' },
         { key: 'User device', val: data?.ssot?.device_name || data.evidence_pack?.device?.hostname || 'Unknown' },
         {
+          key: 'Phone Provider',
+          val: data?.ssot?.phone_provider_name || 'Unknown',
+        },
+        {
           key: 'History',
           val: `${Number(data?.ticket_context_appendix?.history_correlation?.matched_case_count || 0)} matches`,
           ...(Number(data?.ticket_context_appendix?.history_correlation?.matched_case_count || 0) > 0
@@ -690,7 +695,6 @@ export default function SessionDetail({
             ? { highlight: '#1DB98A' }
             : {}),
         },
-        { key: 'SLA', val: selectedTicketView?.priority || 'Standard', highlight: 'var(--accent)' },
       ],
       hypotheses: Array.isArray(data.diagnosis?.top_hypotheses)
         ? data.diagnosis.top_hypotheses.slice(0, 3).map((h: any, i: number) => ({

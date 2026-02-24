@@ -234,6 +234,71 @@ router.get('/list', async (_req: Request, res: Response) => {
             }
             return 'Unknown site';
         };
+        const countMatches = (text: string, needles: string[]) =>
+            needles.reduce((count, needle) => count + (text.includes(needle) ? 1 : 0), 0);
+        const classifySuppression = (input: { title?: string; description?: string; rawBody?: string }) => {
+            const text = normalizeText(
+                [input.title || '', input.description || '', input.rawBody || ''].join('\n'),
+                ''
+            ).toLowerCase();
+            if (!text) return null;
+
+            const quarantineMarkerCount = countMatches(text, [
+                'quarantined emails',
+                'spam/junk emails',
+                'generate a new quarantine report',
+                'trust sender',
+            ]);
+            if (quarantineMarkerCount >= 3) {
+                return {
+                    suppressed: true,
+                    reason_code: 'quarantine_digest',
+                    reason_label: 'Quarantine digest',
+                    confidence: 0.999,
+                };
+            }
+
+            const marketingMarkerCount = countMatches(text, [
+                'join now',
+                'exclusive rates',
+                'report abuse',
+                'business edge',
+                'hotel discounts',
+            ]);
+            if (text.includes('unsubscribe') && marketingMarkerCount >= 2) {
+                return {
+                    suppressed: true,
+                    reason_code: 'marketing_promotional',
+                    reason_label: 'Marketing / promotional',
+                    confidence: 0.999,
+                };
+            }
+
+            const bounceMarkerCount = countMatches(text, [
+                'mailer-daemon',
+                'mail delivery system',
+                'undelivered mail returned to sender',
+                'message could not be delivered',
+                'recipient address rejected',
+                'in reply to rcpt to command',
+                'connection timed out',
+            ]);
+            const hasBounceTransportSignal =
+                /\b(?:4|5)\.\d+\.\d+\b/.test(text) ||
+                /\brcpt to\b/.test(text) ||
+                /\bport 25\b/.test(text) ||
+                /\bsmtp\b/.test(text);
+            if (bounceMarkerCount >= 2 && hasBounceTransportSignal) {
+                return {
+                    suppressed: true,
+                    reason_code: 'delivery_failure_bounce',
+                    reason_label: 'Bounce / delivery failure',
+                    confidence: 0.995,
+                };
+            }
+
+            return null;
+        };
 
         const isMeaningful = (value?: string, ...blocked: string[]) => {
             const normalized = normalizeText(value, '').toLowerCase();
@@ -307,6 +372,11 @@ router.get('/list', async (_req: Request, res: Response) => {
                 const site = isMeaningful(canonicalSite, 'Unknown site', 'site')
                     ? canonicalSite
                     : extractSite(row.raw_body, company);
+                const suppression = classifySuppression({
+                    title: row.title || packTicket.title || ssot.title,
+                    description: row.description || packTicket.description || ssot.description_clean,
+                    rawBody: row.raw_body,
+                });
 
                 return {
                     id: String(row.ticket_id),
@@ -320,6 +390,10 @@ router.get('/list', async (_req: Request, res: Response) => {
                     org: company,
                     site,
                     created_at: ssot.created_at || row.ticket_created_at || row.first_session_created_at || row.session_created_at,
+                    suppressed: suppression?.suppressed ?? false,
+                    suppression_reason: suppression?.reason_code ?? null,
+                    suppression_reason_label: suppression?.reason_label ?? null,
+                    suppression_confidence: suppression?.confidence ?? null,
                 };
             })
             .filter((item) => item.ticket_id)

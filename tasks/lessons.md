@@ -348,3 +348,14 @@
 **Root cause**: `shouldBlockPlaybookOutput` tratava qualquer menção a termos high-risk (ex.: `malware`) sem evidência como bloqueante, inclusive quando apareciam de forma incidental/defensiva no texto.
 **Rule**: Guardrail de playbook deve bloquear deriva **assertiva/perigosa** (root cause/compromise/remediação de incidente) sem evidência, não menções incidentais que não redefinem o caso.
 **Pattern**: `last_error = Playbook guardrail blocked unsupported inference` em tickets operacionais/rede => revisar heurística de "high-risk drift" para contexto/assertividade.
+## Lesson: 2026-02-24 (UI Unknown with timeline-known value is often SSOT completeness breach, not a UI fallback issue)
+**Mistake**: Diagnostiquei o card `Phone Provider = Unknown` como problema de fallback/binding da UI para fontes diferentes, mesmo após o usuário reforçar que a UI deve consumir exclusivamente SSOT.
+**Root cause**: Eu foquei no sintoma visual (timeline mostra valor, card não) e propus mitigação na UI antes de validar o contrato arquitetural: se o pipeline sabe o dado, ele deve ser promovido ao SSOT.
+**Rule**: Em campos de UI de contexto (`user/company/provider/device`), discrepância entre superfícies não deve ser corrigida com fallback na UI; primeiro tratar como falha de promoção/completude do SSOT.
+**Pattern**: Timeline/evento operacional menciona valor inferido e card SSOT mostra `Unknown` => investigar `PrepareContext`/merge para SSOT, não adicionar fallback em `page.tsx`.
+
+## Lesson: 2026-02-24 (intake classification must be queue-actionability-first, not semantic-label-first)
+**Mistake**: Eu inicialmente classifiquei os exemplos por semântica (`bounce`, `marketing`, `digest`) como se isso resolvesse a triagem, mas para a fila todos eram noise/gibberish.
+**Root cause**: Modelei o problema como taxonomia de conteúdo bruto, não como gate de acionabilidade operacional da fila.
+**Rule**: No Playbook Brain intake, a primeira classificação deve ser `actionable vs non-actionable (gibberish)`; subtipos semânticos só entram como camada secundária para auditoria/UX.
+**Pattern**: Se a pergunta do usuário menciona economia de API e medo de falso positivo, priorizar `queue-actionability` + `abstenção`, não taxonomia semântica de email.

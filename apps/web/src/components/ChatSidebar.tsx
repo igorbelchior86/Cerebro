@@ -23,6 +23,10 @@ export interface ActiveTicket {
   age?: string;
   meta?: string;
   created_at?: string;
+  suppressed?: boolean | null;
+  suppression_reason?: string | null;
+  suppression_reason_label?: string | null;
+  suppression_confidence?: number | null;
 }
 
 interface ChatSidebarProps {
@@ -33,6 +37,7 @@ interface ChatSidebarProps {
 }
 
 const SIDEBAR_STATE_KEY = 'chatSidebarState.v1';
+const SIDEBAR_HIDE_SUPPRESSED_KEY = 'chatSidebarHideSuppressed.v1';
 
 const PRIORITY_COLOR: Record<string, string> = {
   P1: '#F97316',
@@ -130,6 +135,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [hideSuppressed, setHideSuppressed] = useState(true);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [clock, setClock] = useState('');
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -152,6 +158,12 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
     const local = localStorage.getItem('theme') as 'dark' | 'light';
     if (local === 'dark' || local === 'light') {
       setTheme(local);
+    }
+    const hiddenSuppressed = localStorage.getItem(SIDEBAR_HIDE_SUPPRESSED_KEY);
+    if (hiddenSuppressed === '0') {
+      setHideSuppressed(false);
+    } else if (hiddenSuppressed === '1') {
+      setHideSuppressed(true);
     }
   }, []);
 
@@ -218,10 +230,12 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
     }
   };
 
-  const completed = tickets.filter((t) => t.status === 'completed').length;
-  const processing = tickets.filter((t) => t.status === 'processing' || t.status === 'pending').length;
+  const suppressedCount = tickets.filter((t) => Boolean(t.suppressed)).length;
+  const ticketsBySuppression = hideSuppressed ? tickets.filter((t) => !t.suppressed) : tickets;
+  const completed = ticketsBySuppression.filter((t) => t.status === 'completed').length;
+  const processing = ticketsBySuppression.filter((t) => t.status === 'processing' || t.status === 'pending').length;
 
-  const visible = tickets.filter((t) => {
+  const visible = ticketsBySuppression.filter((t) => {
     if (filter === 'all') return true;
     if (filter === 'processing') return t.status === 'processing' || t.status === 'pending';
     return t.status === filter;
@@ -300,12 +314,66 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
         </div>
 
         {/* Filters */}
-        <div style={{ display: 'flex', gap: '2px', padding: '12px 12px 8px', position: 'relative', zIndex: 1 }}>
-          {FILTERS.map((f) => (
-            <button key={f.id} onClick={() => setFilter(f.id)} style={{ flex: 1, padding: '5px 0', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '9.5px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', background: filter === f.id ? 'rgba(91,127,255,0.10)' : 'transparent', color: filter === f.id ? 'var(--accent)' : 'var(--text-muted)', transition: 'var(--transition)' }}>
-              {t(f.localeKey as any)}
-            </button>
-          ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '12px 12px 8px', position: 'relative', zIndex: 1 }}>
+          <div style={{ display: 'flex', gap: '2px', flex: 1, minWidth: 0 }}>
+            {FILTERS.map((f) => (
+              <button type="button" key={f.id} onClick={() => setFilter(f.id)} style={{ flex: 1, padding: '5px 0', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '9.5px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', background: filter === f.id ? 'rgba(91,127,255,0.10)' : 'transparent', color: filter === f.id ? 'var(--accent)' : 'var(--text-muted)', transition: 'var(--transition)' }}>
+                {t(f.localeKey as any)}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            aria-pressed={hideSuppressed}
+            title={hideSuppressed ? t('hideSuppressedEnabled') : t('hideSuppressedDisabled')}
+            onClick={() => {
+              setHideSuppressed((prev) => {
+                const next = !prev;
+                localStorage.setItem(SIDEBAR_HIDE_SUPPRESSED_KEY, next ? '1' : '0');
+                return next;
+              });
+            }}
+            style={{
+              width: '28px',
+              height: '28px',
+              borderRadius: '8px',
+              border: `1px solid ${hideSuppressed ? 'rgba(91,127,255,0.28)' : 'var(--border)'}`,
+              background: hideSuppressed ? 'rgba(91,127,255,0.10)' : 'var(--bg-card)',
+              color: hideSuppressed ? 'var(--accent)' : 'var(--text-muted)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              position: 'relative',
+              flexShrink: 0,
+              cursor: 'pointer',
+              transition: 'var(--transition)',
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M2.5 4h11M5 8h6M7 12h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+            {suppressedCount > 0 && (
+              <span style={{
+                position: 'absolute',
+                top: '-4px',
+                right: '-4px',
+                minWidth: '14px',
+                height: '14px',
+                padding: '0 3px',
+                borderRadius: '999px',
+                background: hideSuppressed ? 'var(--accent)' : 'var(--bg-card)',
+                border: `1px solid ${hideSuppressed ? 'rgba(91,127,255,0.34)' : 'var(--border)'}`,
+                color: hideSuppressed ? '#fff' : 'var(--text-muted)',
+                fontFamily: 'var(--font-jetbrains-mono, monospace)',
+                fontSize: '8px',
+                fontWeight: 700,
+                lineHeight: '12px',
+                textAlign: 'center',
+              }}>
+                {suppressedCount > 99 ? '99+' : suppressedCount}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Ticket list */}
@@ -322,6 +390,8 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
             const cfg = STATUS_CONFIG[ticket.status] ?? STATUS_CONFIG.pending;
             const priority = ticket.priority ?? 'P3';
             const isActive = currentTicketId === ticket.id;
+            const isSuppressed = Boolean(ticket.suppressed);
+            const suppressionLabel = normalizeText(ticket.suppression_reason_label ?? ticket.suppression_reason ?? '', t('suppressedReasonNoise'));
             const normalized = {
               priority,
               id: normalizeText(ticket.ticket_id, ticket.id),
@@ -334,7 +404,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
             const createdAtLabel = formatCreatedAt(normalized.createdAt, ticket.age, t('justNow'));
 
             return (
-              <button key={ticket.id} onClick={() => { persistSidebarState(filter); onSelectTicket?.(ticket.id); }}
+              <button type="button" key={ticket.id} onClick={() => { persistSidebarState(filter); onSelectTicket?.(ticket.id); }}
                 className="animate-fadeIn"
                 style={{
                   position: 'relative',
@@ -353,6 +423,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                   alignItems: 'stretch',
                   flexShrink: 0,
                   transition: 'var(--transition)',
+                  opacity: isSuppressed && !isActive ? 0.88 : 1,
                 }}
                 onMouseEnter={(e) => {
                   if (!isActive) {
@@ -379,15 +450,31 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                     <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', fontWeight: 700, color: PRIORITY_COLOR[priority] ?? '#5B7FFF', letterSpacing: '0.05em', flexShrink: 0 }}>{priority}</span>
                     <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-muted)', letterSpacing: '0.03em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{normalized.id}</span>
                   </div>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 8px', borderRadius: '999px', fontSize: '9px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}`, flexShrink: 0 }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: cfg.dot, flexShrink: 0 }} />
-                    {normalized.status}
-                  </span>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
+                    {isSuppressed && !hideSuppressed && (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 7px', borderRadius: '999px', fontSize: '8.5px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#C98A1B', background: 'rgba(201,138,27,0.10)', border: '1px solid rgba(201,138,27,0.22)' }}>
+                        <svg width="7" height="7" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                          <path d="M2 5h6M4 3h2M4 7h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                        </svg>
+                        {t('suppressedBadge')}
+                      </span>
+                    )}
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 8px', borderRadius: '999px', fontSize: '9px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}` }}>
+                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: cfg.dot, flexShrink: 0 }} />
+                      {normalized.status}
+                    </span>
+                  </div>
                 </div>
 
-                <p style={{ fontSize: '13px', fontWeight: 650, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', lineHeight: 1.34, letterSpacing: '-0.012em', marginBottom: '10px', width: '100%', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', minHeight: '34px' }}>
+                <p style={{ fontSize: '13px', fontWeight: 650, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', lineHeight: 1.34, letterSpacing: '-0.012em', marginBottom: isSuppressed && !hideSuppressed ? '6px' : '10px', width: '100%', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis', minHeight: '34px' }}>
                   {normalized.title}
                 </p>
+                {isSuppressed && !hideSuppressed && (
+                  <p style={{ margin: '0 0 8px', fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8.5px', color: '#C98A1B', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                    {suppressionLabel}
+                    {typeof ticket.suppression_confidence === 'number' ? ` · ${Math.round(ticket.suppression_confidence * 100)}%` : ''}
+                  </p>
+                )}
                 <div style={{ width: '100%', display: 'grid', gridTemplateColumns: 'auto 1fr', alignItems: 'center', columnGap: '9px', rowGap: '4px' }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-faint)', flexShrink: 0 }}>
                     <MetaIcon type="clock" />

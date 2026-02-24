@@ -116,3 +116,82 @@
 - What worked:
 - What was tricky:
 - Time taken:
+## Task: Sidebar direita - substituir SLA por Phone Provider e reordenar cards (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Localizar o array de cards da sidebar direita no triage page
+- [x] Step 2: Identificar campo disponível para `Phone Provider` no payload
+- [x] Step 3: Implementar mudança mínima (remover `SLA`, inserir `Phone Provider`, manter ordem solicitada)
+- [x] Step 4: Verificar build/typecheck local do web
+- [x] Step 5: Documentar na wiki (feature + changelog) e preencher review
+
+## Open Questions
+- Nenhuma (campo backend `ssot.phone_provider_name` já existe; fallback para `Unknown`).
+
+## Progress Notes
+- `SLA` removido da grade de contexto da sidebar direita.
+- `Phone Provider` inserido após `User device`, preservando a ordem: `User device | Phone Provider` e `History | Refinement`.
+- Tipagem de `SessionData.ssot` expandida para incluir `phone_provider_name`.
+- Verificação: `pnpm --filter @playbook-brain/web typecheck` OK.
+- Wiki atualizada com feature e changelog da alteração.
+
+## Review
+- What worked: mudança localizada em um único array de cards; backend já expunha `phone_provider_name`.
+- What was tricky: confirmar o campo correto no payload sem inventar schema novo.
+- Time taken: ~10 min
+## Task: Corrigir promoção de `phone_provider_name` para SSOT (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Confirmar root cause no `PrepareContext` (campo inferido existe no enrichment e não entra no SSOT)
+- [x] Step 2: Corrigir `TicketSSOT` + `buildTicketSSOT(...)` para persistir `phone_provider_name`
+- [x] Step 3: Validar `typecheck` de `api` e `web`
+- [x] Step 4: Documentar correção na wiki
+
+## Open Questions
+- Nenhuma. O contrato é explícito: UI é SSOT-only; correção deve acontecer na promoção para `ticket_ssot`.
+
+## Progress Notes
+- Root cause confirmado: `network.phone_provider_name` era produzido no enrichment (`buildNetworkEnrichmentSection`) mas descartado em `buildTicketSSOT(...)`.
+- Fix aplicado em `apps/api/src/services/prepare-context.ts`: `TicketSSOT` agora inclui `phone_provider_name` e o valor é persistido a partir de `network.phone_provider_name`.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK.
+- Verificação: `pnpm --filter @playbook-brain/web typecheck` OK.
+
+## Review
+- What worked: correção mínima e centralizada no ponto de montagem do SSOT.
+- What was tricky: não cair na tentação de corrigir na UI com fallback (violaria o contrato SSOT-only).
+- Time taken: ~12 min
+
+## Task: Sidebar - filtro de tickets suprimidos (noise inline toggle) (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Confirmar ponto de integração da sidebar e payload da lista (`/email-ingestion/list`)
+- [x] Step 2: Adicionar metadados de supressão determinísticos (somente ruído óbvio) ao endpoint da lista
+- [x] Step 3: Implementar toggle de filtro na `ChatSidebar` (default ON) para ocultar/exibir suprimidos inline
+- [x] Step 4: Diferenciar visualmente itens suprimidos quando filtro estiver OFF (badge + motivo)
+- [x] Step 5: Validar `typecheck` (`api` + `web`) e revisar diffs
+- [x] Step 6: Documentar na wiki (feature + changelog) e preencher review
+
+## Open Questions
+- Resolvido: persistência do toggle em `localStorage` (`chatSidebarHideSuppressed.v1`), sem alterar URL.
+- Resolvido: heurística v1 de supressão aplicada no endpoint `/email-ingestion/list` como metadado transitório (sem persistência em banco/pipeline).
+
+## Progress Notes
+- Usuário aprovou UX: botão de filtro na área das tabs; inicia ligado; desligado mostra suprimidos inline.
+- Princípio de segurança alinhado: `Suppress` > `Delete`.
+- `apps/api/src/routes/email-ingestion.ts` agora retorna `suppressed`, `suppression_reason`, `suppression_reason_label` e `suppression_confidence` usando heurísticas conservadoras para `bounce`, `quarantine digest` e `marketing`.
+- `apps/web/src/components/ChatSidebar.tsx` ganhou toggle de visibilidade de suprimidos (default ON), badge de contagem no botão e render inline com chip `SUPPRESSED`.
+- `apps/web/messages/en.json` atualizado com labels/tooltip do novo controle.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK.
+- Verificação: `pnpm --filter @playbook-brain/web typecheck` OK.
+- Wiki atualizada com feature + changelog da alteração.
+
+## Review
+- What worked: mudança incremental e reversível; backend e frontend ficaram compatíveis com `suppressed` opcional sem exigir migração de banco.
+- What was tricky: manter heurística de supressão extremamente conservadora para evitar falso positivo e ainda demonstrar valor na UI imediatamente.
+- Time taken: ~35 min

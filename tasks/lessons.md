@@ -395,3 +395,9 @@
 **Root cause**: Dependência excessiva na obediência da LLM ao prompt, sem gate determinístico pós-geração.
 **Rule**: Quando o usuário define um contrato de saída (ex.: seções do playbook), transformar em validação determinística + repair automático antes de aceitar o output.
 **Pattern**: “A seção está no prompt mas não é garantida” => adicionar validator que falha/testa o contrato, não só instrução textual.
+
+## Lesson: 2026-02-24 (numbered references must be anchored to the same list)
+**Mistake**: Interpretei "now 3 and 4" como referência aos "next steps" mais recentes em vez de aos findings numerados da auditoria, apesar do contexto imediato ainda estar ancorado na lista de findings.
+**Root cause**: Eu não confirmei explicitamente qual lista numerada estava ativa quando havia múltiplas listas numeradas no contexto recente (findings, next steps, plan steps).
+**Rule**: Quando o usuário usa referências numéricas curtas ("1 and 2", "3 and 4"), mapear primeiro para a última lista explicitamente discutida; se houver ambiguidade real, citar as opções antes de assumir.
+**Pattern**: Conversa com múltiplas listas numeradas + resposta curta do usuário => responder com mapeamento explícito ("you mean findings X/Y") antes de propor novo trabalho.

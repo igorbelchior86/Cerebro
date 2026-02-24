@@ -1,9 +1,12 @@
 import { backfillPendingEmailTickets, ingestSupportMailboxOnce } from '../routes/email-ingestion.js';
+import { withTryAdvisoryLock } from '../db/index.js';
 
 export class EmailIngestionPollingService {
     private intervalId: NodeJS.Timeout | null = null;
     private isPolling = false;
     private pollIntervalMs = parseInt(process.env.EMAIL_INGEST_POLL_INTERVAL_MS || '60000', 10);
+    private readonly advisoryLockNamespace = 41023;
+    private readonly advisoryLockKey = 2;
 
     start() {
         const hasGraphCreds = !!(
@@ -42,21 +45,26 @@ export class EmailIngestionPollingService {
         if (this.isPolling) return;
         this.isPolling = true;
         try {
-            const hasGraphCreds = !!(
-                process.env.GRAPH_TENANT_ID &&
-                process.env.GRAPH_CLIENT_ID &&
-                process.env.GRAPH_CLIENT_SECRET &&
-                process.env.GRAPH_MAILBOX_ADDRESS
-            );
-            if (hasGraphCreds) {
-                const { processed } = await ingestSupportMailboxOnce(process.env.GRAPH_MAILBOX_ADDRESS);
-                if (processed > 0) {
-                    console.log(`[EmailIngestionPolling] Processed ${processed} email ticket(s).`);
+            const lock = await withTryAdvisoryLock(this.advisoryLockNamespace, this.advisoryLockKey, async () => {
+                const hasGraphCreds = !!(
+                    process.env.GRAPH_TENANT_ID &&
+                    process.env.GRAPH_CLIENT_ID &&
+                    process.env.GRAPH_CLIENT_SECRET &&
+                    process.env.GRAPH_MAILBOX_ADDRESS
+                );
+                if (hasGraphCreds) {
+                    const { processed } = await ingestSupportMailboxOnce(process.env.GRAPH_MAILBOX_ADDRESS);
+                    if (processed > 0) {
+                        console.log(`[EmailIngestionPolling] Processed ${processed} email ticket(s).`);
+                    }
                 }
-            }
-            const backfill = await backfillPendingEmailTickets(25);
-            if (backfill.processed > 0) {
-                console.log(`[EmailIngestionPolling] Backfilled ${backfill.processed} pending ticket(s).`);
+                const backfill = await backfillPendingEmailTickets(25);
+                if (backfill.processed > 0) {
+                    console.log(`[EmailIngestionPolling] Backfilled ${backfill.processed} pending ticket(s).`);
+                }
+            });
+            if (!lock.acquired) {
+                console.log('[EmailIngestionPolling] Another instance holds the polling lock. Skipping this iteration.');
             }
         } finally {
             this.isPolling = false;

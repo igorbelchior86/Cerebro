@@ -94,6 +94,7 @@ CREATE TABLE llm_outputs (
 
 CREATE INDEX idx_llm_outputs_session ON llm_outputs(session_id);
 CREATE INDEX idx_llm_outputs_step    ON llm_outputs(step);
+CREATE UNIQUE INDEX idx_llm_outputs_session_step_unique ON llm_outputs(session_id, step);
 
 -- ─────────────────────────────────────────
 -- Validation Results
@@ -109,7 +110,7 @@ CREATE TABLE validation_results (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_validation_session ON validation_results(session_id);
+CREATE UNIQUE INDEX idx_validation_results_session_unique ON validation_results(session_id);
 
 -- ─────────────────────────────────────────
 -- Playbooks (output final exportável)
@@ -123,7 +124,7 @@ CREATE TABLE playbooks (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_playbooks_session ON playbooks(session_id);
+CREATE UNIQUE INDEX idx_playbooks_session_unique ON playbooks(session_id);
 
 -- ─────────────────────────────────────────
 -- Audit Log

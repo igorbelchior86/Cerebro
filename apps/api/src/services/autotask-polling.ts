@@ -1,4 +1,5 @@
 import { AutotaskClient } from '../clients/autotask.js';
+import { withTryAdvisoryLock } from '../db/index.js';
 import { triageOrchestrator } from './triage-orchestrator.js';
 
 export class AutotaskPollingService {
@@ -7,6 +8,8 @@ export class AutotaskPollingService {
     private isPolling = false;
     // Polling interval in ms (default: 60 seconds)
     private pollIntervalMs = 60 * 1000;
+    private readonly advisoryLockNamespace = 41023;
+    private readonly advisoryLockKey = 1;
 
     constructor() {
         this.client = new AutotaskClient({
@@ -55,32 +58,35 @@ export class AutotaskPollingService {
 
         this.isPolling = true;
         try {
-            // Find tickets created in the last 1 hour
-            // Autotask REST API allows querying by CreateDate
-            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+            const lock = await withTryAdvisoryLock(this.advisoryLockNamespace, this.advisoryLockKey, async () => {
+                // Find tickets created in the last 1 hour
+                // Autotask REST API allows querying by CreateDate
+                const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
-            // We search for new tickets. You can adjust the filter as needed (e.g. specific queues).
-            // Note: We're passing the raw string filter for now.
-            const filter = `{"op": "gt", "field": "createDate", "value": "${oneHourAgo}"}`;
+                // We search for new tickets. You can adjust the filter as needed (e.g. specific queues).
+                // Note: We're passing the raw string filter for now.
+                const filter = `{"op": "gt", "field": "createDate", "value": "${oneHourAgo}"}`;
 
-            // In apps/api/src/clients/autotask.ts, searchTickets expects a string 'filter' that gets passed as 'search' param
-            // According to Autotask API, search param is a JSON string of filters.
-            const tickets = await this.client.searchTickets(filter, 50, 0);
+                // In apps/api/src/clients/autotask.ts, searchTickets expects a string 'filter' that gets passed as 'search' param
+                // According to Autotask API, search param is a JSON string of filters.
+                const tickets = await this.client.searchTickets(filter, 50, 0);
 
-            if (tickets && tickets.length > 0) {
-                console.log(`[AutotaskPolling] Found ${tickets.length} recently created tickets.`);
+                if (tickets && tickets.length > 0) {
+                    console.log(`[AutotaskPolling] Found ${tickets.length} recently created tickets.`);
 
-                for (const ticket of tickets) {
-                    const ticketIdStr = String(ticket.id);
-                    try {
-                        // triageOrchestrator internally prevents duplicate sessions
-                        await triageOrchestrator.runPipeline(ticketIdStr, undefined, 'autotask');
-                    } catch (err) {
-                        console.error(`[AutotaskPolling] Error orchestrating ticket ${ticket.id}:`, err);
+                    for (const ticket of tickets) {
+                        const ticketIdStr = String(ticket.id);
+                        try {
+                            // triageOrchestrator internally prevents duplicate sessions
+                            await triageOrchestrator.runPipeline(ticketIdStr, undefined, 'autotask');
+                        } catch (err) {
+                            console.error(`[AutotaskPolling] Error orchestrating ticket ${ticket.id}:`, err);
+                        }
                     }
                 }
-            } else {
-                // console.log('[AutotaskPolling] No new tickets found.');
+            });
+            if (!lock.acquired) {
+                console.log('[AutotaskPolling] Another instance holds the polling lock. Skipping this iteration.');
             }
         } catch (error) {
             console.error('[AutotaskPolling] Polling failed:', error);

@@ -12,13 +12,49 @@ import {
   persistEvidencePack,
 } from '../services/prepare-context.js';
 import { v4 as uuidv4 } from 'uuid';
-import { queryOne, execute } from '../db/index.js';
+import { queryOne, execute, transaction } from '../db/index.js';
 import { diagnoseEvidencePack } from '../services/diagnose.js';
 import { validateDiagnosis } from '../services/validate-policy.js';
 import { PrepareContextService } from '../services/prepare-context.js';
 
 const router: Router = Router();
 const fullFlowInFlight = new Set<string>();
+const FULL_FLOW_SESSION_CREATE_LOCK_NAMESPACE = 41022;
+
+async function resolveOrCreateFullFlowSession(ticketId: string, tenantId: string | null): Promise<{ id: string; created: boolean }> {
+  return transaction(async (client) => {
+    await client.query(
+      'SELECT pg_advisory_xact_lock($1, hashtext($2))',
+      [FULL_FLOW_SESSION_CREATE_LOCK_NAMESPACE, ticketId]
+    );
+
+    const existing = await client.query<{ id: string }>(
+      `SELECT id
+       FROM triage_sessions
+       WHERE ticket_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1
+       FOR UPDATE`,
+      [ticketId]
+    );
+    const session = existing.rows[0];
+    if (session) {
+      return { id: session.id, created: false };
+    }
+
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO triage_sessions (id, ticket_id, status, created_by, tenant_id, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+       RETURNING id`,
+      [uuidv4(), ticketId, 'pending', '00000000-0000-0000-0000-000000000000', tenantId]
+    );
+    const newSession = inserted.rows[0];
+    if (!newSession) {
+      throw new Error('Failed to create triage session');
+    }
+    return { id: newSession.id, created: true };
+  });
+}
 
 function isTransientProviderError(error: unknown): boolean {
   const message = String((error as any)?.message || error || '').toLowerCase();
@@ -65,37 +101,16 @@ router.get('/full-flow', async (req, res) => {
 
     if (!isUuid) {
       const tenantId = req.auth?.tid || null;
-      const session = await queryOne<{ id: string }>(
-        `SELECT id
-         FROM triage_sessions
-         WHERE ticket_id = $1 OR id::text = $1
-         ORDER BY created_at DESC
-         LIMIT 1`,
-        [rawId]
-      );
-
-      if (!session) {
-        // Auto-create session if it doesn't exist
+      const resolvedSession = await resolveOrCreateFullFlowSession(rawId, tenantId);
+      if (resolvedSession.created) {
         console.log(`[FULL-FLOW] Creating new session for ticket ${rawId}`);
-        const newSession = await queryOne<{ id: string }>(
-          `INSERT INTO triage_sessions (id, ticket_id, status, created_by, tenant_id, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-           RETURNING id`,
-          [uuidv4(), rawId, 'pending', '00000000-0000-0000-0000-000000000000', tenantId]
-        );
-
-        if (!newSession) {
-          throw new Error('Failed to create triage session');
-        }
-
-        sessionId = newSession.id;
-
-        // Return initializing state but let background processing continue
-        // We set pack/diagnosis/etc to null to trigger background logic later
       } else {
-        console.log(`[FULL-FLOW] Found existing session ${session.id} for ticket ${rawId}`);
-        sessionId = session.id;
+        console.log(`[FULL-FLOW] Found existing session ${resolvedSession.id} for ticket ${rawId}`);
       }
+      sessionId = resolvedSession.id;
+
+      // Return initializing state but let background processing continue
+      // We set pack/diagnosis/etc to null to trigger background logic later
     }
 
     console.log(`[FULL-FLOW] Using sessionId: ${sessionId}`);
@@ -411,27 +426,16 @@ router.get('/full-flow', async (req, res) => {
           console.log(`[FULL-FLOW] Background: Generating Diagnosis for ${sessionId}`);
           currentDiagnosis = await diagnoseEvidencePack(currentPack);
 
-          const existing = await queryOne<{ id: string }>(
-            `SELECT id
-             FROM llm_outputs
-             WHERE session_id = $1 AND step = $2
-             ORDER BY created_at DESC
-             LIMIT 1`,
-            [sessionId, 'diagnose']
+          await execute(
+            `INSERT INTO llm_outputs (session_id, step, model, payload, created_at)
+             VALUES ($1, $2, $3, $4, NOW())
+             ON CONFLICT (session_id, step)
+             DO UPDATE SET
+               model = EXCLUDED.model,
+               payload = EXCLUDED.payload,
+               created_at = NOW()`,
+            [sessionId, 'diagnose', currentDiagnosis.meta?.model || 'groq', JSON.stringify(currentDiagnosis)]
           );
-
-          if (existing) {
-            await execute(
-              `UPDATE llm_outputs SET payload = $1, created_at = NOW() WHERE id = $2`,
-              [JSON.stringify(currentDiagnosis), existing.id]
-            );
-          } else {
-            await execute(
-              `INSERT INTO llm_outputs (session_id, step, model, payload, created_at)
-               VALUES ($1, $2, $3, $4, NOW())`,
-              [sessionId, 'diagnose', currentDiagnosis.meta?.model || 'groq', JSON.stringify(currentDiagnosis)]
-            );
-          }
         }
 
         const shouldRevalidate =
@@ -458,41 +462,26 @@ router.get('/full-flow', async (req, res) => {
               : []),
           ];
 
-          const existing = await queryOne<{ id: string }>(
-            `SELECT id
-             FROM validation_results
-             WHERE session_id = $1
-             ORDER BY created_at DESC
-             LIMIT 1`,
-            [sessionId]
+          await execute(
+            `INSERT INTO validation_results (session_id, status, violations, required_fixes, req_questions, safe_to_proceed, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, NOW())
+             ON CONFLICT (session_id)
+             DO UPDATE SET
+               status = EXCLUDED.status,
+               violations = EXCLUDED.violations,
+               required_fixes = EXCLUDED.required_fixes,
+               req_questions = EXCLUDED.req_questions,
+               safe_to_proceed = EXCLUDED.safe_to_proceed,
+               created_at = NOW()`,
+            [
+              sessionId,
+              currentValidation.status,
+              JSON.stringify(currentValidation.violations),
+              JSON.stringify(persistedRequiredFixes),
+              JSON.stringify(persistedQuestions),
+              currentValidation.safe_to_generate_playbook
+            ]
           );
-
-          if (existing) {
-            await execute(
-              `UPDATE validation_results SET status = $1, violations = $2, required_fixes = $3, req_questions = $4, safe_to_proceed = $5, created_at = NOW() WHERE id = $6`,
-              [
-                currentValidation.status,
-                JSON.stringify(currentValidation.violations),
-                JSON.stringify(persistedRequiredFixes),
-                JSON.stringify(persistedQuestions),
-                currentValidation.safe_to_generate_playbook,
-                existing.id
-              ]
-            );
-          } else {
-            await execute(
-              `INSERT INTO validation_results (session_id, status, violations, required_fixes, req_questions, safe_to_proceed, created_at)
-               VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-              [
-                sessionId,
-                currentValidation.status,
-                JSON.stringify(currentValidation.violations),
-                JSON.stringify(persistedRequiredFixes),
-                JSON.stringify(persistedQuestions),
-                currentValidation.safe_to_generate_playbook
-              ]
-            );
-          }
         }
 
         // 4. Playbook
@@ -500,49 +489,28 @@ router.get('/full-flow', async (req, res) => {
           console.log(`[FULL-FLOW] Background: Generating Playbook for ${sessionId}`);
           const generatedPlaybook = await generatePlaybook(currentDiagnosis, currentValidation, currentPack);
 
-          const existing = await queryOne<{ id: string }>(
-            `SELECT id
-             FROM llm_outputs
-             WHERE session_id = $1 AND step = $2
-             ORDER BY created_at DESC
-             LIMIT 1`,
-            [sessionId, 'playbook']
+          await execute(
+            `INSERT INTO llm_outputs (session_id, step, model, payload, created_at)
+             VALUES ($1, $2, $3, $4, NOW())
+             ON CONFLICT (session_id, step)
+             DO UPDATE SET
+               model = EXCLUDED.model,
+               payload = EXCLUDED.payload,
+               created_at = NOW()`,
+            [sessionId, 'playbook', generatedPlaybook.meta?.model || 'groq', JSON.stringify(generatedPlaybook)]
           );
-
-          if (existing) {
-            await execute(
-              `UPDATE llm_outputs SET payload = $1, created_at = NOW() WHERE id = $2`,
-              [JSON.stringify(generatedPlaybook), existing.id]
-            );
-          } else {
-            await execute(
-              `INSERT INTO llm_outputs (session_id, step, model, payload, created_at)
-               VALUES ($1, $2, $3, $4, NOW())`,
-              [sessionId, 'playbook', generatedPlaybook.meta?.model || 'groq', JSON.stringify(generatedPlaybook)]
-            );
-          }
 
           // Also save in 'playbooks' table for final display
-          const existingPlaybook = await queryOne<{ id: string }>(
-            `SELECT id
-             FROM playbooks
-             WHERE session_id = $1
-             ORDER BY created_at DESC
-             LIMIT 1`,
-            [sessionId]
+          await execute(
+            `INSERT INTO playbooks (session_id, content_md, content_json, created_at)
+             VALUES ($1, $2, $3, NOW())
+             ON CONFLICT (session_id)
+             DO UPDATE SET
+               content_md = EXCLUDED.content_md,
+               content_json = EXCLUDED.content_json,
+               created_at = NOW()`,
+            [sessionId, generatedPlaybook.content_md, JSON.stringify(generatedPlaybook)]
           );
-          if (existingPlaybook) {
-            await execute(
-              `UPDATE playbooks SET content_md = $1, content_json = $2, created_at = NOW() WHERE id = $3`,
-              [generatedPlaybook.content_md, JSON.stringify(generatedPlaybook), existingPlaybook.id]
-            );
-          } else {
-            await execute(
-              `INSERT INTO playbooks (session_id, content_md, content_json, created_at)
-               VALUES ($1, $2, $3, NOW())`,
-              [sessionId, generatedPlaybook.content_md, JSON.stringify(generatedPlaybook)]
-            );
-          }
 
           // Update session status to approved since it's an automated flow
           await execute(

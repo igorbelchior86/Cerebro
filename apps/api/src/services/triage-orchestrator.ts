@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { execute, queryOne, query } from '../db/index.js';
+import { execute, query, transaction } from '../db/index.js';
 import { tenantContext } from '../lib/tenantContext.js';
 import { PrepareContextService, persistEvidencePack } from './prepare-context.js';
 import { DiagnoseService } from './diagnose.js';
@@ -12,8 +12,10 @@ export class TriageOrchestrator {
     private validateService: ValidatePolicyService;
     private playbookService: PlaybookWriterService;
     private retryIntervalId: NodeJS.Timeout | null = null;
+    private isRetrySweepRunning = false;
     private readonly retryBaseDelayMs = 2 * 60 * 1000;
     private readonly retryMaxDelayMs = 30 * 60 * 1000;
+    private readonly advisoryLockNamespace = 41021;
 
     constructor() {
         this.prepareService = new PrepareContextService();
@@ -42,44 +44,54 @@ export class TriageOrchestrator {
     }
 
     private async processPendingSessions() {
-        return tenantContext.run({ tenantId: undefined, bypassRLS: true }, async () => {
-            // Find sessions that are 'pending' or 'processing' but stale (> 10 mins)
-            // Limit to 5 per cycle to avoid hammering the API
-            const staleSessions = await query<{ ticket_id: string }>(
-                `SELECT ticket_id FROM triage_sessions 
-                 WHERE (status = 'pending' AND (next_retry_at IS NULL OR next_retry_at <= NOW()))
-                 OR (status = 'processing' AND updated_at < NOW() - INTERVAL '10 minutes')
-                 ORDER BY updated_at ASC
-                 LIMIT 5`
-            );
+        if (this.isRetrySweepRunning) {
+            console.log('[Orchestrator] Retry sweep already running. Skipping overlapping tick.');
+            return;
+        }
 
-            if (staleSessions.length === 0) return;
+        this.isRetrySweepRunning = true;
+        try {
+            return tenantContext.run({ tenantId: undefined, bypassRLS: true }, async () => {
+                // Find sessions that are 'pending' or 'processing' but stale (> 10 mins)
+                // Limit to 5 per cycle to avoid hammering the API
+                const staleSessions = await query<{ ticket_id: string }>(
+                    `SELECT ticket_id FROM triage_sessions 
+                     WHERE (status = 'pending' AND (next_retry_at IS NULL OR next_retry_at <= NOW()))
+                     OR (status = 'processing' AND updated_at < NOW() - INTERVAL '10 minutes')
+                     ORDER BY updated_at ASC
+                     LIMIT 5`
+                );
 
-            console.log(`[Orchestrator] Found ${staleSessions.length} stale/pending sessions. Processing batch...`);
-            let quotaHit = false;
+                if (staleSessions.length === 0) return;
 
-            for (const s of staleSessions) {
-                if (quotaHit) {
-                    console.log(`[Orchestrator] Quota was hit, skipping remaining tickets in this cycle.`);
-                    break;
-                }
+                console.log(`[Orchestrator] Found ${staleSessions.length} stale/pending sessions. Processing batch...`);
+                let quotaHit = false;
 
-                try {
-                    await this.runPipeline(s.ticket_id, undefined, 'autotask');
-                } catch (err: any) {
-                    const message = String(err?.message || err || '').toLowerCase();
-                    console.error(`[Orchestrator] Error processing ${s.ticket_id}:`, message);
-                    if (this.isTransientProviderError(message) || err?.name === 'LLMQuotaExceededError') {
-                        quotaHit = true;
+                for (const s of staleSessions) {
+                    if (quotaHit) {
+                        console.log(`[Orchestrator] Quota was hit, skipping remaining tickets in this cycle.`);
+                        break;
+                    }
+
+                    try {
+                        await this.runPipeline(s.ticket_id, undefined, 'autotask');
+                    } catch (err: any) {
+                        const message = String(err?.message || err || '').toLowerCase();
+                        console.error(`[Orchestrator] Error processing ${s.ticket_id}:`, message);
+                        if (this.isTransientProviderError(message) || err?.name === 'LLMQuotaExceededError') {
+                            quotaHit = true;
+                        }
+                    }
+
+                    // Delay 10s between tickets to avoid rate-limiting bursts
+                    if (!quotaHit) {
+                        await new Promise(resolve => setTimeout(resolve, 10_000));
                     }
                 }
-
-                // Delay 10s between tickets to avoid rate-limiting bursts
-                if (!quotaHit) {
-                    await new Promise(resolve => setTimeout(resolve, 10_000));
-                }
-            }
-        });
+            });
+        } finally {
+            this.isRetrySweepRunning = false;
+        }
     }
 
     /**
@@ -89,51 +101,9 @@ export class TriageOrchestrator {
     async runPipeline(ticketId: string, orgId?: string, source: 'email' | 'autotask' = 'autotask') {
         return tenantContext.run({ tenantId: undefined, bypassRLS: true }, async () => {
             console.log(`[Orchestrator] Starting pipeline for ticket ${ticketId} (source: ${source})`);
-
-            const existingSession = await queryOne<{ id: string; status: string; updated_at: string }>(
-                `SELECT id, status, updated_at FROM triage_sessions WHERE ticket_id = $1 ORDER BY created_at DESC LIMIT 1`,
-                [ticketId]
-            );
-
-            let sessionId = existingSession?.id;
-
-            if (existingSession) {
-                if (existingSession.status === 'processing') {
-                    const updatedAt = new Date(existingSession.updated_at);
-                    const ageMs = Number.isNaN(updatedAt.getTime()) ? 0 : Date.now() - updatedAt.getTime();
-                    const staleMs = 5 * 60 * 1000;
-                    if (ageMs < staleMs) {
-                        console.log(`[Orchestrator] Ticket ${ticketId} is already processing in session ${sessionId}. Skipping.`);
-                        return;
-                    }
-                    console.warn(`[Orchestrator] Session ${sessionId} was stuck in processing (${Math.round(ageMs / 1000)}s). Resuming.`);
-                }
-                if (existingSession.status === 'approved') {
-                    const existingPlaybook = await queryOne<{ id: string }>(
-                        `SELECT id FROM playbooks WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1`,
-                        [sessionId]
-                    );
-                    if (existingPlaybook) {
-                        console.log(`[Orchestrator] Ticket ${ticketId} already has approved playbook in session ${sessionId}. Skipping.`);
-                        return;
-                    }
-                    console.warn(`[Orchestrator] Session ${sessionId} is approved but has no playbook. Reprocessing.`);
-                }
-                console.log(`[Orchestrator] Resuming/retrying existing session ${sessionId}`);
-                await this.updateSessionStatus(sessionId as string, 'processing', { lastError: null });
-            } else {
-                sessionId = uuidv4();
-                const defaultTenant = await queryOne<{ id: string }>(
-                    `SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`
-                );
-                await execute(
-                    `INSERT INTO triage_sessions (id, ticket_id, org_id, status, created_by, tenant_id, created_at, updated_at)
-                     VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
-                    [sessionId, ticketId, orgId || null, 'processing', 'system', defaultTenant?.id || null]
-                );
-                console.log(`[Orchestrator] Created new session ${sessionId} for ticket ${ticketId}`);
-            }
-            const sid = sessionId as string;
+            const claimed = await this.claimOrCreateSession(ticketId, orgId);
+            if (!claimed) return;
+            const sid = claimed;
 
             try {
                 // PHASE 1: Prepare Context
@@ -150,7 +120,12 @@ export class TriageOrchestrator {
                 const diagnosis = await this.diagnoseService.diagnose(pack);
                 await execute(
                     `INSERT INTO llm_outputs (id, session_id, step, model, payload, created_at)
-                     VALUES ($1, $2, $3, $4, $5, NOW())`,
+                     VALUES ($1, $2, $3, $4, $5, NOW())
+                     ON CONFLICT (session_id, step)
+                     DO UPDATE SET
+                       model = EXCLUDED.model,
+                       payload = EXCLUDED.payload,
+                       created_at = NOW()`,
                     [
                         uuidv4(),
                         sid,
@@ -181,7 +156,15 @@ export class TriageOrchestrator {
                 await execute(
                     `INSERT INTO validation_results (
                         id, session_id, status, violations, required_fixes, req_questions, safe_to_proceed, created_at
-                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())`,
+                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                     ON CONFLICT (session_id)
+                     DO UPDATE SET
+                       status = EXCLUDED.status,
+                       violations = EXCLUDED.violations,
+                       required_fixes = EXCLUDED.required_fixes,
+                       req_questions = EXCLUDED.req_questions,
+                       safe_to_proceed = EXCLUDED.safe_to_proceed,
+                       created_at = NOW()`,
                     [
                         uuidv4(),
                         sid,
@@ -205,13 +188,23 @@ export class TriageOrchestrator {
 
                 await execute(
                     `INSERT INTO playbooks (id, session_id, content_md, content_json, created_at)
-                     VALUES ($1, $2, $3, $4, NOW())`,
+                     VALUES ($1, $2, $3, $4, NOW())
+                     ON CONFLICT (session_id)
+                     DO UPDATE SET
+                       content_md = EXCLUDED.content_md,
+                       content_json = EXCLUDED.content_json,
+                       created_at = NOW()`,
                     [uuidv4(), sid, playbook.content_md, JSON.stringify(playbook)]
                 );
 
                 await execute(
                     `INSERT INTO llm_outputs (id, session_id, step, model, payload, created_at)
-                     VALUES ($1, $2, $3, $4, $5, NOW())`,
+                     VALUES ($1, $2, $3, $4, $5, NOW())
+                     ON CONFLICT (session_id, step)
+                     DO UPDATE SET
+                       model = EXCLUDED.model,
+                       payload = EXCLUDED.payload,
+                       created_at = NOW()`,
                     [
                         uuidv4(),
                         sid,
@@ -259,24 +252,99 @@ export class TriageOrchestrator {
     }
 
     private async markPendingForRetry(sessionId: string, errorMessage: string) {
-        const current = await queryOne<{ retry_count: number | null }>(
-            `SELECT retry_count FROM triage_sessions WHERE id = $1`,
-            [sessionId]
-        );
-        const nextRetryCount = (current?.retry_count ?? 0) + 1;
-        const delayMs = this.computeBackoffDelayMs(nextRetryCount);
-        const nextRetryAt = new Date(Date.now() + delayMs);
+        await transaction(async (client) => {
+            const current = await client.query<{ retry_count: number | null }>(
+                `SELECT retry_count FROM triage_sessions WHERE id = $1 FOR UPDATE`,
+                [sessionId]
+            );
+            const nextRetryCount = (current.rows[0]?.retry_count ?? 0) + 1;
+            const delayMs = this.computeBackoffDelayMs(nextRetryCount);
+            const nextRetryAt = new Date(Date.now() + delayMs);
 
-        await execute(
-            `UPDATE triage_sessions
-             SET status = 'pending',
-                 retry_count = $1,
-                 next_retry_at = $2,
-                 last_error = $3,
-                 updated_at = NOW()
-             WHERE id = $4`,
-            [nextRetryCount, nextRetryAt, errorMessage, sessionId]
-        );
+            await client.query(
+                `UPDATE triage_sessions
+                 SET status = 'pending',
+                     retry_count = $1,
+                     next_retry_at = $2,
+                     last_error = $3,
+                     updated_at = NOW()
+                 WHERE id = $4`,
+                [nextRetryCount, nextRetryAt, errorMessage, sessionId]
+            );
+        });
+    }
+
+    private async claimOrCreateSession(ticketId: string, orgId?: string): Promise<string | null> {
+        type SessionRow = { id: string; status: string; updated_at: string };
+        type TenantRow = { id: string };
+        type PlaybookRow = { id: string };
+
+        return transaction(async (client) => {
+            await client.query(
+                `SELECT pg_advisory_xact_lock($1, hashtext($2))`,
+                [this.advisoryLockNamespace, ticketId]
+            );
+
+            const existingResult = await client.query<SessionRow>(
+                `SELECT id, status, updated_at
+                 FROM triage_sessions
+                 WHERE ticket_id = $1
+                 ORDER BY created_at DESC
+                 LIMIT 1
+                 FOR UPDATE`,
+                [ticketId]
+            );
+            const existingSession = existingResult.rows[0];
+
+            if (existingSession) {
+                const sessionId = existingSession.id;
+                if (existingSession.status === 'processing') {
+                    const updatedAt = new Date(existingSession.updated_at);
+                    const ageMs = Number.isNaN(updatedAt.getTime()) ? 0 : Date.now() - updatedAt.getTime();
+                    const staleMs = 5 * 60 * 1000;
+                    if (ageMs < staleMs) {
+                        console.log(`[Orchestrator] Ticket ${ticketId} is already processing in session ${sessionId}. Skipping.`);
+                        return null;
+                    }
+                    console.warn(`[Orchestrator] Session ${sessionId} was stuck in processing (${Math.round(ageMs / 1000)}s). Resuming.`);
+                }
+
+                if (existingSession.status === 'approved') {
+                    const playbookResult = await client.query<PlaybookRow>(
+                        `SELECT id FROM playbooks WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1`,
+                        [sessionId]
+                    );
+                    if (playbookResult.rows[0]) {
+                        console.log(`[Orchestrator] Ticket ${ticketId} already has approved playbook in session ${sessionId}. Skipping.`);
+                        return null;
+                    }
+                    console.warn(`[Orchestrator] Session ${sessionId} is approved but has no playbook. Reprocessing.`);
+                }
+
+                await client.query(
+                    `UPDATE triage_sessions
+                     SET status = 'processing', last_error = NULL, updated_at = NOW()
+                     WHERE id = $1`,
+                    [sessionId]
+                );
+                console.log(`[Orchestrator] Resuming/retrying existing session ${sessionId}`);
+                return sessionId;
+            }
+
+            const sessionId = uuidv4();
+            const defaultTenantResult = await client.query<TenantRow>(
+                `SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`
+            );
+            const defaultTenant = defaultTenantResult.rows[0];
+
+            await client.query(
+                `INSERT INTO triage_sessions (id, ticket_id, org_id, status, created_by, tenant_id, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
+                [sessionId, ticketId, orgId || null, 'processing', 'system', defaultTenant?.id || null]
+            );
+            console.log(`[Orchestrator] Created new session ${sessionId} for ticket ${ticketId}`);
+            return sessionId;
+        });
     }
 
     private async updateSessionStatus(

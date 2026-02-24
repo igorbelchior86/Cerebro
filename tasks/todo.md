@@ -1,5 +1,5 @@
 # Task: Corrigir contrato dos Passos 1-2 (Despertar + Prepare Context)
-**Status**: verifying
+**Status**: completed
 **Started**: 2026-02-23
 
 ## Plan
@@ -120,7 +120,7 @@
 ---
 
 # Task: Phase 3 Diagnose Strengthening (Technical Plan)
-**Status**: planning
+**Status**: verifying
 **Started**: 2026-02-24
 
 ## Plan
@@ -381,3 +381,59 @@
 - What worked: correção local no frontend, sem tocar backend/pipeline; reaproveita o Markdown já gerado e preenche a UI estruturada que já existia.
 - What was tricky: parser precisava aceitar aliases de seção (`Checklist`/`Resolution Steps`, `Escalation`/`Escalate when`) para compatibilidade com variações de output do Playbook Writer.
 - Time taken: ~20 min
+
+## Task: Concurrency hardening (orchestrator + full-flow UPSERT/idempotency) (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24 11:59 EST
+
+## Plan
+- [x] Step 1: Add minimal DB transaction helper in `apps/api/src/db/index.ts`
+- [x] Step 2: Harden `triage-orchestrator` claim/retry path (atomic claim, local reentrancy guard, atomic retry_count)
+- [x] Step 3: Add DB dedupe + unique indexes for `llm_outputs`, `validation_results`, `playbooks`
+- [x] Step 4: Convert `/playbook/full-flow` and orchestrator artifact writes to UPSERTs compatible with new constraints
+- [x] Step 5: Verify with targeted `api` typecheck/tests
+- [x] Step 6: Document changes in local wiki (`features` + `changelog`) and fill review
+
+## Open Questions
+- Whether to enforce uniqueness on `triage_sessions` (deferred for now; using per-ticket advisory lock in orchestrator path)
+
+## Progress Notes
+- Started from concurrency audit findings (P1/P2) on `triage-orchestrator` and `/playbook/full-flow`.
+- `apps/api/src/db/index.ts` now exposes `transaction(...)` and returns row counts from `execute(...)` to support atomic multi-step writes.
+- `triage-orchestrator` now serializes per-ticket session claim/create with PostgreSQL transaction-scoped advisory lock (`pg_advisory_xact_lock`) + row lock, adds local retry-sweep overlap guard, and locks `retry_count` updates with `FOR UPDATE`.
+- Artifact writes in `triage-orchestrator` and `/playbook/full-flow` background path were converted from `SELECT -> UPDATE/INSERT` check-then-act flows into single-statement UPSERTs.
+- Added migration `014_concurrency_idempotency_indexes.sql` to dedupe existing duplicates and create unique indexes required by the new UPSERT paths (`llm_outputs(session_id, step)`, `validation_results(session_id)`, `playbooks(session_id)`).
+- `init.sql` aligned with the same uniqueness guarantees for fresh environments.
+- Verification: `pnpm --filter @playbook-brain/api typecheck` OK after final patch set.
+- Wiki updated with feature + changelog entries for the concurrency hardening change.
+
+## Review
+- What worked: pairing application-level serialization (advisory lock) with DB uniqueness/UPSERT removed the two main race patterns without broad refactors.
+- What was tricky: adding uniqueness safely required a dedupe migration first; otherwise `CREATE UNIQUE INDEX` would fail on preexisting duplicate rows.
+- Time taken: ~45 min
+
+## Task: Concurrency hardening (P2 full-flow session create + poller distributed locks) (2026-02-24)
+**Status**: planning
+**Started**: 2026-02-24 12:15 EST
+
+## Plan
+- [x] Step 1: Make `/playbook/full-flow` ticket session resolve/create atomic with DB transaction + advisory lock
+- [x] Step 2: Add distributed advisory locks to `AutotaskPollingService` and `EmailIngestionPollingService` (retain local `isPolling` as process guard)
+- [x] Step 3: Verify `api` typecheck
+- [x] Step 4: Document changes in wiki (`features` + `changelog`) and fill review
+
+## Open Questions
+- None blocking. We will use Postgres advisory locks (session-level for pollers, transaction-level for full-flow create) to avoid schema changes on `triage_sessions` in this pass.
+
+## Progress Notes
+- Requested scope: audit findings P2 full-flow auto-create race and poller local-only `isPolling` multi-instance gap.
+- `/playbook/full-flow` now resolves or creates ticket sessions inside a DB transaction with `pg_advisory_xact_lock(..., hashtext(ticketId))`, eliminating the check-then-insert race for concurrent requests on the same ticket.
+- Added reusable DB helper `withTryAdvisoryLock(...)` (session-level advisory lock) in `apps/api/src/db/index.ts` for cross-instance coordination of long-running poll cycles.
+- `AutotaskPollingService` and `EmailIngestionPollingService` now require a DB-backed advisory lock before polling work; local `isPolling` remains as same-process reentrancy guard.
+- Verification: `pnpm --filter @playbook-brain/api typecheck` OK.
+- Wiki updated with feature + changelog entries for the P2 concurrency fixes.
+
+## Review
+- What worked: advisory locks provided a minimal fix without changing `triage_sessions` schema or adding a distributed scheduler.
+- What was tricky: poller coordination needs cross-instance locking without holding an open SQL transaction during external API calls, so session-level advisory locks were the right fit.
+- Time taken: ~25 min

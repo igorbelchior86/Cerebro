@@ -588,3 +588,53 @@
 - What worked: reaproveitar o mesmo modelo de backoff do orquestrador na rota `/full-flow` sem mexer no pipeline principal.
 - What was tricky: o problema não estava só no provider limiter; a rota tinha um path paralelo de retries sem cooldown persistido.
 - Time taken: ~20 min
+
+## Task: Diagnosticar falha de 3 tickets (quota vs outras causas) (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Localizar conexão do banco e consultar `triage_sessions` dos 3 tickets
+- [x] Step 2: Inspecionar `last_error` + artifacts/steps por sessão para cada ticket
+- [x] Step 3: Classificar causas (quota/rate-limit vs bug lógico/outro) com evidência
+- [x] Step 4: Reportar achados e próximos passos
+
+## Open Questions
+- Se houver múltiplas sessões por ticket, qual delas o usuário considera "a que falhou" (vou analisar todas e destacar a mais recente).
+
+## Progress Notes
+- Investigação iniciada via Postgres local padrão do repo (`playbook_brain`).
+- `psql` não estava disponível no shell; consultas feitas via `node + pg` usando dependências de `apps/api`.
+- Os tickets `T20260224.0020`, `T20260224.0017` e `T20260224.0015` apresentam falha com `last_error = there is no unique or exclusion constraint matching the ON CONFLICT specification` (exceto uma sessão antiga de `manual refresh restart`).
+- Evidência de etapa: sessões afetadas já têm `evidence_pack`, mas não têm `llm_outputs`/`validation_results`/`playbooks`, indicando falha logo após `PrepareContext`, na primeira upsert com `ON CONFLICT`.
+- Catálogo de índices do banco confirma ausência dos índices únicos necessários em `llm_outputs(session_id, step)`, `validation_results(session_id)` e `playbooks(session_id)`.
+- A migration `apps/api/src/db/migrations/014_concurrency_idempotency_indexes.sql` cria exatamente esses índices, sugerindo drift de schema/migration não aplicada.
+
+## Review
+- What worked: cruzar `triage_sessions`, presença de artefatos e `pg_indexes` isolou a causa sem depender de logs de app.
+- What was tricky: `psql` indisponível no shell; precisei usar `node + pg` para inspeção.
+- Time taken: ~15 min
+
+## Task: Aplicar correção de schema para falhas de ON CONFLICT (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Confirmar migration alvo e banco local
+- [x] Step 2: Aplicar migration `014_concurrency_idempotency_indexes.sql`
+- [x] Step 3: Validar índices únicos criados no banco
+- [x] Step 4: Reportar resultado e impacto nos tickets falhos
+
+## Open Questions
+- Se o usuário quer que eu também reprocesse os tickets após corrigir o schema (posso fazer na sequência).
+
+## Progress Notes
+- Correção autorizada pelo usuário após diagnóstico de schema drift (`ON CONFLICT` sem índices únicos correspondentes).
+- Migration `014_concurrency_idempotency_indexes.sql` aplicada com sucesso no banco local `playbook_brain` via `node + pg`.
+- Validação em `pg_indexes`: criados `idx_llm_outputs_session_step_unique`, `idx_validation_results_session_unique`, `idx_playbooks_session_unique`.
+- Após a correção, os tickets investigados passaram de erro SQL para `pending` com `retry_count/next_retry_at` e `last_error` de quota Gemini (`429 RESOURCE_EXHAUSTED`, free-tier input token limit), confirmando que a causa SQL foi removida.
+
+## Review
+- What worked: aplicar diretamente a migration `014` resolveu a incompatibilidade entre `ON CONFLICT` e schema atual sem patch de código.
+- What was tricky: `psql` indisponível; a execução/validação precisou ser feita via scripts temporários `node + pg`.
+- Time taken: ~10 min

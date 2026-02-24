@@ -1,0 +1,8 @@
+interface:
+  display_name: "Cerebro Concurrency Auditor"
+  short_description: "Audit races and async reentrancy in Cerebro API"
+  default_prompt: "Use $cerebro-concurrency-race-auditor to inspect race conditions, async reentrancy, and lost-update risks in this Cerebro repo and return a prioritized findings report with repro steps."
+
+policy:
+  allow_implicit_invocation: true
+

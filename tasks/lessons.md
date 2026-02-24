@@ -223,6 +223,18 @@
 **Rule**: If the repo includes a default DB connection string, use it before asking the user for access.
 **Pattern**: When `DATABASE_URL` causes auth errors, retry with the repo default and only ask if that fails.
 
+## Lesson: 2026-02-24 (table detection vs table perception)
+**Mistake**: Declared "table detection/rendering fixed" before validating how it looked in the actual UI screenshot.
+**Root cause**: I verified formatter logic in isolation but underweighted two real-world factors: over-splitting on roster role phrases (`Business Development`, `Williams Marketing`) and missing explicit table styling in `MarkdownRenderer`.
+**Rule**: For formatting/rendering fixes, verify both the generated markdown structure and the visual presentation layer (`renderer + CSS`) against a real ticket screenshot before marking done.
+**Pattern**: "Rendered data structure exists" != "user perceives correct UI"; always validate perception-critical changes end-to-end.
+
+## Lesson: 2026-02-24 (clean display semantics vs pipeline semantics)
+**Mistake**: Initially treated `text_clean` as both pipeline-clean text and UI-formatted output.
+**Root cause**: I optimized for reusing the existing field instead of separating concerns between machine-parsable normalization and technician-facing presentation.
+**Rule**: When the UI requires rich formatting (especially LLM-authored markdown), persist a dedicated display field/format flag and keep pipeline-clean text semantically plain.
+**Pattern**: Canonical parsing text and display markdown should be separate artifacts (`canonical` vs `display`), with explicit format metadata.
+
 ## Lesson: 2026-02-23 (refresh must be hard reset, not UI-only)
 **Mistake**: Implemented refresh that reset UI/session artifacts but still allowed org-level caches to repopulate pipeline outputs.
 **Root cause**: Hard refresh semantics were incomplete (did not clear IT Glue org caches) and button UX did not match expectation.

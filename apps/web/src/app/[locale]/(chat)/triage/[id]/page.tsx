@@ -56,6 +56,8 @@ interface SessionData {
     title_original?: string;
     text_original?: string;
     text_clean?: string;
+    text_clean_display_markdown?: string;
+    text_clean_display_format?: 'plain' | 'markdown_llm';
     normalization_method?: 'llm' | 'deterministic_fallback';
     normalization_confidence?: number;
     created_at?: string;
@@ -457,9 +459,13 @@ export default function SessionDetail({
         const autoTaskOriginalText = ticketTextArtifact?.text_original
           ? `Original ticket text (Autotask/email intake):\n\n${ticketTextArtifact.text_original}`
           : autoTaskPrimaryText;
-        const autoTaskCleanText = ticketTextArtifact?.text_clean
-          ? `Cleaned ticket text (noise removed, meaning preserved):\n\n${ticketTextArtifact.text_clean}`
-          : undefined;
+        const autoTaskCleanText = ticketTextArtifact?.text_clean_display_markdown
+          || ticketTextArtifact?.text_clean
+          || undefined;
+        const autoTaskCleanFormat = ticketTextArtifact?.text_clean_display_markdown
+          && ticketTextArtifact?.text_clean_display_format === 'markdown_llm'
+          ? 'markdown_llm'
+          : 'plain';
 
         const timeline: Message[] = [
           {
@@ -473,7 +479,7 @@ export default function SessionDetail({
                   ticketTextVariant: {
                     primary: (autoTaskCleanText ? 'clean' : 'original') as 'clean' | 'original',
                     original: autoTaskOriginalText,
-                    ...(autoTaskCleanText ? { clean: autoTaskCleanText } : {}),
+                    ...(autoTaskCleanText ? { clean: autoTaskCleanText, cleanFormat: autoTaskCleanFormat } : {}),
                   },
                 }
               : {}),
@@ -557,6 +563,7 @@ export default function SessionDetail({
                 ? {
                     primary: m.ticketTextVariant.primary,
                     clean: m.ticketTextVariant.clean,
+                    cleanFormat: m.ticketTextVariant.cleanFormat,
                     original: m.ticketTextVariant.original,
                   }
                 : null,

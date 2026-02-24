@@ -1,3 +1,36 @@
+# Task: LLM-first rich formatting for Clean ticket text (preserve signature) (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [ ] Step 1: Locate `text_clean` generation path and UI consumption for the `Clean` toggle
+- [ ] Step 2: Extend LLM normalization prompt to produce a rich Markdown display variant that preserves signature/contact block
+- [ ] Step 3: Persist the display-format artifact metadata (`markdown_llm` vs plain fallback) without breaking existing tickets
+- [ ] Step 4: Update frontend `Clean` rendering to trust/render LLM markdown when flagged, keep heuristic formatter for legacy/fallback plain text
+- [ ] Step 5: Verify with `pnpm --filter @playbook-brain/api typecheck` and `pnpm --filter @playbook-brain/web typecheck`
+- [ ] Step 6: Document in wiki (feature/changelog)
+
+## Open Questions
+- Keep `text_clean` as canonical pipeline-clean text (plain) and add a separate display markdown field to avoid polluting enrichment inputs.
+
+## Progress Notes
+- User confirmed the desired direction: rich formatting should be LLM-driven, with signature preserved (`signature stays`).
+- Backend `normalizeTicketForPipeline(...)` extended to ask the LLM for a new `description_display_markdown` field (rich markdown, signature preserved) while keeping `description_canonical` plain/clean for pipeline use.
+- Added post-processing guard for LLM markdown display text (strip code fences/HTML leftovers/common wrappers; keep signature content).
+- `ticket_text_artifact` now persists `text_clean_display_markdown` plus `text_clean_display_format` (`markdown_llm` vs `plain` fallback).
+- Triage page now prefers the display markdown for `Clean` and removed the old verbose `Cleaned ticket text...` prefix from the UI payload.
+- `ChatMessage` now renders `Clean` directly as markdown when `cleanFormat === markdown_llm`, and keeps the heuristic formatter only for plain/legacy tickets.
+- Verification: `pnpm --filter @playbook-brain/api typecheck` and `pnpm --filter @playbook-brain/web typecheck` OK.
+
+## Review
+(fill in after completion)
+- What worked:
+- What worked: separating `description_canonical` (pipeline) from `description_display_markdown` (UI) avoided contaminating enrichment inputs while delivering LLM-based rich formatting.
+- What was tricky: preserving backward compatibility for existing tickets required a format flag and a frontend fallback path instead of replacing `text_clean` semantics.
+- Time taken: ~45 min
+
+---
+
 # Task: Clean toggle formatting v2 (roster cards + highlights + badge) (2026-02-24)
 **Status**: completed
 **Started**: 2026-02-24
@@ -35,10 +68,16 @@
 - Melhoria de método após novo feedback ("não resolveu"): formatter agora usa classificação por linha + score de bloco de roster (com fallback seguro), em vez de regex simples por linha.
 - Fix crítico: tabela markdown passou a ser emitida como bloco único (linhas contíguas), evitando quebra por `join('\\n\\n')`.
 - Verificação: `pnpm --filter @playbook-brain/web typecheck` OK após line-classifier + roster scoring.
+- Ajuste adicional baseado no screenshot real: adicionada segunda passada de segmentação para quebrar múltiplas linhas de roster grudadas na mesma linha (ex.: `... laptop Brittany Williams ...`).
+- Verificação: `pnpm --filter @playbook-brain/web typecheck` OK após segmentation pass por boundary de pessoa+employment.
+- Novo feedback do usuário com screenshot confirmou que "tabela" ainda não aparecia visualmente; root cause refinado: splitter estava superfragmentando linhas (ex.: `Travis Jones`, `Brittany`) e o `MarkdownRenderer` não tinha estilo de tabela, então mesmo quando renderizada a percepção visual era fraca.
+- Fix aplicado no formatter: split de roster embutido passou a usar detecção conservadora por matches + stopwords de cargo (evita falso split em `Business Development` / `Williams Marketing`) e merge de fragmentos de nome com a linha seguinte (`Brittany` + `Williams ...`).
+- Fix aplicado no render markdown: adicionados estilos explícitos para `<table>/<th>/<td>` em `MarkdownRenderer` para a tabela ficar visualmente clara.
+- Verificação: `pnpm --filter @playbook-brain/web typecheck` OK após splitter conservador + table styling.
 
 ## Review
-- What worked: simplificar para email-body formatting resolveu a direção de UX (legibilidade > parsing visual).
-- What was tricky: abandonar a abordagem “rica” rapidamente e fazer rollback funcional sem quebrar o `Clean/Original`.
+- What worked: simplificar para email-body formatting resolveu a direção de UX (legibilidade > parsing visual), e o line-classifier + scoring permaneceu útil como base para detectar roster sem voltar aos cards.
+- What was tricky: o caso real tinha linhas de roster coladas e o splitter por regex global começou a quebrar cargos como se fossem nomes; também faltava estilo visual de tabela no renderer.
 - Time taken: ~1h20 (incluindo iterações rejeitadas + reset simples)
 
 ---

@@ -11,6 +11,7 @@ export interface Message {
   ticketTextVariant?: {
     primary: 'clean' | 'original';
     clean?: string;
+    cleanFormat?: 'plain' | 'markdown_llm';
     original: string;
   };
 }
@@ -210,8 +211,79 @@ function formatSimpleEmailBodyMarkdown(input: string): string {
     .replace(/\s+(Phone\s*:)\s+/gi, '\n$1 ')
     .replace(/\s+(Email\s*:)\s+/gi, '\n$1 ')
     .trim();
+  const rosterEmploymentRe = /\b(1099|W2(?:\s+Employee)?|Corp-to-Corp|corp-to-corp)\b/i;
+  const roleishNameStopwords = new Set([
+    'Business', 'Development', 'Marketing', 'Engagement', 'Project', 'Account', 'Accounts',
+    'Acct', 'Lead', 'Manager', 'Mgmt', 'Support', 'Operations', 'Operation',
+  ]);
+  const splitEmbeddedRosterRows = (line: string) => {
+    const matches = [...line.matchAll(/([A-Z][A-Za-z'-]+)\s+([A-Z][A-Za-z'-]+)\s+(1099|W2(?:\s+Employee)?|Corp-to-Corp|corp-to-corp)\b/g)];
+    if (matches.length <= 1) return [line];
+    const splitPoints = new Set<number>();
+    for (const match of matches) {
+      const start = match.index ?? 0;
+      if (start <= 0) continue;
+      const first = match[1];
+      const second = match[2];
+      if (!first || !second) continue;
+      if (roleishNameStopwords.has(first) || roleishNameStopwords.has(second)) continue;
+      const prefix = line.slice(0, start);
+      const prefixHasRosterRow =
+        rosterEmploymentRe.test(prefix) &&
+        (
+          /\b(Laptop|laptops|Desktop|MacBook|Surface(?:\s+Laptop)?|Workstation|PC)\b/i.test(prefix) ||
+          /\b[A-Z][a-z]+,\s*[A-Z]{2}\b/.test(prefix) ||
+          /[)|]/.test(prefix)
+        );
+      if (prefixHasRosterRow) splitPoints.add(start);
+    }
+    if (!splitPoints.size) return [line];
+    const ordered = [...splitPoints].sort((a, b) => a - b);
+    const parts: string[] = [];
+    let cursor = 0;
+    for (const point of ordered) {
+      const part = line.slice(cursor, point).trim();
+      if (part) parts.push(part);
+      cursor = point;
+    }
+    const tail = line.slice(cursor).trim();
+    if (tail) parts.push(tail);
+    return parts.length ? parts : [line];
+  };
 
-  const lines = text.split('\n').map((l) => l.trim());
+  // Secondary segmentation pass: split embedded roster rows conservatively.
+  const segmentedText = text
+    .split('\n')
+    .flatMap((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return [''];
+      if (/^(NOTE|GOAL)\s*[-:]/i.test(trimmed)) return [trimmed];
+      const parts = splitEmbeddedRosterRows(trimmed);
+      if (parts.length <= 1) return [trimmed];
+      return parts;
+    })
+    .join('\n');
+
+  const rawLines = segmentedText.split('\n').map((l) => l.trim());
+  const lines: string[] = [];
+  const isNameFragment = (line: string) =>
+    /^[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){0,2}$/.test(line) &&
+    !/\b(Thanks|Regards|Best|Sincerely|NOTE|GOAL)\b/i.test(line);
+  const hasRosterDetailSignals = (line: string) =>
+    /\b(1099|W2(?:\s+Employee)?|Corp-to-Corp|corp-to-corp)\b/i.test(line) ||
+    /\b(Laptop|Desktop|MacBook|Surface|PC|Workstation)\b/i.test(line) ||
+    /\b[A-Z][A-Za-z'-]+,\s*[A-Z]{2}\b/.test(line);
+
+  for (let i = 0; i < rawLines.length; i += 1) {
+    const current = rawLines[i] ?? '';
+    const next = rawLines[i + 1] ?? '';
+    if (current && next && isNameFragment(current) && hasRosterDetailSignals(next)) {
+      lines.push(`${current} ${next}`.replace(/\s+/g, ' ').trim());
+      i += 1;
+      continue;
+    }
+    lines.push(current);
+  }
   const blocks: string[] = [];
   let buf: string[] = [];
   let rosterRun: string[] = [];
@@ -233,17 +305,40 @@ function formatSimpleEmailBodyMarkdown(input: string): string {
   const isLikelyRosterLine = (line: string) =>
     classifyLine(line) === 'text' &&
     !/^([1-9][0-9]?\.)\s+/.test(line) &&
-    /^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\s+.+$/.test(line) &&
+    /^[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){1,3}\s+.+$/.test(line) &&
     (
       /\b(1099|W2(?:\s+Employee)?|Corp-to-Corp|corp-to-corp)\b/i.test(line) ||
       /\b(Laptop|Desktop|MacBook|Surface|PC|Workstation)\b/i.test(line) ||
-      /\b[A-Z][a-z]+,\s*[A-Z]{2}\b/.test(line)
+      /\b[A-Z][A-Za-z'-]+,\s*[A-Z]{2}\b/.test(line)
     );
 
   const splitRosterLine = (line: string) => {
-    const m = line.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\s+(.+)$/);
-    const name = m?.[1]?.trim();
-    const details = m?.[2]?.trim();
+    const employmentMarker = line.match(/\b(1099|W2(?:\s+Employee)?|Corp-to-Corp|corp-to-corp)\b/i);
+    if (employmentMarker && employmentMarker.index != null) {
+      const beforeEmployment = line.slice(0, employmentMarker.index).trim();
+      const beforeTokens = beforeEmployment.split(/\s+/).filter(Boolean);
+      if (beforeTokens.length >= 2) {
+        const roleish = new Set([
+          'CEO', 'COO', 'CSO', 'CTO', 'CFO', 'HR', 'Acct', 'Mgmt.', 'Mgmt', 'Marketing',
+          'Business', 'Development', 'Engagement', 'Lead/HR', 'Lead', 'Project',
+        ]);
+        let nameTokenCount = 2;
+        if (
+          beforeTokens.length >= 3 &&
+          /^[A-Z][A-Za-z'-]+$/.test(beforeTokens[2] ?? '') &&
+          !roleish.has(beforeTokens[2] ?? '')
+        ) {
+          nameTokenCount = 3;
+        }
+        const name = beforeTokens.slice(0, nameTokenCount).join(' ');
+        const details = line.slice(name.length).trim();
+        if (name) return { name, details };
+      }
+    }
+
+    const m = line.match(/^([A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){1,2})(?:\s+(.*))?$/);
+    const name = (m?.[1] ?? '').trim();
+    const details = (m?.[2] ?? '').trim();
     if (!name) return { name: line, details: '' };
     return { name, details: details || '' };
   };
@@ -252,10 +347,10 @@ function formatSimpleEmailBodyMarkdown(input: string): string {
     if (!run.length) return 0;
     let score = 0;
     for (const line of run) {
-      if (/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\b/.test(line)) score += 2;
+      if (/^[A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){1,3}\b/.test(line)) score += 2;
       if (/\b(1099|W2(?:\s+Employee)?|Corp-to-Corp|corp-to-corp)\b/i.test(line)) score += 1;
       if (/\b(Laptop|Desktop|MacBook|Surface|PC|Workstation)\b/i.test(line)) score += 1;
-      if (/\b[A-Z][a-z]+,\s*[A-Z]{2}\b/.test(line)) score += 1;
+      if (/\b[A-Z][A-Za-z'-]+,\s*[A-Z]{2}\b/.test(line)) score += 1;
       if (/[.!?]$/.test(line)) score -= 0.5; // roster rows are often fragments, not sentences
     }
     return score / run.length;
@@ -263,7 +358,7 @@ function formatSimpleEmailBodyMarkdown(input: string): string {
 
   const flushRosterRun = () => {
     const score = rosterRunScore(rosterRun);
-    if (rosterRun.length < 3 || score < 2.6) {
+    if (rosterRun.length < 3 || score < 2.2) {
       for (const line of rosterRun) blocks.push(`- ${line}`);
       rosterRun = [];
       return;
@@ -348,7 +443,16 @@ function parseRosterRow(input: { index?: number; title: string; detail?: string 
   };
 }
 
-function RichCleanTicketText({ text }: { text: string }) {
+function RichCleanTicketText({
+  text,
+  format = 'plain',
+}: {
+  text: string;
+  format?: 'plain' | 'markdown_llm';
+}) {
+  if (format === 'markdown_llm') {
+    return <MarkdownRenderer content={text} />;
+  }
   return <MarkdownRenderer content={formatSimpleEmailBodyMarkdown(text)} />;
 }
 
@@ -460,7 +564,10 @@ export default function ChatMessage({ message, children }: ChatMessageProps) {
           )}
         </div>
         {canToggleTicketText && ticketTextMode === 'clean' && hasCleanTicketText ? (
-          <RichCleanTicketText text={message.ticketTextVariant!.clean!} />
+          <RichCleanTicketText
+            text={message.ticketTextVariant!.clean!}
+            format={message.ticketTextVariant!.cleanFormat ?? 'plain'}
+          />
         ) : (
           <MarkdownRenderer content={String(renderedContent) + (message.type === 'validation' ? ' **Status:** `approved`' : '')} />
         )}

@@ -32,6 +32,12 @@ export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
         .md-body a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
         .md-body hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
         .md-body blockquote { border-left: 2px solid var(--border-accent); margin: 0 0 8px; padding: 4px 10px; color: var(--text-muted); }
+        .md-body table { width: 100%; border-collapse: collapse; margin: 8px 0 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: table; }
+        .md-body thead th { text-align: left; font-weight: 600; color: var(--text-primary); background: rgba(255,255,255,0.03); }
+        .md-body th, .md-body td { border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); padding: 6px 8px; vertical-align: top; }
+        .md-body th:last-child, .md-body td:last-child { border-right: none; }
+        .md-body tbody tr:last-child td { border-bottom: none; }
+        .md-body tbody tr:nth-child(even) td { background: rgba(255,255,255,0.015); }
       `}</style>
       <div
         className="md-body"

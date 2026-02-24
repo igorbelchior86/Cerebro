@@ -101,6 +101,8 @@ export interface TicketTextArtifact {
   title_original: string;
   text_original: string;
   text_clean: string;
+  text_clean_display_markdown?: string;
+  text_clean_display_format?: 'plain' | 'markdown_llm';
   normalization_method: 'llm' | 'deterministic_fallback';
   normalization_confidence: number;
   created_at: string;
@@ -630,6 +632,12 @@ export class PrepareContextService {
         title_original: originalTicketTitle,
         text_original: originalTicketNarrative,
         text_clean: normalizedTicket.descriptionCanonical,
+        ...(normalizedTicket.descriptionDisplayMarkdown
+          ? {
+              text_clean_display_markdown: normalizedTicket.descriptionDisplayMarkdown,
+              text_clean_display_format: normalizedTicket.descriptionDisplayFormat,
+            }
+          : {}),
         normalization_method: normalizedTicket.method,
         normalization_confidence: normalizedTicket.confidence,
         created_at: new Date().toISOString(),
@@ -651,6 +659,7 @@ export class PrepareContextService {
         details: [
           `method: ${normalizedTicket.method}`,
           `confidence: ${normalizedTicket.confidence.toFixed(2)}`,
+          `clean_display: ${normalizedTicket.descriptionDisplayFormat}`,
           normalizedTicket.requesterName || normalizedTicket.requesterEmail
             ? `canonical requester: ${normalizedTicket.requesterName || 'unknown'}${normalizedTicket.requesterEmail ? ` <${normalizedTicket.requesterEmail}>` : ''}`
             : 'canonical requester: unavailable',
@@ -6525,6 +6534,8 @@ Output schema:
     title: string;
     descriptionCanonical: string;
     descriptionUi: string;
+    descriptionDisplayMarkdown: string;
+    descriptionDisplayFormat: 'plain' | 'markdown_llm';
     requesterName: string;
     requesterEmail: string;
     affectedUserName: string;
@@ -6543,17 +6554,25 @@ Output schema:
       const prompt = `Normalize this IT support ticket text and return ONLY valid JSON.
 
 Rules:
-1. description_canonical: Keep the original text and intent, but remove signatures, legal disclaimers, external portal boilerplate, and phishing warnings.
+1. description_canonical: Keep the original text and intent, but remove signatures, legal disclaimers, external portal boilerplate, and phishing warnings. This field should be plain text suitable for downstream pipeline parsing.
 2. description_ui: Reinterpret and radically simplify the ticket for the technician UI. Focus EXCLUSIVELY on "what the user wants" or "what is broken". Be direct and concise.
-3. Preserve concrete facts: people, emails, phones, device models/serials, organization hints.
-4. DO NOT confuse requester and affected user. If requester is asking on behalf of a different/new employee and the affected employee name is not explicitly stated, keep the affected employee unnamed (e.g., "new employee (name not provided)").
-5. Keep output concise and factual.
+3. description_display_markdown: Produce clean, rich Markdown for the "Clean" toggle.
+   - Remove gibberish/boilerplate (HTML tags, portal boilerplate, tracking URLs, repeated template content, warning banners).
+   - Preserve the operational meaning exactly.
+   - PRESERVE the sender signature/contact block when present.
+   - Remove legal disclaimers/confidentiality notices unless they contain operational instructions.
+   - Use headings/lists/tables when helpful. Convert clear rosters/lists to Markdown tables. If ambiguous, use bullets and preserve ambiguity.
+   - Output Markdown only in this field (no code fences).
+4. Preserve concrete facts: people, emails, phones, device models/serials, organization hints.
+5. DO NOT confuse requester and affected user. If requester is asking on behalf of a different/new employee and the affected employee name is not explicitly stated, keep the affected employee unnamed (e.g., "new employee (name not provided)").
+6. Keep output concise and factual.
 
 Output JSON schema:
 {
   "title": "string",
   "description_canonical": "string",
   "description_ui": "string",
+  "description_display_markdown": "string",
   "requester_name": "string",
   "requester_email": "string",
   "affected_user_name": "string",
@@ -6573,6 +6592,9 @@ Ticket text:
       const title = String(parsed?.title || '').trim();
       const descriptionCanonical = this.postProcessCanonicalTicketText(String(parsed?.description_canonical || ''));
       let descriptionUi = this.postProcessUiTicketText(String(parsed?.description_ui || ''));
+      const descriptionDisplayMarkdown = this.postProcessDisplayMarkdownTicketText(
+        String(parsed?.description_display_markdown || '')
+      );
       const requesterName = this.normalizeName(String(parsed?.requester_name || '').trim());
       const requesterEmail = String(parsed?.requester_email || '').trim().toLowerCase();
       const affectedUserName = this.normalizeName(String(parsed?.affected_user_name || '').trim());
@@ -6608,6 +6630,10 @@ Ticket text:
               canonicalText: descriptionCanonical || fallback.descriptionClean,
               narrative,
             }),
+          descriptionDisplayMarkdown:
+            descriptionDisplayMarkdown ||
+            (descriptionCanonical || this.postProcessCanonicalTicketText(fallback.descriptionClean)),
+          descriptionDisplayFormat: descriptionDisplayMarkdown ? 'markdown_llm' : 'plain',
           requesterName: canonicalRequesterName,
           requesterEmail: canonicalRequesterEmail,
           affectedUserName: canonicalAffectedName,
@@ -6634,6 +6660,8 @@ Ticket text:
         canonicalText: fallback.descriptionClean,
         narrative,
       }),
+      descriptionDisplayMarkdown: this.postProcessCanonicalTicketText(fallback.descriptionClean),
+      descriptionDisplayFormat: 'plain',
       organizationHint: '',
       deviceHints: [],
       symptoms: [],
@@ -6733,6 +6761,47 @@ Ticket text:
       .trim();
 
     return this.formatCanonicalTicketSignature(text);
+  }
+
+  private postProcessDisplayMarkdownTicketText(value: string): string {
+    let text = String(value || '').trim();
+    if (!text) return '';
+
+    text = text
+      .replace(/^```(?:markdown|md)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .replace(/^cleaned ticket text \(noise removed,\s*meaning preserved\):\s*/i, '')
+      .trim();
+
+    // Strip raw HTML if the model leaked markup; keep markdown intact.
+    text = text
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<img\b[^>]*>/gi, ' ')
+      .replace(/<a\b[^>]*>(.*?)<\/a>/gi, '$1')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'");
+
+    // Remove common wrappers if they slipped through, but preserve signature content.
+    text = text
+      .replace(/\*{3}\s*please enter replies above this line\s*\*{3}[\s\S]*?(?=\n|$)/ig, '')
+      .replace(/you can access your service ticket via our client portal by clicking the following link:[^\n]*/ig, '')
+      .replace(/if you do not have access to the client portal[^\n]*/ig, '')
+      .replace(/\bcaution\b[^\n]*\n?[^\n]*this email originated outside the organization[^\n]*/ig, '')
+      .replace(/this message is directed to and is for the use of the above-noted addressee only[\s\S]*?(?=\n{2,}|$)/ig, '');
+
+    text = text
+      .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    return text;
   }
 
   private formatCanonicalTicketSignature(value: string): string {

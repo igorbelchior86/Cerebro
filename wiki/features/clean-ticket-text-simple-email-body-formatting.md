@@ -13,6 +13,10 @@
   - shorter runs fall back to bullet list formatting
 - Upgraded the formatter from line regex-only logic to a lightweight line-classification + roster-block scoring approach (safer fallback behavior).
 - Fixed markdown table emission to preserve contiguous table rows as a single markdown block (so the table actually renders).
+- Added a secondary segmentation pass to split glued roster entries inside a single line using person-name + employment boundaries (common in normalized onboarding text).
+- Refined the secondary segmentation pass to avoid false splits on role phrases (e.g. `Business Development`, `Williams Marketing`) by using a conservative match-based splitter with stopwords.
+- Added a fragment merge pass for orphan name lines (e.g. `Brittany`) followed by roster details on the next line.
+- Added explicit markdown table styling in `MarkdownRenderer` so rendered roster tables look visibly like tables (headers, borders, row separation).
 
 # Why it changed
 - Prior richer formatting attempts overemphasized heuristic parsing and made the UI confusing / visually noisy.
@@ -25,6 +29,7 @@
 
 # Files touched
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/components/ChatMessage.tsx
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/components/MarkdownRenderer.tsx
 - /Users/igorbelchior/Documents/Github/Cerebro/tasks/lessons.md
 
 # Date

@@ -7,6 +7,10 @@
 - Added simple roster block detection so onboarding-style name rows can render as a markdown table (or bullet list fallback for short runs).
 - Improved detection robustness with line classification + roster-block scoring (instead of pure per-line regex checks).
 - Fixed markdown table rendering by emitting table rows as one contiguous markdown block.
+- Added a secondary roster-boundary segmentation pass to split multiple user entries that arrive merged on one line.
+- Replaced the roster boundary split with a conservative match-based splitter (with role stopwords) to prevent false splits such as `Travis Jones` / `Business Development`.
+- Added merge of orphan name fragments with the following roster-detail line (e.g. `Brittany` + `Williams ...`).
+- Added visible table styling in `MarkdownRenderer` (`table`, `th`, `td`) so roster markdown tables are clearly perceived as tables in the UI.
 
 # Why it changed
 - UX feedback indicated the richer formatting was confusing and visually poor. A simpler email-style presentation is more reliable and easier to scan.
@@ -19,6 +23,7 @@
 
 # Files touched
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/components/ChatMessage.tsx
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/components/MarkdownRenderer.tsx
 - /Users/igorbelchior/Documents/Github/Cerebro/tasks/lessons.md
 
 # Date

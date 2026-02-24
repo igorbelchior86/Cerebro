@@ -13,6 +13,7 @@
 - Follow-up bugfix: relaxed the validator to tolerate small formatting-only label/header additions so valid rich formatting is not falsely downgraded to plain text.
 - Final simplification: rich display markdown is now generated in a **separate strict format-only LLM call** over the already-clean canonical text (instead of sharing the normalization prompt with `description_ui`).
 - Follow-up prompt fix: the format-only prompt now permits **minimal generic labels/headings** (e.g. `Request`, `Signature`) so the `Clean` view can be truly rich-formatted while preserving wording.
+- Follow-up prompt fix: onboarding-style repeated person rosters now have an explicit table preference rule (`3+ person-like entries => Markdown table`) with `Name | Details` fallback when field extraction is ambiguous.
 
 # Why it changed
 - Real intake emails contain HTML/template boilerplate, signatures, disclaimers, and merged list structures that are hard to format reliably with local heuristics.
@@ -27,6 +28,7 @@
 - Logic: validator now uses high source-token coverage + low novel-token ratio (with a formatting-label allowlist) instead of near-exact equality.
 - Logic: display formatting is now decoupled from the normalization/reinterpretation prompt, reducing semantic contamination.
 - Logic: formatter prompt preserves wording/facts but allows small structural labels for readability.
+- Logic: formatter prompt now encodes a concrete roster-table trigger for more consistent output across similar onboarding tickets.
 - Data: No DB schema migration required (JSON payload extension only in `ticket_text_artifacts.payload`).
 
 # Files touched

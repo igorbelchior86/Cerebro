@@ -12,6 +12,7 @@
 - Follow-up bugfix: relaxed the verbatim guard to allow formatting-only label/header additions, preventing false plain-text fallback when rich formatting is otherwise valid.
 - Final simplification: moved `description_display_markdown` generation out of the normalization JSON prompt and into a separate strict format-only LLM call over canonical cleaned text.
 - Follow-up prompt fix: relaxed the strict formatter prompt to allow minimal generic headings/labels (e.g. `Request`, `Signature`) while still forbidding paraphrase/reinterpretation.
+- Follow-up prompt fix: added explicit roster-table preference (`3+ person-like entries`) and ambiguity-safe `Name | Details` table fallback to improve consistency between similar onboarding tickets.
 
 # Why it changed
 - Frontend heuristics alone were not robust enough for messy email/Autotask bodies (HTML blobs, disclaimers, duplicated templates, merged rosters).
@@ -24,6 +25,7 @@
 - Logic: validator now distinguishes formatting additions vs semantic drift via coverage + novel-token ratio thresholds.
 - Logic: formatting and reinterpretation are now isolated in separate LLM tasks (`display markdown` vs `description_ui`).
 - Logic: format-only prompt now distinguishes "new structure" (allowed) from "new facts/rewrites" (forbidden).
+- Logic: prompt now includes a concrete trigger for table formatting of onboarding rosters, reducing Phase 1/Phase 2 output divergence.
 - Data: JSON artifact payload shape extended; no SQL migration required.
 
 # Files touched

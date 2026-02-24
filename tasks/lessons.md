@@ -259,6 +259,12 @@
 **Rule**: For format-only prompts, allow minimal generic structural labels while forbidding semantic rewrites.
 **Pattern**: "No new words" is too strict for rich formatting; prefer "no new facts / no paraphrase" plus minimal structural labels.
 
+## Lesson: 2026-02-24 (prompt needs explicit consistency rules for repeated structures)
+**Mistake**: Similar onboarding tickets (Phase 1 vs Phase 2) produced inconsistent formatting because the prompt did not strongly prefer tables for repeated person rosters.
+**Root cause**: I relied on generic "use tables when helpful" language instead of encoding a concrete trigger and fallback behavior.
+**Rule**: For recurring ticket shapes (e.g. onboarding user rosters), specify an explicit formatting trigger (`3+ person-like rows => table`) and an ambiguity-safe fallback (`Name | Details`) in the prompt.
+**Pattern**: If one example formats correctly and another similar one does not, the prompt lacks deterministic structure guidance.
+
 ## Lesson: 2026-02-23 (refresh must be hard reset, not UI-only)
 **Mistake**: Implemented refresh that reset UI/session artifacts but still allowed org-level caches to repopulate pipeline outputs.
 **Root cause**: Hard refresh semantics were incomplete (did not clear IT Glue org caches) and button UX did not match expectation.

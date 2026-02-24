@@ -35,6 +35,9 @@
 - Follow-up bugfix after latest screenshot: strict formatter prompt was over-constrained and effectively blocked useful structure (e.g. `Request` / `Signature` headings), resulting in almost plain text.
 - Formatter prompt now allows **minimal generic labels/headings** while preserving original wording and facts.
 - Verification follow-up: `pnpm --filter @playbook-brain/api typecheck` OK.
+- Follow-up bugfix after Phase 1 vs Phase 2 comparison: formatter prompt was still too weak on roster/table preference, so similar onboarding tickets could diverge (one tabular, one plain list).
+- Formatter prompt now explicitly prefers Markdown tables for repeated people rosters (3+ person-like entries), including ambiguity handling (`Name | Details` fallback) without dropping merged/unclear rows.
+- Verification follow-up: `pnpm --filter @playbook-brain/api typecheck` OK.
 
 ## Review
 (fill in after completion)

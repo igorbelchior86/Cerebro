@@ -6810,6 +6810,10 @@ CRITICAL RULES (strict):
 - You MAY add minimal formatting labels/headings for structure (for example: "Request", "Signature", "Notes") when helpful.
 - You MAY add Markdown syntax, whitespace, line breaks, bullets, and tables.
 - Keep added labels minimal and generic; do not invent new facts.
+- If the text contains a repeated roster/list of people (for example onboarding users: 3 or more person-like entries), prefer a Markdown table instead of plain paragraphs.
+  - If field extraction is clear, use columns like Name | Employment Type | Device Type (and optionally other obvious columns).
+  - If field extraction is NOT clear, still use a table (for example Name | Details) and preserve the original wording inside cells.
+  - Do not drop ambiguous rows; preserve them verbatim in a row/cell.
 - Preserve the signature/contact block if present.
 - Output Markdown only (no code fences, no explanation).
 

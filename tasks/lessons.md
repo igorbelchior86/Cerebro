@@ -359,3 +359,15 @@
 **Root cause**: Modelei o problema como taxonomia de conteúdo bruto, não como gate de acionabilidade operacional da fila.
 **Rule**: No Playbook Brain intake, a primeira classificação deve ser `actionable vs non-actionable (gibberish)`; subtipos semânticos só entram como camada secundária para auditoria/UX.
 **Pattern**: Se a pergunta do usuário menciona economia de API e medo de falso positivo, priorizar `queue-actionability` + `abstenção`, não taxonomia semântica de email.
+
+## Lesson: 2026-02-24 (UI controls need visual QA after functional delivery)
+**Mistake**: Entreguei o botão de filtro/supressão funcionalmente correto, mas não fiz uma segunda passada de polish visual suficiente para o ícone/controle no contexto real da UI.
+**Root cause**: Foco excessivo em comportamento e segurança operacional (`Suppress > Delete`) sem revisar o acabamento visual dos controles de ação no header.
+**Rule**: Após mudanças de UI com ícones/botões compactos, sempre fazer uma passada de QA visual (proporção, peso do traço, padding, contraste) antes de considerar “done”.
+**Pattern**: Feedback curto do usuário tipo “esse ícone está horrível” normalmente aponta para proporção/legibilidade, não para fluxo/arquitetura.
+
+## Lesson: 2026-02-24 (visual feedback requests require clearly perceptible changes, not subtle polish)
+**Mistake**: Interpretei "esse ícone está horrível" como pedido de polish incremental e entreguei uma mudança visual sutil demais, que o usuário percebeu como "zero mudanças".
+**Root cause**: Não calibrei a severidade do feedback visual; para crítica forte de UI, o usuário espera uma alteração claramente perceptível no elemento central (glyph), não apenas container/hover.
+**Rule**: Quando o usuário rejeitar um ícone explicitamente, trocar o glyph de forma evidente primeiro; depois ajustar acabamento.
+**Pattern**: Feedback "zero mudanças" após UI polish = o problema principal continua no símbolo/forma, não nos detalhes de borda/sombra.

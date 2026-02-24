@@ -772,21 +772,61 @@ export default function SessionDetail({
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                width: '24px',
-                height: '24px',
-                borderRadius: '999px',
+                width: '28px',
+                height: '28px',
+                borderRadius: '9px',
                 color: loading ? 'var(--text-muted)' : 'var(--accent)',
-                background: 'var(--accent-muted)',
-                border: '1px solid var(--border-accent)',
+                background: loading ? 'var(--bg-card)' : 'linear-gradient(180deg, rgba(91,127,255,0.12), rgba(91,127,255,0.07))',
+                border: loading ? '1px solid var(--border)' : '1px solid rgba(91,127,255,0.26)',
+                boxShadow: loading ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.08)',
                 cursor: loading ? 'not-allowed' : 'pointer',
                 opacity: loading ? 0.7 : 1,
+                transition: 'var(--transition)',
+              }}
+              onMouseEnter={(e) => {
+                if (loading) return;
+                (e.currentTarget as HTMLButtonElement).style.background = 'linear-gradient(180deg, rgba(91,127,255,0.16), rgba(91,127,255,0.10))';
+                (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(91,127,255,0.36)';
+                (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={(e) => {
+                if (loading) return;
+                (e.currentTarget as HTMLButtonElement).style.background = 'linear-gradient(180deg, rgba(91,127,255,0.12), rgba(91,127,255,0.07))';
+                (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(91,127,255,0.26)';
+                (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
               }}
               title="Hard refresh pipeline"
               aria-label="Hard refresh pipeline"
             >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                <path d="M13.3 8A5.3 5.3 0 1 1 11.75 4.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                <path d="M10.6 1.9h3.5v3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path
+                  d="M16.2 6.6A6.9 6.9 0 0 0 4.9 4.9"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M4.9 4.9V2.7M4.9 4.9h2.2"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M3.8 13.4A6.9 6.9 0 0 0 15.1 15.1"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M15.1 15.1v2.2m0-2.2h-2.2"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
             </button>
             <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-jetbrains-mono)', marginLeft: playbookReady ? '0' : 'auto' }}>

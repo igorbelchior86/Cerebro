@@ -195,3 +195,28 @@
 - What worked: mudança incremental e reversível; backend e frontend ficaram compatíveis com `suppressed` opcional sem exigir migração de banco.
 - What was tricky: manter heurística de supressão extremamente conservadora para evitar falso positivo e ainda demonstrar valor na UI imediatamente.
 - Time taken: ~35 min
+
+## Task: Refinar ícone do botão de refresh no header da triagem (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Localizar botão de refresh e identificar causa visual (ícone/proporção/estilo)
+- [x] Step 2: Aplicar ajuste mínimo de UI (ícone + sizing + estados visuais)
+- [x] Step 3: Validar `pnpm --filter @playbook-brain/web typecheck`
+- [x] Step 4: Documentar na wiki (feature + changelog) e preencher review
+
+## Open Questions
+- Nenhuma. O usuário pediu refinamento visual do ícone existente.
+
+## Progress Notes
+- Root cause visual observado: botão muito pequeno (`24x24`) com ícone fino e composição visual fraca no header.
+- Ajuste aplicado no botão de hard refresh em `triage/[id]/page.tsx`: `28x28`, raio `9px`, fundo/borda mais intencionais e glyph de refresh com traço mais grosso (`1.7`) e geometria mais equilibrada.
+- Adicionados estados de hover simples (lift + contraste) sem alterar comportamento.
+- Verificação: `pnpm --filter @playbook-brain/web typecheck` OK.
+- Wiki atualizada com feature + changelog do polish visual.
+
+## Review
+- What worked: mudança extremamente localizada no botão específico do header, sem tocar no fluxo de refresh.
+- What was tricky: melhorar legibilidade/estética sem "estourar" o peso visual ao lado do badge `Playbook ready`.
+- Time taken: ~10 min

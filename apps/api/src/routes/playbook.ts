@@ -20,6 +20,8 @@ import { PrepareContextService } from '../services/prepare-context.js';
 const router: Router = Router();
 const fullFlowInFlight = new Set<string>();
 const FULL_FLOW_SESSION_CREATE_LOCK_NAMESPACE = 41022;
+const FULL_FLOW_RETRY_BASE_DELAY_MS = 2 * 60 * 1000;
+const FULL_FLOW_RETRY_MAX_DELAY_MS = 30 * 60 * 1000;
 
 async function resolveOrCreateFullFlowSession(ticketId: string, tenantId: string | null): Promise<{ id: string; created: boolean }> {
   return transaction(async (client) => {
@@ -75,6 +77,35 @@ function isTransientProviderError(error: unknown): boolean {
     message.includes('access is denied');
 }
 
+function computeRetryBackoffDelayMs(retryCount: number): number {
+  const exponent = Math.max(0, retryCount - 1);
+  const delay = FULL_FLOW_RETRY_BASE_DELAY_MS * Math.pow(2, Math.min(exponent, 6));
+  return Math.min(delay, FULL_FLOW_RETRY_MAX_DELAY_MS);
+}
+
+async function markSessionPendingForRetry(sessionId: string, errorMessage: string): Promise<void> {
+  await transaction(async (client) => {
+    const current = await client.query<{ retry_count: number | null }>(
+      `SELECT retry_count FROM triage_sessions WHERE id = $1 FOR UPDATE`,
+      [sessionId]
+    );
+    const nextRetryCount = (current.rows[0]?.retry_count ?? 0) + 1;
+    const delayMs = computeRetryBackoffDelayMs(nextRetryCount);
+    const nextRetryAt = new Date(Date.now() + delayMs);
+
+    await client.query(
+      `UPDATE triage_sessions
+       SET status = 'pending',
+           retry_count = $1,
+           next_retry_at = $2,
+           last_error = $3,
+           updated_at = NOW()
+       WHERE id = $4`,
+      [nextRetryCount, nextRetryAt, errorMessage, sessionId]
+    );
+  });
+}
+
 // ─── GET /playbook/full-flow ──────────────────────────────
 /**
  * Complete flow: Evidence → Diagnosis → Validation → Playbook
@@ -118,10 +149,13 @@ router.get('/full-flow', async (req, res) => {
       id: string;
       ticket_id: string;
       status: string;
+      retry_count: number | null;
+      next_retry_at: string | null;
+      last_error: string | null;
       created_at: string;
       updated_at: string;
     }>(
-      `SELECT id, ticket_id, status, created_at, updated_at
+      `SELECT id, ticket_id, status, retry_count, next_retry_at, last_error, created_at, updated_at
        FROM triage_sessions
        WHERE id = $1
        LIMIT 1`,
@@ -247,10 +281,13 @@ router.get('/full-flow', async (req, res) => {
           id: string;
           ticket_id: string;
           status: string;
+          retry_count: number | null;
+          next_retry_at: string | null;
+          last_error: string | null;
           created_at: string;
           updated_at: string;
         }>(
-          `SELECT id, ticket_id, status, created_at, updated_at
+          `SELECT id, ticket_id, status, retry_count, next_retry_at, last_error, created_at, updated_at
            FROM triage_sessions
            WHERE id = $1
            LIMIT 1`,
@@ -514,7 +551,13 @@ router.get('/full-flow', async (req, res) => {
 
           // Update session status to approved since it's an automated flow
           await execute(
-            'UPDATE triage_sessions SET status = $1, updated_at = NOW() WHERE id = $2',
+            `UPDATE triage_sessions
+             SET status = $1,
+                 last_error = NULL,
+                 retry_count = 0,
+                 next_retry_at = NULL,
+                 updated_at = NOW()
+             WHERE id = $2`,
             ['approved', sessionId]
           );
         }
@@ -523,12 +566,20 @@ router.get('/full-flow', async (req, res) => {
       } catch (bgErr) {
         console.error(`[FULL-FLOW] Background error for ${sessionId}:`, bgErr);
         const bgMessage = String((bgErr as any)?.message || bgErr || '');
-        await execute(
-          `UPDATE triage_sessions
-           SET status = $1, last_error = $2, updated_at = NOW()
-           WHERE id = $3`,
-          [isTransientProviderError(bgErr) ? 'pending' : 'failed', bgMessage, sessionId]
-        );
+        if (isTransientProviderError(bgErr)) {
+          await markSessionPendingForRetry(sessionId, bgMessage);
+        } else {
+          await execute(
+            `UPDATE triage_sessions
+             SET status = 'failed',
+                 last_error = $1,
+                 retry_count = 0,
+                 next_retry_at = NULL,
+                 updated_at = NOW()
+             WHERE id = $2`,
+            [bgMessage, sessionId]
+          );
+        }
       }
     };
 
@@ -539,6 +590,17 @@ router.get('/full-flow', async (req, res) => {
       (!playbook && (validation?.safe_to_generate_playbook ?? true));
 
     if (needsBackgroundProcessing) {
+      const nextRetryAt = sessionRow?.next_retry_at ? new Date(sessionRow.next_retry_at) : null;
+      const retryBlocked =
+        sessionRow?.status === 'pending' &&
+        nextRetryAt &&
+        !Number.isNaN(nextRetryAt.getTime()) &&
+        nextRetryAt.getTime() > Date.now();
+      if (retryBlocked) {
+        console.log(
+          `[FULL-FLOW] Retry backoff active for ${sessionId} until ${nextRetryAt?.toISOString()}. Skipping background trigger.`
+        );
+      } else 
       if (fullFlowInFlight.has(sessionId)) {
         console.log(`[FULL-FLOW] Background already running for ${sessionId}. Skipping duplicate trigger.`);
       } else {

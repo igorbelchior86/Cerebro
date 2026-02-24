@@ -99,10 +99,8 @@ export interface TicketTextArtifact {
   session_id: string;
   source: 'autotask' | 'email' | 'unknown';
   title_original: string;
-  title_reinterpreted: string;
   text_original: string;
   text_clean: string;
-  text_reinterpreted: string;
   normalization_method: 'llm' | 'deterministic_fallback';
   normalization_confidence: number;
   created_at: string;
@@ -630,10 +628,8 @@ export class PrepareContextService {
             ? 'autotask'
             : 'unknown',
         title_original: originalTicketTitle,
-        title_reinterpreted: normalizedTicket.title || originalTicketTitle,
         text_original: originalTicketNarrative,
         text_clean: normalizedTicket.descriptionCanonical,
-        text_reinterpreted: normalizedTicket.descriptionUi,
         normalization_method: normalizedTicket.method,
         normalization_confidence: normalizedTicket.confidence,
         created_at: new Date().toISOString(),
@@ -671,7 +667,10 @@ export class PrepareContextService {
 
     const ticketNarrative = this.buildTicketNarrative(ticket);
     const inferredCompany = this.inferCompanyNameFromTicketText(ticketNarrative) || this.inferCompanyNameFromTicketText(originalTicketNarrative);
-    const companyName = this.normalizeName(ticket.company || inferredCompany || '');
+    const companyName = this.selectPreferredCompanyName({
+      intakeCompany: String(ticket.company || ''),
+      inferredCompany,
+    });
     const requesterName = this.normalizeName(ticket.canonicalRequesterName || ticket.requester || '');
     const facetContext = this.detectFacetContext(
       ticketNarrative
@@ -4087,9 +4086,15 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
     const normalizeCompanyComparable = (value: string) =>
       this.normalizeOrgNameForMatch(this.normalizeName(String(value || '')));
 
-    // Company is a display-critical intake field. Preserve intake formatting and punctuation when available,
-    // and prevent later normalization/fusion variants (e.g. concatenated domain-derived names) from regressing it.
-    if (!isUnknown(intakeCompanyRaw)) {
+    const currentCompanyRaw = String(out.company || '').trim();
+    const canOverrideDomainDerivedIntakeWithCurrent =
+      !isUnknown(currentCompanyRaw) && this.shouldPreferCompanyCandidateOverIntake(intakeCompanyRaw, currentCompanyRaw);
+    const canOverrideDomainDerivedIntakeWithInferred =
+      !isUnknown(inferredCompanyRaw) && this.shouldPreferCompanyCandidateOverIntake(intakeCompanyRaw, inferredCompanyRaw);
+
+    // Company is display-critical. Preserve intake formatting unless the intake value is a domain-derived fallback
+    // and a better display-ready company name was inferred or already assembled in the SSOT.
+    if (!isUnknown(intakeCompanyRaw) && !canOverrideDomainDerivedIntakeWithCurrent && !canOverrideDomainDerivedIntakeWithInferred) {
       out.company = intakeCompanyRaw;
     } else if (!isUnknown(inferredCompanyRaw)) {
       if (
@@ -6381,6 +6386,46 @@ Output schema:
     return (value || '').replace(/\s+/g, ' ').trim();
   }
 
+  private isLikelyDomainDerivedCompanyLabel(value: string): boolean {
+    const raw = this.normalizeName(String(value || ''));
+    if (!raw) return false;
+    if (/\s/.test(raw)) return false;
+    if (!/^[A-Za-z0-9._&-]+$/.test(raw)) return false;
+
+    const compact = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (compact.length < 8) return false;
+
+    if (compact.includes('andcompany') || compact.includes('andco')) return true;
+    if (/(company|corp|corporation|management|services|solutions|technologies|technology|holdings|consulting)$/.test(compact)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private shouldPreferCompanyCandidateOverIntake(intakeCompany: string, candidateCompany: string): boolean {
+    const intake = this.normalizeName(String(intakeCompany || ''));
+    const candidate = this.normalizeName(String(candidateCompany || ''));
+    if (!intake || !candidate) return false;
+    if (!this.isLikelyDomainDerivedCompanyLabel(intake)) return false;
+    if (this.isLikelyDomainDerivedCompanyLabel(candidate)) return false;
+
+    const candidateLooksDisplayReady =
+      /[\s&.,()'-]/.test(candidate) || /\b(inc|llc|ltd|corp|corporation|co)\b/i.test(candidate);
+    if (!candidateLooksDisplayReady) return false;
+
+    return true;
+  }
+
+  private selectPreferredCompanyName(input: { intakeCompany: string; inferredCompany: string }): string {
+    const intake = this.normalizeName(String(input.intakeCompany || ''));
+    const inferred = this.normalizeName(String(input.inferredCompany || ''));
+    if (this.shouldPreferCompanyCandidateOverIntake(intake, inferred)) {
+      return inferred;
+    }
+    return this.normalizeName(intake || inferred || '');
+  }
+
   private capitalize(value: string): string {
     if (!value) return value;
     return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
@@ -6679,11 +6724,130 @@ Ticket text:
 
     // Normalize whitespace and cut trailing repeated signatures/disclaimers again after transforms
     text = text
-      .replace(/\s+/g, ' ')
+      .replace(/\r\n/g, '\n')
+      .replace(/\t+/g, ' ')
+      .replace(/[ \u00A0]+/g, ' ')
+      .replace(/[ ]*\n[ ]*/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
       .replace(/\b(you can access your service ticket|sincerely|caution)\b[\s\S]*$/i, '')
       .trim();
 
-    return text;
+    return this.formatCanonicalTicketSignature(text);
+  }
+
+  private formatCanonicalTicketSignature(value: string): string {
+    const text = String(value || '').trim();
+    if (!text) return '';
+
+    const signatureStart = this.detectLikelySignatureStart(text);
+    if (signatureStart <= 0 || signatureStart >= text.length) {
+      return text.replace(/\s+/g, ' ').trim();
+    }
+
+    const body = text.slice(0, signatureStart).replace(/\s+/g, ' ').trim();
+    const signature = text.slice(signatureStart).trim();
+    const formattedSignature = this.formatSignatureBlock(signature);
+    if (!formattedSignature) return body;
+    if (!body) return formattedSignature;
+    return `${body}\n\n${formattedSignature}`;
+  }
+
+  private detectLikelySignatureStart(text: string): number {
+    const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!normalized) return -1;
+
+    const lower = normalized.toLowerCase();
+    const signoffPatterns = [
+      /\bthanks[,!]?\s+/ig,
+      /\bthank you[,!]?\s+/ig,
+      /\bbest regards[,!]?\s+/ig,
+      /\bregards[,!]?\s+/ig,
+      /\bcheers[,!]?\s+/ig,
+    ];
+    for (const pattern of signoffPatterns) {
+      const match = pattern.exec(lower);
+      if (match && this.signatureSignalCount(normalized.slice(match.index)) >= 2) {
+        return match.index;
+      }
+    }
+
+    // Fallback: detect a trailing contact-card style block around the first contact signal near the tail.
+    const tailStart = Math.floor(normalized.length * 0.45);
+    const contactMatch = normalized
+      .slice(tailStart)
+      .match(/\b(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|(?:Phone|Direct|Email|Website)\s*:|www\.)/i);
+    if (!contactMatch || contactMatch.index == null) return -1;
+
+    const contactIdx = tailStart + contactMatch.index;
+    let start = Math.max(0, contactIdx - 120);
+    const beforeContact = normalized.slice(start, contactIdx);
+
+    const properName = beforeContact.match(/(?:^|\s)([A-Z][a-z]+(?:\s+[A-Z][a-z.'-]+){1,3})\s*$/);
+    const upperName = beforeContact.match(/(?:^|\s)([A-Z]{2,}(?:\s+[A-Z]{2,}){1,4})\s*$/);
+    if (properName?.index != null) {
+      start += properName.index + (properName[0].startsWith(' ') ? 1 : 0);
+    } else if (upperName?.index != null) {
+      start += upperName.index + (upperName[0].startsWith(' ') ? 1 : 0);
+    } else {
+      start = contactIdx;
+    }
+
+    return this.signatureSignalCount(normalized.slice(start)) >= 2 ? start : -1;
+  }
+
+  private signatureSignalCount(text: string): number {
+    const raw = String(text || '');
+    let count = 0;
+    if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(raw)) count += 1;
+    if (/\b(?:direct|phone|mobile|cell|office|email|website)\s*:/i.test(raw)) count += 1;
+    if (/\bwww\.[a-z0-9.-]+\.[a-z]{2,}\b/i.test(raw)) count += 1;
+    if (/\b(?:\+?1[\s.-]*)?(?:\(?\d{3}\)?[\s.-]*)\d{3}[\s.-]?\d{4}\b/.test(raw)) count += 1;
+    if (/\b\d{2,6}\s+[A-Za-z0-9.'#-]+(?:\s+[A-Za-z0-9.'#-]+){1,8}\b/.test(raw)) count += 1;
+    return count;
+  }
+
+  private formatSignatureBlock(signature: string): string {
+    let sig = String(signature || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!sig) return '';
+
+    // Sign-off on its own line when present.
+    sig = sig.replace(/^(thanks|thank you|regards|best regards|cheers)[,!]?\s+/i, (_m, word) => `${word.replace(/\b\w/g, (c: string) => c.toUpperCase())},\n`);
+
+    // Put common contact labels on their own lines.
+    sig = sig.replace(/\s+(?=(?:Direct|Phone|Mobile|Cell|Office|Email|Website)\s*:)/g, '\n');
+
+    // Put email / website / phones on their own lines if inline.
+    sig = sig
+      .replace(/\s+(?=[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b)/ig, '\n')
+      .replace(/\s+(?=www\.[a-z0-9.-]+\.[a-z]{2,}\b)/ig, '\n')
+      .replace(/\s+(?=(?:\+?1[\s.-]*)?(?:\(?\d{3}\)?[\s.-]*)\d{3}[\s.-]?\d{4}\b)/g, '\n');
+
+    // Break before common titles and address starts when they were flattened.
+    sig = sig
+      .replace(/\s+(?=(?:Sr\.?\s+)?(?:Project Engineer|Web Director|Comptroller|Director|Manager|Engineer|Administrator|Coordinator|President|Owner)\b)/g, '\n')
+      .replace(/\s+(?=\d{2,6}\s+[A-Za-z])/g, '\n');
+
+    // Handle compact signature markers like "e john@..." / "c 781..." used in some email signatures.
+    sig = sig
+      .replace(/\s+(?=\be\s+[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b)/ig, '\n')
+      .replace(/\s+(?=\bc\s+\d{3}[.\-\s]\d{3}[.\-\s]\d{4}\b)/ig, '\n');
+
+    // Rejoin common label/value pairs and title suffix splits if previous rules over-split.
+    sig = sig
+      .replace(/\b(Direct|Phone|Mobile|Cell|Office|Email|Website):\s*\n\s*/g, '$1: ')
+      .replace(/\n(Sr\.|Jr\.)\s*\n(?=(?:Project Engineer|Web Director|Comptroller|Director|Manager|Engineer|Administrator|Coordinator|President|Owner)\b)/g, '\n$1 ');
+
+    // Keep lines tidy.
+    sig = sig
+      .split('\n')
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join('\n');
+
+    return sig;
   }
 
   private postProcessUiTicketText(value: string): string {

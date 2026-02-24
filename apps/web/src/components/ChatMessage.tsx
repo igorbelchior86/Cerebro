@@ -9,8 +9,7 @@ export interface Message {
   type?: 'text' | 'status' | 'autotask' | 'evidence' | 'diagnosis' | 'validation';
   steps?: { label: string; status: 'done' | 'running' | 'idle' }[];
   ticketTextVariant?: {
-    primary: 'reinterpreted' | 'clean' | 'original';
-    reinterpreted: string;
+    primary: 'clean' | 'original';
     clean?: string;
     original: string;
   };
@@ -38,8 +37,10 @@ function MsgTag({ children, color, bg }: { children: ReactNode; color?: string; 
 }
 
 export default function ChatMessage({ message, children }: ChatMessageProps) {
-  const [ticketTextMode, setTicketTextMode] = useState<'reinterpreted' | 'clean' | 'original'>(
-    message.ticketTextVariant?.primary || 'reinterpreted'
+  const [ticketTextMode, setTicketTextMode] = useState<'clean' | 'original'>(
+    message.ticketTextVariant?.clean?.trim()
+      ? 'clean'
+      : 'original'
   );
   const isSystem = message.role === 'system' || message.type === 'status';
 
@@ -74,18 +75,17 @@ export default function ChatMessage({ message, children }: ChatMessageProps) {
   const src = SOURCE_CONFIG[message.type ?? 'text'] ?? { icon: '📋', label: 'PlaybookWriter' };
   const canToggleTicketText =
     message.type === 'autotask' &&
-    Boolean(message.ticketTextVariant?.reinterpreted?.trim()) &&
     Boolean(message.ticketTextVariant?.original?.trim());
   const hasCleanTicketText = Boolean(message.ticketTextVariant?.clean?.trim());
-  const ticketTextModes: Array<'reinterpreted' | 'clean' | 'original'> = hasCleanTicketText
-    ? ['reinterpreted', 'clean', 'original']
-    : ['reinterpreted', 'original'];
+  const ticketTextModes: Array<'clean' | 'original'> = hasCleanTicketText
+    ? ['clean', 'original']
+    : ['original'];
   const renderedContent = canToggleTicketText
     ? ticketTextMode === 'original'
       ? message.ticketTextVariant!.original
-      : ticketTextMode === 'clean' && hasCleanTicketText
+      : hasCleanTicketText
         ? message.ticketTextVariant!.clean!
-        : message.ticketTextVariant!.reinterpreted
+        : message.ticketTextVariant!.original
     : message.content;
   return (
     <div className="animate-msgIn" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '10px' }}>
@@ -115,8 +115,8 @@ export default function ChatMessage({ message, children }: ChatMessageProps) {
                   key={mode}
                   type="button"
                   onClick={() => setTicketTextMode(mode)}
-                  title={mode === 'reinterpreted' ? 'Show reframed ticket text' : mode === 'clean' ? 'Show cleaned ticket text' : 'Show original ticket text'}
-                  aria-label={mode === 'reinterpreted' ? 'Show reframed ticket text' : mode === 'clean' ? 'Show cleaned ticket text' : 'Show original ticket text'}
+                  title={mode === 'clean' ? 'Show cleaned ticket text' : 'Show original ticket text'}
+                  aria-label={mode === 'clean' ? 'Show cleaned ticket text' : 'Show original ticket text'}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
@@ -134,7 +134,7 @@ export default function ChatMessage({ message, children }: ChatMessageProps) {
                     letterSpacing: '0.03em',
                   }}
                 >
-                  {mode === 'reinterpreted' ? 'Reframed' : mode === 'clean' ? 'Clean' : 'Original'}
+                  {mode === 'clean' ? 'Clean' : 'Original'}
                 </button>
               ))}
             </div>

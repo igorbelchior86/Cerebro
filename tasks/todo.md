@@ -120,7 +120,7 @@
 ---
 
 # Task: Phase 3 Diagnose Strengthening (Technical Plan)
-**Status**: verifying
+**Status**: completed
 **Started**: 2026-02-24
 
 ## Plan
@@ -413,7 +413,7 @@
 - Time taken: ~45 min
 
 ## Task: Concurrency hardening (P2 full-flow session create + poller distributed locks) (2026-02-24)
-**Status**: planning
+**Status**: completed
 **Started**: 2026-02-24 12:15 EST
 
 ## Plan
@@ -437,3 +437,154 @@
 - What worked: advisory locks provided a minimal fix without changing `triage_sessions` schema or adding a distributed scheduler.
 - What was tricky: poller coordination needs cross-instance locking without holding an open SQL transaction during external API calls, so session-level advisory locks were the right fit.
 - Time taken: ~25 min
+
+## Task: Fix `scripts/stack.sh` restart/status hang on health checks (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24 12:33 EST
+
+## Plan
+- [x] Step 1: Patch `scripts/stack.sh` health curls to fail fast (timeouts)
+- [x] Step 2: Verify `./scripts/stack.sh status` returns promptly
+- [x] Step 3: Document in wiki (`features` + `changelog`) and fill review
+
+## Open Questions
+- None. Repro indicates `status` hangs in health curl path; minimal timeout fix is sufficient.
+
+## Progress Notes
+- Reproduced hang: `./scripts/stack.sh status` printed through `api health: ok` and then stalled (web curl path).
+- Added `curl_health()` helper with `--connect-timeout 1 --max-time 2` and reused it in `wait_ready()` + `cmd_status()`.
+- Verification: `./scripts/stack.sh status` now returns promptly (reported `web health: down` instead of hanging).
+- Verification: `./scripts/stack.sh restart` completed end-to-end and reported both services healthy.
+
+## Review
+- What worked: minimal shell patch fixed both `status` and `restart` because both paths shared the same unbounded curl behavior.
+- What was tricky: reproducing on macOS needed manual observation (no `timeout` command installed by default).
+- Time taken: ~12 min
+
+## Task: Remove `Reframed` toggle option from ticket text view (keep Clean + Original) (2026-02-24)
+**Status**: planning
+**Started**: 2026-02-24 12:42 EST
+
+## Plan
+- [x] Step 1: Patch `ChatMessage` text-mode toggle to remove `Reframed`
+- [x] Step 2: Verify `web` typecheck
+- [x] Step 3: Document in wiki (`features` + `changelog`) and fill review
+
+## Open Questions
+- None. Request is explicit: keep only `Clean` and `Original`.
+
+## Progress Notes
+- Located toggle in `apps/web/src/components/ChatMessage.tsx` (`reinterpreted` / `clean` / `original`).
+- Removed `Reframed` button from the UI toggle; options now render only `Clean` and `Original`.
+- Adjusted initial selection/fallback to prefer `clean` when available, otherwise `original`, preventing hidden `reinterpreted` state.
+- Verification: `pnpm --filter @playbook-brain/web typecheck` OK.
+
+## Review
+- What worked: the toggle was isolated in `ChatMessage`, so the change was localized and low-risk.
+- What was tricky: preserving safe fallback behavior when `clean` is missing while removing the `reinterpreted` option from the UI.
+- Time taken: ~10 min
+
+## Task: Remove `reframed/reinterpreted` entirely from codebase ticket-text flow (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24 12:48 EST
+
+## Plan
+- [x] Step 1: Remove `reinterpreted/reframed` fields/usages from web timeline message types and builders
+- [x] Step 2: Remove `*_reinterpreted` fields from current `ticket_text_artifact` production path in API
+- [x] Step 3: Verify `api` + `web` typecheck and no remaining code references
+- [x] Step 4: Document in wiki (`features` + `changelog`) and fill review
+
+## Open Questions
+- None. User clarified scope explicitly: remove from codebase, not only from UI.
+
+## Progress Notes
+- User corrected prior scope: previous patch only removed the UI option; this task removes the `reframed/reinterpreted` concept from active code paths.
+- `apps/web/src/components/ChatMessage.tsx` ticket text variant model now uses only `primary: 'clean' | 'original'` and no `reinterpreted` field.
+- `apps/web/src/app/[locale]/(chat)/triage/[id]/page.tsx` no longer reads `ticket_text_artifact.text_reinterpreted` / `title_reinterpreted`; the primary timeline text uses `text_clean` when available.
+- `apps/api/src/services/prepare-context.ts` no longer persists `title_reinterpreted` / `text_reinterpreted` in the current `ticket_text_artifact` payload.
+- Verification: global code search (`rg`) for `reframed|reinterpreted|text_reinterpreted|title_reinterpreted` in `*.ts/*.tsx/*.js/*.json` returned no matches.
+- Verification: `pnpm --filter @playbook-brain/api typecheck` OK; `pnpm --filter @playbook-brain/web typecheck` OK (after fixing one TS conditional cast).
+
+## Review
+- What worked: a global reference search made the scope explicit and allowed a coordinated API+web cleanup.
+- What was tricky: the prior UI-only patch left hidden model references; removing the concept required updating both the message type and timeline signature serialization.
+- Time taken: ~18 min
+
+## Task: Improve `Clean` ticket text signature detection/formatting (2026-02-24)
+**Status**: verifying
+**Started**: 2026-02-24 12:49 EST
+
+## Plan
+- [x] Step 1: Locate `text_clean` normalization/post-processing path in `PrepareContext`
+- [x] Step 2: Add deterministic email-signature formatting heuristics for `Clean` text output
+- [x] Step 3: Add regression test for flattened signature formatting
+- [x] Step 4: Verify targeted test + typechecks
+- [x] Step 5: Document in wiki (`features` + `changelog`) and fill review
+
+## Open Questions
+- None blocking. Heuristic formatting is acceptable for v1 and can be tuned with more examples later.
+
+## Progress Notes
+- Root cause identified in `postProcessCanonicalTicketText(...)`: final `\s+` collapse flattened the entire canonical text (including signature/contact blocks) into one line.
+- Added signature-aware formatting pass that detects likely signature start and reinserts readable line breaks for signoff, contact labels, email/phone/website, and address starts.
+- Added regression test case with a flattened email signature (Alex Hall example style).
+- Verification: `pnpm --filter @playbook-brain/api test -- prepare-context.test` OK.
+- Verification: `pnpm --filter @playbook-brain/api typecheck` OK.
+- Wiki updated with feature + changelog entries for clean-text signature formatting.
+
+## Review
+- What worked: fixing the canonical-text post-processing (`postProcessCanonicalTicketText`) solved the issue at the source for all `Clean` consumers, instead of patching UI rendering.
+- What was tricky: the first heuristic over-split some signature parts (`Direct:` and phone number, `Sr.` suffix); a small rejoin pass stabilized the formatting.
+- Time taken: ~25 min
+## Task: Corrigir `company` derivado de domínio persistindo na UI/SSOT (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Traçar fluxo `ticket.company` -> `PrepareContext` -> `ticket_ssot` -> UI
+- [x] Step 2: Confirmar root cause (anti-regressão + precedência inicial preservando fallback de domínio)
+- [x] Step 3: Corrigir seleção/preservação de `company` com heurística mínima para detectar fallback de domínio
+- [x] Step 4: Validar `typecheck` (`api` e `web`)
+- [x] Step 5: Documentar na wiki (feature + changelog)
+
+## Open Questions
+- Nenhuma. A correção é no pipeline/SSOT; UI permanece SSOT-only.
+
+## Progress Notes
+- Root cause confirmado em `PrepareContext`: `companyName` priorizava `ticket.company` antes de `inferredCompany`, e `applyIntakeAntiRegressionToSSOT()` preservava `ticket.company` incondicionalmente.
+- Adicionados helpers para identificar rótulos de empresa provavelmente derivados de domínio e permitir substituição apenas quando houver nome display-ready melhor.
+- `companyName` inicial agora passa por seleção preferencial (`intake` vs `inferred`) antes do restante do pipeline.
+- Anti-regressão do SSOT agora preserva intake **exceto** quando o intake parece fallback de domínio e há candidato melhor (SSOT atual ou inferido).
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK.
+- Verificação: `pnpm --filter @playbook-brain/web typecheck` OK.
+
+## Review
+- What worked: correção centralizada em `PrepareContext`, sem workaround na UI.
+- What was tricky: preservar o contrato “intake canônico” sem congelar valores de baixa qualidade (fallback de domínio).
+- Time taken: ~15 min
+## Task: Reduzir falhas por quota/rate-limit no `/playbook/full-flow` (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Inspecionar handling de `429/quota` no `llm-adapter` e no orquestrador
+- [x] Step 2: Inspecionar `/playbook/full-flow` para loops de re-trigger sob polling
+- [x] Step 3: Implementar backoff persistido (`retry_count/next_retry_at`) na rota para erros transitórios
+- [x] Step 4: Impedir re-trigger enquanto `next_retry_at` futuro estiver ativo
+- [x] Step 5: Validar `api` typecheck e documentar na wiki
+
+## Open Questions
+- Não consegui confirmar por SQL nesta sessão porque `DATABASE_URL` não está carregado no shell atual.
+- Ainda pode haver amplificação adicional em multi-instância (o guard `fullFlowInFlight` é in-memory), mas esta correção elimina o loop local/polling mais provável.
+
+## Progress Notes
+- Auditoria de código mostrou que `triage-orchestrator` já persistia backoff (`retry_count/next_retry_at`) para 429/quota, mas `/playbook/full-flow` não.
+- `triggerBackgroundProcessing()` em `apps/api/src/routes/playbook.ts` marcava erro transitório só como `pending`, sem `next_retry_at`, permitindo re-trigger imediato em cada polling da UI.
+- Fix aplicado: rota agora usa `markSessionPendingForRetry()` (com exponential backoff persistido) para erros transitórios e limpa retry metadata em sucesso/falha não transitória.
+- Fix aplicado: rota respeita `next_retry_at` e não agenda background processing enquanto cooldown estiver ativo.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK.
+
+## Review
+- What worked: reaproveitar o mesmo modelo de backoff do orquestrador na rota `/full-flow` sem mexer no pipeline principal.
+- What was tricky: o problema não estava só no provider limiter; a rota tinha um path paralelo de retries sem cooldown persistido.
+- Time taken: ~20 min

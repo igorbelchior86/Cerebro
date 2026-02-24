@@ -54,10 +54,8 @@ interface SessionData {
     session_id?: string;
     source?: 'autotask' | 'email' | 'unknown';
     title_original?: string;
-    title_reinterpreted?: string;
     text_original?: string;
     text_clean?: string;
-    text_reinterpreted?: string;
     normalization_method?: 'llm' | 'deterministic_fallback';
     normalization_confidence?: number;
     created_at?: string;
@@ -451,8 +449,8 @@ export default function SessionDetail({
           normalizedSiteForLine.toLowerCase() === normalizedOrgForLine.toLowerCase() ||
           normalizedSiteForLine.toLowerCase() === normalizedRequesterForLine.toLowerCase();
         const locationLabelForLine = siteIsRedundant ? org : `${org}, ${site}`;
-        const autoTaskPrimaryText = ticketTextArtifact?.text_reinterpreted
-          ? `New ticket detected: \`${ticketId}\` — "${normalizePlainText(ticketTextArtifact.text_reinterpreted, problemDescription)}" from ${requester} at ${locationLabelForLine}. Priority: **${priorityLabel}**. Starting context collection.`
+        const autoTaskPrimaryText = ticketTextArtifact?.text_clean
+          ? `New ticket detected: \`${ticketId}\` — "${normalizePlainText(ticketTextArtifact.text_clean, problemDescription)}" from ${requester} at ${locationLabelForLine}. Priority: **${priorityLabel}**. Starting context collection.`
           : `New ticket detected: \`${ticketId}\` — "${problemDescription}" from ${requester} at ${locationLabelForLine}. Priority: **${priorityLabel}**. Starting context collection.`;
         const autoTaskOriginalText = ticketTextArtifact?.text_original
           ? `Original ticket text (Autotask/email intake):\n\n${ticketTextArtifact.text_original}`
@@ -468,11 +466,10 @@ export default function SessionDetail({
             type: 'autotask',
             timestamp: ts(0),
             content: autoTaskPrimaryText,
-            ...(ticketTextArtifact?.text_reinterpreted && ticketTextArtifact?.text_original
+            ...(ticketTextArtifact?.text_original
               ? {
                   ticketTextVariant: {
-                    primary: 'reinterpreted' as const,
-                    reinterpreted: autoTaskPrimaryText,
+                    primary: (autoTaskCleanText ? 'clean' : 'original') as 'clean' | 'original',
                     original: autoTaskOriginalText,
                     ...(autoTaskCleanText ? { clean: autoTaskCleanText } : {}),
                   },
@@ -557,7 +554,6 @@ export default function SessionDetail({
               m.ticketTextVariant
                 ? {
                     primary: m.ticketTextVariant.primary,
-                    reinterpreted: m.ticketTextVariant.reinterpreted,
                     clean: m.ticketTextVariant.clean,
                     original: m.ticketTextVariant.original,
                   }

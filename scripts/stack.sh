@@ -68,13 +68,18 @@ kill_ports() {
   done
 }
 
+curl_health() {
+  local url="$1"
+  curl -sf --connect-timeout 1 --max-time 2 "$url" >/dev/null 2>&1
+}
+
 wait_ready() {
   echo "Waiting services..."
   for i in {1..60}; do
     ok_api=0
     ok_web=0
-    curl -sf http://localhost:3001/health >/dev/null 2>&1 && ok_api=1
-    curl -sf http://localhost:3000 >/dev/null 2>&1 && ok_web=1
+    curl_health http://localhost:3001/health && ok_api=1
+    curl_health http://localhost:3000 && ok_web=1
     if [ "$ok_api" -eq 1 ] && [ "$ok_web" -eq 1 ]; then
       echo "READY: web=http://localhost:3000 api=http://localhost:3001"
       return 0
@@ -128,13 +133,13 @@ cmd_status() {
     echo "web listener: stopped"
   fi
 
-  if curl -sf http://localhost:3001/health >/dev/null 2>&1; then
+  if curl_health http://localhost:3001/health; then
     echo "api health: ok"
   else
     echo "api health: down"
   fi
 
-  if curl -sf http://localhost:3000 >/dev/null 2>&1; then
+  if curl_health http://localhost:3000; then
     echo "web health: ok"
   else
     echo "web health: down"

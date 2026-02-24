@@ -401,3 +401,14 @@
 **Root cause**: Eu não confirmei explicitamente qual lista numerada estava ativa quando havia múltiplas listas numeradas no contexto recente (findings, next steps, plan steps).
 **Rule**: Quando o usuário usa referências numéricas curtas ("1 and 2", "3 and 4"), mapear primeiro para a última lista explicitamente discutida; se houver ambiguidade real, citar as opções antes de assumir.
 **Pattern**: Conversa com múltiplas listas numeradas + resposta curta do usuário => responder com mapeamento explícito ("you mean findings X/Y") antes de propor novo trabalho.
+
+## Lesson: 2026-02-24 (UI wording can hide code-scope requirements)
+**Mistake**: Interpretei "remove the reframed" como remoção apenas da opção visual do toggle, quando o usuário queria remover o conceito/campo do código-base.
+**Root cause**: Eu ancorei na screenshot/UI e executei o menor patch visual sem validar se "entirely from the codebase" era o escopo real do termo.
+**Rule**: Quando o usuário pede remover algo nomeado (ex.: `Reframed`) e mostra UI, confirmar/remover também o modelo de dados/campos associados, não só o controle visual.
+**Pattern**: Solicitação de UI + termo de domínio/campo explícito => procurar referências globais (`rg`) antes de limitar o patch ao componente.
+## Lesson: 2026-02-24 (display anti-regression can freeze low-quality intake fallbacks if provenance is ignored)
+**Mistake**: A correção anterior de anti-regressão para `company` preservava `ticket.company` de forma incondicional quando não era `unknown`, mantendo nomes degradados derivados de domínio na UI.
+**Root cause**: O anti-regressão tratava todo valor de intake como canônico sem distinguir valor real de empresa vs fallback heurístico de domínio.
+**Rule**: Campos de display críticos devem preservar intake somente quando o intake for de alta qualidade; se o valor tiver padrão de fallback por domínio, ele deve poder ser substituído por nome inferido/display-ready.
+**Pattern**: `company` continua com string colada tipo `Garmonandcompany` após correção de SSOT => verificar anti-regressão/proveniência, não apenas extração HTML.

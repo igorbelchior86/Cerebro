@@ -310,6 +310,10 @@ const ITGLUE_BASE: Record<string, string> = {
 
 const ITGLUE_EXTRACTOR_VERSION = 'v2-summary-2026-02-23';
 const NINJA_EXTRACTOR_VERSION = 'v1-summary-2026-02-23';
+const ITGLUE_ROUND2_REQUEST_BUDGET = 120;
+const ITGLUE_MAX_SCOPE_ORGS = 4;
+const ITGLUE_MAX_FLEXIBLE_ASSET_TYPES_PER_SCOPE = 24;
+const ITGLUE_MAX_DOCUMENT_EXPANSIONS = 12;
 
 const FACET_TERMS = {
   symptom: {
@@ -708,6 +712,9 @@ export class PrepareContextService {
     let itglueDocumentRelatedItemsById: Record<string, any[]> = {};
     let itglueCollectionErrors: string[] = [];
     let itglueScopeOrgs: Array<{ id: string; name: string; reason: string }> = [];
+    let itglueRequestBudgetRemaining = ITGLUE_ROUND2_REQUEST_BUDGET;
+    let itglueAssetTypesTotal = 0;
+    let itglueAssetTypesSelectedPerScope = 0;
     let itglueEnriched: ItglueEnrichedPayload | null = null;
 
     // ROUND 1: AT/Intake -> IT Glue (Targeting Org/Contacts/Standards)
@@ -738,14 +745,34 @@ export class PrepareContextService {
       }
 
       if (itglueOrgMatch) {
+        const budgetedITG = async <T>(label: string, fn: () => Promise<T>): Promise<T> => {
+          if (itglueRequestBudgetRemaining <= 0) {
+            throw new Error(`IT Glue request budget exceeded in round 2 before ${label}`);
+          }
+          itglueRequestBudgetRemaining -= 1;
+          return fn();
+        };
+        const safeBudgetedITG = async <T>(label: string, fn: () => Promise<T>): Promise<T> => {
+          try {
+            return await budgetedITG(label, fn);
+          } catch (error) {
+            const msg = String((error as Error)?.message || error);
+            if (/429/.test(msg)) {
+              itglueCollectionErrors.push(`rate_limit:${label}: ${msg}`);
+            }
+            throw error;
+          }
+        };
+
         itglueScopeOrgs = await this.resolveITGlueOrgFamilyScopes(itglueClient, itglueOrgMatch, companyName)
           .catch((err: unknown) => {
             itglueCollectionErrors.push(`scope_resolution: ${(err as Error)?.message || String(err)}`);
             return [{ id: itglueOrgMatch!.id, name: itglueOrgMatch!.name, reason: 'matched' }];
           });
+        itglueScopeOrgs = itglueScopeOrgs.slice(0, ITGLUE_MAX_SCOPE_ORGS);
 
         const assetTypesResult = await Promise.allSettled([
-          itglueClient.getFlexibleAssetTypes(200),
+          safeBudgetedITG('flexible_asset_types', () => itglueClient.getFlexibleAssetTypes(200)),
         ]).then((results) => results[0]);
 
         if (assetTypesResult.status !== 'fulfilled') {
@@ -753,18 +780,21 @@ export class PrepareContextService {
             `flexible_asset_types: ${(assetTypesResult.reason as Error)?.message || String(assetTypesResult.reason)}`
           );
         }
+        if (assetTypesResult.status === 'fulfilled') {
+          itglueAssetTypesTotal = Array.isArray(assetTypesResult.value) ? assetTypesResult.value.length : 0;
+        }
 
         for (const scope of itglueScopeOrgs) {
           const scopeLabel = `${scope.name} (${scope.id})`;
           const coreResults = await Promise.allSettled([
-            itglueClient.getOrganizationById(scope.id).then((org) => org?.attributes || {}),
-            itglueClient.getConfigurations(scope.id, 200),
-            itglueClient.getContacts(scope.id, 200),
-            itglueClient.getPasswords(scope.id, 200),
-            itglueClient.getLocations(scope.id, 200),
-            itglueClient.getDomains(scope.id, 200),
-            itglueClient.getSslCertificates(scope.id, 200),
-            itglueClient.getOrganizationDocumentsRaw(scope.id, 200),
+            safeBudgetedITG(`org_details[${scope.id}]`, () => itglueClient.getOrganizationById(scope.id).then((org) => org?.attributes || {})),
+            safeBudgetedITG(`configurations[${scope.id}]`, () => itglueClient.getConfigurations(scope.id, 200)),
+            safeBudgetedITG(`contacts[${scope.id}]`, () => itglueClient.getContacts(scope.id, 200)),
+            safeBudgetedITG(`passwords[${scope.id}]`, () => itglueClient.getPasswords(scope.id, 200)),
+            safeBudgetedITG(`locations[${scope.id}]`, () => itglueClient.getLocations(scope.id, 200)),
+            safeBudgetedITG(`domains[${scope.id}]`, () => itglueClient.getDomains(scope.id, 200)),
+            safeBudgetedITG(`ssl_certs[${scope.id}]`, () => itglueClient.getSslCertificates(scope.id, 200)),
+            safeBudgetedITG(`documents_raw[${scope.id}]`, () => itglueClient.getOrganizationDocumentsRaw(scope.id, 200)),
           ]);
 
           const [
@@ -823,8 +853,19 @@ export class PrepareContextService {
           }
 
           if (assetTypesResult.status === 'fulfilled') {
+            const scopedAssetTypes = this.selectITGlueFlexibleAssetTypesForTicket({
+              assetTypes: assetTypesResult.value,
+              ticketNarrative,
+              docs,
+              maxTypes: ITGLUE_MAX_FLEXIBLE_ASSET_TYPES_PER_SCOPE,
+            });
+            itglueAssetTypesSelectedPerScope = Math.max(itglueAssetTypesSelectedPerScope, scopedAssetTypes.length);
             const assetCandidates = await Promise.allSettled(
-              assetTypesResult.value.map((t: any) => itglueClient.getFlexibleAssets(String(t.id), scope.id, 200))
+              scopedAssetTypes.map((t: any) =>
+                safeBudgetedITG(`flexible_assets[${scope.id}][${String(t?.id || 'unknown')}]`, () =>
+                  itglueClient.getFlexibleAssets(String(t.id), scope.id, 200)
+                )
+              )
             );
             assetCandidates.forEach((result, idx) => {
               if (result.status === 'fulfilled') {
@@ -832,9 +873,9 @@ export class PrepareContextService {
                 return;
               }
               const assetTypeName = String(
-                assetTypesResult.value[idx]?.attributes?.name ||
-                assetTypesResult.value[idx]?.attributes?.['name'] ||
-                assetTypesResult.value[idx]?.id ||
+                scopedAssetTypes[idx]?.attributes?.name ||
+                scopedAssetTypes[idx]?.attributes?.['name'] ||
+                scopedAssetTypes[idx]?.id ||
                 `type_${idx}`
               );
               itglueCollectionErrors.push(
@@ -848,12 +889,13 @@ export class PrepareContextService {
           itglueDocumentsRaw
             .map((doc: any) => String(doc?.id || '').trim())
             .filter(Boolean)
-        )].slice(0, 50);
+        )]
+          .slice(0, Math.max(0, Math.min(ITGLUE_MAX_DOCUMENT_EXPANSIONS, Math.floor(itglueRequestBudgetRemaining / 2))));
         const attachmentResults = await Promise.allSettled(
-          docIdsForExpansion.map((docId) => itglueClient.getDocumentAttachments(docId, 100))
+          docIdsForExpansion.map((docId) => safeBudgetedITG(`document_attachments[${docId}]`, () => itglueClient.getDocumentAttachments(docId, 100)))
         );
         const relatedItemResults = await Promise.allSettled(
-          docIdsForExpansion.map((docId) => itglueClient.getDocumentRelatedItems(docId, 100))
+          docIdsForExpansion.map((docId) => safeBudgetedITG(`document_related_items[${docId}]`, () => itglueClient.getDocumentRelatedItems(docId, 100)))
         );
         docIdsForExpansion.forEach((docId, idx) => {
           const attach = attachmentResults[idx];
@@ -956,6 +998,10 @@ export class PrepareContextService {
           `document_related_items: ${Object.keys(itglueDocumentRelatedItemsById).length} docs expanded`,
           runbooksEndpointUnavailable ? 'runbooks endpoint: unavailable (404)' : `runbooks: ${docs.length}`,
           ...(itglueCollectionErrors.length ? [`partial errors: ${itglueCollectionErrors.length}`] : []),
+          `itglue round2 request budget: used ${ITGLUE_ROUND2_REQUEST_BUDGET - itglueRequestBudgetRemaining}/${ITGLUE_ROUND2_REQUEST_BUDGET} (remaining ${itglueRequestBudgetRemaining})`,
+          itglueAssetTypesTotal > 0
+            ? `flexible asset types selected per scope: ${itglueAssetTypesSelectedPerScope}/${itglueAssetTypesTotal}`
+            : 'flexible asset types selected per scope: unavailable',
           `credential scope: ${credentialScope}`,
         ],
         why_selected: [
@@ -3625,7 +3671,7 @@ export class PrepareContextService {
     const scored = Array.from(deduped.values())
       .filter((x) => x.reason === 'matched' || x.reason === 'parent' || x.reason === 'ancestor' || x.score >= 0.45)
       .sort((a, b) => b.priority - a.priority || b.score - a.score || a.name.localeCompare(b.name))
-      .slice(0, 8)
+      .slice(0, ITGLUE_MAX_SCOPE_ORGS)
       .map(({ id, name, reason }) => ({ id, name, reason }));
 
     return scored.length > 0 ? scored : [{ id: matchedOrg.id, name: matchedOrg.name, reason: 'matched' }];
@@ -4034,12 +4080,27 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
 
     const ticket = input.ticket;
     const normalized = input.normalizedTicket || null;
+    const intakeCompanyRaw = String(ticket.company || '').trim();
+    const inferredCompanyRaw = String(input.companyName || '').trim();
+    const normalizeCompanyComparable = (value: string) =>
+      this.normalizeOrgNameForMatch(this.normalizeName(String(value || '')));
 
-    out.company = pickBetter(
-      out.company,
-      this.normalizeName(ticket.company || ''),
-      this.normalizeName(input.companyName || '')
-    );
+    // Company is a display-critical intake field. Preserve intake formatting and punctuation when available,
+    // and prevent later normalization/fusion variants (e.g. concatenated domain-derived names) from regressing it.
+    if (!isUnknown(intakeCompanyRaw)) {
+      out.company = intakeCompanyRaw;
+    } else if (!isUnknown(inferredCompanyRaw)) {
+      if (
+        isUnknown(out.company) ||
+        normalizeCompanyComparable(String(out.company || '')) === normalizeCompanyComparable(inferredCompanyRaw)
+      ) {
+        out.company = inferredCompanyRaw;
+      } else {
+        out.company = pickBetter(out.company, inferredCompanyRaw);
+      }
+    } else {
+      out.company = pickBetter(out.company);
+    }
 
     out.requester_name = pickBetter(
       out.requester_name,
@@ -4141,13 +4202,20 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
     }
 
     const fallbackResolutions = this.buildDeterministicFusionFallbackResolutions(input, links);
+    const validatedLlmResolutions = this.validateFusionLlmResolutions({
+      resolutions: llmOutput?.resolutions || [],
+      fieldCandidates,
+      deterministicLinks: links,
+      deterministicInferences: inferences,
+    });
     const mergedOutput: FusionAdjudicationOutput = {
       resolutions: [
-        ...((llmOutput?.resolutions || []).filter((r) => supportedPaths.has(r.path))),
-        ...fallbackResolutions.filter((r) => !llmOutput?.resolutions?.some((x) => x.path === r.path)),
+        ...validatedLlmResolutions.filter((r) => supportedPaths.has(r.path)),
+        ...fallbackResolutions.filter((r) => !validatedLlmResolutions.some((x) => x.path === r.path)),
       ],
-      links: [...(llmOutput?.links || []), ...links.filter((l) => !llmOutput?.links?.some((x) => x.id === l.id))],
-      inferences: [...(llmOutput?.inferences || []), ...inferences.filter((i) => !llmOutput?.inferences?.some((x) => x.id === i.id))],
+      // Never trust LLM-generated links/inferences directly; keep only deterministic candidates built by the pipeline.
+      links,
+      inferences,
       conflicts: llmOutput?.conflicts || [],
     };
 
@@ -4465,6 +4533,7 @@ Rules:
 1. Return ONLY valid JSON.
 2. If uncertain, prefer status="unknown" or "conflict".
 3. For non-unknown resolutions, evidence_refs must be non-empty.
+3.1. DO NOT invent evidence sources, systems, people, or inference IDs not present in the provided candidates/links/inferences.
 4. Use resolution_mode:
    - direct (single-source direct observation)
    - assembled (complementary multi-source assembly)
@@ -4504,7 +4573,7 @@ Output schema:
   "resolutions": [
     {
       "path": "ticket.affected_user_name",
-      "value": "Alex Hall",
+      "value": "new employee (name not provided)",
       "status": "confirmed|inferred|unknown|conflict",
       "confidence": 0.0,
       "resolution_mode": "direct|assembled|inferred|fallback|unknown",
@@ -4557,6 +4626,96 @@ Output schema:
         evidence_refs: Array.isArray(c?.evidence_refs) ? c.evidence_refs.map(String) : undefined,
       })) : [],
     };
+  }
+
+  private validateFusionLlmResolutions(input: {
+    resolutions: FusionFieldResolution[];
+    fieldCandidates: FusionFieldCandidate[];
+    deterministicLinks: FusionLink[];
+    deterministicInferences: FusionInference[];
+  }): FusionFieldResolution[] {
+    const allowedEvidenceRefs = new Set<string>();
+    for (const candidate of input.fieldCandidates) {
+      for (const ref of candidate.evidence_refs || []) {
+        const value = String(ref || '').trim();
+        if (value) allowedEvidenceRefs.add(value);
+      }
+    }
+    for (const link of input.deterministicLinks) {
+      for (const ref of link.evidence_refs || []) {
+        const value = String(ref || '').trim();
+        if (value) allowedEvidenceRefs.add(value);
+      }
+    }
+    for (const inf of input.deterministicInferences) {
+      for (const ref of inf.evidence_chain || []) {
+        const value = String(ref || '').trim();
+        if (value) allowedEvidenceRefs.add(value);
+      }
+    }
+
+    const allowedInferenceIds = new Set(
+      input.deterministicInferences.map((i) => String(i?.id || '').trim()).filter(Boolean)
+    );
+    const candidateValuesByPath = new Map<string, Set<string>>();
+    const normalizeCandidateValue = (value: unknown) => this.normalizeFusionCandidateValueForCompare(value);
+    for (const candidate of input.fieldCandidates) {
+      const key = String(candidate.path || '');
+      if (!key) continue;
+      const set = candidateValuesByPath.get(key) || new Set<string>();
+      const normalized = normalizeCandidateValue(candidate.value);
+      if (normalized) set.add(normalized);
+      candidateValuesByPath.set(key, set);
+    }
+
+    const guardedIdentityPaths = new Set([
+      'ticket.affected_user_name',
+      'ticket.affected_user_email',
+      'identity.user_principal_name',
+    ]);
+
+    const out: FusionFieldResolution[] = [];
+    for (const resolution of input.resolutions || []) {
+      const refs = Array.isArray(resolution.evidence_refs) ? resolution.evidence_refs.map((r) => String(r || '').trim()).filter(Boolean) : [];
+      const infRefs = Array.isArray(resolution.inference_refs) ? resolution.inference_refs.map((r) => String(r || '').trim()).filter(Boolean) : [];
+      const invalidEvidence = refs.some((ref) => !allowedEvidenceRefs.has(ref));
+      if (invalidEvidence) {
+        continue;
+      }
+      const invalidInference = infRefs.some((id) => !allowedInferenceIds.has(id));
+      if (invalidInference) {
+        continue;
+      }
+
+      if (guardedIdentityPaths.has(String(resolution.path || ''))) {
+        const normalizedValue = normalizeCandidateValue(resolution.value);
+        const candidateSet = candidateValuesByPath.get(String(resolution.path || '')) || new Set<string>();
+        const hasDeterministicInference = infRefs.length > 0 && infRefs.every((id) => allowedInferenceIds.has(id));
+        const isUnknownLike = this.isFusionUnknownValue(this.normalizeFusionResolutionValue(resolution.path, resolution.value));
+        if (!isUnknownLike && !candidateSet.has(normalizedValue) && !hasDeterministicInference) {
+          continue;
+        }
+      }
+
+      out.push({
+        ...resolution,
+        evidence_refs: refs,
+        ...(infRefs.length ? { inference_refs: infRefs } : {}),
+      });
+    }
+    return out;
+  }
+
+  private normalizeFusionCandidateValueForCompare(value: unknown): string {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'object') {
+      try {
+        return JSON.stringify(value).toLowerCase();
+      } catch {
+        return '';
+      }
+    }
+    return this.normalizeName(String(value || '')).toLowerCase();
   }
 
   private buildDeterministicFusionFallbackResolutions(input: {
@@ -5317,6 +5476,58 @@ Output schema:
         return { ...doc, relevance: Number(Math.max(Number(doc.relevance || 0), score).toFixed(3)) };
       })
       .sort((a, b) => Number(b.relevance || 0) - Number(a.relevance || 0));
+  }
+
+  private selectITGlueFlexibleAssetTypesForTicket(input: {
+    assetTypes: Array<{ id: string; attributes?: Record<string, unknown> }>;
+    ticketNarrative: string;
+    docs?: Doc[];
+    maxTypes: number;
+  }): Array<{ id: string; attributes?: Record<string, unknown> }> {
+    const maxTypes = Math.max(1, input.maxTypes || ITGLUE_MAX_FLEXIBLE_ASSET_TYPES_PER_SCOPE);
+    const sourceText = [
+      input.ticketNarrative || '',
+      ...(input.docs || []).slice(0, 8).map((d) => `${d.title} ${d.snippet}`),
+    ]
+      .join(' ')
+      .toLowerCase();
+
+    const genericHighValuePatterns: Array<{ pattern: RegExp; score: number }> = [
+      { pattern: /\b(internet|wan|isp|network)\b/i, score: 10 },
+      { pattern: /\b(router|firewall|fortigate|sonicwall|vpn)\b/i, score: 9 },
+      { pattern: /\b(wifi|wireless|ssid|access point|unifi|meraki)\b/i, score: 8 },
+      { pattern: /\b(switch|lan)\b/i, score: 7 },
+      { pattern: /\b(domain|dns|ssl|certificate)\b/i, score: 5 },
+      { pattern: /\b(server|endpoint|workstation|computer|desktop|laptop|device)\b/i, score: 4 },
+      { pattern: /\b(user|employee|onboarding|new hire|install)\b/i, score: 3 },
+    ];
+
+    const tokenHints = new Set(
+      sourceText
+        .split(/[^a-z0-9]+/)
+        .map((t) => t.trim())
+        .filter((t) => t.length >= 4)
+        .slice(0, 80)
+    );
+
+    const ranked = (input.assetTypes || [])
+      .map((t: any) => {
+        const name = String(this.itgAttr(t?.attributes || {}, 'name') || '').trim();
+        const lower = name.toLowerCase();
+        let score = 0;
+        for (const rule of genericHighValuePatterns) {
+          if (rule.pattern.test(lower)) score += rule.score;
+        }
+        for (const token of tokenHints) {
+          if (lower.includes(token)) score += token.length >= 8 ? 1.2 : 0.7;
+        }
+        if (/\b(billing|finance|hr|archive)\b/i.test(lower)) score -= 2;
+        return { type: t, score, name: lower || String(t?.id || '') };
+      })
+      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+
+    const selected = ranked.slice(0, maxTypes).map((x) => x.type);
+    return selected.length > 0 ? selected : (input.assetTypes || []).slice(0, maxTypes);
   }
 
   private collectTextPairs(
@@ -6174,7 +6385,13 @@ Output schema:
   }
 
   private inferCompanyNameFromTicketText(text: string): string {
-    const raw = String(text || '');
+    const raw = String(text || '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'");
     const bodyPatterns = [
       /\bhas been created for\s+([A-Z][A-Za-z0-9&.,'()\-\s]{2,80}?)\s*\.\s*we will attend/i,
       /\bcreated for\s+([A-Z][A-Za-z0-9&.,'()\-\s]{2,80}?)\s*\.\s*/i,

@@ -185,6 +185,31 @@ export default function SessionDetail({
     return normalizePlainText(current, fallback) || fallback;
   };
 
+  const isSpecificUiUser = (value?: string) => {
+    const normalized = normalizePlainText(value, '').toLowerCase();
+    if (!normalized || normalized === 'unknown') return false;
+    if (/name not provided/.test(normalized)) return false;
+    if (/^(new|another|the)\s+employee\b/.test(normalized)) return false;
+    if (/^employee\b/.test(normalized)) return false;
+    if (/^new hire\b/.test(normalized)) return false;
+    return true;
+  };
+
+  const selectUiUserFromSsot = (input: {
+    affected?: string | undefined;
+    requester?: string | undefined;
+    fallbacks?: Array<string | undefined>;
+  }) => {
+    const affected = normalizePlainText(input.affected, '');
+    if (isSpecificUiUser(affected)) return affected;
+    const requester = normalizePlainText(input.requester, '');
+    if (isMeaningfulText(requester)) return requester;
+    for (const fallback of input.fallbacks || []) {
+      if (isMeaningfulText(fallback)) return normalizePlainText(fallback, 'Unknown user');
+    }
+    return 'Unknown user';
+  };
+
   const getTicketContextMeta = (ticket?: ActiveTicket) => {
     if (!ticket) return selectedTicketId;
     const parts = [
@@ -278,13 +303,12 @@ export default function SessionDetail({
         const requester = pickStableText(
           snapshot?.requester,
           [
-            ssot.affected_user_name,
-            ssot.requester_name,
-            backendTicket.requester_normalized,
-            backendTicket.requester,
-            currentTicket?.requester,
+            selectUiUserFromSsot({
+              affected: ssot.affected_user_name || backendTicket.affected_user_normalized,
+              requester: ssot.requester_name || backendTicket.requester_normalized || backendTicket.requester,
+              fallbacks: [currentTicket?.requester, packUser.name],
+            }),
             currentTicket?.site,
-            packUser.name,
           ],
           'Unknown user'
         );
@@ -588,15 +612,11 @@ export default function SessionDetail({
   const displayTickets = sidebarTickets;
   const canonicalTicketId = data?.session.ticket_id || selectedTicketId;
   const selectedTicket = displayTickets.find((t) => t.id === canonicalTicketId || t.ticket_id === canonicalTicketId);
-  const canonicalRequesterUi = normalizePlainText(
-    data?.ssot?.affected_user_name ||
-    data?.ssot?.requester_name ||
-    data?.ticket?.affected_user_normalized ||
-    data?.ticket?.requester_normalized ||
-    data?.ticket?.requester ||
-    selectedTicket?.requester,
-    'Unknown requester'
-  );
+  const canonicalRequesterUi = selectUiUserFromSsot({
+    affected: data?.ssot?.affected_user_name || data?.ticket?.affected_user_normalized,
+    requester: data?.ssot?.requester_name || data?.ticket?.requester_normalized || data?.ticket?.requester,
+    fallbacks: [selectedTicket?.requester],
+  });
   const canonicalCompanyUi = normalizePlainText(
     data?.ssot?.company || data?.ticket?.company || selectedTicket?.company || selectedTicket?.org,
     'Unknown org'
@@ -638,13 +658,14 @@ export default function SessionDetail({
         {
           key: 'User',
           val: normalizePlainText(
-            data?.ssot?.affected_user_name ||
-            data?.ssot?.requester_name ||
-            selectedTicketView?.requester,
+            selectUiUserFromSsot({
+              affected: data?.ssot?.affected_user_name,
+              requester: data?.ssot?.requester_name,
+              fallbacks: [selectedTicketView?.requester],
+            }),
             'Unknown user'
           ),
         },
-        { key: 'Site', val: selectedTicketView?.site || 'Unknown site' },
         {
           key: 'ISP',
           val: data?.ssot?.isp_name || data.evidence_pack?.external_status?.[0]?.provider || 'Unknown',

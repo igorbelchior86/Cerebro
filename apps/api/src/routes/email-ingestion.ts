@@ -241,6 +241,22 @@ router.get('/list', async (_req: Request, res: Response) => {
             if (blocked.some((label) => normalized === label.toLowerCase())) return false;
             return normalized !== 'unknown';
         };
+        const isSpecificAffectedUser = (value?: string) => {
+            const normalized = normalizeText(value, '').toLowerCase();
+            if (!normalized || normalized === 'unknown') return false;
+            if (/name not provided/.test(normalized)) return false;
+            if (/^(new|another|the)\s+employee\b/.test(normalized)) return false;
+            if (/^employee\b/.test(normalized)) return false;
+            if (/^new hire\b/.test(normalized)) return false;
+            return true;
+        };
+        const selectUiUserFromSsot = (ssot: any, fallbackRequester: string) => {
+            const affected = normalizeText(ssot?.affected_user_name, '');
+            const requester = normalizeText(ssot?.requester_name, '');
+            if (isSpecificAffectedUser(affected)) return affected;
+            if (isMeaningful(requester, 'Unknown requester', 'requester', 'user')) return requester;
+            return fallbackRequester;
+        };
         const mapped = (pipelineRows as any[])
             .map((row) => {
                 const pack = row.evidence_payload || {};
@@ -270,7 +286,7 @@ router.get('/list', async (_req: Request, res: Response) => {
 
                 const processedRequester = extractRequester(row.requester, row.raw_body);
                 const packRequester = normalizeText(packUser.name, '');
-                const ssotRequester = normalizeText(ssot.requester_name, '');
+                const ssotRequester = selectUiUserFromSsot(ssot, '');
                 const canonicalRequester = normalizeText(
                     normalizedTicketSection?.affected_user_name?.value ||
                     normalizedTicketSection?.requester_name?.value,

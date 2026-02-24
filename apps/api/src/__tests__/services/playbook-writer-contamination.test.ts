@@ -24,4 +24,25 @@ describe('PlaybookWriter contamination guard', () => {
     expect(cleaned).toContain('Verify Device Configuration');
     expect(cleaned).toContain('Verify Phone Line Service');
   });
+
+  it('does not block legitimate troubleshooting terms like API response or debug logs', () => {
+    const service = new PlaybookWriterService() as any;
+    const legitimate = `
+# Network Playbook
+1. [H1] Check API response from Job Runner service endpoint for timeout or 5xx errors
+2. [H2] Review application debug logs on the tablet and WAP event logs
+3. [H3] Verify DHCP lease and gateway reachability
+`;
+    expect(service.hasInternalLeakage(legitimate)).toBe(false);
+  });
+
+  it('still blocks explicit model-meta leakage phrasing', () => {
+    const service = new PlaybookWriterService() as any;
+    const leaked = `
+# Network Playbook
+1. Debug the prompt used for playbook generation
+2. Inspect model API response and parse JSON
+`;
+    expect(service.hasInternalLeakage(leaked)).toBe(true);
+  });
 });

@@ -19,9 +19,9 @@ const INTERNAL_LEAK_PATTERNS: RegExp[] = [
   /\bmodel output\b/i,
   /\bchain of thought\b/i,
   /\bsystem instruction\b/i,
-  /\bdebug\b/i,
+  /\bdebug\s+(?:the\s+)?(?:prompt|model|llm|json)\b/i,
   /\bparse(?:r|)\s+json\b/i,
-  /\bapi response\b/i,
+  /\b(?:llm|model)\s+api response\b/i,
 ];
 
 export class PlaybookWriterService {

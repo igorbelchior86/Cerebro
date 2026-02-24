@@ -300,3 +300,39 @@
 **Root cause**: O tenant retornava `404` no endpoint global `/documents` filtrado por org (mas o nested funcionava), e parte da extração lia attrs em `snake_case` enquanto a API devolvia `kebab-case`; além disso erros viravam `[]` em alguns paths.
 **Rule**: Em troubleshooting de IT Glue, sempre confirmar endpoint (global vs nested), permissões e naming (`kebab/snake`) com probe real antes de concluir “sem dados”.
 **Pattern**: UI mostra dados + snapshot API mostra zeros => verificar primeiro `404/403 masked`, rota nested, e parser de atributos.
+
+## Lesson: 2026-02-24 (multi-scope collection can silently blow API quota without per-round budgets)
+**Mistake**: Ampliei a coleta IT Glue para parent+child orgs e flexible assets, mas sem guardrails explícitos de volume por ticket.
+**Root cause**: O loop `scope_orgs x flexible_asset_types` multiplicou chamadas rapidamente (centenas por ticket), e a expansão de attachments/related items adicionou mais fan-out.
+**Rule**: Toda coleta multi-scope/multi-endpoint precisa de budget por round (request cap), limites de escopo, limites de fan-out e priorização de endpoints/tipos por relevância.
+**Pattern**: Se um fix melhora cobertura mas o tenant começa a retornar 429/quota exceeded, revisar imediatamente loops de cartesian product e adicionar request budgets auditáveis no `source_findings`.
+
+## Lesson: 2026-02-24 (LLM fusion output must be schema-valid AND evidence-grounded)
+**Mistake**: O pipeline aceitou uma inferência LLM inventada (`internal_hr_system`) e gravou `Alex Hall` no `SSOT` como affected user sem evidência real no ticket/IT Glue/Ninja.
+**Root cause**: A sanitização do `fusion` validava formato/schema, mas não validava grounding (`evidence_refs`/`inference_refs`) contra os candidatos/links/inferences realmente gerados pelo pipeline.
+**Rule**: Em fusão multi-fonte, saída da LLM só é válida se estiver ancorada em evidências e inferências previamente geradas pelo pipeline; `schema-valid` não basta.
+**Pattern**: Se `fusion_audit` menciona sistemas/fatos não presentes nos candidates (`internal_hr_system`, etc.), a validação pós-LLM está frouxa.
+
+## Lesson: 2026-02-24 (UI consistency requires shared SSOT-derived display semantics, not just shared payload)
+**Mistake**: Sidebar e center/right consumiam dados do mesmo ticket, mas exibiam “User” com semânticas diferentes (`requester` vs `affected_user`), criando split-brain visual.
+**Root cause**: Cada superfície tinha sua própria precedence/fallback para o campo exibido, sem uma regra comum derivada do SSOT.
+**Rule**: Se a UI diz usar SSOT, cada rótulo visual (ex.: `User`) precisa de uma regra única e compartilhada de derivação a partir do SSOT.
+**Pattern**: `sidebar user != right panel user` pode ser bug de semântica/fallback mesmo quando ambos “usam SSOT” parcialmente.
+
+## Lesson: 2026-02-24 (contamination guards need domain-safe allowability, not broad keyword bans)
+**Mistake**: O `PlaybookWriter` bloqueava playbooks legítimos de troubleshooting por regex ampla (`debug`, `api response`) no contamination guard.
+**Root cause**: Os padrões foram escritos para bloquear vazamento meta de LLM/engine, mas sem considerar que termos como `API response` e `debug logs` são comuns em playbooks operacionais.
+**Rule**: Guards anti-contaminação devem bloquear contexto meta explícito (`LLM/model/prompt/json response`) e evitar palavras genéricas usadas em troubleshooting técnico.
+**Pattern**: Falha consistente no `PlaybookWriter` com `Validation=approved` e `last_error=contamination guard blocked` => verificar regex overbroad antes de culpar PrepareContext/Diagnose.
+
+## Lesson: 2026-02-24 (SSOT anti-regression must preserve display-critical intake formatting, not only non-unknown semantics)
+**Mistake**: O `company` do ticket regrediu visualmente após processamento (ex.: nome colapsado/normalizado) porque o merge do SSOT só bloqueava `unknown`, não versões “significativas” porém piores que o intake.
+**Root cause**: `applyIntakeAntiRegressionToSSOT` usava `pickBetter` baseado apenas em `unknown`, permitindo que variantes processadas do mesmo nome substituíssem a forma canônica do intake.
+**Rule**: Campos de display críticos vindos do intake (`company`, `requester`) devem preservar a forma bruta canônica quando disponível; anti-regressão precisa proteger também contra regressão de formatação/qualidade, não só `unknown`.
+**Pattern**: UI correta logo após reset e piora após `Prepare Context` => verificar se o SSOT está sobrescrevendo valor de intake com variante semântica degradada.
+
+## Lesson: 2026-02-24 (company extraction from HTML emails must decode entities before regex matching)
+**Mistake**: A inferência de empresa caiu para fallback de domínio (`Garmonandcompany`) mesmo com a frase correta “created for GARMON & CO. INC.” presente no email do Autotask.
+**Root cause**: O parser aplicava regex no HTML cru com entidades (`&amp;`), e os padrões de empresa não toleravam a sequência codificada; isso quebrava a captura e ativava o fallback por domínio.
+**Rule**: Sempre decodificar entidades HTML básicas antes de regex semânticos em texto de email (`company`, `requester`, etc.).
+**Pattern**: Empresa correta visível em email HTML + SSOT mostra versão derivada do domínio => suspeitar de `&amp;`/entities quebrando regex de extração.

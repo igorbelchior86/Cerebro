@@ -85,6 +85,23 @@
 - Root cause confirmado por probe direto no IT Glue: empresa/match estavam corretos, mas dados relevantes estavam distribuídos entre org parent (`Composite`) e child (`CAT Resources`); além disso `/documents` global retornava 404 para o tenant e parte da extração lia attrs ITG em `snake_case` enquanto a API devolve `kebab-case`.
 - Fix aplicado: coleta IT Glue round 2 agora suporta `family scopes` (matched + parent/ancestors + children relevantes), `documents/passwords` com fallback nested-first no `ITGlueClient`, agregação multi-scope com `collection_errors`, e helper genérico `itgAttr(...)` para ler attrs ITG em kebab/snake/camel (+ traits).
 - Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após hardening multi-org + normalização de attrs ITG.
+- Guardrail de cota IT Glue adicionado no round 2: request budget explícito por ticket (`ITGLUE_ROUND2_REQUEST_BUDGET`), limite de org scopes, limite/ranking de `flexible_asset_types` por ticket e limite de expansão de docs (attachments/related items) conforme budget restante.
+- `source_findings` round 2 agora expõe consumo de budget e quantos tipos de flexible assets foram selecionados por scope, facilitando troubleshooting de quota.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após guardrails de quota IT Glue.
+- Bug crítico de vazamento no SSOT identificado em `T20260223.0006`: `runCrossSourceFusion` aceitou inferência LLM inventada (`internal_hr_system`) e sobrescreveu `ticket.affected_user_name` para `Alex Hall` sem evidência suportada.
+- Fix aplicado: resoluções LLM do fusion agora passam por validação determinística (evidence_refs/inference_refs devem existir nos candidatos/links/inferences gerados pelo pipeline; campos de identidade não aceitam valores fora dos candidatos sem inferência determinística válida). Links/inferences vindos da LLM deixaram de ser aceitos; apenas os determinísticos do pipeline entram no audit/merge.
+- Unificação UI/SSOT aplicada: sidebar (`/email-ingestion/list`) e center/right usam a mesma regra de exibição derivada do SSOT para "User" (affected user só quando específico; senão requester), eliminando split-brain `requester vs affected` semântica.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` e `pnpm --filter @playbook-brain/web typecheck` OK após fix de fusion+UI.
+- Root cause de falha consistente em `T20260221.0001` identificado no `PlaybookWriter`: falso positivo no contamination guard bloqueando termos técnicos legítimos (`API response`, `debug logs`) por regex ampla demais.
+- Fix aplicado no contamination guard: padrões internos foram estreitados para bloquear somente contexto meta de engine/modelo (`model/llm api response`, `debug prompt/model/llm/json`) e permitir troubleshooting operacional.
+- Testes de regressão adicionados/validados em `playbook-writer-contamination.test.ts` cobrindo ambos os lados (troubleshooting legítimo permitido + meta leakage ainda bloqueado).
+- Verificação: `pnpm --filter @playbook-brain/api test -- playbook-writer-contamination` e `pnpm --filter @playbook-brain/api typecheck` OK após fix do PlaybookWriter contamination guard.
+- Bug UI/SSOT corrigido: `company` mudava para variante degradada após processamento (ex.: nome colapsado sem pontuação) porque o SSOT aceitava versão processada significativa; anti-regressão do `PrepareContext` agora preserva o `ticket.company` bruto do intake como fonte canônica de display.
+- UI simplificada: removido campo `Site` da coluna direita (PlaybookPanel context cards) para eliminar vazamento de formatação e reduzir ruído até termos extração confiável.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` e `pnpm --filter @playbook-brain/web typecheck` OK após fix de company SSOT + remoção do campo Site.
+- Root cause adicional do nome de empresa errado em `T20260221.0001`: inferência de `company` no `PrepareContext` lia HTML cru sem decodificar entidades (`&amp;`), falhava em capturar “GARMON & CO. INC.” na frase “created for ...” e caía no fallback por domínio (`Garmonandcompany`).
+- Fix aplicado: `inferCompanyNameFromTicketText(...)` agora decodifica entidades HTML básicas antes dos regex de extração de empresa.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após fix de decodificação HTML na inferência de company.
 
 ## Review
 (fill in after completion)

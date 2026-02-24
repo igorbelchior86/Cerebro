@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { routing } from '@/i18n/routing';
 
 import '@/styles/globals.css';
+import { GeistSans } from 'geist/font/sans';
 import { GeistMono } from 'geist/font/mono';
 import { DM_Sans, JetBrains_Mono } from 'next/font/google';
 import type { Metadata } from 'next';
@@ -43,7 +44,7 @@ export default async function RootLayout({
   const messages = await getMessages();
 
   return (
-    <html lang={locale} data-theme="dark" className={`${dmSans.variable} ${jetbrainsMono.variable} ${GeistMono.variable}`}>
+  <html lang={locale} data-theme="dark" className={`${GeistSans.variable} ${dmSans.variable} ${jetbrainsMono.variable} ${GeistMono.variable}`}>
       <head>
         {/* Anti-FOUC: read saved theme from localStorage before first paint */}
         <script
@@ -52,7 +53,7 @@ export default async function RootLayout({
           }}
         />
       </head>
-      <body className={dmSans.className} style={{ background: 'var(--bg-root)' }}>
+      <body className={GeistSans.className} style={{ background: 'var(--bg-root)' }}>
         <NextIntlClientProvider messages={messages}>
           {children}
         </NextIntlClientProvider>

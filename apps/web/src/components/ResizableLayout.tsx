@@ -75,27 +75,46 @@ export default function ResizableLayout({ sidebarContent, mainContent, rightCont
   }, [sidebarWidth, rightWidth, user, updateProfile]);
 
   const resizerStyle = {
-    width: '4px',
+    width: '10px',
     cursor: 'col-resize',
     background: 'transparent',
     transition: 'background 0.2s',
     zIndex: 10,
     flexShrink: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
   };
 
+  const panelShellStyle = {
+    borderRadius: '18px',
+    border: '1px solid var(--bento-outline)',
+    background: 'var(--bg-bento-panel)',
+    boxShadow: 'var(--shadow-panel)',
+    overflow: 'hidden',
+  } as const;
+
   return (
-    <div className="flex h-screen" style={{ background: 'var(--bg-root)', overflow: 'hidden' }}>
+    <div
+      className="flex h-screen p-2.5 md:p-3"
+      style={{
+        background: 'var(--bg-root)',
+        overflow: 'hidden',
+        gap: '8px',
+      }}
+    >
       {/* Sidebar */}
       <div
         ref={sidebarRef}
         style={{
           width: `${sidebarWidth}px`,
           flexShrink: 0,
-          background: 'var(--bg-sidebar)',
           position: 'relative',
           display: 'flex',
           flexDirection: 'column',
-          height: '100vh', // allow children to escape overflow if positioning says so
+          height: '100%',
+          minHeight: 0,
+          ...panelShellStyle,
         }}
       >
         {sidebarContent}
@@ -109,12 +128,22 @@ export default function ResizableLayout({ sidebarContent, mainContent, rightCont
           document.body.style.cursor = 'col-resize';
           document.body.style.userSelect = 'none';
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent, rgba(91,127,255,0.5))'; }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(110,134,201,0.06)'; }}
         onMouseLeave={(e) => { if (!isResizingSidebar.current) e.currentTarget.style.background = 'transparent'; }}
-      />
+      >
+        <div style={{ width: '1px', height: '42%', background: 'var(--bento-outline-strong)', borderRadius: '999px' }} />
+      </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col" style={{ minWidth: 0, background: 'var(--bg-root)' }}>
+      <div
+        className="flex-1 flex flex-col"
+        style={{
+          minWidth: 0,
+          minHeight: 0,
+          height: '100%',
+          ...panelShellStyle,
+        }}
+      >
         {mainContent}
       </div>
 
@@ -128,9 +157,11 @@ export default function ResizableLayout({ sidebarContent, mainContent, rightCont
               document.body.style.cursor = 'col-resize';
               document.body.style.userSelect = 'none';
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--accent, rgba(91,127,255,0.5))'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(110,134,201,0.06)'; }}
             onMouseLeave={(e) => { if (!isResizingRight.current) e.currentTarget.style.background = 'transparent'; }}
-          />
+          >
+            <div style={{ width: '1px', height: '42%', background: 'var(--bento-outline-strong)', borderRadius: '999px' }} />
+          </div>
           <div
             ref={rightRef}
             style={{
@@ -138,12 +169,10 @@ export default function ResizableLayout({ sidebarContent, mainContent, rightCont
               flexShrink: 0,
               minWidth: 0,
               minHeight: 0,
-              height: '100vh',
-              background: 'var(--bg-sidebar)', // Or card background
-              borderLeft: '1px solid var(--border)',
+              height: '100%',
               display: 'flex',
               flexDirection: 'column',
-              overflow: 'hidden',
+              ...panelShellStyle,
             }}
           >
             {rightContent}

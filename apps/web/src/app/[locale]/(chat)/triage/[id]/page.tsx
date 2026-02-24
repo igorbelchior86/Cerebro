@@ -900,27 +900,28 @@ export default function SessionDetail({
         />
       }
       mainContent={
-        <div className="flex-1 flex flex-col" style={{ background: 'var(--bg-root)', minWidth: 0, height: '100%' }}>
-          {/* Header */}
-          <div
-            className="px-5 py-3 flex items-center gap-3 flex-shrink-0"
-            style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}
-          >
+        <div className="flex-1 flex flex-col" style={{ background: 'transparent', minWidth: 0, height: '100%', minHeight: 0, padding: '10px', gap: '8px' }}>
+          <div style={{ border: '1px solid var(--bento-outline)', borderRadius: '14px', background: 'var(--bg-card)', overflow: 'hidden', flexShrink: 0 }}>
+            {/* Header */}
             <div
-              style={{
-                width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
-                background: playbookReady ? 'var(--green)' : loading ? '#EAB308' : 'var(--accent)',
-                boxShadow: loading || !playbookReady ? `0 0 6px ${loading ? '#EAB308' : 'var(--accent)'}` : undefined,
-              }}
-            />
-            <p style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {ticketLabel}
-            </p>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 600, color: 'var(--green)', background: 'var(--green-muted)', border: '1px solid var(--green-border)', visibility: playbookReady ? 'visible' : 'hidden' }}>
-              <svg width="8" height="8" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              {t('statusPlaybookReady')}
-            </span>
-            <button
+              className="px-4 py-3 flex items-center gap-3 flex-shrink-0"
+              style={{ borderBottom: '1px solid var(--bento-outline)', background: 'transparent' }}
+            >
+              <div
+                style={{
+                  width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                  background: playbookReady ? 'var(--green)' : loading ? '#EAB308' : 'var(--accent)',
+                  boxShadow: loading || !playbookReady ? `0 0 6px ${loading ? '#EAB308' : 'var(--accent)'}` : undefined,
+                }}
+              />
+              <p style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {ticketLabel}
+              </p>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 600, color: 'var(--green)', background: 'var(--green-muted)', border: '1px solid var(--green-border)', visibility: playbookReady ? 'visible' : 'hidden' }}>
+                <svg width="8" height="8" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                {t('statusPlaybookReady')}
+              </span>
+              <button
               onClick={handleToggleManualSuppression}
               aria-pressed={isManualSuppressed}
               disabled={isManualSuppressionSaving}
@@ -970,7 +971,7 @@ export default function SessionDetail({
                 <path d="M12.8 7.2l-5.6 5.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
               </svg>
             </button>
-            <button
+              <button
               onClick={handleRefreshPipeline}
               disabled={loading}
               style={{
@@ -1034,18 +1035,28 @@ export default function SessionDetail({
                 />
               </svg>
             </button>
-            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-jetbrains-mono)', marginLeft: playbookReady ? '0' : 'auto' }}>
-              {playbookReady ? '' : loading ? t('statusInitializing') : t('statusProcessing')}
-            </span>
-          </div>
-          <div className="px-5 pb-2" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
-            <p style={{ fontFamily: 'var(--font-jetbrains-mono)', fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.03em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {ticketMetaLabel}
-            </p>
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-jetbrains-mono)', marginLeft: playbookReady ? '0' : 'auto' }}>
+                {playbookReady ? '' : loading ? t('statusInitializing') : t('statusProcessing')}
+              </span>
+            </div>
+            <div className="px-4 py-2" style={{ background: 'transparent' }}>
+              <p style={{ fontFamily: 'var(--font-jetbrains-mono)', fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.03em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {ticketMetaLabel}
+              </p>
+            </div>
           </div>
 
           {/* Messages Container */}
-          <div className="flex-1 overflow-y-auto px-6 pt-5 pb-2">
+          <div
+            className="flex-1 overflow-y-auto"
+            style={{
+              padding: '14px 14px 8px',
+              border: '1px solid var(--bento-outline)',
+              borderRadius: '14px',
+              background: 'var(--bg-card)',
+              minHeight: 0,
+            }}
+          >
             {error && (
               <div
                 className="rounded-xl p-4 mb-4 text-sm"

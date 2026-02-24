@@ -137,11 +137,11 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
   const ticketId = data?.ticketId;
 
   return (
-    <div className="animate-slideInRight" style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0, flexShrink: 0, background: 'var(--bg-panel)', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden', borderLeft: '1px solid var(--border)' }}>
+    <div className="animate-slideInRight" style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0, flexShrink: 0, background: 'transparent', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
       <div style={{ position: 'absolute', top: '-60px', right: '-80px', width: '280px', height: '280px', borderRadius: '50%', background: 'var(--glow-playbook)', pointerEvents: 'none', zIndex: 0 }} />
 
       {/* Topbar */}
-      <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, position: 'relative', zIndex: 1, background: 'var(--bg-panel)' }}>
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--bento-outline)', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, position: 'relative', zIndex: 1, background: 'var(--bg-card)' }}>
         <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ color: '#1DB98A', flexShrink: 0 }}>
           <rect x="1" y="1" width="12" height="12" rx="3" stroke="currentColor" strokeWidth="1.4" />
           <path d="M4 5h6M4 7.5h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
@@ -155,7 +155,7 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
           )}
         </span>
         <button onClick={handleCopy}
-          style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px', borderRadius: '6px', fontSize: '10.5px', fontWeight: 600, border: `1px solid ${copied ? 'var(--green-border)' : 'var(--border)'}`, background: 'var(--bg-card)', color: copied ? 'var(--green)' : 'var(--text-secondary)', cursor: 'pointer', transition: 'var(--transition)' }}
+          style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px', borderRadius: '8px', fontSize: '10.5px', fontWeight: 600, border: `1px solid ${copied ? 'var(--green-border)' : 'var(--bento-outline)'}`, background: 'var(--bg-panel)', color: copied ? 'var(--green)' : 'var(--text-secondary)', cursor: 'pointer', transition: 'var(--transition)' }}
         >
           {copied ? (
             <span className="animate-check-pop" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -169,13 +169,13 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
             </span>
           )}
         </button>
-        <button style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px', borderRadius: '6px', fontSize: '10.5px', fontWeight: 600, border: '1px solid var(--accent)', background: 'var(--accent)', color: 'white', cursor: 'pointer', opacity: 0.88 }}>
+        <button style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px', borderRadius: '8px', fontSize: '10.5px', fontWeight: 600, border: '1px solid var(--border-accent)', background: 'var(--accent-muted)', color: 'var(--accent)', cursor: 'pointer', opacity: 0.95 }}>
           Export
         </button>
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '18px', position: 'relative', zIndex: 1 }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px', position: 'relative', zIndex: 1 }}>
         {ctx.length > 0 && (
           <div style={{ marginBottom: '22px' }}>
             <SectionLabel>Context</SectionLabel>

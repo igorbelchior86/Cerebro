@@ -94,6 +94,24 @@ function MetaIcon({ type }: { type: 'clock' | 'company' | 'user' }) {
   );
 }
 
+function CerebroBrandMark() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true" style={{ display: 'block' }}>
+      <defs>
+        <linearGradient id="cerebro-mark-gradient" x1="3" y1="3" x2="19" y2="19" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#8AA2FF" />
+          <stop offset="1" stopColor="#5E79D8" />
+        </linearGradient>
+      </defs>
+      <rect x="1.5" y="1.5" width="19" height="19" rx="7" fill="rgba(110,134,201,0.12)" stroke="rgba(110,134,201,0.28)" />
+      <path d="M14.8 7.1a4.9 4.9 0 1 0 0 7.8" stroke="url(#cerebro-mark-gradient)" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M13.1 9a2.8 2.8 0 1 0 0 4" stroke="url(#cerebro-mark-gradient)" strokeWidth="1.7" strokeLinecap="round" />
+      <circle cx="14.9" cy="11" r="1.15" fill="#9CB1FF" />
+      <path d="M6.2 11h4" stroke="rgba(156,177,255,0.72)" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 const HTML_ENTITY_MAP: Record<string, string> = {
   '&nbsp;': ' ',
   '&amp;': '&',
@@ -136,6 +154,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [hideSuppressed, setHideSuppressed] = useState(true);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [clock, setClock] = useState('');
@@ -235,11 +254,33 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   const ticketsBySuppression = hideSuppressed ? tickets.filter((t) => !t.suppressed) : tickets;
   const completed = ticketsBySuppression.filter((t) => t.status === 'completed').length;
   const processing = ticketsBySuppression.filter((t) => t.status === 'processing' || t.status === 'pending').length;
+  const normalizedSearch = searchQuery.trim().toLowerCase();
 
   const visible = ticketsBySuppression.filter((t) => {
-    if (filter === 'all') return true;
-    if (filter === 'processing') return t.status === 'processing' || t.status === 'pending';
-    return t.status === filter;
+    const statusMatch = filter === 'all'
+      ? true
+      : filter === 'processing'
+        ? t.status === 'processing' || t.status === 'pending'
+        : t.status === filter;
+    if (!statusMatch) return false;
+    if (!normalizedSearch) return true;
+
+    const haystack = [
+      t.ticket_id,
+      t.id,
+      t.title,
+      t.description,
+      t.company,
+      t.org,
+      t.requester,
+      t.site,
+      t.meta,
+    ]
+      .map((v) => normalizeText(v, ''))
+      .join(' ')
+      .toLowerCase();
+
+    return haystack.includes(normalizedSearch);
   });
 
   return (
@@ -271,43 +312,76 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
           });
         }}
       />
-      <aside style={{ width: '100%', minWidth: 0, flexShrink: 0, background: 'var(--bg-sidebar)', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', position: 'relative', height: '100%' }}>
+      <aside style={{ width: '100%', minWidth: 0, flexShrink: 0, background: 'transparent', display: 'flex', flexDirection: 'column', position: 'relative', height: '100%' }}>
         {/* Ambient glow */}
         <div style={{ position: 'absolute', top: '-100px', left: '-80px', width: '320px', height: '320px', borderRadius: '50%', background: 'var(--glow-sidebar)', pointerEvents: 'none', zIndex: 0 }} />
 
         {/* Header */}
-        <div style={{ padding: '18px 15px 13px', borderBottom: '1px solid var(--border)', position: 'relative', zIndex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '14px' }}>
-            <div style={{ width: '29px', height: '29px', borderRadius: '8px', background: 'linear-gradient(135deg, #6B8FFF 0%, #4060EE 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 16px rgba(91,127,255,0.32)', flexShrink: 0 }}>
-              <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M7 2l5 5-5 5" stroke="white" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        <div style={{ padding: '16px 14px 10px', position: 'relative', zIndex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+            <div style={{ width: '34px', height: '34px', borderRadius: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))', border: '1px solid var(--bento-outline)', boxShadow: 'var(--shadow-card)', flexShrink: 0 }}>
+              <CerebroBrandMark />
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.025em' }}>{t('appName')}</div>
-              <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8.5px', color: 'var(--text-muted)', letterSpacing: '0.09em', textTransform: 'uppercase', marginTop: '2px' }}>{t('appSubtitle')}</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: '14px', lineHeight: 1, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.03em' }}>Cerebro</div>
             </div>
-            {/* Clock + Theme toggle */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-              <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-muted)', letterSpacing: '0.04em', minWidth: '46px', textAlign: 'right' }}>{clock}</span>
-              <ThemeToggle theme={theme} onToggle={toggleTheme} size="sm" />
-            </div>
+            <label style={{ flex: 1, minWidth: 0, position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ position: 'absolute', left: '10px', color: 'var(--text-muted)', pointerEvents: 'none' }}>
+                <circle cx="7" cy="7" r="4.2" stroke="currentColor" strokeWidth="1.4" />
+                <path d="M10.5 10.5L13.6 13.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              </svg>
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search"
+                aria-label="Search tickets"
+                style={{
+                  width: '100%',
+                  height: '34px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--bento-outline)',
+                  background: 'var(--bg-card)',
+                  color: 'var(--text-primary)',
+                  padding: '0 11px 0 30px',
+                  fontSize: '12px',
+                  outline: 'none',
+                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.02)',
+                  transition: 'var(--transition)',
+                }}
+                onFocus={(e) => {
+                  (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--border-accent)';
+                  (e.currentTarget as HTMLInputElement).style.boxShadow = '0 0 0 3px var(--accent-glow)';
+                }}
+                onBlur={(e) => {
+                  (e.currentTarget as HTMLInputElement).style.borderColor = 'var(--bento-outline)';
+                  (e.currentTarget as HTMLInputElement).style.boxShadow = 'inset 0 1px 0 rgba(255,255,255,0.02)';
+                }}
+              />
+            </label>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '7px', padding: '8px 11px', borderRadius: '7px', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-            <span style={{ position: 'relative', display: 'inline-flex', width: '8px', height: '8px', flexShrink: 0 }}>
-              <span className="animate-ping" style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: '#1DB98A', opacity: 0.4 }} />
-              <span style={{ position: 'relative', width: '8px', height: '8px', borderRadius: '50%', background: '#1DB98A' }} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px 10px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--bento-outline)', marginBottom: '8px' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
+                <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.3" />
+                <path d="M8 4.8V8l2.4 1.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                {clock}
+              </span>
             </span>
-            <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', color: 'var(--text-muted)', letterSpacing: '0.03em' }}>{t('listeningAutotask')}</span>
+            <ThemeToggle theme={theme} onToggle={toggleTheme} size="sm" />
           </div>
         </div>
 
         {/* Stats */}
-        <div style={{ display: 'flex', padding: '9px 15px', borderBottom: '1px solid var(--border)', position: 'relative', zIndex: 1 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px', padding: '0 12px 6px', position: 'relative', zIndex: 1 }}>
           {[
             { val: processing, label: t('statActive'), color: 'var(--accent)' },
             { val: completed, label: t('statDoneToday'), color: 'var(--green)' },
             { val: tickets.length > 0 ? '4m' : '—', label: t('statAvgTime'), color: 'var(--text-muted)' },
           ].map((s) => (
-            <div key={s.label} style={{ flex: 1, textAlign: 'center', padding: '3px 0' }}>
+            <div key={s.label} style={{ textAlign: 'center', padding: '8px 6px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--bento-outline)' }}>
               <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '15px', fontWeight: 700, letterSpacing: '-0.04em', marginBottom: '3px', color: s.color }}>{s.val}</div>
               <div style={{ fontSize: '8.5px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{s.label}</div>
             </div>
@@ -315,10 +389,10 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
         </div>
 
         {/* Filters */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '12px 12px 8px', position: 'relative', zIndex: 1 }}>
-          <div style={{ display: 'flex', gap: '2px', flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 12px 8px', position: 'relative', zIndex: 1 }}>
+          <div style={{ display: 'flex', gap: '3px', flex: 1, minWidth: 0, padding: '3px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--bento-outline)' }}>
             {FILTERS.map((f) => (
-              <button type="button" key={f.id} onClick={() => setFilter(f.id)} style={{ flex: 1, padding: '5px 0', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '9.5px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', background: filter === f.id ? 'rgba(91,127,255,0.10)' : 'transparent', color: filter === f.id ? 'var(--accent)' : 'var(--text-muted)', transition: 'var(--transition)' }}>
+              <button type="button" key={f.id} onClick={() => setFilter(f.id)} style={{ flex: 1, padding: '6px 0', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '9.5px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', background: filter === f.id ? 'var(--accent-muted)' : 'transparent', color: filter === f.id ? 'var(--accent)' : 'var(--text-muted)', transition: 'var(--transition)' }}>
                 {t(f.localeKey as any)}
               </button>
             ))}
@@ -338,8 +412,8 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
               width: '28px',
               height: '28px',
               borderRadius: '8px',
-              border: `1px solid ${hideSuppressed ? 'rgba(91,127,255,0.28)' : 'var(--border)'}`,
-              background: hideSuppressed ? 'rgba(91,127,255,0.10)' : 'var(--bg-card)',
+              border: `1px solid ${hideSuppressed ? 'var(--border-accent)' : 'var(--bento-outline)'}`,
+              background: hideSuppressed ? 'var(--accent-muted)' : 'var(--bg-card)',
               color: hideSuppressed ? 'var(--accent)' : 'var(--text-muted)',
               display: 'inline-flex',
               alignItems: 'center',
@@ -363,7 +437,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                 padding: '0 3px',
                 borderRadius: '999px',
                 background: hideSuppressed ? 'var(--accent)' : 'var(--bg-card)',
-                border: `1px solid ${hideSuppressed ? 'rgba(91,127,255,0.34)' : 'var(--border)'}`,
+                border: `1px solid ${hideSuppressed ? 'var(--border-accent)' : 'var(--bento-outline)'}`,
                 color: hideSuppressed ? '#fff' : 'var(--text-muted)',
                 fontFamily: 'var(--font-jetbrains-mono, monospace)',
                 fontSize: '8px',
@@ -381,7 +455,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
         <div
           ref={listRef}
           onScroll={(e) => persistSidebarState(filter, (e.currentTarget as HTMLDivElement).scrollTop)}
-          style={{ flex: 1, overflowY: 'auto', padding: '2px 10px 10px', display: 'flex', flexDirection: 'column', gap: '6px', position: 'relative', zIndex: 1 }}
+          style={{ flex: 1, overflowY: 'auto', padding: '4px 10px 10px', display: 'flex', flexDirection: 'column', gap: '7px', position: 'relative', zIndex: 1 }}
         >
           {isLoading && tickets.length === 0 ? (
             [1, 2].map((i) => <div key={i} style={{ height: '80px', borderRadius: '9px', background: 'var(--bg-card)', border: '1px solid var(--border)', opacity: 0.6 }} />)
@@ -413,8 +487,8 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                   borderRadius: '12px',
                   cursor: 'pointer',
                   background: isActive ? 'var(--bg-card-active)' : 'var(--bg-card)',
-                  border: `1px solid ${isActive ? 'rgba(91,127,255,0.5)' : 'var(--border)'}`,
-                  boxShadow: isActive ? '0 0 0 1px rgba(91,127,255,0.24), 0 10px 26px rgba(29,34,55,0.25)' : '0 6px 16px rgba(20,24,38,0.12)',
+                  border: `1px solid ${isActive ? 'var(--border-accent)' : 'var(--bento-outline)'}`,
+                  boxShadow: isActive ? '0 0 0 1px var(--accent-muted), 0 10px 22px rgba(5,7,11,0.18)' : '0 6px 14px rgba(5,7,11,0.08)',
                   textAlign: 'left',
                   overflow: 'hidden',
                   width: '100%',
@@ -429,7 +503,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                 onMouseEnter={(e) => {
                   if (!isActive) {
                     (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card-hover)';
-                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(91,127,255,0.3)';
+                    (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-accent)';
                     (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 10px 22px rgba(20,24,38,0.2)';
                     (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)';
                   }
@@ -443,7 +517,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                   }
                 }}
               >
-                {isActive && <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 0% 50%, rgba(91,127,255,0.18) 0%, transparent 70%)', pointerEvents: 'none' }} />}
+                {isActive && <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at 0% 50%, var(--accent-glow) 0%, transparent 70%)', pointerEvents: 'none' }} />}
                 <div style={{ position: 'absolute', left: 0, top: 10, bottom: 10, width: '3px', borderRadius: '0 3px 3px 0', background: PRIORITY_COLOR[priority] ?? '#5B7FFF', opacity: isActive ? 1 : 0.55 }} />
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', width: '100%' }}>

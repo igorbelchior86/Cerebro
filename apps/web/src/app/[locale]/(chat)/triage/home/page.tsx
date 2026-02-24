@@ -131,13 +131,14 @@ export default function HomePage() {
     <ResizableLayout
       sidebarContent={<ChatSidebar tickets={sidebarTickets} isLoading={isLoadingTickets} onSelectTicket={(id) => router.push(`/triage/${id}`, { scroll: false })} />}
       mainContent={
-        <div className="flex-1 flex flex-col" style={{ background: 'var(--bg-root)', minWidth: 0, height: '100%' }}>
+        <div className="flex-1 flex flex-col" style={{ background: 'transparent', minWidth: 0, height: '100%', minHeight: 0, padding: '10px', gap: '8px' }}>
           {/* Header */}
           <div
             style={{
-              padding: '12px 20px',
-              borderBottom: '1px solid var(--border)',
-              background: 'var(--bg-panel)',
+              padding: '12px 16px',
+              border: '1px solid var(--bento-outline)',
+              borderRadius: '14px',
+              background: 'var(--bg-card)',
               display: 'flex',
               alignItems: 'center',
               gap: '10px',
@@ -147,7 +148,7 @@ export default function HomePage() {
             <div
               style={{
                 width: '28px', height: '28px', borderRadius: '8px',
-                background: 'linear-gradient(135deg, #5B7FFF 0%, #1DB98A 100%)',
+                background: 'linear-gradient(135deg, rgba(110,134,201,0.95) 0%, rgba(56,165,140,0.82) 100%)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px',
               }}
             >
@@ -175,11 +176,28 @@ export default function HomePage() {
             style={{
               flex: 1,
               overflowY: 'auto',
-              padding: '20px 20px 8px',
+              padding: '12px',
               display: 'flex',
               flexDirection: 'column',
+              minHeight: 0,
+              border: '1px solid var(--bento-outline)',
+              borderRadius: '14px',
+              background: 'var(--bg-card)',
             }}
           >
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 mb-3">
+              {[
+                { label: 'Style', value: 'Bento', tone: 'var(--accent)' },
+                { label: 'Palette', value: 'Deep', tone: 'var(--text-primary)' },
+                { label: 'Mode', value: t('assistant'), tone: 'var(--green)' },
+                { label: 'Hints', value: String(HINTS.length), tone: 'var(--text-primary)' },
+              ].map((tile) => (
+                <div key={tile.label} style={{ border: '1px solid var(--bento-outline)', borderRadius: '12px', background: 'var(--bg-panel)', padding: '10px 11px' }}>
+                  <div style={{ fontSize: '9px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px' }}>{tile.label}</div>
+                  <div style={{ fontFamily: 'var(--font-geist-sans, sans-serif)', fontSize: '12px', fontWeight: 600, color: tile.tone }}>{tile.value}</div>
+                </div>
+              ))}
+            </div>
             {messages.map((msg) => (
               <ChatMessage key={msg.id} message={msg} />
             ))}

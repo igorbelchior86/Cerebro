@@ -316,8 +316,11 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
         {/* Ambient glow */}
         <div style={{ position: 'absolute', top: '-100px', left: '-80px', width: '320px', height: '320px', borderRadius: '50%', background: 'var(--glow-sidebar)', pointerEvents: 'none', zIndex: 0 }} />
 
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minHeight: 0, padding: '10px' }}>
+          <div style={{ borderRadius: '14px', border: '1px solid var(--bento-outline)', background: 'var(--bg-bento-panel)', boxShadow: 'var(--shadow-card)', overflow: 'hidden', flexShrink: 0 }}>
+
         {/* Header */}
-        <div style={{ padding: '16px 14px 10px', position: 'relative', zIndex: 1 }}>
+        <div style={{ padding: '16px 14px 10px', position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
             <div style={{ width: '34px', height: '34px', borderRadius: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))', border: '1px solid var(--bento-outline)', boxShadow: 'var(--shadow-card)', flexShrink: 0 }}>
               <CerebroBrandMark />
@@ -360,7 +363,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
               />
             </label>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px 10px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--bento-outline)', marginBottom: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px 10px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--bento-outline)' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
               <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ color: 'var(--text-muted)', flexShrink: 0 }}>
                 <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.3" />
@@ -373,9 +376,12 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
             <ThemeToggle theme={theme} onToggle={toggleTheme} size="sm" />
           </div>
         </div>
+          </div>
+
+          <div style={{ borderRadius: '14px', border: '1px solid var(--bento-outline)', background: 'var(--bg-bento-panel)', boxShadow: 'var(--shadow-card)', overflow: 'hidden', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
 
         {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px', padding: '0 12px 6px', position: 'relative', zIndex: 1 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px', padding: '10px 12px 6px', position: 'relative', zIndex: 1 }}>
           {[
             { val: processing, label: t('statActive'), color: 'var(--accent)' },
             { val: completed, label: t('statDoneToday'), color: 'var(--green)' },
@@ -580,6 +586,8 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
             onOpenSettings={() => setSettingsOpen(true)}
             onEditProfile={() => setProfileOpen(true)}
           />
+        </div>
+          </div>
         </div>
       </aside>
     </>

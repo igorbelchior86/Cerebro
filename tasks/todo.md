@@ -1,3 +1,29 @@
+# Task: Sidebar header destacado como módulo separado (gutter estrutural real) (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Revisar a estrutura atual da `ChatSidebar` e identificar por que o ajuste anterior não criou separação modular real
+- [x] Step 2: Refatorar o layout para separar `busca + hora/toggle` em um wrapper/panel próprio, com gap real para o restante da sidebar
+- [x] Step 3: Validar via diff/screenshot semantics (sem divider/cor nova; destaque por estrutura) e atualizar wiki/changelog
+
+## Open Questions
+- Nenhuma. O requisito foi esclarecido pelo usuário com screenshot: destaque equivalente ao padrão de separação entre colunas (módulos distintos com vão real).
+
+## Progress Notes
+- Correção do usuário confirmou que o ajuste anterior criou apenas espaço interno (`spacer`) e não separação estrutural entre módulos.
+- Root cause definido: interpretação incorreta de “gutter” como `margin/height spacer` dentro do mesmo bloco contínuo.
+- `ChatSidebar` foi refatorada para dois wrappers internos (header e conteúdo) com `gap: 8px`, reproduzindo a semântica visual de separação modular usada entre colunas.
+- Verificação: `pnpm --filter @playbook-brain/web typecheck` OK.
+
+## Review
+(fill in after completion)
+- What worked: separar a sidebar em dois wrappers/panels internos resolveu o problema na raiz (destaque modular real), sem alterar lógica, dados ou componentes internos.
+- What was tricky: o requisito parecia um ajuste de spacing, mas dependia de semântica estrutural do layout (container boundaries), não apenas `margin/gap` local.
+- Time taken: ~15 min (incluindo correção após feedback)
+
+---
+
 # Task: LLM-first rich formatting for Clean ticket text (preserve signature) (2026-02-24)
 **Status**: completed
 **Started**: 2026-02-24

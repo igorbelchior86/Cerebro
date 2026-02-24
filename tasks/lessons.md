@@ -1,3 +1,9 @@
+## Lesson: 2026-02-24 (gutter vs modular separation)
+**Mistake**: Interpretei o pedido de “gutter” abaixo da hora/toggle como apenas espaçamento interno, sem destacar a seção inteira como um módulo separado.
+**Root cause**: Foco excessivo no token visual (`gap`) e pouco na semântica estrutural do screenshot (seções destacadas por wrappers independentes, como colunas).
+**Rule**: Quando o usuário comparar com separação entre colunas/painéis, implementar separação modular real (wrappers/containers distintos + vão), não apenas `margin`/`spacer`.
+**Pattern**: Para pedidos de “destacar seção” em layouts bento/panel-based, validar se há mudança de contorno/agrupamento estrutural e não só distância entre elementos.
+
 ## Lesson: 2026-02-20
 **Mistake**: Sidebar showed import time rather than actual ticket creation time.
 **Root cause**: `created_at` in `tickets_processed` was populated via DB default/current timestamp during ingestion; list ordering also used `last_updated_at`.

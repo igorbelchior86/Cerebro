@@ -1,0 +1,21 @@
+# 2026-02-24 Sidebar Structural Gutter Below Time Toggle
+# What changed
+- Split the left sidebar into two internal modules (top header module and main content module) using separate panel wrappers.
+- Added a real `8px` gutter gap between these wrappers so the `search + clock/theme` section is structurally detached from the rest of the sidebar.
+- Removed the previous dependence on internal spacing-only separation below the `clock + dark/light toggle` strip.
+
+# Why it changed
+- The first implementation only added spacing and did not create the same modular highlight pattern used by the columns.
+- The user clarified that the header must be highlighted as a full section, not just offset by an internal spacer.
+
+# Impact (UI / logic / data)
+- UI: The `search + clock/theme` block now reads as its own sub-panel, separated from the rest of the sidebar with the same structural language used between columns.
+- Logic: No changes.
+- Data: No changes.
+
+# Files touched
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/components/ChatSidebar.tsx
+- /Users/igorbelchior/Documents/Github/Cerebro/wiki/changelog/2026-02-24-sidebar-structural-gutter-below-time-toggle.md
+
+# Date
+2026-02-24

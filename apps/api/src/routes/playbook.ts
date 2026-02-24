@@ -343,6 +343,7 @@ router.get('/full-flow', async (req, res) => {
       round0Details.find((d: string) => String(d).startsWith('confidence:')) || ''
     ).replace('confidence:', '').trim();
     const dbTicket = ticketResult?.payload || {};
+    const manuallySuppressed = Boolean((dbTicket as any)?.manual_suppressed);
     const ssotResult = await queryOne<{ payload: any }>(
       `SELECT payload FROM ticket_ssot WHERE ticket_id = $1 ORDER BY updated_at DESC LIMIT 1`,
       [String(ticketId || rawId || '')]
@@ -589,7 +590,22 @@ router.get('/full-flow', async (req, res) => {
       !validation ||
       (!playbook && (validation?.safe_to_generate_playbook ?? true));
 
-    if (needsBackgroundProcessing) {
+    if (needsBackgroundProcessing && manuallySuppressed) {
+      console.log(`[FULL-FLOW] Ticket ${ticketId} is manually suppressed. Skipping background trigger.`);
+      if (sessionRow?.id && ['pending', 'processing', 'failed'].includes(String(sessionRow.status || ''))) {
+        await execute(
+          `UPDATE triage_sessions
+           SET status = 'blocked',
+               last_error = 'manual suppression',
+               retry_count = 0,
+               next_retry_at = NULL,
+               updated_at = NOW()
+           WHERE id = $1`,
+          [sessionRow.id]
+        );
+        sessionRow = { ...sessionRow, status: 'blocked', last_error: 'manual suppression', retry_count: 0, next_retry_at: null };
+      }
+    } else if (needsBackgroundProcessing) {
       const nextRetryAt = sessionRow?.next_retry_at ? new Date(sessionRow.next_retry_at) : null;
       const retryBlocked =
         sessionRow?.status === 'pending' &&
@@ -618,13 +634,17 @@ router.get('/full-flow', async (req, res) => {
       sessionId,
       session: sessionRow ?? { id: sessionId, ticket_id: ticketId, status: 'pending' },
       flow: {
-        evidence_pack: pack ? '✅ Ready' : '⏳ Processing',
-        diagnosis: diagnosis ? '✅ Ready' : '⏳ Waiting',
-        validation: validation ? '✅ Ready' : '⏳ Waiting',
-        playbook: playbook ? '✅ Ready' : '⏳ Waiting',
+        evidence_pack: pack ? '✅ Ready' : (manuallySuppressed ? '⛔ Suppressed' : '⏳ Processing'),
+        diagnosis: diagnosis ? '✅ Ready' : (manuallySuppressed ? '⛔ Suppressed' : '⏳ Waiting'),
+        validation: validation ? '✅ Ready' : (manuallySuppressed ? '⛔ Suppressed' : '⏳ Waiting'),
+        playbook: playbook ? '✅ Ready' : (manuallySuppressed ? '⛔ Suppressed' : '⏳ Waiting'),
       },
       data: {
         ticket: canonicalTicket,
+        suppression: {
+          manual_suppressed: manuallySuppressed,
+          effective_suppressed: manuallySuppressed,
+        },
         ssot,
         ticket_text_artifact: ticketTextArtifact?.payload || null,
         ticket_context_appendix: ticketContextAppendix?.payload || null,

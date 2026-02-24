@@ -36,6 +36,322 @@ function MsgTag({ children, color, bg }: { children: ReactNode; color?: string; 
   );
 }
 
+type CleanSegment =
+  | { kind: 'paragraph'; text: string }
+  | { kind: 'list_item'; text: string; index?: number }
+  | { kind: 'callout'; label: string; text: string }
+  | { kind: 'signature'; text: string };
+
+type CleanDisplayModel = {
+  markdownFallback: string;
+  segments: CleanSegment[];
+  rosterItems: Array<{ index?: number; title: string; detail?: string }>;
+  formatted: boolean;
+};
+
+function normalizeCleanTicketTextForDisplay(input: string): CleanDisplayModel {
+  const raw = String(input || '').trim();
+  if (!raw) {
+    return { markdownFallback: '', segments: [], rosterItems: [], formatted: false };
+  }
+
+  // Keep explicit line breaks if already present, otherwise create some deterministic structure.
+  const base = raw
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  // Promote common inline list patterns ("1. ... 2. ...") to actual line-separated items.
+  const withListBreaks = base
+    .replace(/\s+([1-9][0-9]?\.)\s+(?=[A-Z#])/g, '\n$1 ')
+    .replace(/\s+(NOTE\s*[-:])\s+/gi, '\n$1 ')
+    .replace(/\s+(GOAL\s*[-:])\s+/gi, '\n$1 ');
+
+  const lines = withListBreaks
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const out: string[] = [];
+  const segments: CleanSegment[] = [];
+  let paragraphBuffer: string[] = [];
+
+  const flushParagraph = () => {
+    if (paragraphBuffer.length === 0) return;
+    const paragraph = paragraphBuffer.join(' ').replace(/\s+/g, ' ').trim();
+    if (paragraph) out.push(paragraph);
+    if (paragraph) segments.push({ kind: 'paragraph', text: paragraph });
+    paragraphBuffer = [];
+  };
+
+  const isListItem = (line: string) => /^([1-9][0-9]?\.)\s+/.test(line);
+  const isCallout = (line: string) => /^(NOTE|GOAL|PRIORITY|ACTION|IMPACT)\s*[-:]/i.test(line);
+  const isSignatureLike = (line: string) =>
+    /^(thanks[,!]?|regards[,!]?|best[,!]?|sincerely[,!]?)/i.test(line) ||
+    /^(direct|phone|email)\s*:/i.test(line);
+
+  for (const line of lines) {
+    if (isListItem(line)) {
+      flushParagraph();
+      out.push(line);
+      const m = line.match(/^([1-9][0-9]?)\.\s+([\s\S]+)$/);
+      const itemText = m?.[2] || line.replace(/^([1-9][0-9]?)\.\s+/, '');
+      if (m) {
+        segments.push({ kind: 'list_item', index: Number(m[1]), text: itemText });
+      } else {
+        segments.push({ kind: 'list_item', text: itemText });
+      }
+      continue;
+    }
+
+    if (isCallout(line)) {
+      flushParagraph();
+      out.push(`**${line.replace(/^([A-Z ]+)\s*([-:])\s*/i, (_, label, sep) => `${String(label).trim()}${sep} `)}**`);
+      const cm = line.match(/^([A-Z ]+)\s*[-:]\s*(.*)$/i);
+      segments.push({
+        kind: 'callout',
+        label: String(cm?.[1] || 'Note').trim(),
+        text: String(cm?.[2] || '').trim(),
+      });
+      continue;
+    }
+
+    if (isSignatureLike(line)) {
+      flushParagraph();
+      out.push(line);
+      segments.push({ kind: 'signature', text: line });
+      continue;
+    }
+
+    paragraphBuffer.push(line);
+  }
+
+  flushParagraph();
+
+  const markdownFallback = out.join('\n\n');
+
+  // Heuristic roster detection: numbered onboarding/person rows with a likely person name + role/device/location.
+  const rosterItems = segments
+    .filter((s): s is Extract<CleanSegment, { kind: 'list_item' }> => s.kind === 'list_item')
+    .map((item) => {
+      const text = item.text.trim();
+      const splitByDevice = text.match(/^(.*?)(\b(?:microsoft\s+surface|laptop|desktop|macbook|pc|workstation|personal\s+laptop)\b.*)$/i);
+      const title = (splitByDevice?.[1] || text).trim();
+      const detail = splitByDevice?.[2]?.trim();
+      return {
+        ...(typeof item.index === 'number' ? { index: item.index } : {}),
+        title,
+        ...(detail ? { detail } : {}),
+      };
+    })
+    .filter((item) => /[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}/.test(item.title));
+
+  const formatted = markdownFallback !== raw || rosterItems.length > 0;
+  return { markdownFallback, segments, rosterItems, formatted };
+}
+
+function renderHighlightedInline(text: string): ReactNode {
+  // Keep highlights restrained: deadlines/dates/action cues only.
+  const tokens = String(text || '').split(
+    /(\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b|\bmarch\s+\d{1,2}(?:st|nd|rd|th)?\b|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b|\b(?:today|tomorrow|asap|urgent|deadline)\b|\b(?:goal(?:\s+completion)?|please prioritize|due by)\b)/gi
+  );
+
+  return tokens.map((part, idx) => {
+    if (!part) return null;
+    const lower = part.toLowerCase();
+    const isDateOrDeadline =
+      /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)/i.test(part) ||
+      /\bmarch\s+\d{1,2}(?:st|nd|rd|th)?\b/i.test(part) ||
+      /\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/.test(part) ||
+      ['today', 'tomorrow', 'asap', 'urgent', 'deadline', 'goal', 'goal completion', 'please prioritize', 'due by'].includes(lower);
+
+    if (!isDateOrDeadline) return <span key={idx}>{part}</span>;
+
+    return (
+      <span
+        key={idx}
+        style={{
+          display: 'inline',
+          padding: '0 3px',
+          borderRadius: '4px',
+          background: 'rgba(234,179,8,0.10)',
+          border: '1px solid rgba(234,179,8,0.18)',
+          color: '#B78109',
+          fontWeight: 600,
+        }}
+      >
+        {part}
+      </span>
+    );
+  });
+}
+
+function formatSimpleEmailBodyMarkdown(input: string): string {
+  const raw = String(input || '').trim();
+  if (!raw) return raw;
+
+  const withoutVerbosePrefix = raw.replace(
+    /^cleaned ticket text \(noise removed,\s*meaning preserved\):\s*/i,
+    ''
+  ).trim();
+
+  const text = withoutVerbosePrefix
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    // break common inline numbered sequences into separate lines
+    .replace(/\s+([1-9][0-9]?\.)\s+(?=[A-Z#])/g, '\n$1 ')
+    // break common email sections/callouts
+    .replace(/\s+(NOTE\s*[-:])\s+/gi, '\n\n$1 ')
+    .replace(/\s+(GOAL\s*[-:])\s+/gi, '\n\n$1 ')
+    .replace(/\s+(Thanks[,!]?|Regards[,!]?|Best[,!]?|Sincerely[,!]?)\s+/gi, '\n\n$1 ')
+    .replace(/\s+(Direct\s*:)\s+/gi, '\n$1 ')
+    .replace(/\s+(Phone\s*:)\s+/gi, '\n$1 ')
+    .replace(/\s+(Email\s*:)\s+/gi, '\n$1 ')
+    .trim();
+
+  const lines = text.split('\n').map((l) => l.trim());
+  const blocks: string[] = [];
+  let buf: string[] = [];
+  let rosterRun: string[] = [];
+
+  const flush = () => {
+    if (!buf.length) return;
+    blocks.push(buf.join(' ').replace(/\s+/g, ' ').trim());
+    buf = [];
+  };
+
+  const classifyLine = (line: string) => {
+    if (!line) return 'blank' as const;
+    if (/^([1-9][0-9]?\.)\s+/.test(line)) return 'numbered' as const;
+    if (/^(NOTE|GOAL)\s*[-:]/i.test(line)) return 'callout' as const;
+    if (/^(Thanks|Regards|Best|Sincerely)[,!]?/i.test(line) || /^(Direct|Phone|Email)\s*:/i.test(line)) return 'signature' as const;
+    return 'text' as const;
+  };
+
+  const isLikelyRosterLine = (line: string) =>
+    classifyLine(line) === 'text' &&
+    !/^([1-9][0-9]?\.)\s+/.test(line) &&
+    /^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\s+.+$/.test(line) &&
+    (
+      /\b(1099|W2(?:\s+Employee)?|Corp-to-Corp|corp-to-corp)\b/i.test(line) ||
+      /\b(Laptop|Desktop|MacBook|Surface|PC|Workstation)\b/i.test(line) ||
+      /\b[A-Z][a-z]+,\s*[A-Z]{2}\b/.test(line)
+    );
+
+  const splitRosterLine = (line: string) => {
+    const m = line.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\s+(.+)$/);
+    const name = m?.[1]?.trim();
+    const details = m?.[2]?.trim();
+    if (!name) return { name: line, details: '' };
+    return { name, details: details || '' };
+  };
+
+  const rosterRunScore = (run: string[]) => {
+    if (!run.length) return 0;
+    let score = 0;
+    for (const line of run) {
+      if (/^[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\b/.test(line)) score += 2;
+      if (/\b(1099|W2(?:\s+Employee)?|Corp-to-Corp|corp-to-corp)\b/i.test(line)) score += 1;
+      if (/\b(Laptop|Desktop|MacBook|Surface|PC|Workstation)\b/i.test(line)) score += 1;
+      if (/\b[A-Z][a-z]+,\s*[A-Z]{2}\b/.test(line)) score += 1;
+      if (/[.!?]$/.test(line)) score -= 0.5; // roster rows are often fragments, not sentences
+    }
+    return score / run.length;
+  };
+
+  const flushRosterRun = () => {
+    const score = rosterRunScore(rosterRun);
+    if (rosterRun.length < 3 || score < 2.6) {
+      for (const line of rosterRun) blocks.push(`- ${line}`);
+      rosterRun = [];
+      return;
+    }
+    const tableLines = ['| Name | Details |', '| --- | --- |'];
+    for (const line of rosterRun) {
+      const row = splitRosterLine(line);
+      const name = row.name.replace(/\|/g, '\\|');
+      const details = row.details.replace(/\|/g, '\\|');
+      tableLines.push(`| ${name} | ${details || '—'} |`);
+    }
+    blocks.push(tableLines.join('\n'));
+    rosterRun = [];
+  };
+
+  for (const line of lines) {
+    const kind = classifyLine(line);
+    if (kind === 'blank') {
+      if (rosterRun.length) flushRosterRun();
+      flush();
+      continue;
+    }
+    if (isLikelyRosterLine(line)) {
+      flush();
+      rosterRun.push(line);
+      continue;
+    }
+    if (rosterRun.length) flushRosterRun();
+    if (kind === 'numbered') {
+      flush();
+      blocks.push(line);
+      continue;
+    }
+    if (kind === 'callout') {
+      flush();
+      blocks.push(`**${line}**`);
+      continue;
+    }
+    if (kind === 'signature') {
+      flush();
+      blocks.push(line);
+      continue;
+    }
+    buf.push(line);
+  }
+  if (rosterRun.length) flushRosterRun();
+  flush();
+  return blocks.filter(Boolean).join('\n\n');
+}
+
+function parseRosterRow(input: { index?: number; title: string; detail?: string }) {
+  const source = `${input.title}${input.detail ? ` ${input.detail}` : ''}`.replace(/\s+/g, ' ').trim();
+  const nameMatch = source.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b(.*)$/);
+  const name = (nameMatch?.[1] || input.title).trim();
+  const rest = (nameMatch?.[2] || source.replace(name, '')).trim();
+
+  const employmentMatch = rest.match(/\b(1099|W2 Employee|Corp-to-Corp|corp-to-Corp|corp-to-corp)\b/i);
+  const employment = employmentMatch?.[1]
+    ? employmentMatch[1].replace(/corp-to-corp/i, 'Corp-to-Corp')
+    : '';
+  const deviceMatch = source.match(/\b(Microsoft Surface(?: Laptop)?|Personal Laptop|Laptop|Desktop|MacBook|PC|Workstation)\b/i);
+  const device = deviceMatch?.[1] || '';
+  const locationMatch = source.match(/\b([A-Z][a-z]+,\s*[A-Z]{2})\b/);
+  const location = locationMatch?.[1] || '';
+  const notes = [rest]
+    .join(' ')
+    .replace(new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '')
+    .replace(/\b(1099|W2 Employee|Corp-to-Corp|corp-to-corp)\b/gi, '')
+    .replace(/\b(Microsoft Surface(?: Laptop)?|Personal Laptop|Laptop|Desktop|MacBook|PC|Workstation)\b/gi, '')
+    .replace(/\b([A-Z][a-z]+,\s*[A-Z]{2})\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[,.;:\- ]+|[,.;:\- ]+$/g, '');
+
+  return {
+    index: input.index,
+    name,
+    employment: employment || '—',
+    device: device || '—',
+    location: location || '—',
+    notes: notes || '—',
+  };
+}
+
+function RichCleanTicketText({ text }: { text: string }) {
+  return <MarkdownRenderer content={formatSimpleEmailBodyMarkdown(text)} />;
+}
+
 export default function ChatMessage({ message, children }: ChatMessageProps) {
   const [ticketTextMode, setTicketTextMode] = useState<'clean' | 'original'>(
     message.ticketTextVariant?.clean?.trim()
@@ -84,9 +400,12 @@ export default function ChatMessage({ message, children }: ChatMessageProps) {
     ? ticketTextMode === 'original'
       ? message.ticketTextVariant!.original
       : hasCleanTicketText
-        ? message.ticketTextVariant!.clean!
-        : message.ticketTextVariant!.original
+        ? normalizeCleanTicketTextForDisplay(message.ticketTextVariant!.clean!)
+        : normalizeCleanTicketTextForDisplay(message.ticketTextVariant!.original)
     : message.content;
+  const cleanDisplayModel = canToggleTicketText && hasCleanTicketText
+    ? normalizeCleanTicketTextForDisplay(message.ticketTextVariant!.clean!)
+    : null;
   return (
     <div className="animate-msgIn" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '10px' }}>
       <div style={{ width: '26px', height: '26px', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '12px', border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
@@ -140,7 +459,11 @@ export default function ChatMessage({ message, children }: ChatMessageProps) {
             </div>
           )}
         </div>
-        <MarkdownRenderer content={renderedContent + (message.type === 'validation' ? ' **Status:** `approved`' : '')} />
+        {canToggleTicketText && ticketTextMode === 'clean' && hasCleanTicketText ? (
+          <RichCleanTicketText text={message.ticketTextVariant!.clean!} />
+        ) : (
+          <MarkdownRenderer content={String(renderedContent) + (message.type === 'validation' ? ' **Status:** `approved`' : '')} />
+        )}
         {message.steps && message.steps.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '8px' }}>
             {message.steps.map((step, i) => (

@@ -52,7 +52,9 @@ export default function HomePage() {
         });
         if (res.ok) {
           const json = await res.json();
-          if (json.success) setSidebarTickets(json.data);
+          if (json.success && Array.isArray(json.data)) {
+            setSidebarTickets(json.data as ActiveTicket[]);
+          }
         } else {
           console.error('Failed to load tickets', res.status);
         }

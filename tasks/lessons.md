@@ -412,3 +412,33 @@
 **Root cause**: O anti-regressão tratava todo valor de intake como canônico sem distinguir valor real de empresa vs fallback heurístico de domínio.
 **Rule**: Campos de display críticos devem preservar intake somente quando o intake for de alta qualidade; se o valor tiver padrão de fallback por domínio, ele deve poder ser substituído por nome inferido/display-ready.
 **Pattern**: `company` continua com string colada tipo `Garmonandcompany` após correção de SSOT => verificar anti-regressão/proveniência, não apenas extração HTML.
+
+## Lesson: 2026-02-24 (prefer local UI override when backend semantics are derived-only)
+**Mistake**: Na primeira proposta para "incluir manualmente nos filtrados", eu puxei a solução para um modelo de filtro + overrides mais amplo do que o pedido imediato.
+**Root cause**: Foquei na semântica de produto antes de otimizar por menor impacto técnico/UX para o caso real do usuário.
+**Rule**: Quando o backend fornece um estado derivado (ex.: supressão automática calculada) e o usuário pede um controle manual pontual, avaliar primeiro um override local e explícito na UI antes de redesenhar o modelo.
+**Pattern**: Usuário responde com "tenho uma ideia mais simples" => reduzir escopo, reaproveitar fluxo existente e evitar acoplamento desnecessário com backend.
+
+## Lesson: 2026-02-24 (manual suppression is operational control, not only UI categorization)
+**Mistake**: Entreguei supressão manual como MVP frontend-only, tratando o pedido como categorização visual e não como controle operacional de pipeline.
+**Root cause**: Não alinhei a intenção econômica/operacional implícita (evitar processamento e gasto de token) com a semântica de "suprimido".
+**Rule**: Quando um estado afeta triagem/processamento (ex.: `suppressed`), assumir persistência backend + enforcement de execução por padrão, a menos que o usuário peça explicitamente algo apenas visual.
+**Pattern**: Usuário questiona "não deveria evitar pipeline/token?" => faltou guardar/checar estado no backend e adicionar guard no worker/orchestrator.
+
+## Lesson: 2026-02-24 (sidebar list queries must anchor on source-of-truth inbox table, not processing sessions)
+**Mistake**: A lista `/email-ingestion/list` ancorava em `triage_sessions`, então tickets manualmente suprimidos antes de qualquer sessão desapareciam totalmente da sidebar (inclusive do contador de suprimidos).
+**Root cause**: Modelei a sidebar como "tickets com sessão" em vez de "tickets do inbox", mas o novo fluxo de supressão manual atua em `tickets_processed` e pode ocorrer antes do pipeline.
+**Rule**: Se a UI representa o inbox de tickets, a query deve ancorar em `tickets_processed`; dados de pipeline (`triage_sessions`, `evidence_packs`, `ticket_ssot`) entram como joins opcionais.
+**Pattern**: Filtro toggle não revela itens e contador não bate após ação backend em ticket ainda não processado => verificar se a query base exclui itens sem sessão/artefatos.
+
+## Lesson: 2026-02-24 (don’t render high-confidence UI structures from low-confidence text parsing)
+**Mistake**: Transformei linhas heurísticas de onboarding em cards visuais “bonitos”, mas o parsing ainda era impreciso; a UI passou sensação de estrutura confiável com dados errados/ambíguos.
+**Root cause**: Priorizei impacto visual antes de calibrar confiança semântica da extração local.
+**Rule**: Quando a extração é heurística e parcial, usar disclosure + tabela compacta + sinalização explícita de “heuristic parse”, mantendo o texto limpo como fonte principal.
+**Pattern**: Feedback “ficou horrível/confusing” em UI derivada de texto => reduzir ornamentação, diminuir peso visual e rebaixar a extração para camada secundária.
+
+## Lesson: 2026-02-24 (when UX trust breaks, prefer simple readable formatting over clever parsing UI)
+**Mistake**: Mesmo após simplificar para disclosure/tabela, eu ainda mantive uma camada de parsing heurístico visível em um contexto onde o usuário queria apenas legibilidade de email body.
+**Root cause**: Continuei tentando “salvar” a ideia de extração visual em vez de aceitar o pedido real: formatting simples e previsível.
+**Rule**: Se o usuário pedir explicitamente “simples email body formatting”, remover parsing visual/estruturas derivadas e focar em parágrafos + listas + assinatura.
+**Pattern**: Reação forte negativa a iterações de UI (“tudo isso uma merda”) => reset para baseline simples e confiável antes de qualquer refinamento.

@@ -128,6 +128,8 @@ export default function SessionDetail({
   // Add state for real tickets
   const [sidebarTickets, setSidebarTickets] = useState<ActiveTicket[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(true);
+  const [isManualSuppressed, setIsManualSuppressed] = useState(false);
+  const [isManualSuppressionSaving, setIsManualSuppressionSaving] = useState(false);
 
   const cleanTitle = (value?: string) =>
     (value || '')
@@ -703,9 +705,58 @@ export default function SessionDetail({
     }
   };
 
+  const handleToggleManualSuppression = async () => {
+    const ticketId = String(data?.session.ticket_id || selectedTicketId || '').trim();
+    if (!ticketId || isManualSuppressionSaving) return;
+    setIsManualSuppressionSaving(true);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const res = await fetch(`${apiUrl}/email-ingestion/tickets/${encodeURIComponent(ticketId)}/manual-suppression`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ suppressed: !isManualSuppressed }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(String((payload as any)?.error || `HTTP ${res.status}`));
+      }
+      const nextManualSuppressed = Boolean((payload as any)?.manual_suppressed);
+      setIsManualSuppressed(nextManualSuppressed);
+      setSidebarTickets((prev) => prev.map((ticket) => {
+        const currentId = String(ticket.ticket_id || ticket.id || '');
+        if (currentId !== ticketId) return ticket;
+        const autoSuppressed = ticket.suppression_reason !== 'manual_override' ? Boolean(ticket.suppressed) : false;
+        return {
+          ...ticket,
+          manual_suppressed: nextManualSuppressed,
+          suppressed: nextManualSuppressed || autoSuppressed,
+          suppression_reason: nextManualSuppressed
+            ? String((payload as any)?.suppression_reason || 'manual_override')
+            : (autoSuppressed ? ticket.suppression_reason ?? null : null),
+          suppression_reason_label: nextManualSuppressed
+            ? String((payload as any)?.suppression_reason_label || 'Manual suppression')
+            : (autoSuppressed ? ticket.suppression_reason_label ?? null : null),
+          suppression_confidence: nextManualSuppressed
+            ? null
+            : (autoSuppressed ? ticket.suppression_confidence ?? null : null),
+        };
+      }));
+    } catch (err) {
+      console.error('Failed to update manual suppression', err);
+      setError((err as Error)?.message || 'Failed to update suppression');
+    } finally {
+      setIsManualSuppressionSaving(false);
+    }
+  };
+
   const displayTickets = sidebarTickets;
   const canonicalTicketId = data?.session.ticket_id || selectedTicketId;
   const selectedTicket = displayTickets.find((t) => t.id === canonicalTicketId || t.ticket_id === canonicalTicketId);
+  useEffect(() => {
+    const ticket = sidebarTickets.find((t) => t.id === selectedTicketId || t.ticket_id === selectedTicketId);
+    setIsManualSuppressed(Boolean(ticket?.manual_suppressed));
+  }, [selectedTicketId, sidebarTickets]);
   const canonicalRequesterUi = selectUiUserFromSsot({
     affected: data?.ssot?.affected_user_name || data?.ticket?.affected_user_normalized,
     requester: data?.ssot?.requester_name || data?.ticket?.requester_normalized || data?.ticket?.requester,
@@ -862,6 +913,56 @@ export default function SessionDetail({
               <svg width="8" height="8" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
               {t('statusPlaybookReady')}
             </span>
+            <button
+              onClick={handleToggleManualSuppression}
+              aria-pressed={isManualSuppressed}
+              disabled={isManualSuppressionSaving}
+              title={isManualSuppressed ? 'Remove manual suppression' : 'Add ticket to suppressed'}
+              aria-label={isManualSuppressed ? 'Remove manual suppression' : 'Add ticket to suppressed'}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '28px',
+                height: '28px',
+                borderRadius: '9px',
+                color: isManualSuppressed ? '#F59E0B' : 'var(--text-muted)',
+                background: isManualSuppressed
+                  ? 'linear-gradient(180deg, rgba(245,158,11,0.14), rgba(245,158,11,0.08))'
+                  : 'var(--bg-card)',
+                border: isManualSuppressed ? '1px solid rgba(245,158,11,0.30)' : '1px solid var(--border)',
+                boxShadow: isManualSuppressed ? 'inset 0 1px 0 rgba(255,255,255,0.06)' : 'none',
+                cursor: isManualSuppressionSaving ? 'not-allowed' : 'pointer',
+                opacity: isManualSuppressionSaving ? 0.7 : 1,
+                transition: 'var(--transition)',
+              }}
+              onMouseEnter={(e) => {
+                if (isManualSuppressionSaving) return;
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.transform = 'translateY(-1px)';
+                if (!isManualSuppressed) {
+                  el.style.borderColor = 'rgba(245,158,11,0.24)';
+                  el.style.color = '#F59E0B';
+                  el.style.background = 'rgba(245,158,11,0.06)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (isManualSuppressionSaving) return;
+                const el = e.currentTarget as HTMLButtonElement;
+                el.style.transform = 'translateY(0)';
+                if (!isManualSuppressed) {
+                  el.style.borderColor = 'var(--border)';
+                  el.style.color = 'var(--text-muted)';
+                  el.style.background = 'var(--bg-card)';
+                }
+              }}
+            >
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path d="M3.8 10a6.2 6.2 0 0 1 10.4-4.5L16.6 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M16.2 10a6.2 6.2 0 0 1-10.4 4.5L3.4 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M12.8 7.2l-5.6 5.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </button>
             <button
               onClick={handleRefreshPipeline}
               disabled={loading}

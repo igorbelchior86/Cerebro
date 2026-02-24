@@ -1,0 +1,5 @@
+ALTER TABLE tickets_processed
+  ADD COLUMN IF NOT EXISTS manual_suppressed BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE tickets_processed
+  ADD COLUMN IF NOT EXISTS manual_suppressed_at TIMESTAMP WITH TIME ZONE;

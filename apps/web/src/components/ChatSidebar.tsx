@@ -23,6 +23,7 @@ export interface ActiveTicket {
   age?: string;
   meta?: string;
   created_at?: string;
+  manual_suppressed?: boolean | null;
   suppressed?: boolean | null;
   suppression_reason?: string | null;
   suppression_reason_label?: string | null;

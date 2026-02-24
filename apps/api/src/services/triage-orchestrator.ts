@@ -16,6 +16,7 @@ export class TriageOrchestrator {
     private readonly retryBaseDelayMs = 2 * 60 * 1000;
     private readonly retryMaxDelayMs = 30 * 60 * 1000;
     private readonly advisoryLockNamespace = 41021;
+    private hasManualSuppressedColumnCache: boolean | null = null;
 
     constructor() {
         this.prepareService = new PrepareContextService();
@@ -101,6 +102,11 @@ export class TriageOrchestrator {
     async runPipeline(ticketId: string, orgId?: string, source: 'email' | 'autotask' = 'autotask') {
         return tenantContext.run({ tenantId: undefined, bypassRLS: true }, async () => {
             console.log(`[Orchestrator] Starting pipeline for ticket ${ticketId} (source: ${source})`);
+            if (await this.isTicketManuallySuppressed(ticketId)) {
+                console.log(`[Orchestrator] Ticket ${ticketId} is manually suppressed. Skipping pipeline execution.`);
+                await this.markLatestSessionBlockedBySuppression(ticketId);
+                return;
+            }
             const claimed = await this.claimOrCreateSession(ticketId, orgId);
             if (!claimed) return;
             const sid = claimed;
@@ -345,6 +351,52 @@ export class TriageOrchestrator {
             console.log(`[Orchestrator] Created new session ${sessionId} for ticket ${ticketId}`);
             return sessionId;
         });
+    }
+
+    private async hasManualSuppressedColumn(): Promise<boolean> {
+        if (this.hasManualSuppressedColumnCache !== null) return this.hasManualSuppressedColumnCache;
+        const rows = await query<{ exists: boolean }>(
+            `SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name = 'tickets_processed'
+                  AND column_name = 'manual_suppressed'
+             ) AS exists`
+        );
+        this.hasManualSuppressedColumnCache = Boolean(rows[0]?.exists);
+        return this.hasManualSuppressedColumnCache;
+    }
+
+    private async isTicketManuallySuppressed(ticketId: string): Promise<boolean> {
+        if (!await this.hasManualSuppressedColumn()) return false;
+        const rows = await query<{ manual_suppressed: boolean | null }>(
+            `SELECT COALESCE(manual_suppressed, FALSE) AS manual_suppressed
+             FROM tickets_processed
+             WHERE id = $1
+             LIMIT 1`,
+            [ticketId]
+        );
+        return Boolean(rows[0]?.manual_suppressed);
+    }
+
+    private async markLatestSessionBlockedBySuppression(ticketId: string): Promise<void> {
+        await execute(
+            `UPDATE triage_sessions
+             SET status = 'blocked',
+                 last_error = 'manual suppression',
+                 retry_count = 0,
+                 next_retry_at = NULL,
+                 updated_at = NOW()
+             WHERE id IN (
+               SELECT id
+               FROM triage_sessions
+               WHERE ticket_id = $1
+                 AND status IN ('pending', 'processing', 'failed')
+               ORDER BY created_at DESC
+               LIMIT 1
+             )`,
+            [ticketId]
+        );
     }
 
     private async updateSessionStatus(

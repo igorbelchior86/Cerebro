@@ -64,6 +64,7 @@ export async function backfillPendingEmailTickets(limit = 20): Promise<{ process
          ) latest_session ON true
          LEFT JOIN playbooks p ON p.session_id = latest_session.id
          WHERE p.id IS NULL
+           AND COALESCE(tp.manual_suppressed, FALSE) = FALSE
            AND (latest_session.id IS NULL OR latest_session.status IN ('pending', 'failed', 'needs_more_info', 'blocked'))
          ORDER BY tp.created_at DESC
          LIMIT $1`,
@@ -107,6 +108,15 @@ router.get('/list', async (_req: Request, res: Response) => {
              ) AS exists`
         );
         const includeCompany = Boolean(hasCompanyColumn[0]?.exists);
+        const hasManualSuppressedColumn = await query<{ exists: boolean }>(
+            `SELECT EXISTS (
+               SELECT 1
+               FROM information_schema.columns
+               WHERE table_name = 'tickets_processed'
+                 AND column_name = 'manual_suppressed'
+             ) AS exists`
+        );
+        const includeManualSuppressed = Boolean(hasManualSuppressedColumn[0]?.exists);
 
         const pipelineRows = await query(
             `WITH ticket_sessions AS (
@@ -130,7 +140,7 @@ router.get('/list', async (_req: Request, res: Response) => {
                ORDER BY ticket_id, created_at DESC
              )
              SELECT ls.session_id,
-                    ls.ticket_id,
+                    tp.id AS ticket_id,
                     ls.session_status,
                     ls.session_created_at,
                     ls.first_session_created_at,
@@ -139,33 +149,34 @@ router.get('/list', async (_req: Request, res: Response) => {
                     ${includeCompany ? 'tp.company,' : `''::text AS company,`}
                     tp.requester,
                     tp.raw_body,
+                    ${includeManualSuppressed ? 'COALESCE(tp.manual_suppressed, FALSE) AS manual_suppressed,' : 'FALSE AS manual_suppressed,'}
                     tp.created_at AS ticket_created_at,
                     ep.payload AS evidence_payload,
                     ssot.payload AS ssot_payload
-             FROM latest_sessions ls
-             LEFT JOIN tickets_processed tp ON tp.id = ls.ticket_id
+             FROM tickets_processed tp
+             LEFT JOIN latest_sessions ls ON ls.ticket_id = tp.id
              LEFT JOIN LATERAL (
                SELECT payload
                FROM triage_sessions ts_pack
                JOIN evidence_packs ep ON ep.session_id = ts_pack.id
-               WHERE ts_pack.ticket_id = ls.ticket_id
+               WHERE ts_pack.ticket_id = tp.id
                ORDER BY ep.created_at DESC
                LIMIT 1
              ) ep ON true
              LEFT JOIN LATERAL (
                SELECT payload
                FROM ticket_ssot
-               WHERE ticket_id = ls.ticket_id
+               WHERE ticket_id = tp.id
                ORDER BY updated_at DESC
                LIMIT 1
              ) ssot ON true
              ORDER BY
                CASE
-                 WHEN ls.ticket_id ~ '^T[0-9]{8}\\.[0-9]+$' THEN substring(ls.ticket_id from 2 for 8)
+                 WHEN tp.id ~ '^T[0-9]{8}\\.[0-9]+$' THEN substring(tp.id from 2 for 8)
                  ELSE NULL
                END DESC NULLS LAST,
                CASE
-                 WHEN ls.ticket_id ~ '^T[0-9]{8}\\.[0-9]+$' THEN LPAD(split_part(ls.ticket_id, '.', 2), 12, '0')
+                 WHEN tp.id ~ '^T[0-9]{8}\\.[0-9]+$' THEN LPAD(split_part(tp.id, '.', 2), 12, '0')
                  ELSE NULL
                END DESC NULLS LAST,
                COALESCE(tp.created_at, ls.first_session_created_at) DESC
@@ -377,6 +388,8 @@ router.get('/list', async (_req: Request, res: Response) => {
                     description: row.description || packTicket.description || ssot.description_clean,
                     rawBody: row.raw_body,
                 });
+                const manuallySuppressed = Boolean(row.manual_suppressed);
+                const effectiveSuppressed = manuallySuppressed || Boolean(suppression?.suppressed);
 
                 return {
                     id: String(row.ticket_id),
@@ -390,10 +403,11 @@ router.get('/list', async (_req: Request, res: Response) => {
                     org: company,
                     site,
                     created_at: ssot.created_at || row.ticket_created_at || row.first_session_created_at || row.session_created_at,
-                    suppressed: suppression?.suppressed ?? false,
-                    suppression_reason: suppression?.reason_code ?? null,
-                    suppression_reason_label: suppression?.reason_label ?? null,
-                    suppression_confidence: suppression?.confidence ?? null,
+                    manual_suppressed: manuallySuppressed,
+                    suppressed: effectiveSuppressed,
+                    suppression_reason: manuallySuppressed ? 'manual_override' : (suppression?.reason_code ?? null),
+                    suppression_reason_label: manuallySuppressed ? 'Manual suppression' : (suppression?.reason_label ?? null),
+                    suppression_confidence: manuallySuppressed ? null : (suppression?.confidence ?? null),
                 };
             })
             .filter((item) => item.ticket_id)
@@ -418,6 +432,84 @@ router.get('/list', async (_req: Request, res: Response) => {
     } catch (error: any) {
         console.error('[EmailIngestion] List failed:', error);
         res.status(500).json({ error: error.message || 'Internal Server Error' });
+    }
+});
+
+router.patch('/tickets/:ticketId/manual-suppression', async (req: Request, res: Response) => {
+    try {
+        const ticketId = String(req.params.ticketId || '').trim();
+        const requested = req.body?.suppressed;
+        const suppressed =
+            requested === true ||
+            requested === 1 ||
+            String(requested || '').toLowerCase() === 'true' ||
+            String(requested || '').toLowerCase() === '1';
+
+        if (!ticketId) {
+            return res.status(400).json({ error: 'Missing ticketId' });
+        }
+
+        const { query, execute } = await import('../db/index.js');
+        const hasManualSuppressedColumn = await query<{ exists: boolean }>(
+            `SELECT EXISTS (
+               SELECT 1
+               FROM information_schema.columns
+               WHERE table_name = 'tickets_processed'
+                 AND column_name = 'manual_suppressed'
+             ) AS exists`
+        );
+        if (!hasManualSuppressedColumn[0]?.exists) {
+            return res.status(500).json({ error: 'manual_suppressed column not available (run migrations)' });
+        }
+
+        const exists = await query<{ id: string }>(
+            `SELECT id FROM tickets_processed WHERE id = $1 LIMIT 1`,
+            [ticketId]
+        );
+        if (!exists[0]?.id) {
+            return res.status(404).json({ error: 'Ticket not found', ticketId });
+        }
+
+        await execute(
+            `UPDATE tickets_processed
+             SET manual_suppressed = $1,
+                 manual_suppressed_at = CASE WHEN $1 THEN NOW() ELSE NULL END,
+                 last_updated_at = CURRENT_TIMESTAMP
+             WHERE id = $2`,
+            [suppressed, ticketId]
+        );
+
+        if (suppressed) {
+            await execute(
+                `UPDATE triage_sessions
+                 SET status = 'blocked',
+                     last_error = 'manual suppression',
+                     retry_count = 0,
+                     next_retry_at = NULL,
+                     updated_at = NOW()
+                 WHERE id IN (
+                   SELECT id
+                   FROM triage_sessions
+                   WHERE ticket_id = $1
+                     AND status IN ('pending', 'processing', 'failed')
+                   ORDER BY created_at DESC
+                   LIMIT 1
+                 )`,
+                [ticketId]
+            );
+        }
+
+        return res.json({
+            success: true,
+            ticketId,
+            manual_suppressed: suppressed,
+            suppressed: suppressed,
+            suppression_reason: suppressed ? 'manual_override' : null,
+            suppression_reason_label: suppressed ? 'Manual suppression' : null,
+        });
+    } catch (error: any) {
+        console.error('[EmailIngestion] Manual suppression update failed:', error);
+        return res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
 });
 

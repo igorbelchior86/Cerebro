@@ -1,3 +1,115 @@
+# Task: Clean toggle formatting v2 (roster cards + highlights + badge) (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Expand formatter in `ChatMessage` to produce structured segments for `Clean` text
+- [x] Step 2: Add onboarding roster detection and render roster items as compact visual cards
+- [x] Step 3: Add deterministic inline highlighting (dates/deadlines/device-like terms) in `Clean`
+- [x] Step 4: Add subtle `formatted` badge in the `Clean` toggle UI
+- [x] Step 5: Validate with `pnpm --filter @playbook-brain/web typecheck`
+- [x] Step 6: Document in wiki (feature/changelog)
+
+## Open Questions
+- We will keep all behavior scoped to `autotask` + `Clean` display only.
+
+## Progress Notes
+- Refatorado formatter do `Clean` para gerar modelo estruturado (segments + roster candidates + markdown fallback).
+- Adicionado renderer local `RichCleanTicketText` (somente `autotask` + modo `Clean`) com:
+  - parágrafos/callouts/signature separados
+  - roster onboarding renderizado em cards compactos
+  - highlights heurísticos para datas/deadlines/device-like termos
+- Adicionado badge sutil `fmt` ao botão `Clean` quando a visualização está enriquecida por heurística.
+- Verificação: `pnpm --filter @playbook-brain/web typecheck` OK.
+- Feedback do usuário: visual ficou confuso/feio; cards de roster transmitiam falsa precisão (`Adam Patton 1099`, `Alicia Smith corp-to-Corp`, etc.).
+- Redesign aplicado: `Clean` volta a ser leitura principal; extração heurística virou disclosure colapsável `Detected Users` com tabela compacta e rótulo de baixa confiança.
+- Highlights reduzidos para datas/deadlines/ações (removidos chips agressivos de vendors/device no texto corrido).
+- `fmt` badge removido do toggle; substituído por helper text discreto `Display formatting applied (heuristic)` abaixo do header.
+- Verificação pós-redesign: `pnpm --filter @playbook-brain/web typecheck` OK.
+- Novo feedback do usuário: ainda quer algo mais simples (email body formatting).
+- Reset aplicado: removidos disclosure/tabela/helper text; `Clean` agora usa formatação simples de corpo de email (parágrafos + listas + notas/assinatura) com helper determinístico.
+- Verificação final pós-reset: `pnpm --filter @playbook-brain/web typecheck` OK.
+- Ajuste incremental após novo feedback: removido prefixo verboso `Cleaned ticket text (noise removed, meaning preserved):`.
+- Adicionada detecção simples de bloco de roster (3+ linhas) no formatter de email body para renderizar como tabela markdown (`Name | Details`); runs menores viram bullet list.
+- Verificação: `pnpm --filter @playbook-brain/web typecheck` OK após ajuste de prefixo + list/table detection.
+- Melhoria de método após novo feedback ("não resolveu"): formatter agora usa classificação por linha + score de bloco de roster (com fallback seguro), em vez de regex simples por linha.
+- Fix crítico: tabela markdown passou a ser emitida como bloco único (linhas contíguas), evitando quebra por `join('\\n\\n')`.
+- Verificação: `pnpm --filter @playbook-brain/web typecheck` OK após line-classifier + roster scoring.
+
+## Review
+- What worked: simplificar para email-body formatting resolveu a direção de UX (legibilidade > parsing visual).
+- What was tricky: abandonar a abordagem “rica” rapidamente e fazer rollback funcional sem quebrar o `Clean/Original`.
+- Time taken: ~1h20 (incluindo iterações rejeitadas + reset simples)
+
+---
+
+# Task: Rich formatting para texto "Clean" no toggle da center column (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Localizar render do toggle `Clean/Original` e ponto de aplicação de formatação
+- [x] Step 2: Implementar formatador heurístico determinístico para texto `Clean` (parágrafos/listas/linhas-chave)
+- [x] Step 3: Aplicar somente no modo `Clean` da mensagem `autotask`
+- [x] Step 4: Validar com `pnpm --filter @playbook-brain/web typecheck`
+- [x] Step 5: Documentar na wiki (feature/changelog)
+
+## Open Questions
+- Nenhuma. Estratégia será UI-only, mantendo o texto original intacto e sem alterar payloads/LLM.
+
+## Progress Notes
+- Render do toggle `Clean/Original` identificado em `ChatMessage.tsx`, com render final passando por `MarkdownRenderer`.
+- Implementado formatador heurístico local (`normalizeCleanTicketTextForDisplay`) aplicado somente ao modo `Clean` em mensagens `autotask`.
+- O formatter promove listas numeradas inline (`1. ... 2. ...`) para itens separados, cria parágrafos consistentes e separa callouts comuns (`NOTE`, `GOAL`) e linhas tipo assinatura.
+- Verificação: `pnpm --filter @playbook-brain/web typecheck` OK.
+
+## Review
+- What worked: mudança localizada no render preserva payloads e melhora legibilidade de forma determinística para todos os tickets já existentes.
+- What was tricky: melhorar bastante sem “inventar” conteúdo nem quebrar o texto quando ele já vem parcialmente formatado.
+- Time taken: ~25 min
+
+---
+
+# Task: Botão de supressão manual no header da center column (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Mapear ponto do header da triagem e a lógica atual de tickets suprimidos
+- [x] Step 2: Implementar override manual de supressão (persistência local) e aplicar overlay na lista
+- [x] Step 3: Adicionar ícone toggle ao lado do badge "Playbook ready" e botão de refresh
+- [x] Step 4: Validar comportamento (polling/refresh) e rodar `pnpm --filter @playbook-brain/web typecheck`
+- [x] Step 5: Migrar supressão manual para backend persistente + endpoint de toggle
+- [x] Step 6: Bloquear pipeline/background para tickets manualmente suprimidos
+- [x] Step 7: Atualizar frontend para usar backend (remover MVP localStorage)
+- [x] Step 8: Revalidar (`api` + `web`) e atualizar wiki/changelog
+
+## Open Questions
+- Persistência manual será local (`localStorage`) no MVP; backend não será alterado nesta entrega.
+
+## Progress Notes
+- Supressão automática atual vem da rota `email-ingestion/list` (classificação derivada em runtime), sem persistência manual no backend.
+- Implementado override manual local (`localStorage`) com merge sobre a lista de tickets para sobreviver ao polling (home + triage detail).
+- Adicionado botão de ícone (toggle) no header da center column entre badge `Playbook ready` e botão de refresh, com `aria-label`/`aria-pressed`.
+- Verificação: `pnpm --filter @playbook-brain/web typecheck` OK.
+- Correção do usuário válida: supressão manual deve ser backend-enforced para evitar gasto de pipeline/token; tarefa reaberta para implementar persistência + guard operacional.
+- Supressão manual migrada para backend (`tickets_processed.manual_suppressed` + endpoint `PATCH /email-ingestion/tickets/:ticketId/manual-suppression`).
+- Lista `/email-ingestion/list` agora mescla supressão automática + manual persistida e expõe `manual_suppressed`.
+- `triageOrchestrator.runPipeline(...)` agora aborta cedo para tickets manualmente suprimidos e bloqueia sessão mais recente (`blocked`, `last_error = manual suppression`).
+- `/playbook/full-flow` não agenda background processing para tickets manualmente suprimidos e responde fluxo como `⛔ Suppressed` quando aplicável.
+- Verificação final: `pnpm --filter @playbook-brain/api typecheck` e `pnpm --filter @playbook-brain/web typecheck` OK.
+- Regressão reportada pelo usuário: tickets suprimidos manualmente (sem sessão) não reapareciam ao desligar filtro e contador de suprimidos ficava incorreto.
+- Root cause: `/email-ingestion/list` ancorava em `triage_sessions`, excluindo tickets sem sessão.
+- Fix: query da sidebar agora ancora em `tickets_processed` com `LEFT JOIN latest_sessions`; `session/evidence/ssot` permanecem opcionais.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após fix da query da sidebar.
+
+## Review
+- What worked: manter a semântica de supressão no backend permitiu resolver UX + economia de pipeline/token com mudanças localizadas (rota list, endpoint toggle, guards em orchestrator/full-flow).
+- What was tricky: substituir o MVP local sem regredir o estado visual imediato do botão e da sidebar durante polling.
+- Time taken: ~1h30 (incluindo MVP inicial + correção para backend enforcement)
+
+---
+
 # Task: Corrigir contrato dos Passos 1-2 (Despertar + Prepare Context)
 **Status**: completed
 **Started**: 2026-02-23

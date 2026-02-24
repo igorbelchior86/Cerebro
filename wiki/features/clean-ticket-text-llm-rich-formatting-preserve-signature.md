@@ -8,6 +8,11 @@
 - Updated the triage UI to prefer/render the LLM markdown in the `Clean` toggle when available.
 - Preserved the sender signature/contact block in the LLM display markdown prompt contract.
 - Removed the verbose UI prefix (`Cleaned ticket text (noise removed, meaning preserved):`) from the `Clean` toggle payload.
+- Follow-up hardening: display markdown generation is now constrained to **format-only** changes (no paraphrase / no reinterpretation).
+- Added a verbatim-preservation validator plus a strict LLM retry path for formatting-only output before plain fallback.
+- Follow-up bugfix: relaxed the validator to tolerate small formatting-only label/header additions so valid rich formatting is not falsely downgraded to plain text.
+- Final simplification: rich display markdown is now generated in a **separate strict format-only LLM call** over the already-clean canonical text (instead of sharing the normalization prompt with `description_ui`).
+- Follow-up prompt fix: the format-only prompt now permits **minimal generic labels/headings** (e.g. `Request`, `Signature`) so the `Clean` view can be truly rich-formatted while preserving wording.
 
 # Why it changed
 - Real intake emails contain HTML/template boilerplate, signatures, disclaimers, and merged list structures that are hard to format reliably with local heuristics.
@@ -18,6 +23,10 @@
 - Logic: `normalizeTicketForPipeline(...)` now requests both:
   - canonical plain cleaned text for pipeline usage
   - display markdown for technician-facing rendering
+- Logic: LLM display markdown is validated against canonical cleaned text (markdown stripped / normalized) and retried with a stricter prompt if it changes wording.
+- Logic: validator now uses high source-token coverage + low novel-token ratio (with a formatting-label allowlist) instead of near-exact equality.
+- Logic: display formatting is now decoupled from the normalization/reinterpretation prompt, reducing semantic contamination.
+- Logic: formatter prompt preserves wording/facts but allows small structural labels for readability.
 - Data: No DB schema migration required (JSON payload extension only in `ticket_text_artifacts.payload`).
 
 # Files touched

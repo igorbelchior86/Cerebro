@@ -6556,23 +6556,15 @@ Output schema:
 Rules:
 1. description_canonical: Keep the original text and intent, but remove signatures, legal disclaimers, external portal boilerplate, and phishing warnings. This field should be plain text suitable for downstream pipeline parsing.
 2. description_ui: Reinterpret and radically simplify the ticket for the technician UI. Focus EXCLUSIVELY on "what the user wants" or "what is broken". Be direct and concise.
-3. description_display_markdown: Produce clean, rich Markdown for the "Clean" toggle.
-   - Remove gibberish/boilerplate (HTML tags, portal boilerplate, tracking URLs, repeated template content, warning banners).
-   - Preserve the operational meaning exactly.
-   - PRESERVE the sender signature/contact block when present.
-   - Remove legal disclaimers/confidentiality notices unless they contain operational instructions.
-   - Use headings/lists/tables when helpful. Convert clear rosters/lists to Markdown tables. If ambiguous, use bullets and preserve ambiguity.
-   - Output Markdown only in this field (no code fences).
-4. Preserve concrete facts: people, emails, phones, device models/serials, organization hints.
-5. DO NOT confuse requester and affected user. If requester is asking on behalf of a different/new employee and the affected employee name is not explicitly stated, keep the affected employee unnamed (e.g., "new employee (name not provided)").
-6. Keep output concise and factual.
+3. Preserve concrete facts: people, emails, phones, device models/serials, organization hints.
+4. DO NOT confuse requester and affected user. If requester is asking on behalf of a different/new employee and the affected employee name is not explicitly stated, keep the affected employee unnamed (e.g., "new employee (name not provided)").
+5. Keep output concise and factual.
 
 Output JSON schema:
 {
   "title": "string",
   "description_canonical": "string",
   "description_ui": "string",
-  "description_display_markdown": "string",
   "requester_name": "string",
   "requester_email": "string",
   "affected_user_name": "string",
@@ -6592,9 +6584,6 @@ Ticket text:
       const title = String(parsed?.title || '').trim();
       const descriptionCanonical = this.postProcessCanonicalTicketText(String(parsed?.description_canonical || ''));
       let descriptionUi = this.postProcessUiTicketText(String(parsed?.description_ui || ''));
-      const descriptionDisplayMarkdown = this.postProcessDisplayMarkdownTicketText(
-        String(parsed?.description_display_markdown || '')
-      );
       const requesterName = this.normalizeName(String(parsed?.requester_name || '').trim());
       const requesterEmail = String(parsed?.requester_email || '').trim().toLowerCase();
       const affectedUserName = this.normalizeName(String(parsed?.affected_user_name || '').trim());
@@ -6618,9 +6607,15 @@ Ticket text:
         const canonicalRequesterName = requesterName || this.normalizeName(ticket.requester || '') || '';
         const canonicalAffectedName = affectedUserName || canonicalRequesterName || '';
         const canonicalAffectedEmail = affectedUserEmail || canonicalRequesterEmail || '';
+        const canonicalDisplayText = descriptionCanonical || this.postProcessCanonicalTicketText(fallback.descriptionClean);
+        let descriptionDisplayMarkdown = '';
+        const strictFormat = await this.formatDisplayMarkdownVerbatimWithLLM(canonicalDisplayText).catch(() => '');
+        if (this.isDisplayMarkdownVerbatimEnough(canonicalDisplayText, strictFormat)) {
+          descriptionDisplayMarkdown = strictFormat;
+        }
         return {
           title: title || fallback.title,
-          descriptionCanonical: descriptionCanonical || this.postProcessCanonicalTicketText(fallback.descriptionClean),
+          descriptionCanonical: canonicalDisplayText,
           descriptionUi:
             descriptionUi ||
             this.guardTicketUiRoleAssignment({
@@ -6632,7 +6627,7 @@ Ticket text:
             }),
           descriptionDisplayMarkdown:
             descriptionDisplayMarkdown ||
-            (descriptionCanonical || this.postProcessCanonicalTicketText(fallback.descriptionClean)),
+            canonicalDisplayText,
           descriptionDisplayFormat: descriptionDisplayMarkdown ? 'markdown_llm' : 'plain',
           requesterName: canonicalRequesterName,
           requesterEmail: canonicalRequesterEmail,
@@ -6802,6 +6797,101 @@ Ticket text:
       .trim();
 
     return text;
+  }
+
+  private async formatDisplayMarkdownVerbatimWithLLM(sourceText: string): Promise<string> {
+    const text = String(sourceText || '').trim();
+    if (!text) return '';
+    const prompt = `Format the following ticket text as Markdown for readability.
+
+CRITICAL RULES (strict):
+- Preserve the original wording for the ticket content and signature details.
+- Do NOT paraphrase, summarize, reinterpret, rename, or reorder facts.
+- You MAY add minimal formatting labels/headings for structure (for example: "Request", "Signature", "Notes") when helpful.
+- You MAY add Markdown syntax, whitespace, line breaks, bullets, and tables.
+- Keep added labels minimal and generic; do not invent new facts.
+- Preserve the signature/contact block if present.
+- Output Markdown only (no code fences, no explanation).
+
+Text:
+"""${text.slice(0, 12000)}"""`;
+    const llm = await callLLM(prompt);
+    return this.postProcessDisplayMarkdownTicketText(String(llm.content || ''));
+  }
+
+  private isDisplayMarkdownVerbatimEnough(sourceText: string, markdownText: string): boolean {
+    const source = this.normalizeDisplayTextForVerbatimGuard(sourceText);
+    const rendered = this.normalizeDisplayTextForVerbatimGuard(this.stripMarkdownForDisplayGuard(markdownText));
+    if (!source || !rendered) return false;
+
+    const sourceTokens = source.split(' ').filter(Boolean);
+    const renderedTokens = rendered.split(' ').filter(Boolean);
+    if (!sourceTokens.length || !renderedTokens.length) return false;
+
+    // Exact match after markdown stripping/whitespace normalization is ideal.
+    if (source === rendered) return true;
+
+    // Coverage by subsequence: source wording should still appear in order.
+    let matched = 0;
+    let j = 0;
+    for (let i = 0; i < sourceTokens.length && j < renderedTokens.length; i += 1) {
+      const token = sourceTokens[i];
+      while (j < renderedTokens.length && renderedTokens[j] !== token) j += 1;
+      if (j < renderedTokens.length && renderedTokens[j] === token) {
+        matched += 1;
+        j += 1;
+      }
+    }
+
+    const coverage = matched / Math.max(1, sourceTokens.length);
+    const sourceSet = new Set(sourceTokens);
+    const formattingWords = new Set([
+      'request', 'requests', 'requester', 'signature', 'contact', 'notes', 'goal', 'priority',
+      'users', 'items', 'details', 'name', 'role', 'employment', 'location', 'device',
+    ]);
+    let novel = 0;
+    for (const token of renderedTokens) {
+      if (!sourceSet.has(token) && !formattingWords.has(token)) novel += 1;
+    }
+    const novelRatio = novel / Math.max(1, renderedTokens.length);
+    const lengthRatio = rendered.length / Math.max(1, source.length);
+
+    // Allow formatting headers/table labels, but reject meaningful rewrites.
+    // If the source is short, require tighter length/coverage because a few new words can dominate.
+    if (sourceTokens.length < 12) {
+      return coverage >= 0.9 && novelRatio <= 0.12 && lengthRatio >= 0.75 && lengthRatio <= 1.4;
+    }
+    return coverage >= 0.9 && novelRatio <= 0.08 && lengthRatio >= 0.7 && lengthRatio <= 1.5;
+  }
+
+  private stripMarkdownForDisplayGuard(value: string): string {
+    return String(value || '')
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+      .replace(/^\s*[-*+]\s+/gm, '')
+      .replace(/^\s*\d+\.\s+/gm, '')
+      .replace(/^\s*\|/gm, ' ')
+      .replace(/\|/g, ' ')
+      .replace(/^\s*:?[-]{3,}:?\s*$/gm, ' ')
+      .replace(/[*_~]/g, '')
+      .trim();
+  }
+
+  private normalizeDisplayTextForVerbatimGuard(value: string): string {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
+      .replace(/[–—]/g, '-')
+      .replace(/\s*\n\s*/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/\s+([,.;:!?])/g, '$1')
+      .trim();
   }
 
   private formatCanonicalTicketSignature(value: string): string {

@@ -7,6 +7,11 @@
 - Triage timeline `Autotask` message now uses the display markdown for the `Clean` toggle when present.
 - `ChatMessage` renders `Clean` as direct markdown for `markdown_llm` tickets and falls back to the existing heuristic formatter for plain/legacy tickets.
 - The `Clean` toggle payload no longer prepends the verbose `Cleaned ticket text...` label.
+- Follow-up hardening: display markdown prompt now explicitly requires **format-only** transformations (no paraphrase / no reinterpretation).
+- Added a verbatim guard plus a strict LLM retry formatting path before degrading to plain display text.
+- Follow-up bugfix: relaxed the verbatim guard to allow formatting-only label/header additions, preventing false plain-text fallback when rich formatting is otherwise valid.
+- Final simplification: moved `description_display_markdown` generation out of the normalization JSON prompt and into a separate strict format-only LLM call over canonical cleaned text.
+- Follow-up prompt fix: relaxed the strict formatter prompt to allow minimal generic headings/labels (e.g. `Request`, `Signature`) while still forbidding paraphrase/reinterpretation.
 
 # Why it changed
 - Frontend heuristics alone were not robust enough for messy email/Autotask bodies (HTML blobs, disclaimers, duplicated templates, merged rosters).
@@ -15,6 +20,10 @@
 # Impact (UI / logic / data)
 - UI: Cleaner `Clean` rendering path with LLM-authored Markdown when available; backward-compatible fallback remains.
 - Logic: Separation of concerns between pipeline canonical text (`text_clean`) and UI display markdown (`text_clean_display_markdown`).
+- Logic: Display markdown is now validated and retried under a stricter verbatim formatting contract to preserve original wording.
+- Logic: validator now distinguishes formatting additions vs semantic drift via coverage + novel-token ratio thresholds.
+- Logic: formatting and reinterpretation are now isolated in separate LLM tasks (`display markdown` vs `description_ui`).
+- Logic: format-only prompt now distinguishes "new structure" (allowed) from "new facts/rewrites" (forbidden).
 - Data: JSON artifact payload shape extended; no SQL migration required.
 
 # Files touched

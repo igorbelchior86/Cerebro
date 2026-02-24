@@ -235,6 +235,30 @@
 **Rule**: When the UI requires rich formatting (especially LLM-authored markdown), persist a dedicated display field/format flag and keep pipeline-clean text semantically plain.
 **Pattern**: Canonical parsing text and display markdown should be separate artifacts (`canonical` vs `display`), with explicit format metadata.
 
+## Lesson: 2026-02-24 (LLM formatter guard should recover before degrading UX)
+**Mistake**: A first pass at blocking LLM paraphrase risk could over-degrade `Clean` back to plain text.
+**Root cause**: Validation existed, but there was no intermediate strict-retry formatting step to preserve formatting quality while enforcing verbatim text.
+**Rule**: For LLM formatting transforms, implement `candidate -> validate -> strict retry -> validate -> plain fallback`.
+**Pattern**: If user feedback says "formatting was good, only text changed", keep the formatting path and tighten the wording contract instead of collapsing to plain fallback.
+
+## Lesson: 2026-02-24 (verbatim guard must tolerate formatting labels)
+**Mistake**: The verbatim guard still rejected good rich formatting because it expected near-exact text after markdown stripping.
+**Root cause**: Rich formatting can legitimately add a small number of structural words (headers/labels), which looked like drift to a strict equality-style validator.
+**Rule**: For rich-format validation, use high source-token coverage + low novel-token ratio (with a formatting-word allowlist), not near-exact equality.
+**Pattern**: Guard false negatives show up as "no formatting at all" because the system silently falls back to plain text.
+
+## Lesson: 2026-02-24 (separate LLM tasks by intent)
+**Mistake**: I asked one normalization prompt to both reinterpret (`description_ui`) and produce verbatim-rich formatting (`description_display_markdown`).
+**Root cause**: Mixed objectives in the same LLM response increased the chance of semantic bleed/paraphrase in the display field.
+**Rule**: When two outputs have conflicting transformation goals (reinterpret vs format-only), use separate LLM calls with dedicated prompts.
+**Pattern**: `canonical cleanup` and `display formatting` are distinct tasks; coupling them creates avoidable drift.
+
+## Lesson: 2026-02-24 (format-only prompt can still over-constrain formatting)
+**Mistake**: The strict formatter prompt prohibited adding any labels/headings, which prevented the simple rich formatting the user actually wanted.
+**Root cause**: I optimized for verbatim preservation but accidentally removed the model's ability to add minimal structure (`Request`, `Signature`).
+**Rule**: For format-only prompts, allow minimal generic structural labels while forbidding semantic rewrites.
+**Pattern**: "No new words" is too strict for rich formatting; prefer "no new facts / no paraphrase" plus minimal structural labels.
+
 ## Lesson: 2026-02-23 (refresh must be hard reset, not UI-only)
 **Mistake**: Implemented refresh that reset UI/session artifacts but still allowed org-level caches to repopulate pipeline outputs.
 **Root cause**: Hard refresh semantics were incomplete (did not clear IT Glue org caches) and button UX did not match expectation.

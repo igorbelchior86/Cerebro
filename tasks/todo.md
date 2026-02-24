@@ -3,12 +3,12 @@
 **Started**: 2026-02-24
 
 ## Plan
-- [ ] Step 1: Locate `text_clean` generation path and UI consumption for the `Clean` toggle
-- [ ] Step 2: Extend LLM normalization prompt to produce a rich Markdown display variant that preserves signature/contact block
-- [ ] Step 3: Persist the display-format artifact metadata (`markdown_llm` vs plain fallback) without breaking existing tickets
-- [ ] Step 4: Update frontend `Clean` rendering to trust/render LLM markdown when flagged, keep heuristic formatter for legacy/fallback plain text
-- [ ] Step 5: Verify with `pnpm --filter @playbook-brain/api typecheck` and `pnpm --filter @playbook-brain/web typecheck`
-- [ ] Step 6: Document in wiki (feature/changelog)
+- [x] Step 1: Locate `text_clean` generation path and UI consumption for the `Clean` toggle
+- [x] Step 2: Extend LLM normalization prompt to produce a rich Markdown display variant that preserves signature/contact block
+- [x] Step 3: Persist the display-format artifact metadata (`markdown_llm` vs plain fallback) without breaking existing tickets
+- [x] Step 4: Update frontend `Clean` rendering to trust/render LLM markdown when flagged, keep heuristic formatter for legacy/fallback plain text
+- [x] Step 5: Verify with `pnpm --filter @playbook-brain/api typecheck` and `pnpm --filter @playbook-brain/web typecheck`
+- [x] Step 6: Document in wiki (feature/changelog)
 
 ## Open Questions
 - Keep `text_clean` as canonical pipeline-clean text (plain) and add a separate display markdown field to avoid polluting enrichment inputs.
@@ -21,12 +21,25 @@
 - Triage page now prefers the display markdown for `Clean` and removed the old verbose `Cleaned ticket text...` prefix from the UI payload.
 - `ChatMessage` now renders `Clean` directly as markdown when `cleanFormat === markdown_llm`, and keeps the heuristic formatter only for plain/legacy tickets.
 - Verification: `pnpm --filter @playbook-brain/api typecheck` and `pnpm --filter @playbook-brain/web typecheck` OK.
+- Follow-up bugfix after user validation: keep rich formatting but prevent LLM wording changes in `Clean`.
+- `description_display_markdown` prompt hardened to `FORMAT ONLY` (no paraphrase/reinterpretation).
+- Added verbatim guard (markdown-stripped output vs canonical cleaned text) and a strict LLM retry path for formatting-only output before plain fallback.
+- Verification follow-up: `pnpm --filter @playbook-brain/api typecheck` OK.
+- Follow-up bugfix after screenshot validation: verbatim guard was too strict and rejected valid rich formatting (headers/list labels/table labels), causing plain-text fallback.
+- Guard adjusted to allow formatting-only additions using high source-token coverage + low novel-token ratio (with a formatting-label allowlist), while still blocking paraphrase-heavy outputs.
+- Verification follow-up: `pnpm --filter @playbook-brain/api typecheck` OK.
+- Simplificação final aplicada após feedback do usuário: `description_display_markdown` deixou de ser gerado na mesma prompt de normalização (que também gera `description_ui` reinterpreted).
+- Agora o rich formatting do `Clean` é uma chamada LLM separada, **strict format-only**, executada sobre o `description_canonical` já limpo.
+- Isso reduz contaminação semântica entre objetivos (`normalize/reinterpret` vs `format-only`) e implementa exatamente o contrato pedido: limpar gibberish + formatar + manter texto original + assinatura.
+- Verification follow-up: `pnpm --filter @playbook-brain/api typecheck` OK.
+- Follow-up bugfix after latest screenshot: strict formatter prompt was over-constrained and effectively blocked useful structure (e.g. `Request` / `Signature` headings), resulting in almost plain text.
+- Formatter prompt now allows **minimal generic labels/headings** while preserving original wording and facts.
+- Verification follow-up: `pnpm --filter @playbook-brain/api typecheck` OK.
 
 ## Review
 (fill in after completion)
-- What worked:
-- What worked: separating `description_canonical` (pipeline) from `description_display_markdown` (UI) avoided contaminating enrichment inputs while delivering LLM-based rich formatting.
-- What was tricky: preserving backward compatibility for existing tickets required a format flag and a frontend fallback path instead of replacing `text_clean` semantics.
+- What worked: separating `description_canonical` (pipeline) from `description_display_markdown` (UI) avoided contaminating enrichment inputs; decoupling the display-format LLM call from the normalization prompt further aligned behavior with the product contract.
+- What was tricky: preserving backward compatibility for existing tickets required a format flag and a frontend fallback path instead of replacing `text_clean` semantics; later, the semantic guard needed both a strict-retry step and a more formatting-tolerant validator to avoid false plain-text fallback.
 - Time taken: ~45 min
 
 ---

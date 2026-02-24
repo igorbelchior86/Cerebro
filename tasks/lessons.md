@@ -389,3 +389,9 @@
 **Root cause**: Cobertura de regex focada em verbos genéricos (`delete`, `disable`, `wipe`) sem considerar frases operacionais comuns de MSP/network.
 **Rule**: Ao implementar guardrails de remediação destrutiva, incluir vocabulário operacional concreto (`factory reset`, `reset firewall`, etc.) e validar com exemplos reais de linguagem de técnico.
 **Pattern**: Teste de risco falha com `status=approved` quando deveria bloquear => antes de mexer em lógica de status, revisar cobertura lexical do matcher.
+
+## Lesson: 2026-02-24 (prompt-only contracts are not real contracts)
+**Mistake**: O `PlaybookWriter` já descrevia uma boa estrutura no prompt, mas o validador de estrutura só dava `warn`, então a Fase 5 podia sair sem `Escalation`/`Checklist`/`Hypotheses` consistentes.
+**Root cause**: Dependência excessiva na obediência da LLM ao prompt, sem gate determinístico pós-geração.
+**Rule**: Quando o usuário define um contrato de saída (ex.: seções do playbook), transformar em validação determinística + repair automático antes de aceitar o output.
+**Pattern**: “A seção está no prompt mas não é garantida” => adicionar validator que falha/testa o contrato, não só instrução textual.

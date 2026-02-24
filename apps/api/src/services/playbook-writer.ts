@@ -90,7 +90,19 @@ Regenerate the full playbook and ensure Resolution Steps include explicit hypoth
       sanitizedPlaybook = this.sanitizePlaybook(playbookMarkdown);
     }
 
-    // ─── Validate playbook structure ────────────────────────────
+    // ─── Validate playbook structure (Phase 5 contract) ─────────
+    const missingSections = this.getMissingPlaybookSections(sanitizedPlaybook);
+    if (missingSections.length > 0) {
+      const repairPrompt = `${prompt}
+
+## REVISION REQUIRED
+Your previous output is missing mandatory field-guide sections required by contract: ${missingSections.join(', ')}.
+Regenerate the full playbook and include explicit Markdown sections for Context, Hypotheses, Checklist, and Escalation (plus Verification and Rollback).`;
+      const repair = await llm.complete(repairPrompt);
+      playbookMarkdown = repair.content;
+      sanitizedPlaybook = this.sanitizePlaybook(playbookMarkdown);
+    }
+
     this.validatePlaybookStructure(sanitizedPlaybook);
     if (!this.hasChecklistHypothesisAlignment(sanitizedPlaybook, diagnosis)) {
       throw new Error(
@@ -195,16 +207,18 @@ Generate a MARKDOWN playbook with these sections:
 [TICKET-ID] - [Concise Title from Diagnosis]
 \`\`\`
 
-## 📋 Overview
-- Issue: One paragraph summary
+## 📋 Context
+- Client: ${pack.org?.name || 'Unknown org'}
+- Scenario: One paragraph summary of what is happening and where (site/device/team) based on validated evidence
 - Affected: ${pack.device?.hostname || 'Device'}, ${pack.user?.name || 'User'}, etc.
 - Impact: High/Medium/Low with explanation
 - Estimated Time: 5-30 minutes
 
-## 🎯 Root Cause
-- Primary hypothesis from diagnosis
-- Contributing factors
-- Why this happened
+## 🧠 Hypotheses
+- H1: Primary validated hypothesis with confidence and why it is likely
+- H2/H3: Alternative hypotheses (only if material)
+- Mention evidence refs or observed facts supporting each hypothesis
+- If a hypothesis is investigative-only, say so explicitly
 
 ## ✅ Pre-flight Checks
 List 3-5 checks to verify system state before starting:
@@ -212,7 +226,7 @@ List 3-5 checks to verify system state before starting:
 - Check 2: Specific command or note
 - etc.
 
-## 🔧 Resolution Steps
+## ✅ Checklist
 Numbered steps with:
 1. **[H#] Step Title** - One line summary
    - Description of what to do
@@ -222,7 +236,7 @@ Numbered steps with:
 
 2. **Next Step** - Continue...
 
-Stop at step 8 maximum. Each step should be 30-60 seconds execution.
+Stop at step 8 maximum. Each step should be 30-60 seconds execution and written as direct technician actions.
 
 ### Hypothesis Mapping Rule (MANDATORY)
 - Map checklist steps to hypotheses using tags:
@@ -268,7 +282,7 @@ ${pack.docs
 4. Be practical: Estimated time, prerequisites, dependencies
 
 ## MANDATORY ADVISOR WARNING INJECTION
-If there are ADVISOR NOTES provided above, you MUST include a "🛡️ Advisor Notes" section immediately after the "📋 Overview" section in your Markdown output.
+If there are ADVISOR NOTES provided above, you MUST include a "🛡️ Advisor Notes" section immediately after the "📋 Context" section in your Markdown output.
 For each note, use this format:
 > [!WARNING]
 > [Detail of the advisor note]
@@ -329,23 +343,23 @@ Start with the title and continue with the sections above.`;
    * Validate that the playbook has required sections
    */
   private validatePlaybookStructure(markdown: string): void {
-    const requiredSections = [
-      'overview',
-      'root cause',
-      'steps',
-      'verification',
-      'rollback',
-    ];
-
-    const lowerContent = markdown.toLowerCase();
-
-    for (const section of requiredSections) {
-      if (!lowerContent.includes(section)) {
-        console.warn(
-          `[WARN] Playbook missing expected section: "${section}". Generated content may be incomplete.`
-        );
-      }
+    const missing = this.getMissingPlaybookSections(markdown);
+    if (missing.length > 0) {
+      throw new Error(`Playbook generation failed: missing required sections (${missing.join(', ')})`);
     }
+  }
+
+  private getMissingPlaybookSections(markdown: string): string[] {
+    const checks: Array<{ label: string; ok: boolean }> = [
+      { label: 'title', ok: /^\s*#\s+.+/m.test(markdown) },
+      { label: 'context', ok: /##\s+.*(context|overview)/i.test(markdown) },
+      { label: 'hypotheses', ok: /##\s+.*(hypotheses|root cause)/i.test(markdown) },
+      { label: 'checklist', ok: /##\s+.*(checklist|resolution steps)/i.test(markdown) },
+      { label: 'verification', ok: /##\s+.*verification/i.test(markdown) },
+      { label: 'rollback', ok: /##\s+.*rollback/i.test(markdown) },
+      { label: 'escalation', ok: /##\s+.*escalation/i.test(markdown) },
+    ];
+    return checks.filter((c) => !c.ok).map((c) => c.label);
   }
 }
 

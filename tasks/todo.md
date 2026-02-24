@@ -316,3 +316,68 @@
 - What worked: os novos guardrails se encaixaram no `ValidatePolicyService` sem mudar o contrato externo (`ValidationOutput`) e reforçam exatamente os exemplos do usuário (destrutivo sem aprovação, ISP sem corroboration).
 - What was tricky: manter o comportamento de `advisor mode` sem diluir a regra “nada de chute”; a solução foi classificar os novos casos como hard stops específicos.
 - Time taken: ~25 min
+
+## Task: Fase 5 completa — Playbook Writer (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Auditar `PlaybookWriter` contra contrato da Fase 5 (Contexto/Hipóteses/Checklist/Escalação)
+- [x] Step 2: Implementar gaps de formato/validação para garantir saída “guia de campo” direto ao técnico
+- [x] Step 3: Adicionar/ajustar testes de estrutura do playbook
+- [x] Step 4: Validar testes focados + `typecheck`
+- [x] Step 5: Documentar na wiki e preencher review
+
+## Open Questions
+- Não bloqueante para backend. A Fase 5 foi fechada no writer/contract; render da UI pode permanecer agnóstico às labels enquanto consome Markdown.
+
+## Progress Notes
+- Auditoria identificou gap principal: `PlaybookWriter` já pedia uma boa estrutura no prompt, mas `validatePlaybookStructure()` só emitia `console.warn` e não exigia (nem testava) seções essenciais da narrativa da Fase 5.
+- `apps/api/src/services/playbook-writer.ts` atualizado para:
+  - reforçar prompt com seções explícitas `Context`, `Hypotheses`, `Checklist`, `Escalation`
+  - manter compatibilidade aceitando aliases (`Overview`/`Root Cause`/`Resolution Steps`) na validação
+  - fazer repair automático adicional se faltar seção contratual
+  - falhar explicitamente se ainda faltar seção obrigatória após repair
+- Novo helper `getMissingPlaybookSections()` implementado e `validatePlaybookStructure()` passou a ser gate real (throw).
+- Teste novo `playbook-writer-structure` cobre aceitação com seções do contrato e rejeição sem `Escalation`.
+- Verificações:
+  - `pnpm --filter @playbook-brain/api test -- playbook-writer-structure` ✅
+  - `pnpm --filter @playbook-brain/api test -- playbook-writer-alignment` ✅
+  - `pnpm --filter @playbook-brain/api test -- playbook-writer-contamination` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+
+## Review
+- What worked: reforçar o contrato no pós-processamento/validador do writer foi uma mudança pequena e eficaz; não dependemos só do prompt para garantir a forma de “guia de campo”.
+- What was tricky: exigir o contrato sem quebrar compatibilidade com playbooks já existentes; a solução foi aceitar aliases de seção na validação (`overview/root cause/resolution steps`) enquanto o prompt passa a orientar para `Context/Hypotheses/Checklist`.
+- Time taken: ~25 min
+
+## Task: Fase 6 — Grand Finale UX (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Auditar a experiência final (sidebar -> clique -> playbook pronto) no frontend
+- [x] Step 2: Identificar gap principal na entrega “mastigada” do playbook
+- [x] Step 3: Implementar preenchimento estruturado de checklist/escalation no painel direito a partir do Markdown
+- [x] Step 4: Validar `pnpm --filter @playbook-brain/web typecheck`
+- [x] Step 5: Documentar na wiki e preencher review
+
+## Open Questions
+- O fluxo continua baseado em polling (não push). Isso não bloqueia a Fase 6 funcional, mas permanece como melhoria futura para sensação de “instantâneo”.
+
+## Progress Notes
+- Auditoria mostrou que o ticket já aparecia na sidebar e o playbook podia chegar pronto, mas havia um gap importante no painel direito:
+  - `PlaybookPanel` tinha UI para `Checklist` e `Escalation`
+  - porém `triage/[id]/page.tsx` só populava `context` e `hypotheses`
+  - resultado: checklist ficava vazio/skeleton mesmo com `content_md` pronto
+- Implementado parser leve no frontend (`triage/[id]/page.tsx`) para extrair do `playbook.content_md`:
+  - seção `Checklist` (ou alias `Resolution Steps`)
+  - seção `Escalation` (ou alias `Escalate when`)
+- `PlaybookPanel` agora recebe `checklist` e `escalate` estruturados do playbook gerado, reforçando a experiência “formatado e mastigado” para o técnico.
+- Verificação:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+
+## Review
+- What worked: correção local no frontend, sem tocar backend/pipeline; reaproveita o Markdown já gerado e preenche a UI estruturada que já existia.
+- What was tricky: parser precisava aceitar aliases de seção (`Checklist`/`Resolution Steps`, `Escalation`/`Escalate when`) para compatibilidade com variações de output do Playbook Writer.
+- Time taken: ~20 min

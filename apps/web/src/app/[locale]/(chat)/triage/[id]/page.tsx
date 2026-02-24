@@ -221,6 +221,103 @@ export default function SessionDetail({
     return parts.length > 0 ? parts.join(' · ') : selectedTicketId;
   };
 
+  const extractMarkdownSection = (markdown: string, aliases: string[]) => {
+    const lines = markdown.split('\n');
+    const normalizedAliases = aliases.map((a) => a.toLowerCase());
+    let start = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] || '';
+      const m = line.match(/^\s*##+\s+(.+?)\s*$/);
+      if (!m) continue;
+      const heading = normalizePlainText(m[1] || '', '').toLowerCase();
+      if (normalizedAliases.some((alias) => heading.includes(alias))) {
+        start = i + 1;
+        break;
+      }
+    }
+    if (start < 0) return '';
+    let end = lines.length;
+    for (let i = start; i < lines.length; i++) {
+      if (/^\s*##+\s+/.test(lines[i] || '')) {
+        end = i;
+        break;
+      }
+    }
+    return lines.slice(start, end).join('\n').trim();
+  };
+
+  const parseChecklistFromPlaybook = (markdown?: string) => {
+    if (!markdown) return [] as Array<{ id: string; text: string; details_md?: string }>;
+    const section = extractMarkdownSection(markdown, ['checklist', 'resolution steps']);
+    if (!section) return [] as Array<{ id: string; text: string; details_md?: string }>;
+
+    const lines = section.split('\n');
+    const items: Array<{ id: string; text: string; details_md?: string }> = [];
+    let current: { id: string; text: string; detailLines: string[] } | null = null;
+
+    const flush = () => {
+      if (!current) return;
+      items.push({
+        id: current.id,
+        text: current.text,
+        ...(current.detailLines.length > 0
+          ? { details_md: current.detailLines.join('\n').trim() }
+          : {}),
+      });
+      current = null;
+    };
+
+    for (const rawLine of lines) {
+      const line = rawLine.replace(/\r/g, '');
+      const itemMatch = line.match(/^\s*(\d+)\.\s+(.*)$/);
+      if (itemMatch) {
+        flush();
+        current = {
+          id: `c${items.length + 1}`,
+          text: (itemMatch[2] || '').trim(),
+          detailLines: [],
+        };
+        continue;
+      }
+      if (!current) continue;
+      if (!line.trim()) {
+        if (current.detailLines.length > 0 && current.detailLines[current.detailLines.length - 1] !== '') {
+          current.detailLines.push('');
+        }
+        continue;
+      }
+      if (/^\s*---+\s*$/.test(line)) continue;
+      current.detailLines.push(line);
+    }
+    flush();
+    return items;
+  };
+
+  const parseEscalationFromPlaybook = (markdown?: string) => {
+    if (!markdown) return [] as Array<{ icon: string; text: string }>;
+    const section = extractMarkdownSection(markdown, ['escalation', 'escalate when']);
+    if (!section) return [] as Array<{ icon: string; text: string }>;
+    const rows: Array<{ icon: string; text: string }> = [];
+    for (const rawLine of section.split('\n')) {
+      const line = rawLine.replace(/\r/g, '').trim();
+      if (!line) continue;
+      const bullet = line.match(/^[-*]\s+(.*)$/);
+      const numbered = line.match(/^\d+\.\s+(.*)$/);
+      const contentLine = (bullet?.[1] || numbered?.[1] || '').trim();
+      if (!contentLine) continue;
+      const lowered = contentLine.toLowerCase();
+      const icon = lowered.startsWith('if:') || lowered.includes(' if ') || lowered.includes('condition')
+        ? '⚠️'
+        : lowered.startsWith('contact:') || lowered.includes('contact')
+          ? '📞'
+          : lowered.startsWith('escalate')
+            ? '⬆️'
+            : '⚠️';
+      rows.push({ icon, text: contentLine });
+    }
+    return rows;
+  };
+
   useEffect(() => {
     sidebarTicketsRef.current = sidebarTickets;
   }, [sidebarTickets]);
@@ -651,6 +748,8 @@ export default function SessionDetail({
     digestFacts.map((f: any) => [String(f?.id || ''), String(f?.fact || '').trim()])
   );
   const normalizeFact = (value: string) => value.replace(/\s+/g, ' ').trim();
+  const parsedPlaybookChecklist = parseChecklistFromPlaybook(data?.playbook?.content_md || undefined);
+  const parsedPlaybookEscalation = parseEscalationFromPlaybook(data?.playbook?.content_md || undefined);
   const playbookPanelData = data
     ? {
       ticketId: ticketNumber,
@@ -718,6 +817,8 @@ export default function SessionDetail({
             : [],
         }))
         : [],
+      checklist: parsedPlaybookChecklist,
+      escalate: parsedPlaybookEscalation,
     }
     : undefined;
 

@@ -348,6 +348,12 @@
 **Root cause**: `shouldBlockPlaybookOutput` tratava qualquer menção a termos high-risk (ex.: `malware`) sem evidência como bloqueante, inclusive quando apareciam de forma incidental/defensiva no texto.
 **Rule**: Guardrail de playbook deve bloquear deriva **assertiva/perigosa** (root cause/compromise/remediação de incidente) sem evidência, não menções incidentais que não redefinem o caso.
 **Pattern**: `last_error = Playbook guardrail blocked unsupported inference` em tickets operacionais/rede => revisar heurística de "high-risk drift" para contexto/assertividade.
+
+## Lesson: 2026-02-24 (don’t over-prescribe rollout strategy in a non-production codebase)
+**Mistake**: Propus rollout paralelo/gradual como se houvesse ambiente de produção ativo para a Fase 3.
+**Root cause**: Assumi restrições de deploy típicas sem validar o estágio real do produto (ainda em desenvolvimento).
+**Rule**: Antes de recomendar estratégia de rollout, confirmar se o app está em produção; em ambiente de desenvolvimento, priorizar implementação direta + validação em tickets reais.
+**Pattern**: Usuário corrige “sem produção” => reduzir overhead de rollout e acelerar implementação.
 ## Lesson: 2026-02-24 (UI Unknown with timeline-known value is often SSOT completeness breach, not a UI fallback issue)
 **Mistake**: Diagnostiquei o card `Phone Provider = Unknown` como problema de fallback/binding da UI para fontes diferentes, mesmo após o usuário reforçar que a UI deve consumir exclusivamente SSOT.
 **Root cause**: Eu foquei no sintoma visual (timeline mostra valor, card não) e propus mitigação na UI antes de validar o contrato arquitetural: se o pipeline sabe o dado, ele deve ser promovido ao SSOT.
@@ -371,3 +377,15 @@
 **Root cause**: Não calibrei a severidade do feedback visual; para crítica forte de UI, o usuário espera uma alteração claramente perceptível no elemento central (glyph), não apenas container/hover.
 **Rule**: Quando o usuário rejeitar um ícone explicitamente, trocar o glyph de forma evidente primeiro; depois ajustar acabamento.
 **Pattern**: Feedback "zero mudanças" após UI polish = o problema principal continua no símbolo/forma, não nos detalhes de borda/sombra.
+
+## Lesson: 2026-02-24 (diagnose metadata consumers must treat missing fields as legacy-compatible)
+**Mistake**: No `ValidatePolicyService`, tratei `playbook_anchor_eligible` ausente como `false`, fazendo diagnósticos antigos parecerem "sem âncora" e degradando status/validação sem motivo.
+**Root cause**: Assumi presença universal de metadata nova da Fase 3, ignorando compatibilidade com payloads legados e fixtures de teste.
+**Rule**: Ao integrar campos opcionais novos no pipeline (`Diagnose -> Validate -> Playbook`), ausência do campo deve ter comportamento compatível explícito (ex.: `anchorEligible = true` por default para legado).
+**Pattern**: Introdução de metadata opcional + queda inesperada de testes "happy path" => revisar defaults de compatibilidade antes de mexer em thresholds.
+
+## Lesson: 2026-02-24 (risk gates need real-world destructive verb coverage, not only abstract patterns)
+**Mistake**: O novo gate de ação destrutiva não bloqueou o caso de teste “Factory reset the firewall...” porque o matcher não incluía `factory reset`.
+**Root cause**: Cobertura de regex focada em verbos genéricos (`delete`, `disable`, `wipe`) sem considerar frases operacionais comuns de MSP/network.
+**Rule**: Ao implementar guardrails de remediação destrutiva, incluir vocabulário operacional concreto (`factory reset`, `reset firewall`, etc.) e validar com exemplos reais de linguagem de técnico.
+**Pattern**: Teste de risco falha com `status=approved` quando deveria bloquear => antes de mexer em lógica de status, revisar cobertura lexical do matcher.

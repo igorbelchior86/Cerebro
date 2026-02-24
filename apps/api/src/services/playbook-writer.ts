@@ -121,7 +121,20 @@ Regenerate the full playbook and ensure Resolution Steps include explicit hypoth
     validation: ValidationOutput,
     pack: EvidencePack
   ): string {
-    const topHypothesis = diagnosis.top_hypotheses[0];
+    const enrichedHypotheses = (diagnosis.top_hypotheses || []).slice(0, 3).map((h) => {
+      const anyH = h as any;
+      return {
+        ...h,
+        grounding_status: String(anyH.grounding_status || 'unknown'),
+        support_score: Number(anyH.support_score ?? NaN),
+        relevance_score: Number(anyH.relevance_score ?? NaN),
+        calibrated_confidence: Number(anyH.calibrated_confidence ?? h.confidence ?? 0),
+        llm_confidence: Number(anyH.llm_confidence ?? h.confidence ?? 0),
+        playbook_anchor_eligible: Boolean(anyH.playbook_anchor_eligible ?? true),
+      };
+    });
+    const actionableHypotheses = enrichedHypotheses.filter((h) => h.playbook_anchor_eligible);
+    const topHypothesis = actionableHypotheses[0] || enrichedHypotheses[0];
     const digest = pack.evidence_digest;
     const endpoint = pack.iterative_enrichment?.sections?.endpoint;
     const capability = pack.capability_verification;
@@ -133,10 +146,13 @@ Regenerate the full playbook and ensure Resolution Steps include explicit hypoth
 **Issue Summary:** ${diagnosis.summary}
 
 **Root Cause Hypothesis (Primary):**
-${topHypothesis ? `- ${topHypothesis.hypothesis} (Confidence: ${(topHypothesis.confidence * 100).toFixed(0)}%)` : '- Multiple hypotheses identified'}
+${topHypothesis ? `- ${topHypothesis.hypothesis} (Confidence: ${(topHypothesis.confidence * 100).toFixed(0)}%)${(topHypothesis as any).playbook_anchor_eligible ? '' : ' [Investigative only]'}` : '- Multiple hypotheses identified'}
 
 **Supporting Evidence:**
 ${diagnosis.top_hypotheses.map((h) => h.evidence.map((e) => `- ${e}`).join('\n')).join('\n')}
+
+## HYPOTHESIS QUALITY (MANDATORY FOR STEP PLANNING)
+${enrichedHypotheses.map((h, idx) => `- H${idx + 1}: conf=${Math.round((Number(h.confidence || 0)) * 100)}%, grounding=${h.grounding_status}, support=${Number.isFinite(h.support_score) ? h.support_score.toFixed(2) : 'n/a'}, relevance=${Number.isFinite(h.relevance_score) ? h.relevance_score.toFixed(2) : 'n/a'}, anchor=${h.playbook_anchor_eligible ? 'yes' : 'no'} :: ${h.hypothesis}`).join('\n') || '- none'}
 
 ${digest ? `## EVIDENCE DIGEST (MANDATORY GROUNDING)
 ### Confirmed facts
@@ -213,9 +229,9 @@ Stop at step 8 maximum. Each step should be 30-60 seconds execution.
   - [H1] for primary hypothesis
   - [H2] for second hypothesis
   - [H3] for third hypothesis
-- At least one checklist step must exist for each hypothesis with confidence >= 0.60.
+- At least one checklist step must exist for each hypothesis with confidence >= 0.60 AND anchor=yes.
 - Do not produce a checklist focused only on H1 when H2/H3 are material.
-- If a hypothesis cannot be actioned, add one explicit investigative step tagged to that hypothesis.
+- If a hypothesis is anchor=no, add at most one investigative validation step (do not anchor root cause/remediation on it).
 
 ## ✨ Verification
 - How to verify the fix worked
@@ -265,6 +281,7 @@ For each note, use this format:
 10. NEVER include internal-engine instructions or meta-steps (forbidden examples: "check LLM JSON response", "review prompt", "inspect model output", "parse JSON")
 11. NEVER add data-collection steps for fields already present in Known endpoint/capability data above; use those facts directly.
 12. If manufacturer+model are already known, do not ask to identify hardware model again.
+13. Use HYPOTHESIS QUALITY block: prioritize anchor=yes hypotheses for root cause and remediation sequencing; anchor=no hypotheses are investigative only.
 
 ## OUTPUT
 
@@ -279,8 +296,13 @@ Start with the title and continue with the sections above.`;
   ): boolean {
     const required = (diagnosis.top_hypotheses || [])
       .slice(0, 3)
-      .filter((h) => Number(h?.confidence || 0) >= 0.6)
-      .map((h, idx) => `h${idx + 1}`);
+      .map((h, idx) => ({ h, tag: `h${idx + 1}` }))
+      .filter(({ h }) => {
+        const anyH = h as any;
+        const anchor = anyH.playbook_anchor_eligible;
+        return Number(h?.confidence || 0) >= 0.6 && (anchor === undefined || Boolean(anchor));
+      })
+      .map(({ tag }) => tag);
     if (required.length === 0) return true;
 
     const lines = markdown.split('\n');

@@ -349,6 +349,13 @@ export interface Hypothesis {
   evidence: string[];
   tests: string[];
   next_questions?: string[];
+  llm_confidence?: number;
+  calibrated_confidence?: number;
+  support_score?: number;
+  relevance_score?: number;
+  grounding_status?: 'grounded' | 'partial' | 'weak' | 'unsupported';
+  confidence_explanation?: string[];
+  playbook_anchor_eligible?: boolean;
 }
 
 export interface RecommendedAction {

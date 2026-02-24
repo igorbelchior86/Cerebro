@@ -5,9 +5,21 @@
 import type {
   EvidencePack,
   DiagnosisOutput,
+  Hypothesis,
 } from '@playbook-brain/types';
 import { getDefaultLLMProvider } from './llm-adapter.js';
 import { shouldBlockDiagnosisOutput } from './evidence-guardrails.js';
+
+type HypothesisGroundingStatus = 'grounded' | 'partial' | 'weak' | 'unsupported';
+type EnrichedHypothesis = Hypothesis & {
+  llm_confidence?: number;
+  calibrated_confidence?: number;
+  support_score?: number;
+  relevance_score?: number;
+  grounding_status?: HypothesisGroundingStatus;
+  confidence_explanation?: string[];
+  playbook_anchor_eligible?: boolean;
+};
 
 export class DiagnoseService {
   /**
@@ -198,27 +210,37 @@ Rules:
       const parsed = JSON.parse(cleanJson);
       const algorithmicBaseline = this.calculateAlgorithmicBaseline(pack);
 
+      const parsedHypotheses: EnrichedHypothesis[] = (parsed.top_hypotheses || []).map(
+        (h: any, idx: number) => {
+          const llmConfidence = Math.min(1, Math.max(0, Number(h.confidence || 0)));
+          // Keep a backward-compatible baseline confidence before deterministic calibration.
+          const baselineBlendedConfidence = Number(
+            (0.6 * llmConfidence + 0.4 * algorithmicBaseline).toFixed(3)
+          );
+
+          return {
+            rank: h.rank || idx + 1,
+            hypothesis: h.hypothesis || 'Unknown hypothesis',
+            confidence: baselineBlendedConfidence,
+            llm_confidence: llmConfidence,
+            evidence: Array.isArray(h.evidence) ? h.evidence : [],
+            tests: Array.isArray(h.tests) ? h.tests : [],
+            next_questions: Array.isArray(h.next_questions)
+              ? h.next_questions
+              : [],
+          };
+        }
+      );
+
+      const calibratedHypotheses = this.enrichAndRankHypotheses(
+        parsedHypotheses,
+        pack,
+        algorithmicBaseline
+      );
+
       const parsedDiagnosis: DiagnosisOutput = {
         summary: String(parsed.summary || 'Diagnosis complete.'),
-        top_hypotheses: (parsed.top_hypotheses || []).map(
-          (h: any, idx: number) => {
-            const llmConfidence = Math.min(1, Math.max(0, h.confidence || 0));
-            // BLENDING LOGIC: 60% LLM, 40% Algorithmic Baseline
-            // If internal identifier match is strong, baseline pushes it up.
-            const blendedConfidence = Number((0.6 * llmConfidence + 0.4 * algorithmicBaseline).toFixed(3));
-
-            return {
-              rank: h.rank || idx + 1,
-              hypothesis: h.hypothesis || 'Unknown hypothesis',
-              confidence: blendedConfidence,
-              evidence: Array.isArray(h.evidence) ? h.evidence : [],
-              tests: Array.isArray(h.tests) ? h.tests : [],
-              next_questions: Array.isArray(h.next_questions)
-                ? h.next_questions
-                : [],
-            };
-          }
-        ),
+        top_hypotheses: calibratedHypotheses as Hypothesis[],
         missing_data: Array.isArray(parsed.missing_data)
           ? parsed.missing_data
           : [],
@@ -286,6 +308,238 @@ Rules:
     }
 
     return Math.min(1.0, score);
+  }
+
+  private enrichAndRankHypotheses(
+    hypotheses: EnrichedHypothesis[],
+    pack: EvidencePack,
+    algorithmicBaseline: number
+  ): EnrichedHypothesis[] {
+    const ticketDomains = this.detectDomains(
+      `${pack.ticket.title || ''} ${pack.ticket.description || ''} ${(pack.evidence_digest?.tech_context_detected || []).join(' ')}`
+    );
+    const confirmedFacts = (pack.evidence_digest?.facts_confirmed || []) as Array<any>;
+    const conflictedFacts = (pack.evidence_digest?.facts_conflicted || []) as Array<any>;
+    const missingCritical = (pack.evidence_digest?.missing_critical || []) as Array<any>;
+    const confirmedIds = new Set(confirmedFacts.map((f) => String(f?.id || '').trim()).filter(Boolean));
+    const conflictedIds = new Set(conflictedFacts.map((f) => String(f?.id || '').trim()).filter(Boolean));
+    const candidateActionText = (pack.evidence_digest?.candidate_actions || [])
+      .map((a: any) => String(a?.action || '').toLowerCase())
+      .filter(Boolean);
+
+    const processed = hypotheses.map((hyp, idx) =>
+      this.scoreAndCalibrateHypothesis({
+        hyp,
+        idx,
+        ticketDomains,
+        confirmedIds,
+        conflictedIds,
+        confirmedFacts,
+        conflictedFacts,
+        missingCritical,
+        candidateActionText,
+        algorithmicBaseline,
+      })
+    );
+
+    return processed
+      .sort((a, b) => {
+        const confDelta = (b.calibrated_confidence || b.confidence) - (a.calibrated_confidence || a.confidence);
+        if (Math.abs(confDelta) > 0.0001) return confDelta;
+        return (b.support_score || 0) - (a.support_score || 0);
+      })
+      .slice(0, 3)
+      .map((h, i) => ({ ...h, rank: i + 1 }));
+  }
+
+  private scoreAndCalibrateHypothesis(input: {
+    hyp: EnrichedHypothesis;
+    idx: number;
+    ticketDomains: Set<string>;
+    confirmedIds: Set<string>;
+    conflictedIds: Set<string>;
+    confirmedFacts: Array<any>;
+    conflictedFacts: Array<any>;
+    missingCritical: Array<any>;
+    candidateActionText: string[];
+    algorithmicBaseline: number;
+  }): EnrichedHypothesis {
+    const { hyp, idx, ticketDomains, confirmedIds, conflictedIds, confirmedFacts, conflictedFacts, missingCritical, candidateActionText, algorithmicBaseline } = input;
+    const llmConfidence = Math.min(1, Math.max(0, Number(hyp.llm_confidence ?? hyp.confidence ?? 0)));
+    const evidenceRefs = (hyp.evidence || []).map((e) => String(e || '').trim()).filter(Boolean);
+    const tests = (hyp.tests || []).map((t) => String(t || '').trim()).filter(Boolean);
+    const hypothesisText = String(hyp.hypothesis || '');
+    const hypothesisLower = hypothesisText.toLowerCase();
+
+    const directConfirmedMatches = evidenceRefs.filter((e) => confirmedIds.has(e)).length;
+    const directConflictMatches = evidenceRefs.filter((e) => conflictedIds.has(e)).length;
+    const evidencePresenceScore = evidenceRefs.length > 0 ? Math.min(0.28, 0.08 * evidenceRefs.length) : 0;
+    const directGroundingScore = Math.min(0.52, 0.2 * directConfirmedMatches);
+    const testsScore = tests.length > 0 ? Math.min(0.12, 0.04 * tests.length) : 0;
+    const candidateActionAlignmentScore = tests.some((t) =>
+      candidateActionText.some((a) => a && (t.toLowerCase().includes(a) || a.includes(t.toLowerCase())))
+    )
+      ? 0.08
+      : 0;
+    const unsupportedEvidencePenalty = evidenceRefs.length > 0 && directConfirmedMatches === 0 ? 0.12 : 0;
+    const supportScore = this.clamp01(
+      evidencePresenceScore + directGroundingScore + testsScore + candidateActionAlignmentScore - unsupportedEvidencePenalty
+    );
+
+    const hypothesisDomains = this.detectDomains(hypothesisText);
+    const relevanceScore = this.computeRelevanceScore(ticketDomains, hypothesisDomains, hypothesisLower);
+
+    const conflictPenalty = Math.min(0.22, 0.08 * directConflictMatches) +
+      this.computeConflictThemePenalty(hypothesisLower, conflictedFacts);
+    const missingCriticalPenalty = this.computeMissingCriticalPenalty(hypothesisLower, missingCritical);
+
+    let calibrated = 0.42 * llmConfidence +
+      0.18 * algorithmicBaseline +
+      0.24 * supportScore +
+      0.16 * relevanceScore -
+      conflictPenalty -
+      missingCriticalPenalty;
+
+    if (relevanceScore < 0.35) calibrated -= 0.08;
+    if (supportScore < 0.25) calibrated -= 0.06;
+
+    const calibratedConfidence = Number(this.clamp01(calibrated, 0.05, 0.98).toFixed(3));
+    const groundingStatus = this.computeGroundingStatus({
+      supportScore,
+      relevanceScore,
+      directConfirmedMatches,
+    });
+    const playbookAnchorEligible =
+      (groundingStatus === 'grounded' || groundingStatus === 'partial') &&
+      relevanceScore >= 0.55 &&
+      calibratedConfidence >= 0.45;
+
+    const confidenceExplanation: string[] = [
+      `llm=${llmConfidence.toFixed(2)}`,
+      `baseline=${algorithmicBaseline.toFixed(2)}`,
+      `support=${supportScore.toFixed(2)} (${directConfirmedMatches} direct ref${directConfirmedMatches === 1 ? '' : 's'})`,
+      `relevance=${relevanceScore.toFixed(2)}${hypothesisDomains.size ? ` [${[...hypothesisDomains].join(',')}]` : ''}`,
+    ];
+    if (conflictPenalty > 0) confidenceExplanation.push(`conflict_penalty=${conflictPenalty.toFixed(2)}`);
+    if (missingCriticalPenalty > 0) confidenceExplanation.push(`missing_penalty=${missingCriticalPenalty.toFixed(2)}`);
+    if (!playbookAnchorEligible) confidenceExplanation.push('downgraded=investigative');
+    confidenceExplanation.push(`idx=${idx + 1}`);
+
+    return {
+      ...hyp,
+      confidence: calibratedConfidence,
+      calibrated_confidence: calibratedConfidence,
+      support_score: Number(supportScore.toFixed(3)),
+      relevance_score: Number(relevanceScore.toFixed(3)),
+      grounding_status: groundingStatus,
+      confidence_explanation: confidenceExplanation,
+      playbook_anchor_eligible: playbookAnchorEligible,
+    };
+  }
+
+  private computeGroundingStatus(input: {
+    supportScore: number;
+    relevanceScore: number;
+    directConfirmedMatches: number;
+  }): HypothesisGroundingStatus {
+    const { supportScore, relevanceScore, directConfirmedMatches } = input;
+    if (directConfirmedMatches > 0 && supportScore >= 0.62 && relevanceScore >= 0.62) return 'grounded';
+    if (supportScore >= 0.45 && relevanceScore >= 0.5) return 'partial';
+    if (supportScore >= 0.25) return 'weak';
+    return 'unsupported';
+  }
+
+  private computeConflictThemePenalty(hypothesisLower: string, conflictedFacts: Array<any>): number {
+    if (!conflictedFacts.length) return 0;
+    const conflictText = conflictedFacts.map((f) => String(f?.fact || '').toLowerCase()).join(' ');
+    const identityKeywords = /(user|requester|logged-in|logged in|account|profile|authentication|auth)/;
+    if (identityKeywords.test(hypothesisLower) && identityKeywords.test(conflictText)) {
+      return 0.05;
+    }
+    return 0;
+  }
+
+  private computeMissingCriticalPenalty(hypothesisLower: string, missingCritical: Array<any>): number {
+    if (!missingCritical.length) return 0;
+    let penalty = 0;
+    for (const item of missingCritical.slice(0, 6)) {
+      const field = String(item?.field || '').toLowerCase();
+      const why = String(item?.why || '').toLowerCase();
+      const joined = `${field} ${why}`;
+      const tokens = joined.split(/[^a-z0-9]+/).filter((t) => t.length >= 4);
+      if (tokens.some((t) => hypothesisLower.includes(t))) {
+        penalty += 0.04;
+      }
+    }
+    return Math.min(0.16, penalty);
+  }
+
+  private computeRelevanceScore(
+    ticketDomains: Set<string>,
+    hypothesisDomains: Set<string>,
+    hypothesisLower: string
+  ): number {
+    if (ticketDomains.size === 0) return hypothesisDomains.size > 0 ? 0.6 : 0.55;
+    if (hypothesisDomains.size === 0) return 0.55;
+
+    if (
+      ticketDomains.has('email') &&
+      !ticketDomains.has('network') &&
+      (hypothesisDomains.has('network') || hypothesisDomains.has('firewall')) &&
+      !/(rename|change|update).{0,20}\b(email|mailbox|alias)\b|\b(email|mailbox|alias)\b.{0,20}(rename|change|update)/.test(hypothesisLower)
+    ) {
+      return 0.28;
+    }
+
+    const overlap = [...hypothesisDomains].filter((d) => ticketDomains.has(d));
+    if (overlap.length > 0) {
+      return Math.min(0.95, 0.72 + 0.08 * overlap.length);
+    }
+
+    // Explicit cross-domain penalties for common overreach patterns.
+    if (ticketDomains.has('email') && (hypothesisDomains.has('network') || hypothesisDomains.has('firewall'))) {
+      return 0.24;
+    }
+    if (ticketDomains.has('network') && hypothesisDomains.has('security') && !/(edr|xdr|defender|malware|phish)/.test(hypothesisLower)) {
+      return 0.28;
+    }
+    if (ticketDomains.has('onboarding') && hypothesisDomains.has('network') && !/(vpn|wifi|internet|network)/.test(hypothesisLower)) {
+      return 0.34;
+    }
+    return 0.42;
+  }
+
+  private detectDomains(text: string): Set<string> {
+    const t = String(text || '').toLowerCase();
+    const out = new Set<string>();
+    if (!t) return out;
+    if (/(wifi|wireless|dhcp|dns|gateway|latency|packet loss|apipa|internet|wan|wlan|switch|router|wap|access point|network|vpn)/.test(t)) {
+      out.add('network');
+    }
+    if (/(account|mfa|password|login|sign in|signin|identity|user profile|authentication|auth|azure ad|entra|ad )/.test(t)) {
+      out.add('identity');
+    }
+    if (/(email|mailbox|outlook|exchange|smtp|imap|email address|rename email|signature)/.test(t)) {
+      out.add('email');
+    }
+    if (/(new employee|new hire|onboarding|provision|access request|employee setup|user creation)/.test(t)) {
+      out.add('onboarding');
+    }
+    if (/(printer|print|scanner|usb|monitor|dock|laptop|desktop|hardware|driver)/.test(t)) {
+      out.add('hardware');
+    }
+    if (/(malware|phishing|ransomware|edr|xdr|defender|incident|compromis|exfiltration)/.test(t)) {
+      out.add('security');
+    }
+    if (/(firewall|fortigate|sonicwall|palo alto|watchguard)/.test(t)) {
+      out.add('firewall');
+      out.add('network');
+    }
+    return out;
+  }
+
+  private clamp01(value: number, min = 0, max = 1): number {
+    return Math.min(max, Math.max(min, Number.isFinite(value) ? value : 0));
   }
 }
 

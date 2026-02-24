@@ -116,6 +116,36 @@
 - What worked:
 - What was tricky:
 - Time taken:
+
+---
+
+# Task: Phase 3 Diagnose Strengthening (Technical Plan)
+**Status**: planning
+**Started**: 2026-02-24
+
+## Plan
+- [ ] Step 1: Define Diagnose quality targets (grounding, relevance, confidence calibration, abstention)
+- [ ] Step 2: Design hybrid Diagnose architecture (LLM generation + deterministic scoring/calibration)
+- [ ] Step 3: Specify output/schema changes with backward compatibility for Validate/Playbook/UI
+- [ ] Step 4: Define incremental rollout + verification protocol on real tickets
+
+## Open Questions
+- Should calibrated confidence replace current confidence immediately, or ship in parallel (`confidence_calibrated`) first?
+- Do we want hypothesis-level grounding only first, or claim-level grounding in v1?
+- How much of the new scoring should be exposed in UI vs appendix only?
+
+## Review
+(fill in after completion)
+- What worked:
+- What was tricky:
+- Time taken:
+
+- Correção de escopo de rollout registrada: este app ainda está em desenvolvimento (sem produção), então o strengthen da Fase 3 foi implementado diretamente em vez de rollout paralelo.
+- Fase 3 (`Diagnose`) strengthened implementada: pós-processamento determinístico de hipóteses com `support_score`, `relevance_score`, `grounding_status`, `calibrated_confidence` e `playbook_anchor_eligible`, mantendo compatibilidade do campo `confidence`.
+- `DiagnoseService` agora recalibra e reranqueia hipóteses após parse da LLM usando evidências do `evidence_digest`, baseline algorítmico e penalidades de conflito/missing/irrelevância.
+- Heurística de relevância adicionada para reduzir overreach cross-domain (ex.: hipótese de firewall em ticket de email/rename).
+- Teste novo `diagnose-calibration.test.ts` cobre downgrade de overreach cross-domain.
+- Verificação: `pnpm --filter @playbook-brain/api test -- diagnose-calibration`, `pnpm --filter @playbook-brain/api test -- diagnose-fail-fast`, `pnpm --filter @playbook-brain/api typecheck` OK.
 ## Task: Sidebar direita - substituir SLA por Phone Provider e reordenar cards (2026-02-24)
 **Status**: completed
 **Started**: 2026-02-24
@@ -220,3 +250,69 @@
 - What worked: mudança extremamente localizada no botão específico do header, sem tocar no fluxo de refresh.
 - What was tricky: melhorar legibilidade/estética sem "estourar" o peso visual ao lado do badge `Playbook ready`.
 - Time taken: ~10 min
+
+## Task: Fase 3 completa — Diagnose grounding/calibration + integração com Validate/Playbook (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Fortalecer `Diagnose` com grounding/relevance scoring + calibrated confidence
+- [x] Step 2: Integrar metadata de hipótese no `Validate & Policy` (unsupported top hypothesis, anchor eligibility)
+- [x] Step 3: Integrar `PlaybookWriter` para preferir hipóteses `playbook_anchor_eligible`
+- [x] Step 4: Adicionar/ajustar testes e validar `typecheck`
+- [x] Step 5: Documentar tudo na wiki
+
+## Progress Notes
+- `apps/api/src/services/diagnose.ts`: pós-processamento determinístico das hipóteses adicionando `support_score`, `relevance_score`, `grounding_status`, `calibrated_confidence`, `playbook_anchor_eligible` e reranking por confiança calibrada.
+- `apps/api/src/services/validate-policy.ts`: bloqueio explícito quando top hypothesis está `unsupported`, advisory quando nenhuma hipótese é `anchor` e compatibilidade preservada para diagnósticos legados sem campo `playbook_anchor_eligible`.
+- `apps/api/src/services/playbook-writer.ts`: prompt agora inclui bloco `HYPOTHESIS QUALITY`; checklist/alinhamento ignora hipóteses `anchor=no` como obrigatórias e preserva labels H1/H2/H3 originais após filtro.
+- `packages/types/src/index.ts`: campos opcionais adicionados ao tipo `Hypothesis` para metadata de grounding/calibração.
+- Testes adicionados/ajustados:
+  - `diagnose-calibration`
+  - `validate-policy-gates`
+  - `playbook-writer-alignment`
+- Verificações:
+  - `pnpm --filter @playbook-brain/api test -- diagnose-calibration` ✅
+  - `pnpm --filter @playbook-brain/api test -- validate-policy-gates` ✅
+  - `pnpm --filter @playbook-brain/api test -- playbook-writer-alignment` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+
+## Review
+- What worked: integração incremental pós-LLM permitiu fortalecer diagnóstico sem quebrar payloads existentes; `Validate` e `PlaybookWriter` passaram a consumir os novos sinais com compatibilidade para tickets antigos.
+- What was tricky: alinhar regras novas com comportamento já existente de `advisor mode` e manter labels de hipótese (`H1/H2/H3`) consistentes ao filtrar hipóteses não-âncora.
+- Time taken: ~45 min
+
+## Task: Fase 4 completa — Validate & Policy (2026-02-24)
+**Status**: completed
+**Started**: 2026-02-24
+
+## Plan
+- [x] Step 1: Auditar `Validate & Policy` atual contra contrato da Fase 4 (destrutivo, prova, corroboration)
+- [x] Step 2: Implementar gaps (principalmente regra de corroboration para hipóteses amplas como ISP/região)
+- [x] Step 3: Adicionar/ajustar testes do `ValidatePolicyService`
+- [x] Step 4: Validar `typecheck` + testes focados
+- [x] Step 5: Documentar na wiki e preencher review
+
+## Open Questions
+- Decisão aplicada: falta de corroboração para hipótese ampla de provider/região vira hard quality stop (`safe_to_generate_playbook=false`) para impedir ancoragem sem prova.
+
+## Progress Notes
+- Auditoria confirmou boa cobertura prévia de Fase 4 (evidence-per-claim, risk gates, cross-tenant rejection, quality/coverage gates), mas dois gaps frente ao contrato do usuário:
+  - ações destrutivas só eram tratadas como bloqueio forte em ticket `Critical`
+  - não existia gate de corroboração para hipóteses amplas de ISP/provedor/região/outage
+- `apps/api/src/services/validate-policy.ts` recebeu:
+  - `destructive_action_requires_human_approval` (risk gate) para ações destrutivas sem qualifier explícito de aprovação humana/janela de mudança
+  - `broad_hypothesis_corroboration_missing` (quality gate + hard stop) quando hipótese top-1 aponta para ISP/provedor/região sem corroboração em `external_status`, `related_cases` ou evidência de impacto em pares
+  - compatibilidade preservada com `advisor mode` para outros gates não-hard
+- Padrão destrutivo ampliado para cobrir `factory reset` / `reset firewall`
+- Testes adicionados em `validate-policy-gates` para:
+  - hipótese ISP sem corroboração => bloqueio
+  - remediação destrutiva sem aprovação => bloqueio
+- Verificações:
+  - `pnpm --filter @playbook-brain/api test -- validate-policy-gates` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+
+## Review
+- What worked: os novos guardrails se encaixaram no `ValidatePolicyService` sem mudar o contrato externo (`ValidationOutput`) e reforçam exatamente os exemplos do usuário (destrutivo sem aprovação, ISP sem corroboration).
+- What was tricky: manter o comportamento de `advisor mode` sem diluir a regra “nada de chute”; a solução foi classificar os novos casos como hard stops específicos.
+- Time taken: ~25 min

@@ -150,7 +150,7 @@ describe('validate policy quality gates', () => {
 
     const result = service.validate(buildDiagnosis(), pack);
     expect(result.status).toBe('needs_more_info');
-    expect(result.safe_to_generate_playbook).toBe(false);
+    expect(result.safe_to_generate_playbook).toBe(true);
     expect(result.blocking_reasons).toContain('named_entity_unresolved');
   });
 
@@ -166,7 +166,7 @@ describe('validate policy quality gates', () => {
 
     const result = service.validate(buildDiagnosis(), pack);
     expect(result.status).toBe('needs_more_info');
-    expect(result.safe_to_generate_playbook).toBe(false);
+    expect(result.safe_to_generate_playbook).toBe(true);
     expect(result.blocking_reasons).toContain('capability_verification_incomplete');
   });
 
@@ -209,6 +209,41 @@ describe('validate policy quality gates', () => {
     expect(result.status).toBe('approved');
     expect(result.safe_to_generate_playbook).toBe(true);
     expect(result.violations.find((v) => v.type === 'quality_gate')).toBeUndefined();
+  });
+
+  it('blocks generation when top hypothesis is explicitly unsupported by diagnose grounding', () => {
+    const service = new ValidatePolicyService({ profile: 'standard' });
+    const diagnosis = buildDiagnosis();
+    (diagnosis.top_hypotheses[0] as any).grounding_status = 'unsupported';
+    (diagnosis.top_hypotheses[0] as any).support_score = 0.12;
+    (diagnosis.top_hypotheses[0] as any).relevance_score = 0.78;
+    (diagnosis.top_hypotheses[0] as any).calibrated_confidence = 0.68;
+    (diagnosis.top_hypotheses[0] as any).playbook_anchor_eligible = false;
+
+    const result = service.validate(diagnosis, buildPack());
+    expect(result.safe_to_generate_playbook).toBe(false);
+    expect(result.blocking_reasons).toContain('diagnose_top_hypothesis_unsupported');
+  });
+
+  it('adds advisory when no hypothesis is playbook-anchor eligible', () => {
+    const service = new ValidatePolicyService({ profile: 'standard' });
+    const diagnosis = buildDiagnosis();
+    diagnosis.top_hypotheses = diagnosis.top_hypotheses.map((h) => ({
+      ...h,
+      confidence: 0.62,
+      evidence: ['fact-ticket-T1'],
+      tests: ['Investigate further'],
+    })) as any;
+    diagnosis.top_hypotheses.forEach((h: any) => {
+      h.grounding_status = 'weak';
+      h.support_score = 0.3;
+      h.relevance_score = 0.55;
+      h.playbook_anchor_eligible = false;
+    });
+
+    const result = service.validate(diagnosis, buildPack());
+    expect(result.safe_to_generate_playbook).toBe(true);
+    expect(result.violations.some((v) => /playbook_anchor_eligible/i.test(v.detail))).toBe(true);
   });
 
   it('blocks safe generation when rejected evidence contains invalid_source_scope', () => {
@@ -297,7 +332,57 @@ describe('validate policy quality gates', () => {
     } as any;
 
     const result = service.validate(buildDiagnosis(), pack);
-    expect(result.safe_to_generate_playbook).toBe(false);
+    expect(result.status).toBe('needs_more_info');
+    expect(result.safe_to_generate_playbook).toBe(true);
     expect(result.blocking_reasons).toContain('mandatory_ticket_fields_missing');
+  });
+
+  it('blocks broad ISP/provider hypothesis when no corroborating evidence exists', () => {
+    const service = new ValidatePolicyService({ profile: 'standard' });
+    const pack = buildPack();
+    pack.related_cases = [];
+    pack.external_status = [];
+    pack.evidence_digest = {
+      ...pack.evidence_digest!,
+      facts_confirmed: [
+        {
+          id: 'fact-ticket-T1',
+          fact: 'Ticket reports intermittent internet issues',
+          evidence_score: 1,
+          evidence_refs: ['fact-ticket-T1'],
+          source: 'ticket',
+          tenant_id: 'tenant-1',
+          org_id: 'org-1',
+          source_workspace: 'tenant:tenant-1',
+        },
+      ],
+    };
+    const diagnosis = buildDiagnosis();
+    diagnosis.top_hypotheses = [
+      {
+        rank: 1,
+        hypothesis: 'ISP regional outage affecting provider connectivity',
+        confidence: 0.74,
+        evidence: ['fact-ticket-T1'],
+        tests: ['Check ISP status page'],
+      },
+    ];
+
+    const result = service.validate(diagnosis, pack);
+    expect(result.safe_to_generate_playbook).toBe(false);
+    expect(result.blocking_reasons).toContain('broad_hypothesis_corroboration_missing');
+  });
+
+  it('blocks destructive remediation without explicit human approval gate', () => {
+    const service = new ValidatePolicyService({ profile: 'standard' });
+    const diagnosis = buildDiagnosis();
+    diagnosis.recommended_actions = [
+      { action: 'Factory reset the firewall to clear bad config state', risk: 'high' },
+    ];
+
+    const result = service.validate(diagnosis, buildPack());
+    expect(result.status).toBe('blocked');
+    expect(result.safe_to_generate_playbook).toBe(false);
+    expect(result.blocking_reasons).toContain('destructive_action_requires_human_approval');
   });
 });

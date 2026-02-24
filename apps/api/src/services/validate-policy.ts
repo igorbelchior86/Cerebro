@@ -101,6 +101,7 @@ export class ValidatePolicyService {
       domain_required_source_missing: this.hasDomainRequiredSourceMissing(pack),
       capability_verification_incomplete: this.isCapabilityVerificationIncomplete(pack),
       mandatory_ticket_fields_missing: this.hasMandatoryTicketFieldsMissing(pack),
+      broad_hypothesis_corroboration_missing: false,
     };
     const hasTicketActorContactHints = this.hasTicketActorContactHints(pack);
 
@@ -115,6 +116,21 @@ export class ValidatePolicyService {
       requiredQuestions.add('Collect additional data to support at least one hypothesis');
     }
 
+    const enrichedHypotheses = (diagnosis.top_hypotheses || []).map((h) => {
+      const anyH = h as any;
+      return {
+        raw: h,
+        groundingStatus: String(anyH.grounding_status || '').toLowerCase(),
+        supportScore: Number(anyH.support_score ?? NaN),
+        relevanceScore: Number(anyH.relevance_score ?? NaN),
+        anchorEligible:
+          anyH.playbook_anchor_eligible === undefined
+            ? true
+            : Boolean(anyH.playbook_anchor_eligible),
+        calibratedConfidence: Number(anyH.calibrated_confidence ?? h.confidence ?? 0),
+      };
+    });
+
     // ─── Check hypothesis quality ─────────────────────────────────
     const lowConfidenceHypotheses = diagnosis.top_hypotheses.filter(
       (h) => h.confidence < this.config.minHypothesisConfidence
@@ -128,6 +144,52 @@ export class ValidatePolicyService {
       lowConfidenceHypotheses.forEach((h) => {
         requiredQuestions.add(`Validate hypothesis: ${h.hypothesis}`);
       });
+    }
+
+    const topHyp = enrichedHypotheses[0];
+    if (topHyp && topHyp.groundingStatus === 'unsupported') {
+      violations.push({
+        type: 'quality_gate',
+        detail: 'diagnose_top_hypothesis_unsupported: top-ranked hypothesis is not grounded in current evidence',
+      });
+      requiredFixes.add('Regenerate diagnosis or collect stronger evidence before anchoring on top hypothesis');
+      blockingReasons.push('diagnose_top_hypothesis_unsupported');
+    }
+
+    const corroborationGap = this.findBroadHypothesisCorroborationGap(diagnosis, pack);
+    qualityGates.broad_hypothesis_corroboration_missing = Boolean(corroborationGap);
+    if (corroborationGap) {
+      violations.push({
+        type: 'quality_gate',
+        detail: `broad_hypothesis_corroboration_missing: ${corroborationGap.reason}`,
+      });
+      requiredQuestions.add(corroborationGap.question);
+      requiredFixes.add('Collect corroborating evidence (peer impact, provider status, or related cases) before anchoring on broad external/network hypothesis');
+      blockingReasons.push('broad_hypothesis_corroboration_missing');
+    }
+
+    const weakHighConfidenceHypotheses = enrichedHypotheses.filter((h) => {
+      const conf = Number.isFinite(h.calibratedConfidence) ? h.calibratedConfidence : 0;
+      const weakGrounding = h.groundingStatus === 'weak' || h.groundingStatus === 'unsupported';
+      return weakGrounding && conf >= this.config.minHypothesisConfidence;
+    });
+    if (weakHighConfidenceHypotheses.length > 0) {
+      violations.push({
+        type: 'coherence',
+        detail: `${weakHighConfidenceHypotheses.length} high-confidence hypothesis(es) are weakly grounded`,
+      });
+      weakHighConfidenceHypotheses.forEach((h) => {
+        requiredQuestions.add(`Collect stronger evidence to confirm or demote: ${h.raw.hypothesis}`);
+      });
+    }
+
+    const anchorEligibleCount = enrichedHypotheses.filter((h) => h.anchorEligible).length;
+    if ((diagnosis.top_hypotheses || []).length > 0 && anchorEligibleCount === 0) {
+      violations.push({
+        type: 'coherence',
+        detail: 'No hypothesis is marked playbook_anchor_eligible; playbook should remain investigative',
+      });
+      requiredFixes.add('Keep playbook in investigative mode or improve evidence grounding for at least one hypothesis');
     }
 
     // ─── Check evidence support ───────────────────────────────────
@@ -188,6 +250,7 @@ export class ValidatePolicyService {
       /delete|drop|truncate|format|wipe|erase|clear.*database/i,
       /restart.*production|reboot.*prod/i,
       /disable.*auth|disable.*firewall/i,
+      /factory\s*reset|reset.*factory|reset.*firewall/i,
       /bypass.*policy|override.*security/i,
       /modify.*critical.*system|alter.*core/i,
     ];
@@ -196,7 +259,22 @@ export class ValidatePolicyService {
       destructivePatterns.some((p) => p.test(a.action))
     );
 
-    if (destructiveActions.length > 0 && pack.ticket.priority === 'Critical') {
+    const ungatedDestructiveActions = destructiveActions.filter(
+      (a) => !this.hasHumanApprovalQualifier(a.action)
+    );
+
+    if (ungatedDestructiveActions.length > 0) {
+      violations.push({
+        type: 'risk_gate',
+        detail: 'Destructive actions proposed without explicit human approval gating',
+      });
+      ungatedDestructiveActions.forEach((a) => {
+        requiredFixes.add(
+          `Add explicit human approval gate / rollback criteria before action: "${a.action}"`
+        );
+      });
+      blockingReasons.push('destructive_action_requires_human_approval');
+    } else if (destructiveActions.length > 0 && pack.ticket.priority === 'Critical') {
       violations.push({
         type: 'risk_gate',
         detail: 'Destructive actions proposed on CRITICAL ticket',
@@ -360,7 +438,9 @@ export class ValidatePolicyService {
     const hasRiskGate = violations.some((v) => v.type === 'risk_gate');
     const hasNoEvidence = violations.some((v) => v.type === 'no_evidence');
     const hasHardQualityStop =
-      blockingReasons.includes('cross_tenant_candidate_detected');
+      blockingReasons.includes('cross_tenant_candidate_detected') ||
+      blockingReasons.includes('diagnose_top_hypothesis_unsupported') ||
+      blockingReasons.includes('broad_hypothesis_corroboration_missing');
 
     // ADVISOR MODE: We only block if there's a hard risk gate (destructive/org mismatch)
     // Coverage and confidence issues are now ADVISORY.
@@ -512,6 +592,55 @@ export class ValidatePolicyService {
       tech_coverage: techCoverage,
       signal_coverage: signalCoverage,
       asset_coverage: assetCoverage,
+    };
+  }
+
+  private hasHumanApprovalQualifier(action: string): boolean {
+    const normalized = String(action || '').toLowerCase();
+    return (
+      normalized.includes('approval') ||
+      normalized.includes('approved') ||
+      normalized.includes('with approval') ||
+      normalized.includes('after approval') ||
+      normalized.includes('change window') ||
+      normalized.includes('maintenance window')
+    );
+  }
+
+  private findBroadHypothesisCorroborationGap(
+    diagnosis: DiagnosisOutput,
+    pack: EvidencePack
+  ): { reason: string; question: string } | null {
+    const top = diagnosis.top_hypotheses?.[0];
+    if (!top) return null;
+    const text = `${top.hypothesis || ''} ${(top.evidence || []).join(' ')} ${(top.tests || []).join(' ')}`
+      .toLowerCase();
+    const isBroadExternalOrProviderHypothesis =
+      /\b(isp|provider|carrier|regional|outage|comcast|charter|xfinity|spectrum|internet service)\b/.test(
+        text
+      );
+    if (!isBroadExternalOrProviderHypothesis) return null;
+
+    const facts = (pack.evidence_digest?.facts_confirmed || [])
+      .map((f) => `${f.fact || ''} ${(f.evidence_refs || []).join(' ')}`.toLowerCase())
+      .join(' ');
+    const hasPeerImpactEvidence =
+      /\b(multiple users|multiple devices|site-wide|office-wide|several users|others affected)\b/.test(facts) ||
+      /\b(multiple users|multiple devices|others affected|peer impact)\b/.test(
+        (pack.ticket.description || '').toLowerCase()
+      );
+    const hasProviderStatusEvidence = (pack.external_status || []).length > 0;
+    const hasRelatedCaseCorroboration = (pack.related_cases || []).length > 0;
+
+    if (hasPeerImpactEvidence || hasProviderStatusEvidence || hasRelatedCaseCorroboration) {
+      return null;
+    }
+
+    return {
+      reason:
+        'top hypothesis claims provider/regional cause without corroborating external status, peer impact, or related-case evidence',
+      question:
+        'If this is an ISP/provider hypothesis, confirm whether multiple users/sites are affected or check provider status/outage signals first',
     };
   }
 }

@@ -10,7 +10,7 @@ import type {
   EvidencePack,
 } from '@playbook-brain/types';
 import { getDefaultLLMProvider } from './llm-adapter.js';
-import { shouldBlockPlaybookOutput } from './evidence-guardrails.js';
+import { explainPlaybookGuardBlock, shouldBlockPlaybookOutput } from './evidence-guardrails.js';
 
 const INTERNAL_LEAK_PATTERNS: RegExp[] = [
   /\bllm\b/i,
@@ -64,9 +64,10 @@ export class PlaybookWriterService {
 
     const latencyMs = Date.now() - startTime;
 
-    if (shouldBlockPlaybookOutput(playbookMarkdown, diagnosis, pack)) {
+    const playbookGuardBlockReason = explainPlaybookGuardBlock(playbookMarkdown, diagnosis, pack);
+    if (playbookGuardBlockReason || shouldBlockPlaybookOutput(playbookMarkdown, diagnosis, pack)) {
       throw new Error(
-        `Playbook guardrail blocked unsupported inference for ticket ${pack.ticket.id}`
+        `Playbook guardrail blocked unsupported inference for ticket ${pack.ticket.id}${playbookGuardBlockReason ? ` (${playbookGuardBlockReason})` : ''}`
       );
     }
     if (this.hasInternalLeakage(playbookMarkdown)) {

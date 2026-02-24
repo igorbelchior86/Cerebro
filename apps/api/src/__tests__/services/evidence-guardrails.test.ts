@@ -93,4 +93,35 @@ describe('evidence guardrails', () => {
 `;
     expect(shouldBlockPlaybookOutput(markdown, diagnosis, pack)).toBe(false);
   });
+
+  it('does not block playbook for incidental unsupported high-risk mention without assertive drift', () => {
+    const pack = buildBasePack();
+    pack.ticket.title = 'Warehouse WiFi intermittent';
+    pack.ticket.description = 'Job Runner tablets lose connectivity in warehouse';
+    const diagnosis = buildDiagnosis('Wireless connectivity issue affecting tablets');
+    const markdown = `
+# T1 - Warehouse WiFi Troubleshooting
+## Root Cause
+- Likely DHCP or AP connectivity issue
+## Verification
+- Confirm connectivity is restored
+- If endpoint remains unstable after network fix, run a malware scan as a separate hygiene check
+`;
+    expect(shouldBlockPlaybookOutput(markdown, diagnosis, pack)).toBe(false);
+  });
+
+  it('blocks playbook for unsupported high-risk root-cause drift', () => {
+    const pack = buildBasePack();
+    pack.ticket.title = 'Warehouse WiFi intermittent';
+    pack.ticket.description = 'Job Runner tablets lose connectivity in warehouse';
+    const diagnosis = buildDiagnosis('Wireless connectivity issue affecting tablets');
+    const markdown = `
+# T1 - Warehouse WiFi Troubleshooting
+## Root Cause
+- Primary hypothesis: malware compromise on the tablet is the root cause
+## Resolution Steps
+1. Isolate endpoint from network
+`;
+    expect(shouldBlockPlaybookOutput(markdown, diagnosis, pack)).toBe(true);
+  });
 });

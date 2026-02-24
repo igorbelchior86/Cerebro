@@ -554,11 +554,12 @@ router.get('/full-flow', async (req, res) => {
         console.log(`[FULL-FLOW] Background processing complete for ${sessionId}`);
       } catch (bgErr) {
         console.error(`[FULL-FLOW] Background error for ${sessionId}:`, bgErr);
+        const bgMessage = String((bgErr as any)?.message || bgErr || '');
         await execute(
           `UPDATE triage_sessions
-           SET status = $1, updated_at = NOW()
-           WHERE id = $2`,
-          [isTransientProviderError(bgErr) ? 'pending' : 'failed', sessionId]
+           SET status = $1, last_error = $2, updated_at = NOW()
+           WHERE id = $3`,
+          [isTransientProviderError(bgErr) ? 'pending' : 'failed', bgMessage, sessionId]
         );
       }
     };

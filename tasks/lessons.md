@@ -336,3 +336,15 @@
 **Root cause**: O parser aplicava regex no HTML cru com entidades (`&amp;`), e os padrões de empresa não toleravam a sequência codificada; isso quebrava a captura e ativava o fallback por domínio.
 **Rule**: Sempre decodificar entidades HTML básicas antes de regex semânticos em texto de email (`company`, `requester`, etc.).
 **Pattern**: Empresa correta visível em email HTML + SSOT mostra versão derivada do domínio => suspeitar de `&amp;`/entities quebrando regex de extração.
+
+## Lesson: 2026-02-24 (background pipeline failures must persist last_error, not only status)
+**Mistake**: `/playbook/full-flow` background processing marcava sessões como `failed`/`pending` sem salvar `last_error`, deixando a UI mostrar `FAILED` sem causa.
+**Root cause**: O catch de `triggerBackgroundProcessing()` atualizava apenas `status` e `updated_at`.
+**Rule**: Todo path que muda `triage_sessions.status` para erro/retry deve persistir a mensagem em `last_error`.
+**Pattern**: Ticket em `FAILED` após refresh com `triage_sessions.last_error = null` => verificar catch/background route fora do orquestrador principal.
+
+## Lesson: 2026-02-24 (playbook evidence guardrails should block assertive unsupported drift, not incidental mentions)
+**Mistake**: O playbook de um ticket de WiFi foi bloqueado por `unsupported inference` mesmo com `Prepare Context`, `Diagnose` e `Validation` corretos.
+**Root cause**: `shouldBlockPlaybookOutput` tratava qualquer menção a termos high-risk (ex.: `malware`) sem evidência como bloqueante, inclusive quando apareciam de forma incidental/defensiva no texto.
+**Rule**: Guardrail de playbook deve bloquear deriva **assertiva/perigosa** (root cause/compromise/remediação de incidente) sem evidência, não menções incidentais que não redefinem o caso.
+**Pattern**: `last_error = Playbook guardrail blocked unsupported inference` em tickets operacionais/rede => revisar heurística de "high-risk drift" para contexto/assertividade.

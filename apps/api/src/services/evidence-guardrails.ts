@@ -12,6 +12,26 @@ const HIGH_RISK_TERMS = [
   'account takeover',
 ];
 
+const HIGH_RISK_ASSERTIVE_CONTEXT_PATTERNS: RegExp[] = [
+  /\b(root cause|primary hypothesis|likely cause|cause|why this happened)\b[\s\S]{0,120}\b(malware|phishing|ransomware|credential theft|account takeover|data exfiltration|lateral movement|compromis)\b/i,
+  /\b(malware|phishing|ransomware|credential theft|account takeover|data exfiltration|lateral movement|compromis)\b[\s\S]{0,120}\b(root cause|confirmed|detected|likely|caused|compromise)\b/i,
+];
+
+const HIGH_RISK_REMEDIATION_ACTION_TERMS = [
+  'isolate device',
+  'isolate endpoint',
+  'contain host',
+  'contain endpoint',
+  'disconnect from network',
+  'quarantine endpoint',
+  'reimage',
+  'wipe device',
+  'reset all passwords',
+  'disable account',
+  'disable user',
+  'incident response',
+];
+
 const INTEGRATION_CONTEXT_TERMS = [
   'ninjaone',
   'it glue',
@@ -115,8 +135,12 @@ export function shouldBlockPlaybookOutput(
     `${collectDirectEvidenceText(pack)} ${collectDiagnosisNarrativeText(diagnosis)}`
   );
 
-  const playbookHasUnsupportedHighRisk =
+  const unsupportedHighRiskMention =
     includesAny(playbookText, HIGH_RISK_TERMS) && !includesAny(evidenceText, HIGH_RISK_TERMS);
+  const highRiskAssertiveDrift = HIGH_RISK_ASSERTIVE_CONTEXT_PATTERNS.some((pattern) => pattern.test(markdown));
+  const highRiskRemediationDrift = includesAny(playbookText, HIGH_RISK_REMEDIATION_ACTION_TERMS);
+  const playbookHasUnsupportedHighRisk =
+    unsupportedHighRiskMention && (highRiskAssertiveDrift || highRiskRemediationDrift);
   if (playbookHasUnsupportedHighRisk) return true;
 
   const integrationRemediationDrift =
@@ -126,4 +150,35 @@ export function shouldBlockPlaybookOutput(
   if (integrationRemediationDrift) return true;
 
   return false;
+}
+
+export function explainPlaybookGuardBlock(
+  markdown: string,
+  diagnosis: DiagnosisOutput,
+  pack: EvidencePack
+): string | null {
+  const playbookText = normalize(markdown);
+  const evidenceText = normalize(
+    `${collectDirectEvidenceText(pack)} ${collectDiagnosisNarrativeText(diagnosis)}`
+  );
+
+  const unsupportedHighRiskMention =
+    includesAny(playbookText, HIGH_RISK_TERMS) && !includesAny(evidenceText, HIGH_RISK_TERMS);
+  if (unsupportedHighRiskMention) {
+    const highRiskAssertiveDrift = HIGH_RISK_ASSERTIVE_CONTEXT_PATTERNS.some((pattern) => pattern.test(markdown));
+    const highRiskRemediationDrift = includesAny(playbookText, HIGH_RISK_REMEDIATION_ACTION_TERMS);
+    if (highRiskAssertiveDrift || highRiskRemediationDrift) {
+      return 'unsupported_high_risk_inference';
+    }
+  }
+
+  const integrationRemediationDrift =
+    hasIntegrationAuthGaps(pack) &&
+    !ticketMentionsIntegrationContext(pack) &&
+    includesAny(playbookText, INTEGRATION_REMEDIATION_TERMS);
+  if (integrationRemediationDrift) {
+    return 'unsupported_integration_remediation';
+  }
+
+  return null;
 }

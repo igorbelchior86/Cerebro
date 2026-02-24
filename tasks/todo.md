@@ -102,6 +102,14 @@
 - Root cause adicional do nome de empresa errado em `T20260221.0001`: inferência de `company` no `PrepareContext` lia HTML cru sem decodificar entidades (`&amp;`), falhava em capturar “GARMON & CO. INC.” na frase “created for ...” e caía no fallback por domínio (`Garmonandcompany`).
 - Fix aplicado: `inferCompanyNameFromTicketText(...)` agora decodifica entidades HTML básicas antes dos regex de extração de empresa.
 - Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após fix de decodificação HTML na inferência de company.
+- Bug de observabilidade no `/playbook/full-flow` identificado: background processing marcava `triage_sessions.status = failed|pending` sem persistir `last_error`, deixando tickets em `FAILED` sem motivo visível após refresh.
+- Fix aplicado: background catch do `triggerBackgroundProcessing()` agora persiste `last_error` com a mensagem real da exceção.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK após fix de persistência de `last_error` no full-flow background.
+- Root cause atual do `FAILED` em `T20260221.0001` identificado: não era mais contamination guard; o `evidence` playbook guardrail estava bloqueando por "unsupported inference" em ticket de WiFi (falso positivo de high-risk drift).
+- Fix aplicado no `shouldBlockPlaybookOutput`: bloqueio de termos high-risk sem evidência agora exige deriva assertiva (root-cause/compromise) ou ação de remediação de incidente; menções incidentais/defensivas deixam de bloquear o playbook.
+- Melhoria de observabilidade: `PlaybookWriter` agora inclui razão do bloqueio (`unsupported_high_risk_inference` / `unsupported_integration_remediation`) no erro quando o guardrail dispara.
+- Testes adicionados para cobrir high-risk incidental vs. deriva assertiva em `evidence-guardrails.test.ts`.
+- Verificação: `pnpm --filter @playbook-brain/api test -- evidence-guardrails`, `pnpm --filter @playbook-brain/api test -- playbook-writer-contamination`, `pnpm --filter @playbook-brain/api typecheck` OK após fix do playbook evidence guardrail.
 
 ## Review
 (fill in after completion)

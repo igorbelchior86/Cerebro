@@ -27,44 +27,44 @@
 }
 
 [data-theme="dark"], :root {
-  --bg-root:       #05070B;
-  --bg-sidebar:    #090C12;
-  --bg-panel:      #0D1118;
-  --bg-chat:       #10151E;
-  --bg-card:       rgba(255,255,255,0.018);
-  --bg-card-hover: rgba(255,255,255,0.030);
-  --bg-card-active:rgba(110,134,201,0.06);
-  --bg-input:      rgba(255,255,255,0.04);
-  --bg-badge:      rgba(255,255,255,0.05);
-  --border:        rgba(255,255,255,0.04);
-  --border-strong: rgba(255,255,255,0.08);
-  --border-accent: rgba(110,134,201,0.22);
-  --text-primary:  #E6E9F0;
-  --text-secondary:rgba(230,233,240,0.68);
-  --text-muted:    rgba(230,233,240,0.40);
-  --text-faint:    rgba(230,233,240,0.18);
-  --shadow-card:   0 1px 2px rgba(0,0,0,0.28), 0 0 0 1px rgba(255,255,255,0.02);
-  --shadow-panel:  0 10px 40px rgba(0,0,0,0.28);
-  --glow-sidebar:  radial-gradient(ellipse at 0% 0%, rgba(110,134,201,0.06) 0%, transparent 65%);
-  --glow-playbook: radial-gradient(ellipse at 100% 0%, rgba(56,165,140,0.04) 0%, transparent 60%);
-  --scrollbar:     rgba(255,255,255,0.07);
+  --bg-root:       #020408;
+  --bg-sidebar:    #0B0E14;
+  --bg-panel:      #0F131A;
+  --bg-chat:       #121721;
+  --bg-card:       rgba(255,255,255,0.025);
+  --bg-card-hover: rgba(255,255,255,0.040);
+  --bg-card-active:rgba(110,134,201,0.08);
+  --bg-input:      rgba(255,255,255,0.05);
+  --bg-badge:      rgba(255,255,255,0.06);
+  --border:        rgba(255,255,255,0.05);
+  --border-strong: rgba(255,255,255,0.10);
+  --border-accent: rgba(110,134,201,0.28);
+  --text-primary:  #FFFFFF;
+  --text-secondary:rgba(255,255,255,0.72);
+  --text-muted:    rgba(255,255,255,0.45);
+  --text-faint:    rgba(255,255,255,0.22);
+  --shadow-card:   0 2px 4px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.03);
+  --shadow-panel:  0 12px 48px rgba(0,0,0,0.4);
+  --glow-sidebar:  radial-gradient(ellipse at 0% 0%, rgba(110,134,201,0.08) 0%, transparent 65%);
+  --glow-playbook: radial-gradient(ellipse at 100% 0%, rgba(56,165,140,0.06) 0%, transparent 60%);
+  --scrollbar:     rgba(255,255,255,0.08);
   /* bg aliases */
-  --bg-base:       #05070B;
-  --bg-surface:    #090C12;
-  --bg-elevated:   #0D1118;
-  --bg-hover:      #171C25;
-  --bg-bento-shell: rgba(255,255,255,0.012);
-  --bg-bento-panel: linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.012) 100%);
-  --bento-outline: rgba(255,255,255,0.05);
-  --bento-outline-strong: rgba(255,255,255,0.08);
+  --bg-base:       #020408;
+  --bg-surface:    #0B0E14;
+  --bg-elevated:   #0F131A;
+  --bg-hover:      #1A1F29;
+  --bg-bento-shell: rgba(255,255,255,0.015);
+  --bg-bento-panel: linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.015) 100%);
+  --bento-outline: rgba(255,255,255,0.06);
+  --bento-outline-strong: rgba(255,255,255,0.10);
   /* Modal glass surfaces */
-  --modal-overlay: rgba(5, 8, 15, 0.55);
-  --modal-surface: rgba(11, 16, 32, 0.88);
-  --modal-sidebar: rgba(0, 0, 0, 0.16);
-  --modal-border:  rgba(255, 255, 255, 0.08);
-  --modal-divider: rgba(255, 255, 255, 0.06);
-  --input-bg:      rgba(255, 255, 255, 0.04);
-  --input-border:  rgba(255, 255, 255, 0.08);
+  --modal-overlay: rgba(2, 4, 8, 0.65);
+  --modal-surface: rgba(15, 20, 35, 0.92);
+  --modal-sidebar: rgba(0, 0, 0, 0.20);
+  --modal-border:  rgba(255, 255, 255, 0.10);
+  --modal-divider: rgba(255, 255, 255, 0.08);
+  --input-bg:      rgba(255, 255, 255, 0.05);
+  --input-border:  rgba(255, 255, 255, 0.10);
 }
 
 [data-theme="light"] {

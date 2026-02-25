@@ -4,6 +4,12 @@
 **Rule**: Quando o usuário comparar com separação entre colunas/painéis, implementar separação modular real (wrappers/containers distintos + vão), não apenas `margin`/`spacer`.
 **Pattern**: Para pedidos de “destacar seção” em layouts bento/panel-based, validar se há mudança de contorno/agrupamento estrutural e não só distância entre elementos.
 
+## Lesson: 2026-02-24 (screenshot parity requires geometry tuning)
+**Mistake**: Mesmo após separar em módulos, mantive geometria muito tímida (gap/raio/padding), ainda distante da leitura visual do screenshot alvo.
+**Root cause**: Assumi que a semântica estrutural por si só seria suficiente, sem calibrar magnitude visual dos espaços e raios.
+**Rule**: Quando o usuário fornece screenshot de referência e pede “exatamente isso”, validar também a intensidade visual (gap, padding, border-radius), não só a estrutura.
+**Pattern**: Em UI parity, aplicar correção em 2 fases: (1) semântica estrutural; (2) tuning geométrico fino para equivalência perceptiva.
+
 ## Lesson: 2026-02-20
 **Mistake**: Sidebar showed import time rather than actual ticket creation time.
 **Root cause**: `created_at` in `tickets_processed` was populated via DB default/current timestamp during ingestion; list ordering also used `last_updated_at`.

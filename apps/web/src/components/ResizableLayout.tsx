@@ -7,9 +7,15 @@ interface ResizableLayoutProps {
   sidebarContent: React.ReactNode;
   mainContent: React.ReactNode;
   rightContent?: React.ReactNode;
+  transparentSidebar?: boolean;
 }
 
-export default function ResizableLayout({ sidebarContent, mainContent, rightContent }: ResizableLayoutProps) {
+export default function ResizableLayout({
+  sidebarContent,
+  mainContent,
+  rightContent,
+  transparentSidebar = false
+}: ResizableLayoutProps) {
   const { user, updateProfile } = useAuth();
 
   // Configured defaults: 20 / 40 / 40 roughly maps to 272px / rest / rest
@@ -114,7 +120,7 @@ export default function ResizableLayout({ sidebarContent, mainContent, rightCont
           flexDirection: 'column',
           height: '100%',
           minHeight: 0,
-          ...panelShellStyle,
+          ...(transparentSidebar ? {} : panelShellStyle),
         }}
       >
         {sidebarContent}

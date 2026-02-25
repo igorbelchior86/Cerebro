@@ -65,10 +65,65 @@ function confColor(c: number): string {
   return 'rgba(228,234,248,0.28)';
 }
 
-function SectionLabel({ children }: { children: ReactNode }) {
+function SectionLabel({ children, onToggle, isOpen }: { children: ReactNode; onToggle?: () => void; isOpen?: boolean }) {
   return (
-    <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8.5px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--text-faint)', marginBottom: '10px', paddingBottom: '7px', borderBottom: '1px solid var(--border)' }}>
+    <div style={{
+      fontFamily: 'var(--font-jetbrains-mono, monospace)',
+      fontSize: '8.5px',
+      fontWeight: 700,
+      textTransform: 'uppercase',
+      letterSpacing: '0.12em',
+      color: 'var(--text-faint)',
+      marginBottom: '10px',
+      paddingBottom: '7px',
+      borderBottom: '1px solid var(--border)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      position: 'relative',
+      zIndex: 10,
+    }}>
       {children}
+      {onToggle && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggle(); }}
+          style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--bento-outline)',
+            color: 'var(--accent)',
+            cursor: 'pointer',
+            padding: '4px 6px',
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            transition: 'all 0.2s ease',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = 'var(--accent)';
+            e.currentTarget.style.background = 'rgba(91,127,255,0.04)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = 'var(--bento-outline)';
+            e.currentTarget.style.background = 'var(--bg-card)';
+          }}
+          title={isOpen ? 'Collapse' : 'Expand'}
+        >
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 12 12"
+            fill="none"
+            style={{
+              transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
+            }}
+          >
+            <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
@@ -110,16 +165,9 @@ function formatEvidenceChipLabel(raw: string | { id: string; label?: string }): 
 }
 
 export default function PlaybookPanel({ content, status = 'ready', data, sessionStatus, children }: PlaybookPanelProps) {
-  const [copied, setCopied] = useState(false);
+  const [isContextOpen, setIsContextOpen] = useState(true);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [openEvidenceFor, setOpenEvidenceFor] = useState<number | null>(null);
-
-  const handleCopy = () => {
-    navigator.clipboard?.writeText(content ?? '').then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
 
   const ctx = data?.context ?? [];
   const hyps = data?.hypotheses ?? [];
@@ -140,53 +188,37 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
     <div className="animate-slideInRight" style={{ width: '100%', height: '100%', minWidth: 0, minHeight: 0, flexShrink: 0, background: 'transparent', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
       <div style={{ position: 'absolute', top: '-60px', right: '-80px', width: '280px', height: '280px', borderRadius: '50%', background: 'var(--glow-playbook)', pointerEvents: 'none', zIndex: 0 }} />
 
-      {/* Topbar */}
-      <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--bento-outline)', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, position: 'relative', zIndex: 1, background: 'var(--bg-card)' }}>
-        <svg width="13" height="13" viewBox="0 0 14 14" fill="none" style={{ color: '#1DB98A', flexShrink: 0 }}>
-          <rect x="1" y="1" width="12" height="12" rx="3" stroke="currentColor" strokeWidth="1.4" />
-          <path d="M4 5h6M4 7.5h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-        </svg>
-        <span style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', flex: 1 }}>
-          Network Playbook{ticketId ? ` — ${ticketId}` : ''}
-          {sessionStatus === 'pending' && (
-            <span style={{ marginLeft: '8px', color: '#EAB308', fontSize: '9px', fontWeight: 500, background: 'rgba(234,179,8,0.1)', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(234,179,8,0.2)' }}>
-              WAITING FOR QUOTA
-            </span>
-          )}
-        </span>
-        <button onClick={handleCopy}
-          style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px', borderRadius: '8px', fontSize: '10.5px', fontWeight: 600, border: `1px solid ${copied ? 'var(--green-border)' : 'var(--bento-outline)'}`, background: 'var(--bg-panel)', color: copied ? 'var(--green)' : 'var(--text-secondary)', cursor: 'pointer', transition: 'var(--transition)' }}
-        >
-          {copied ? (
-            <span className="animate-check-pop" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
-              Copied!
-            </span>
-          ) : (
-            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.3"><rect x="4" y="4" width="7" height="7" rx="1.5" /><path d="M8 4V2.5A1.5 1.5 0 006.5 1h-4A1.5 1.5 0 001 2.5v4A1.5 1.5 0 002.5 8H4" /></svg>
-              Copy
-            </span>
-          )}
-        </button>
-        <button style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px', borderRadius: '8px', fontSize: '10.5px', fontWeight: 600, border: '1px solid var(--border-accent)', background: 'var(--accent-muted)', color: 'var(--accent)', cursor: 'pointer', opacity: 0.95 }}>
-          Export
-        </button>
-      </div>
 
-      {/* Content */}
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '14px', position: 'relative', zIndex: 1 }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 14px 12px 14px', position: 'relative', zIndex: 1 }}>
         {ctx.length > 0 && (
-          <div style={{ marginBottom: '22px' }}>
-            <SectionLabel>Context</SectionLabel>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-              {ctx.map((c) => (
-                <div key={c.key} style={{ padding: '8px 10px', borderRadius: '7px', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                  <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8.5px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '3px' }}>{c.key}</div>
-                  <div style={{ fontSize: '11.5px', fontWeight: 500, color: c.highlight ?? 'var(--text-primary)' }}>{c.val}</div>
-                </div>
-              ))}
-            </div>
+          <div style={{
+            position: 'sticky',
+            top: '-14px',
+            background: 'var(--bg-panel)',
+            backdropFilter: 'blur(24px)',
+            WebkitBackdropFilter: 'blur(24px)',
+            zIndex: 20,
+            margin: '0 -14px 22px -14px',
+            padding: '14px 14px 14px 14px',
+            borderBottom: isContextOpen ? 'none' : '1px solid var(--bento-outline)',
+            boxShadow: '0 8px 16px -4px rgba(0,0,0,0.06)'
+          }}>
+            <SectionLabel
+              isOpen={isContextOpen}
+              onToggle={() => setIsContextOpen(!isContextOpen)}
+            >
+              Context
+            </SectionLabel>
+            {isContextOpen && (
+              <div className="animate-in fade-in slide-in-from-top-1 duration-300" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                {ctx.map((c) => (
+                  <div key={c.key} style={{ padding: '8px 10px', borderRadius: '7px', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                    <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8.5px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '3px' }}>{c.key}</div>
+                    <div style={{ fontSize: '11.5px', fontWeight: 500, color: c.highlight ?? 'var(--text-primary)' }}>{c.val}</div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

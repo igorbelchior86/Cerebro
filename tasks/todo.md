@@ -15,12 +15,14 @@
 - Root cause definido: interpretação incorreta de “gutter” como `margin/height spacer` dentro do mesmo bloco contínuo.
 - `ChatSidebar` foi refatorada para dois wrappers internos (header e conteúdo) com `gap: 8px`, reproduzindo a semântica visual de separação modular usada entre colunas.
 - Verificação: `pnpm --filter @playbook-brain/web typecheck` OK.
+- Novo feedback com screenshot alvo exigiu paridade visual mais forte; ajuste fino aplicado na geometria dos módulos (`gap`, `padding`, `borderRadius`) para aproximar da referência.
+- Verificação pós-tuning: `pnpm --filter @playbook-brain/web typecheck` OK.
 
 ## Review
 (fill in after completion)
 - What worked: separar a sidebar em dois wrappers/panels internos resolveu o problema na raiz (destaque modular real), sem alterar lógica, dados ou componentes internos.
-- What was tricky: o requisito parecia um ajuste de spacing, mas dependia de semântica estrutural do layout (container boundaries), não apenas `margin/gap` local.
-- Time taken: ~15 min (incluindo correção após feedback)
+- What was tricky: o requisito parecia um ajuste de spacing, mas dependia de semântica estrutural do layout (container boundaries) e depois de tuning geométrico fino (intensidade do gap/raio), não apenas `margin/gap` local.
+- Time taken: ~25 min (incluindo correções após feedback)
 
 ---
 

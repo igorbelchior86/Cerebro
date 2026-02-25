@@ -476,12 +476,12 @@ export default function SessionDetail({
             content: autoTaskPrimaryText,
             ...(ticketTextArtifact?.text_original
               ? {
-                  ticketTextVariant: {
-                    primary: (autoTaskCleanText ? 'clean' : 'original') as 'clean' | 'original',
-                    original: autoTaskOriginalText,
-                    ...(autoTaskCleanText ? { clean: autoTaskCleanText, cleanFormat: autoTaskCleanFormat } : {}),
-                  },
-                }
+                ticketTextVariant: {
+                  primary: (autoTaskCleanText ? 'clean' : 'original') as 'clean' | 'original',
+                  original: autoTaskOriginalText,
+                  ...(autoTaskCleanText ? { clean: autoTaskCleanText, cleanFormat: autoTaskCleanFormat } : {}),
+                },
+              }
               : {}),
           },
         ];
@@ -561,11 +561,11 @@ export default function SessionDetail({
             ticketTextVariant:
               m.ticketTextVariant
                 ? {
-                    primary: m.ticketTextVariant.primary,
-                    clean: m.ticketTextVariant.clean,
-                    cleanFormat: m.ticketTextVariant.cleanFormat,
-                    original: m.ticketTextVariant.original,
-                  }
+                  primary: m.ticketTextVariant.primary,
+                  clean: m.ticketTextVariant.clean,
+                  cleanFormat: m.ticketTextVariant.cleanFormat,
+                  original: m.ticketTextVariant.original,
+                }
                 : null,
             steps: m.steps?.map((s) => `${s.label}:${s.status}`) ?? [],
           }))
@@ -791,7 +791,6 @@ export default function SessionDetail({
   const ticketNumber = data?.session.ticket_id || selectedTicketView?.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`;
   const ticketLabel = `${ticketNumber} — ${ticketTitle}`;
   const ticketMetaLabel = [
-    ticketNumber,
     canonicalCompanyUi,
     canonicalRequesterUi,
   ].filter(Boolean).join(' · ') || getTicketContextMeta(selectedTicketView);
@@ -844,7 +843,7 @@ export default function SessionDetail({
           key: 'Refinement',
           val: `${Array.isArray(data?.ticket_context_appendix?.final_refinement?.fields_updated) ? data.ticket_context_appendix?.final_refinement?.fields_updated?.length || 0 : 0} fields`,
           ...(Array.isArray(data?.ticket_context_appendix?.final_refinement?.fields_updated) &&
-          (data.ticket_context_appendix?.final_refinement?.fields_updated?.length || 0) > 0
+            (data.ticket_context_appendix?.final_refinement?.fields_updated?.length || 0) > 0
             ? { highlight: '#1DB98A' }
             : {}),
         },
@@ -878,6 +877,7 @@ export default function SessionDetail({
 
   return (
     <ResizableLayout
+      transparentSidebar={true}
       sidebarContent={
         <ChatSidebar
           tickets={displayTickets}
@@ -900,7 +900,7 @@ export default function SessionDetail({
         />
       }
       mainContent={
-        <div className="flex-1 flex flex-col" style={{ background: 'transparent', minWidth: 0, height: '100%', minHeight: 0, padding: '10px', gap: '8px' }}>
+        <div className="flex-1 flex flex-col" style={{ background: 'transparent', minWidth: 0, height: '100%', minHeight: 0, padding: '12px', gap: '8px' }}>
           <div style={{ border: '1px solid var(--bento-outline)', borderRadius: '14px', background: 'var(--bg-card)', overflow: 'hidden', flexShrink: 0 }}>
             {/* Header */}
             <div
@@ -917,124 +917,112 @@ export default function SessionDetail({
               <p style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {ticketLabel}
               </p>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '2px 9px', borderRadius: '999px', fontSize: '10px', fontWeight: 600, color: 'var(--green)', background: 'var(--green-muted)', border: '1px solid var(--green-border)', visibility: playbookReady ? 'visible' : 'hidden' }}>
-                <svg width="8" height="8" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4.5px',
+                padding: '3px 8px',
+                borderRadius: '8px',
+                fontSize: '10.5px',
+                fontWeight: 600,
+                color: 'var(--green)',
+                background: 'rgba(29,185,138,0.08)',
+                border: '1px solid rgba(29,185,138,0.2)',
+                visibility: playbookReady ? 'visible' : 'hidden',
+                transition: 'all 0.2s ease',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+              }}>
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                  <path d="M10 3L4.5 8.5L2 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
                 {t('statusPlaybookReady')}
               </span>
               <button
-              onClick={handleToggleManualSuppression}
-              aria-pressed={isManualSuppressed}
-              disabled={isManualSuppressionSaving}
-              title={isManualSuppressed ? 'Remove manual suppression' : 'Add ticket to suppressed'}
-              aria-label={isManualSuppressed ? 'Remove manual suppression' : 'Add ticket to suppressed'}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '28px',
-                height: '28px',
-                borderRadius: '9px',
-                color: isManualSuppressed ? '#F59E0B' : 'var(--text-muted)',
-                background: isManualSuppressed
-                  ? 'linear-gradient(180deg, rgba(245,158,11,0.14), rgba(245,158,11,0.08))'
-                  : 'var(--bg-card)',
-                border: isManualSuppressed ? '1px solid rgba(245,158,11,0.30)' : '1px solid var(--border)',
-                boxShadow: isManualSuppressed ? 'inset 0 1px 0 rgba(255,255,255,0.06)' : 'none',
-                cursor: isManualSuppressionSaving ? 'not-allowed' : 'pointer',
-                opacity: isManualSuppressionSaving ? 0.7 : 1,
-                transition: 'var(--transition)',
-              }}
-              onMouseEnter={(e) => {
-                if (isManualSuppressionSaving) return;
-                const el = e.currentTarget as HTMLButtonElement;
-                el.style.transform = 'translateY(-1px)';
-                if (!isManualSuppressed) {
-                  el.style.borderColor = 'rgba(245,158,11,0.24)';
-                  el.style.color = '#F59E0B';
-                  el.style.background = 'rgba(245,158,11,0.06)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (isManualSuppressionSaving) return;
-                const el = e.currentTarget as HTMLButtonElement;
-                el.style.transform = 'translateY(0)';
-                if (!isManualSuppressed) {
-                  el.style.borderColor = 'var(--border)';
-                  el.style.color = 'var(--text-muted)';
-                  el.style.background = 'var(--bg-card)';
-                }
-              }}
-            >
-              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path d="M3.8 10a6.2 6.2 0 0 1 10.4-4.5L16.6 8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M16.2 10a6.2 6.2 0 0 1-10.4 4.5L3.4 12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M12.8 7.2l-5.6 5.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-              </svg>
-            </button>
+                onClick={handleToggleManualSuppression}
+                aria-pressed={isManualSuppressed}
+                disabled={isManualSuppressionSaving}
+                title={isManualSuppressed ? 'Remove manual suppression' : 'Add ticket to suppressed'}
+                aria-label={isManualSuppressed ? 'Remove manual suppression' : 'Add ticket to suppressed'}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '10px',
+                  color: isManualSuppressed ? '#F59E0B' : 'var(--text-muted)',
+                  background: isManualSuppressed
+                    ? 'rgba(245,158,11,0.08)'
+                    : 'var(--bg-card)',
+                  border: isManualSuppressed ? '1px solid rgba(245,158,11,0.30)' : '1px solid var(--bento-outline)',
+                  boxShadow: isManualSuppressed ? '0 2px 8px rgba(245,158,11,0.1)' : 'none',
+                  cursor: isManualSuppressionSaving ? 'not-allowed' : 'pointer',
+                  opacity: isManualSuppressionSaving ? 0.7 : 1,
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+                onMouseEnter={(e) => {
+                  if (isManualSuppressionSaving) return;
+                  const el = e.currentTarget as HTMLButtonElement;
+                  el.style.transform = 'translateY(-1px)';
+                  if (!isManualSuppressed) {
+                    el.style.borderColor = 'var(--accent)';
+                    el.style.color = 'var(--accent)';
+                    el.style.background = 'rgba(91,127,255,0.04)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (isManualSuppressionSaving) return;
+                  const el = e.currentTarget as HTMLButtonElement;
+                  el.style.transform = 'translateY(0)';
+                  if (!isManualSuppressed) {
+                    el.style.borderColor = 'var(--bento-outline)';
+                    el.style.color = 'var(--text-muted)';
+                    el.style.background = 'var(--bg-card)';
+                  }
+                }}
+              >
+                <svg width="15" height="15" viewBox="0 0 20 20" fill="none">
+                  <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M7 13L13 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
               <button
-              onClick={handleRefreshPipeline}
-              disabled={loading}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '28px',
-                height: '28px',
-                borderRadius: '9px',
-                color: loading ? 'var(--text-muted)' : 'var(--accent)',
-                background: loading ? 'var(--bg-card)' : 'linear-gradient(180deg, rgba(91,127,255,0.12), rgba(91,127,255,0.07))',
-                border: loading ? '1px solid var(--border)' : '1px solid rgba(91,127,255,0.26)',
-                boxShadow: loading ? 'none' : 'inset 0 1px 0 rgba(255,255,255,0.08)',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                opacity: loading ? 0.7 : 1,
-                transition: 'var(--transition)',
-              }}
-              onMouseEnter={(e) => {
-                if (loading) return;
-                (e.currentTarget as HTMLButtonElement).style.background = 'linear-gradient(180deg, rgba(91,127,255,0.16), rgba(91,127,255,0.10))';
-                (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(91,127,255,0.36)';
-                (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)';
-              }}
-              onMouseLeave={(e) => {
-                if (loading) return;
-                (e.currentTarget as HTMLButtonElement).style.background = 'linear-gradient(180deg, rgba(91,127,255,0.12), rgba(91,127,255,0.07))';
-                (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(91,127,255,0.26)';
-                (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
-              }}
-              title="Hard refresh pipeline"
-              aria-label="Hard refresh pipeline"
-            >
-              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path
-                  d="M16.2 6.6A6.9 6.9 0 0 0 4.9 4.9"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M4.9 4.9V2.7M4.9 4.9h2.2"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M3.8 13.4A6.9 6.9 0 0 0 15.1 15.1"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M15.1 15.1v2.2m0-2.2h-2.2"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
+                onClick={handleRefreshPipeline}
+                disabled={loading}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '10px',
+                  color: loading ? 'var(--text-muted)' : 'var(--accent)',
+                  background: loading ? 'var(--bg-card)' : 'rgba(91,127,255,0.07)',
+                  border: loading ? '1px solid var(--bento-outline)' : '1px solid rgba(91,127,255,0.20)',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  opacity: loading ? 0.7 : 1,
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+                onMouseEnter={(e) => {
+                  if (loading) return;
+                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(91,127,255,0.12)';
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(91,127,255,0.30)';
+                  (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)';
+                }}
+                onMouseLeave={(e) => {
+                  if (loading) return;
+                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(91,127,255,0.07)';
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(91,127,255,0.20)';
+                  (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+                }}
+                title="Hard refresh pipeline"
+                aria-label="Hard refresh pipeline"
+              >
+                <svg width="15" height="15" viewBox="0 0 20 20" fill="none">
+                  <path d="M15.5 10C15.5 13.0376 13.0376 15.5 10 15.5C6.96243 15.5 4.5 13.0376 4.5 10C4.5 6.96243 6.96243 4.5 10 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  <path d="M9.5 7L12 4.5L9.5 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
               <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-jetbrains-mono)', marginLeft: playbookReady ? '0' : 'auto' }}>
                 {playbookReady ? '' : loading ? t('statusInitializing') : t('statusProcessing')}
               </span>

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type CSSProperties, type ReactNode } from 'react';
 import MarkdownRenderer from './MarkdownRenderer';
 
 export interface Message {
@@ -456,6 +456,29 @@ function RichCleanTicketText({
   return <MarkdownRenderer content={formatSimpleEmailBodyMarkdown(text)} />;
 }
 
+const assistantBubbleStyle: CSSProperties = {
+  width: '100%',
+  borderRadius: '12px 12px 12px 3px',
+  border: '1px solid var(--bento-outline)',
+  background: 'var(--bg-card)',
+  boxShadow: 'var(--shadow-card)',
+  padding: '10px 12px 24px 12px',
+  position: 'relative',
+};
+
+const userBubbleStyle: CSSProperties = {
+  width: '100%',
+  margin: 0,
+  borderRadius: '12px 12px 3px 12px',
+  border: '1px solid rgba(91,127,255,0.15)',
+  background: 'rgba(91,127,255,0.10)',
+  boxShadow: 'var(--shadow-card)',
+  padding: '10px 12px',
+  fontSize: '12.5px',
+  color: 'var(--text-primary)',
+  lineHeight: 1.55,
+};
+
 export default function ChatMessage({ message, children }: ChatMessageProps) {
   const [ticketTextMode, setTicketTextMode] = useState<'clean' | 'original'>(
     message.ticketTextVariant?.clean?.trim()
@@ -484,7 +507,7 @@ export default function ChatMessage({ message, children }: ChatMessageProps) {
             <span style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>You</span>
             {message.timestamp && <span suppressHydrationWarning style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)' }}>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
           </div>
-          <p style={{ background: 'rgba(91,127,255,0.10)', border: '1px solid rgba(91,127,255,0.15)', borderRadius: '10px 10px 2px 10px', padding: '8px 12px', display: 'inline-block', maxWidth: '80%', fontSize: '12.5px', color: 'var(--text-primary)', lineHeight: 1.55 }}>
+          <p style={userBubbleStyle}>
             {message.content}
           </p>
         </div>
@@ -510,80 +533,116 @@ export default function ChatMessage({ message, children }: ChatMessageProps) {
   const cleanDisplayModel = canToggleTicketText && hasCleanTicketText
     ? normalizeCleanTicketTextForDisplay(message.ticketTextVariant!.clean!)
     : null;
-  return (
-    <div className="animate-msgIn" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', marginBottom: '10px' }}>
-      <div style={{ width: '26px', height: '26px', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '12px', border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
-        {src.icon}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '4px' }}>
-          <span style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>{src.label}</span>
-          {message.timestamp && <span suppressHydrationWarning style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)' }}>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>}
-          {canToggleTicketText && (
-            <div
-              style={{
-                marginLeft: '2px',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '3px',
-                padding: '2px',
-                borderRadius: '999px',
-                border: '1px solid rgba(91,127,255,0.20)',
-                background: 'linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(91,127,255,0.10) 100%)',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 8px rgba(0,0,0,0.10)',
-              }}
-            >
-              {ticketTextModes.map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setTicketTextMode(mode)}
-                  title={mode === 'clean' ? 'Show cleaned ticket text' : 'Show original ticket text'}
-                  aria-label={mode === 'clean' ? 'Show cleaned ticket text' : 'Show original ticket text'}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '4px',
-                    padding: '2px 7px',
-                    borderRadius: '999px',
-                    border: '1px solid transparent',
-                    background: ticketTextMode === mode ? 'rgba(91,127,255,0.16)' : 'transparent',
-                    color: ticketTextMode === mode ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    fontFamily: 'var(--font-jetbrains-mono, monospace)',
-                    fontSize: '9px',
-                    fontWeight: 700,
-                    letterSpacing: '0.03em',
-                  }}
-                >
-                  {mode === 'clean' ? 'Clean' : 'Original'}
-                </button>
-              ))}
-            </div>
-          )}
+  const stepsList = message.steps && message.steps.length > 0 ? (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '8px' }}>
+      {message.steps.map((step, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11.5px', color: 'var(--text-muted)' }}>
+          <span style={{ width: '14px', height: '14px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', flexShrink: 0, background: step.status === 'done' ? 'var(--green-muted)' : step.status === 'running' ? 'var(--accent-muted)' : 'var(--bg-badge)', border: `1px solid ${step.status === 'done' ? 'var(--green-border)' : step.status === 'running' ? 'rgba(91,127,255,0.25)' : 'var(--border)'}`, color: step.status === 'done' ? 'var(--green)' : 'transparent' }} className={step.status === 'running' ? 'animate-throbber' : undefined}>
+            {step.status === 'done' ? '✓' : ''}
+          </span>
+          <span>{step.label}</span>
         </div>
-        {canToggleTicketText && ticketTextMode === 'clean' && hasCleanTicketText ? (
-          <RichCleanTicketText
-            text={message.ticketTextVariant!.clean!}
-            format={message.ticketTextVariant!.cleanFormat ?? 'plain'}
-          />
-        ) : (
-          <MarkdownRenderer content={String(renderedContent) + (message.type === 'validation' ? ' **Status:** `approved`' : '')} />
-        )}
-        {message.steps && message.steps.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '8px' }}>
-            {message.steps.map((step, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11.5px', color: 'var(--text-muted)' }}>
-                <span style={{ width: '14px', height: '14px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', flexShrink: 0, background: step.status === 'done' ? 'var(--green-muted)' : step.status === 'running' ? 'var(--accent-muted)' : 'var(--bg-badge)', border: `1px solid ${step.status === 'done' ? 'var(--green-border)' : step.status === 'running' ? 'rgba(91,127,255,0.25)' : 'var(--border)'}`, color: step.status === 'done' ? 'var(--green)' : 'transparent' }} className={step.status === 'running' ? 'animate-throbber' : undefined}>
-                  {step.status === 'done' ? '✓' : ''}
-                </span>
-                <span>{step.label}</span>
-              </div>
+      ))}
+    </div>
+  ) : null;
+  const isPrepareContextMessage = message.type === 'evidence';
+  return (
+    <div className="animate-msgIn" style={{ marginBottom: '10px' }}>
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+        <div style={{ width: '26px', height: '26px', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '12px', border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+          {src.icon}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={assistantBubbleStyle}>
+            {canToggleTicketText && ticketTextMode === 'clean' && hasCleanTicketText ? (
+              <RichCleanTicketText
+                text={message.ticketTextVariant!.clean!}
+                format={message.ticketTextVariant!.cleanFormat ?? 'plain'}
+              />
+            ) : (
+              <MarkdownRenderer content={String(renderedContent) + (message.type === 'validation' ? ' **Status:** `approved`' : '')} />
+            )}
+            {stepsList && (isPrepareContextMessage ? (
+              <details style={{ marginTop: '8px' }}>
+                <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: '10.5px', fontWeight: 600, listStylePosition: 'inside' }}>
+                  PrepareContext items ({message.steps?.length ?? 0})
+                </summary>
+                {stepsList}
+              </details>
+            ) : (
+              stepsList
             ))}
+            {children && <div style={{ marginTop: '8px' }}>{children}</div>}
+
+            {canToggleTicketText && (
+              <div style={{
+                position: 'absolute',
+                bottom: '6px',
+                right: '6px',
+                display: 'flex',
+                gap: '4px',
+                zIndex: 10
+              }}>
+                {ticketTextModes.map((mode) => (
+                  <button
+                    key={mode}
+                    onClick={() => setTicketTextMode(mode)}
+                    title={mode === 'clean' ? 'Clean View' : 'Original View'}
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '6px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      border: '1px solid',
+                      borderColor: ticketTextMode === mode ? 'rgba(91,127,255,0.3)' : 'var(--bento-outline)',
+                      background: ticketTextMode === mode ? 'rgba(91,127,255,0.12)' : 'var(--bg-card)',
+                      color: ticketTextMode === mode ? 'var(--accent)' : 'var(--text-faint)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      boxShadow: ticketTextMode === mode ? '0 1px 4px rgba(91,127,255,0.1)' : 'none',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (ticketTextMode !== mode) {
+                        e.currentTarget.style.borderColor = 'var(--accent)';
+                        e.currentTarget.style.color = 'var(--accent)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (ticketTextMode !== mode) {
+                        e.currentTarget.style.borderColor = 'var(--bento-outline)';
+                        e.currentTarget.style.color = 'var(--text-faint)';
+                      }
+                    }}
+                  >
+                    {mode === 'clean' ? (
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                        <path d="M8 2L9.5 5.5L13 7L9.5 8.5L8 12L6.5 8.5L3 7L6.5 5.5L8 2Z" fill="currentColor" />
+                        <path d="M12 10L12.5 11.5L14 12L12.5 12.5L12 14L11.5 12.5L10 12L11.5 11.5L12 10Z" fill="currentColor" />
+                      </svg>
+                    ) : (
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                        <path d="M4 4H12V5.5H4V4ZM4 7H12V8.5H4V7ZM4 10H9V11.5H4V10Z" fill="currentColor" />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', marginTop: '6px', marginLeft: '36px', paddingRight: '2px' }}>
+        {message.timestamp && (
+          <span
+            suppressHydrationWarning
+            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)', letterSpacing: '0.04em' }}
+          >
+            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          </span>
         )}
-        {children && <div style={{ marginTop: '8px' }}>{children}</div>}
+        <span style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--text-secondary)' }}>{src.label}</span>
       </div>
     </div>
   );

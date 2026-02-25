@@ -129,9 +129,10 @@ export default function HomePage() {
 
   return (
     <ResizableLayout
+      transparentSidebar={true}
       sidebarContent={<ChatSidebar tickets={sidebarTickets} isLoading={isLoadingTickets} onSelectTicket={(id) => router.push(`/triage/${id}`, { scroll: false })} />}
       mainContent={
-        <div className="flex-1 flex flex-col" style={{ background: 'transparent', minWidth: 0, height: '100%', minHeight: 0, padding: '10px', gap: '8px' }}>
+        <div className="flex-1 flex flex-col" style={{ background: 'transparent', minWidth: 0, height: '100%', minHeight: 0, padding: '12px', gap: '8px' }}>
           {/* Header */}
           <div
             style={{

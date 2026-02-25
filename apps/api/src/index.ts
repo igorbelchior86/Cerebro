@@ -16,13 +16,11 @@ import diagnoseRoutes from './routes/diagnose.js';
 import playbookRoutes from './routes/playbook.js';
 import integrationsRoutes from './routes/integrations.js';
 import chatRoutes from './routes/chat.js';
-import emailIngestionRoutes from './routes/email-ingestion.js';
 import authRoutes from './routes/auth.js';
 import { requireAuth } from './middleware/auth.js';
 import { autoSeedAdmin } from './db/seed-admin.js';
 import { triageOrchestrator } from './services/triage-orchestrator.js';
 import { autotaskPollingService } from './services/autotask-polling.js';
-import { emailIngestionPollingService } from './services/email-ingestion-polling.js';
 import { bootstrapWorkspaceRuntimeSettings } from './services/runtime-settings.js';
 
 // Load environment variables — look for .env at monorepo root (../../../ relative to dist/)
@@ -98,9 +96,6 @@ app.use('/playbook', requireAuth, playbookRoutes);
 app.use('/integrations', requireAuth, integrationsRoutes);
 app.use('/chat', requireAuth, chatRoutes);
 
-// Public email ingestion trigger, could be secured via token in production
-app.use('/email-ingestion', emailIngestionRoutes);
-
 // ─── Error Handling ──────────────────────────────────────────
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('[ERROR]', err.message);
@@ -136,8 +131,6 @@ app.listen(PORT, '0.0.0.0', async () => {
 
   // Start Autotask Polling Service
   autotaskPollingService.start();
-  // Start Email Ingestion Polling Service (fallback path when Autotask admin is unavailable)
-  emailIngestionPollingService.start();
 
   console.log(`[API] ✓ Ready\n`);
 });

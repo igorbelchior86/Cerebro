@@ -11,7 +11,12 @@ describe('AutotaskClient', () => {
   let client: AutotaskClient;
 
   beforeEach(() => {
-    client = new AutotaskClient({ apiIntegrationCode: 'test-code', username: 'test@example.com', secret: 'test-secret' });
+    client = new AutotaskClient({
+      apiIntegrationCode: 'test-code',
+      username: 'test@example.com',
+      secret: 'test-secret',
+      zoneUrl: 'https://webservices14.autotask.net/atservicesrest/v1.0'
+    });
     jest.clearAllMocks();
   });
 
@@ -45,6 +50,16 @@ describe('AutotaskClient', () => {
       expect(global.fetch).toHaveBeenCalled();
     });
 
+    it('should parse ticket by ID responses that return item', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ item: { id: 123, ticketNumber: 'T20260225.0123', title: 'Single item ticket' } })
+      });
+
+      const result = await client.getTicket(123);
+      expect((result as any).ticketNumber).toBe('T20260225.0123');
+    });
+
     it('should throw error if ticket not found', async () => {
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
@@ -72,6 +87,53 @@ describe('AutotaskClient', () => {
       );
 
       await expect(client.getTicket(123)).rejects.toThrow('Connection refused');
+    });
+  });
+
+  describe('searchTickets', () => {
+    it('should send documented search payload format for ticket queries', async () => {
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ pageDetails: {}, records: [] })
+        });
+
+      await client.searchTickets('{"op":"gt","field":"createDate","value":"2026-02-25T16:00:00.000Z"}', 50, 0);
+
+      const requestUrl = (global.fetch as jest.Mock).mock.calls[0][0] as string;
+      const url = new URL(requestUrl);
+      const searchParam = url.searchParams.get('search');
+      expect(searchParam).toBeTruthy();
+
+      const parsed = JSON.parse(searchParam as string);
+      expect(parsed.MaxRecords).toBe(50);
+      expect(Array.isArray(parsed.filter)).toBe(true);
+      expect(parsed.filter[0]).toMatchObject({ op: 'gt', field: 'createDate' });
+      expect(url.searchParams.get('pageSize')).toBeNull();
+      expect(url.searchParams.get('pageNumber')).toBeNull();
+    });
+
+    it('should parse query responses that return items', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [{ id: 321, ticketNumber: 'T20260225.9999', title: 'From query items' }] })
+      });
+
+      const result = await client.searchTickets('{"op":"eq","field":"ticketNumber","value":"T20260225.9999"}', 5, 0);
+      expect(result).toHaveLength(1);
+      expect((result[0] as any).ticketNumber).toBe('T20260225.9999');
+    });
+  });
+
+  describe('getTicketByTicketNumber', () => {
+    it('should return exact ticket match from query results', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [{ id: 111, ticketNumber: 'T20260225.0001', title: 'Match' }] })
+      });
+
+      const result = await client.getTicketByTicketNumber('T20260225.0001');
+      expect((result as any).id).toBe(111);
     });
   });
 });

@@ -1,33 +1,66 @@
 import { AutotaskClient } from '../clients/autotask.js';
-import { withTryAdvisoryLock } from '../db/index.js';
+import { queryOne, withTryAdvisoryLock } from '../db/index.js';
 import { triageOrchestrator } from './triage-orchestrator.js';
 
+interface AutotaskCreds {
+    apiIntegrationCode: string;
+    username: string;
+    secret: string;
+    zoneUrl?: string;
+}
+
 export class AutotaskPollingService {
-    private client: AutotaskClient;
     private intervalId: NodeJS.Timeout | null = null;
     private isPolling = false;
     // Polling interval in ms (default: 60 seconds)
     private pollIntervalMs = 60 * 1000;
     private readonly advisoryLockNamespace = 41023;
     private readonly advisoryLockKey = 1;
+    constructor() { }
 
-    constructor() {
-        this.client = new AutotaskClient({
-            apiIntegrationCode: process.env.AUTOTASK_API_INTEGRATION_CODE || '',
-            username: process.env.AUTOTASK_USERNAME || '',
-            secret: process.env.AUTOTASK_SECRET || '',
-        });
+    private async getAutotaskCredentials(): Promise<AutotaskCreds | null> {
+        try {
+            const latest = await queryOne<{ credentials: AutotaskCreds }>(
+                `SELECT credentials
+                 FROM integration_credentials
+                 WHERE service = 'autotask'
+                 ORDER BY updated_at DESC
+                 LIMIT 1`
+            );
+            if (latest?.credentials?.apiIntegrationCode && latest.credentials?.username && latest.credentials?.secret) {
+                return latest.credentials;
+            }
+        } catch {
+            // Fall through to env fallback if DB is unavailable / table not ready.
+        }
+
+        const apiIntegrationCode =
+            process.env.AUTOTASK_API_INTEGRATION_CODE ||
+            process.env.AUTOTASK_API_INTEGRATIONCODE ||
+            '';
+        const username =
+            process.env.AUTOTASK_USERNAME ||
+            process.env.AUTOTASK_API_USER ||
+            '';
+        const secret =
+            process.env.AUTOTASK_SECRET ||
+            process.env.AUTOTASK_API_SECRET ||
+            '';
+        const zoneUrl = process.env.AUTOTASK_ZONE_URL || undefined;
+
+        if (!apiIntegrationCode || !username || !secret) return null;
+        return { apiIntegrationCode, username, secret, ...(zoneUrl ? { zoneUrl } : {}) };
+    }
+
+    private async buildClient(): Promise<AutotaskClient | null> {
+        const creds = await this.getAutotaskCredentials();
+        if (!creds) return null;
+        return new AutotaskClient(creds);
     }
 
     start() {
         if (this.intervalId) {
             console.log('[AutotaskPolling] Already running.');
-            return;
-        }
-
-        // Only start if credentials are provided
-        if (!process.env.AUTOTASK_API_INTEGRATION_CODE || !process.env.AUTOTASK_USERNAME || !process.env.AUTOTASK_SECRET) {
-            console.warn('[AutotaskPolling] Missing Autotask credentials. Polling will NOT start.');
             return;
         }
 
@@ -59,6 +92,12 @@ export class AutotaskPollingService {
         this.isPolling = true;
         try {
             const lock = await withTryAdvisoryLock(this.advisoryLockNamespace, this.advisoryLockKey, async () => {
+                const client = await this.buildClient();
+                if (!client) {
+                    console.warn('[AutotaskPolling] Missing Autotask credentials (DB/UI and env fallback). Skipping poll.');
+                    return;
+                }
+
                 // Find tickets created in the last 1 hour
                 // Autotask REST API allows querying by CreateDate
                 const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -69,7 +108,7 @@ export class AutotaskPollingService {
 
                 // In apps/api/src/clients/autotask.ts, searchTickets expects a string 'filter' that gets passed as 'search' param
                 // According to Autotask API, search param is a JSON string of filters.
-                const tickets = await this.client.searchTickets(filter, 50, 0);
+                const tickets = await client.searchTickets(filter, 50, 0);
 
                 if (tickets && tickets.length > 0) {
                     console.log(`[AutotaskPolling] Found ${tickets.length} recently created tickets.`);

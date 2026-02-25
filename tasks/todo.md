@@ -657,7 +657,7 @@
 - Time taken: ~12 min
 
 ## Task: Remove `Reframed` toggle option from ticket text view (keep Clean + Original) (2026-02-24)
-**Status**: planning
+**Status**: completed
 **Started**: 2026-02-24 12:42 EST
 
 ## Plan
@@ -833,3 +833,104 @@
 - What worked: aplicar diretamente a migration `014` resolveu a incompatibilidade entre `ON CONFLICT` e schema atual sem patch de código.
 - What was tricky: `psql` indisponível; a execução/validação precisou ser feita via scripts temporários `node + pg`.
 - Time taken: ~10 min
+
+## Task: Corrigir formato de query do Autotask polling (2026-02-25)
+**Status**: completed
+**Started**: 2026-02-25
+
+## Plan
+- [x] Step 1: Confirmar online o formato documentado de `search` na REST API do Autotask
+- [x] Step 2: Comparar com `AutotaskClient.searchTickets()` e `AutotaskPollingService`
+- [x] Step 3: Corrigir o payload de query para formato documentado (`search` com `filter[]`)
+- [x] Step 4: Validar via testes/typecheck e logs do poller após restart
+- [x] Step 5: Documentar a correção na wiki
+
+## Open Questions
+- Se o Autotask continuar retornando `500` após corrigir o formato, será preciso validar operador/campo (`createDate`) e/ou endpoint específico do tenant.
+
+## Progress Notes
+- Encontrado desvio do formato documentado: código enviava `search={op,field,value}` + `pageSize/pageNumber`, sem wrapper `filter[]`.
+- Correção implementada em `AutotaskClient.searchTickets()` para montar `search` compatível (`{"MaxRecords":N,"filter":[...]}`) e remover params legados de paginação nessa rota.
+- Teste unitário adicionado para validar o querystring gerado no `searchTickets`.
+
+## Review
+- What worked: corrigir a montagem de `search` no cliente resolveu a chamada real `/tickets/query`; validação direta retornou `200 OK` com itens.
+- What was tricky: o log do poller não mostrou rapidamente o resultado após restart (chamada pendente/assíncrona), então a comprovação final exigiu um teste runtime direto usando a mesma credencial salva em `integration_credentials`.
+- Time taken: ~25 min
+
+## Task: Priorizar Autotask/Ninja/IT Glue com email como fallback (2026-02-25)
+**Status**: completed
+**Started**: 2026-02-25
+
+## Plan
+- [x] Step 1: Auditar o ponto de decisão de intake no pipeline (`PrepareContext` / orchestrator / pollers)
+- [x] Step 2: Implementar prioridade Autotask para tickets `T...` (buscar no Autotask por `ticketNumber`) e manter email como fallback
+- [x] Step 3: Garantir compatibilidade do `AutotaskClient` com shape real de resposta de query (`items`)
+- [x] Step 4: Validar por testes + chamada runtime + evidência de logs
+- [x] Step 5: Documentar mudança na wiki
+
+## Open Questions
+- Se o tenant Autotask não permitir `ticketNumber eq`, pode ser necessário fallback para busca por `contains` + filtragem local.
+
+## Progress Notes
+- Usuário quer pipeline único com fontes operacionais primárias (Autotask/Ninja/IT Glue) e email apenas como fallback.
+- `PrepareContext` foi alterado para, em tickets `T...`, tentar primeiro `AutotaskClient.getTicketByTicketNumber()` e só então cair para `tickets_processed`/`tickets_raw`.
+- `AutotaskClient` passou a aceitar respostas de query em `items` (shape real observado) além de `records`.
+- Validação runtime consolidada com credenciais do banco confirmou leitura de dados em Autotask, NinjaOne e IT Glue.
+- Logs confirmaram fallback explícito quando Autotask não encontra o ticket (`404`): `Autotask primary lookup failed ... falling back to email ingestion data`.
+
+## Review
+- What worked: mudar a priorização no `PrepareContext` + corrigir o shape `items` no client resolveu a origem primária sem reescrever o pipeline.
+- What was tricky: alguns tickets `T...` ainda podem não existir/estar visíveis no Autotask na hora do processamento; nesses casos o fallback por email foi mantido e validado.
+- Time taken: ~30 min
+
+## Task: Remover email do pipeline (usar apenas fontes configuráveis na UI) (2026-02-25)
+**Status**: completed
+**Started**: 2026-02-25
+
+## Plan
+- [x] Step 1: Identificar todos os pontos ativos de email no runtime (poller/rota/fallback em PrepareContext)
+- [x] Step 2: Remover fallback de email no `PrepareContext` (Autotask-only intake)
+- [x] Step 3: Desativar runtime de email ingestion (poller + rota pública)
+- [x] Step 4: Validar typecheck + restart + logs (sem email poller)
+- [x] Step 5: Documentar mudança na wiki
+
+## Open Questions
+- O código de email ingestion pode permanecer no repo (inativo) sem impacto; remoção física completa pode ser feita depois se desejado.
+
+## Progress Notes
+- Fallback `tickets_processed`/`tickets_raw` foi removido da fase de intake do `PrepareContext`.
+- T-format tickets agora dependem exclusivamente de lookup no Autotask por `ticketNumber`.
+- `index.ts` não monta mais `/email-ingestion` e não inicia `EmailIngestionPollingService`.
+- Validação runtime confirmou: `/email-ingestion` agora retorna `404` e não há logs de startup do `EmailIngestionPolling`.
+- Ajuste adicional no `AutotaskClient`: endpoints por ID também aceitam shape `item` (além de `records/items`), evitando parse incompatível do tenant.
+
+## Review
+- What worked: remoção do email no runtime foi simples e verificável (rota + poller + fallback de intake).
+- What was tricky: apareceram falhas em sessões antigas do poller (`Cannot prepare context without valid ticket from Autotask`) que indicam um problema separado de credencial/sessão/tenant em retries, não fallback de email.
+- Time taken: ~25 min
+
+## Task: Corrigir falha crítica `Cannot prepare context without valid ticket from Autotask` (2026-02-25)
+**Status**: planning
+**Started**: 2026-02-25
+
+## Plan
+- [x] Step 1: Reproduzir e identificar causa raiz (sessão/tenant/credencial vs parse/endpoint) com evidência de logs + DB
+- [x] Step 2: Implementar correção mínima no caminho Autotask-only (sem reintroduzir email fallback)
+- [x] Step 3: Validar com runtime real (poller) e/ou chamada direta ao `PrepareContext`
+- [x] Step 4: Documentar mudança na wiki
+
+## Open Questions
+- As sessões que falham são retries antigas com `tenant_id`/credenciais tenant-scoped inválidas? (hipótese principal)
+
+## Progress Notes
+- Usuário corretamente classificou o erro como crítico, pois ele quebra a Fase 1 do pipeline logo após o poller detectar tickets válidos.
+- Causa raiz confirmada: `PrepareContext.buildAutotaskClient()` aplicava `AUTOTASK_ZONE_URL` do env mesmo quando usava credenciais da UI/DB; isso podia forçar zona incorreta/placeholder e quebrar `getTicket()` no runtime.
+- O poller consultava Autotask com sucesso porque ele usa as credenciais DB sem forçar o `zoneUrl` do env.
+- Fix aplicado: `PrepareContext` só usa `AUTOTASK_ZONE_URL` do env quando não há credencial DB; com credencial da UI, deixa zone discovery automático (ou usa `zoneUrl` da própria credencial DB).
+- Validação: reprodução direta de `PrepareContext.prepare()` para sessão que falhava (`132753`) passou; sessões `132753`/`132754` voltaram para `processing` após restart.
+
+## Review
+- What worked: isolar diferença entre poller e `PrepareContext` (ambos Autotask) revelou bug de composição de client/zone, não bug de API.
+- What was tricky: o erro genérico mascarava a causa; precisei cruzar logs, sessões, credenciais e reproduzir `PrepareContext` diretamente.
+- Time taken: ~20 min

@@ -81,61 +81,108 @@ export class AutotaskClient {
     return response.json() as Promise<T>;
   }
 
+  private buildSearchParam(filterOrSearch: string, maxRecords: number): string {
+    try {
+      const parsed = JSON.parse(filterOrSearch) as Record<string, unknown>;
+      if (Array.isArray(parsed.filter)) {
+        const searchObj = {
+          ...parsed,
+          ...(typeof parsed.MaxRecords === 'number' ? {} : { MaxRecords: maxRecords }),
+        };
+        return JSON.stringify(searchObj);
+      }
+
+      return JSON.stringify({
+        MaxRecords: maxRecords,
+        filter: [parsed],
+      });
+    } catch {
+      // Preserve legacy/manual callers sending raw text while still wrapping into the documented shape.
+      return JSON.stringify({
+        MaxRecords: maxRecords,
+        filter: [{ op: 'contains', field: 'title', value: filterOrSearch }],
+      });
+    }
+  }
+
+  private extractCollection<T>(response: { items?: T[]; records?: T[]; item?: T } | null | undefined): T[] {
+    if (response?.item) return [response.item];
+    if (Array.isArray(response?.items)) return response.items;
+    if (Array.isArray(response?.records)) return response.records;
+    return [];
+  }
+
   /**
    * Get ticket by ID (read-only)
    */
   async getTicket(ticketId: number): Promise<AutotaskTicket> {
-    const response = await this.request<{ pageDetails: { id: number }; records: AutotaskTicket[] }>(
+    const response = await this.request<{ pageDetails?: { id: number }; records?: AutotaskTicket[]; items?: AutotaskTicket[]; item?: AutotaskTicket }>(
       `/tickets/${ticketId}`
     );
-    if (!response.records[0]) {
+    const rows = this.extractCollection(response);
+    if (!rows[0]) {
       throw new Error(`Ticket ${ticketId} not found`);
     }
-    return response.records[0];
+    return rows[0];
   }
 
   /**
    * Search tickets by query (read-only)
    */
   async searchTickets(filter: string, pageSize: number = 25, pageNumber: number = 0) {
-    const response = await this.request<{ pageDetails: unknown; records: AutotaskTicket[] }>(
+    void pageNumber; // Autotask REST query pagination uses nextPageUrl/prevPageUrl, not pageNumber.
+    const response = await this.request<{ pageDetails?: unknown; records?: AutotaskTicket[]; items?: AutotaskTicket[] }>(
       '/tickets/query',
-      { pageSize, pageNumber, search: filter }
+      { search: this.buildSearchParam(filter, pageSize) }
     );
-    return response.records;
+    return this.extractCollection(response);
+  }
+
+  async getTicketByTicketNumber(ticketNumber: string): Promise<AutotaskTicket> {
+    const results = await this.searchTickets(
+      JSON.stringify({ op: 'eq', field: 'ticketNumber', value: ticketNumber }),
+      5,
+      0
+    );
+    const exact = results.find(t => String((t as any)?.ticketNumber || '').trim().toUpperCase() === ticketNumber.trim().toUpperCase());
+    if (!exact) {
+      throw new Error(`Ticket ${ticketNumber} not found in Autotask query`);
+    }
+    return exact;
   }
 
   /**
    * Get device information (read-only)
    */
   async getDevice(deviceId: number): Promise<AutotaskDevice> {
-    const response = await this.request<{ pageDetails: { id: number }; records: AutotaskDevice[] }>(
+    const response = await this.request<{ pageDetails?: { id: number }; records?: AutotaskDevice[]; items?: AutotaskDevice[]; item?: AutotaskDevice }>(
       `/configurationItems/${deviceId}`
     );
-    if (!response.records[0]) {
+    const rows = this.extractCollection(response);
+    if (!rows[0]) {
       throw new Error(`Device ${deviceId} not found`);
     }
-    return response.records[0];
+    return rows[0];
   }
 
   /**
    * Get all devices for a company (read-only)
    */
   async getDevicesByCompany(companyId: number, pageSize: number = 100) {
-    const response = await this.request<{ pageDetails: unknown; records: AutotaskDevice[] }>(
+    const response = await this.request<{ pageDetails?: unknown; records?: AutotaskDevice[]; items?: AutotaskDevice[] }>(
       '/configurationItems/query',
       { pageSize, filter: `companyID eq ${companyId}` }
     );
-    return response.records;
+    return this.extractCollection(response);
   }
 
   /**
    * Get ticket notes (read-only)
    */
   async getTicketNotes(ticketId: number) {
-    const response = await this.request<{ records: Array<{ id: number; noteType: string; noteText: string; createDate: string }> }>(
+    const response = await this.request<{ records?: Array<{ id: number; noteType: string; noteText: string; createDate: string }>; items?: Array<{ id: number; noteType: string; noteText: string; createDate: string }> }>(
       `/tickets/${ticketId}/notes`
     );
-    return response.records;
+    return this.extractCollection(response);
   }
 }

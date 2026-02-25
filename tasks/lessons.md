@@ -496,3 +496,21 @@
 **Root cause**: Continuei tentando “salvar” a ideia de extração visual em vez de aceitar o pedido real: formatting simples e previsível.
 **Rule**: Se o usuário pedir explicitamente “simples email body formatting”, remover parsing visual/estruturas derivadas e focar em parágrafos + listas + assinatura.
 **Pattern**: Reação forte negativa a iterações de UI (“tudo isso uma merda”) => reset para baseline simples e confiável antes de qualquer refinamento.
+
+## Lesson: 2026-02-25 (when user invokes a workflow skill, apply the workflow artifacts immediately)
+**Mistake**: Eu continuei a execução do bugfix sem entrar formalmente no fluxo do `workflow-orchestrator` (plan em `tasks/todo.md`) após o usuário pedir explicitamente a skill.
+**Root cause**: Foquei na correção técnica já diagnosticada e tratei o pedido da skill como detalhe de processo em vez de requisito operacional do turno.
+**Rule**: Se o usuário nomear uma skill de workflow/processo, aplicar primeiro os artefatos/processos obrigatórios dela (ex.: plan tracking) antes de continuar a implementação.
+**Pattern**: Usuário cita `$workflow-orchestrator` em bugfix não trivial => criar/atualizar `tasks/todo.md` imediatamente e manter status/review até o fim.
+
+## Lesson: 2026-02-25 (when user asks source purity, remove fallback behavior entirely)
+**Mistake**: Eu mantive email como fallback mesmo após o usuário reforçar que queria pipeline único e fontes configuráveis pela UI.
+**Root cause**: Priorização excessiva de resiliência operacional (fallback) acima do requisito explícito de arquitetura/fonte de verdade.
+**Rule**: Quando o usuário pede eliminar uma fonte/caminho (“single pipeline”, “remover completamente”), remover também fallbacks ativos no runtime, não só repriorizar.
+**Pattern**: Requisito de unificação de fonte + fallback ainda presente em logs/comentários => revisar startup services, routes e intake branches.
+
+## Lesson: 2026-02-25 (generic phase errors can hide source-specific client construction bugs)
+**Mistake**: Após remover o email fallback, eu inicialmente tratei `Cannot prepare context without valid ticket from Autotask` como possível parse/endpoint issue, sem comparar a construção do `AutotaskClient` entre poller e `PrepareContext`.
+**Root cause**: O poller e o `PrepareContext` usavam caminhos diferentes para montar o cliente; `PrepareContext` herdava `AUTOTASK_ZONE_URL` do env (placeholder) mesmo com credencial válida da UI/DB.
+**Rule**: Quando dois componentes chamam a mesma API e apenas um falha, comparar imediatamente a construção/configuração do client (headers, base URL, zone, timeouts), não só payload/parse.
+**Pattern**: Poller “finds tickets” mas `PrepareContext` falha ao buscar ticket => investigar divergência de config entre clients antes de mudar lógica de domínio.

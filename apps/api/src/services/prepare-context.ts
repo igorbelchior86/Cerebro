@@ -28,7 +28,6 @@ import { ITGlueClient } from '../clients/itglue.js';
 import { shouldBlockDiagnosisOutput } from './evidence-guardrails.js';
 import { webSearch, type SearchResult } from './web-search.js';
 import { query, queryOne, execute } from '../db/index.js';
-import { emailParser } from './email/email-parser.js';
 import { callLLM } from './llm-adapter.js';
 
 interface PrepareContextInput {
@@ -417,7 +416,11 @@ export class PrepareContextService {
       process.env.AUTOTASK_SECRET ||
       process.env.AUTOTASK_API_SECRET ||
       '';
-    const zoneUrl = creds?.zoneUrl || process.env.AUTOTASK_ZONE_URL || undefined;
+    // Important: when using UI/DB credentials, avoid forcing a stale/placeholder env zone URL.
+    // Let Autotask zone discovery run unless the DB credential explicitly provides zoneUrl.
+    const zoneUrl = creds
+      ? (creds.zoneUrl || undefined)
+      : (process.env.AUTOTASK_ZONE_URL || undefined);
 
     return new AutotaskClient({
       apiIntegrationCode,
@@ -498,88 +501,43 @@ export class PrepareContextService {
       await this.resolveClientsForSession(input.sessionId);
     const sourceWorkspace = tenantId ? `tenant:${tenantId}` : 'workspace:latest';
 
-    // ─── Coleta de Dados (Autotask ou Email Ingestion) ───────────
+    // ─── Coleta de Dados (Autotask only) ─────────────────────────
     let ticket: TicketLike | null = null;
     let signals: Signal[] = [];
+    let intakeSource: 'autotask' | 'email' | 'unknown' = 'unknown';
 
-    // Check if it's an email-ingested ticket (starts with T)
+    // T-format tickets are looked up in Autotask by ticketNumber.
     const isEmailTicket = input.ticketId.startsWith('T');
 
     if (isEmailTicket) {
-      console.log(`[PrepareContext] Detected email-ingested ticket: ${input.ticketId}`);
+      console.log(`[PrepareContext] Resolving T-format ticket from Autotask: ${input.ticketId}`);
       try {
-        const includeCompany = await this.hasCompanyColumn();
-        const emailTicket = await queryOne<any>(
-          `SELECT id, title, description, ${includeCompany ? 'company' : `''::text as company`}, requester, raw_body, status, updates, created_at 
-           FROM tickets_processed WHERE id = $1`,
-          [input.ticketId]
-        );
+        const autotaskTicket = await autotaskClient.getTicketByTicketNumber(input.ticketId);
+        ticket = autotaskTicket;
+        intakeSource = 'autotask';
+        console.log(`[PrepareContext] Resolved ${input.ticketId} from Autotask API (primary)`);
 
-        if (emailTicket) {
-          ticket = {
-            id: emailTicket.id,
-            ticketNumber: emailTicket.id,
-            title: emailTicket.title,
-            description: emailTicket.description,
-            company: emailTicket.company || '',
-            requester: emailTicket.requester || '',
-            rawBody: emailTicket.raw_body || '',
-            updates: Array.isArray(emailTicket.updates) ? emailTicket.updates : [],
-            createDate: emailTicket.created_at,
-            priority: 3, // Default normal
-            queueName: 'Email Ingestion',
-          };
-          console.log(`[PrepareContext] Successfully fetched email ticket data from DB`);
-
-          // Process signals from updates
-          const updates = emailTicket.updates || [];
-          signals = updates.map((update: any, idx: number) => ({
-            id: `email-update-${idx}`,
-            source: 'email' as const,
-            timestamp: update.timestamp,
+        const ticketIdNum = Number(autotaskTicket.id);
+        if (!Number.isNaN(ticketIdNum)) {
+          const notes = await autotaskClient.getTicketNotes(ticketIdNum);
+          signals = notes.map((note, idx) => ({
+            id: `autotask-note-${idx}`,
+            source: 'autotask' as const,
+            timestamp: note.createDate,
             type: 'ticket_note',
-            summary: update.content?.substring(0, 200) || '',
-            raw_ref: update,
+            summary: note.noteText?.substring(0, 200) || '',
+            raw_ref: note,
             tenant_id: tenantId,
             org_id: input.orgId || null,
             source_workspace: sourceWorkspace,
           }));
-        } else {
-          console.warn(`[PrepareContext] Email ticket ${input.ticketId} not found in tickets_processed. Trying raw fallback...`);
-          const raw = await queryOne<any>(
-            `SELECT email_data
-             FROM tickets_raw
-             WHERE (email_data->>'subject') ILIKE '%' || $1 || '%'
-                OR (email_data->'body'->>'content') ILIKE '%' || $1 || '%'
-             ORDER BY ingested_at DESC
-             LIMIT 1`,
-            [input.ticketId]
-          );
-          if (raw?.email_data) {
-            const parsed = emailParser.parseEmail(
-              String(raw.email_data.subject || ''),
-              String(raw.email_data?.body?.content || ''),
-              String(raw.email_data.receivedDateTime || '')
-            );
-            if (parsed) {
-              ticket = {
-                id: parsed.id,
-                ticketNumber: parsed.id,
-                title: parsed.title,
-                description: parsed.description,
-                company: parsed.company || '',
-                requester: parsed.requester || '',
-                rawBody: parsed.rawBody || '',
-                createDate: parsed.createdAt,
-                priority: 3,
-                queueName: 'Email Ingestion',
-              };
-              console.log(`[PrepareContext] Raw fallback succeeded for ${input.ticketId}`);
-            }
-          }
         }
-      } catch (err) {
-        console.error(`[PrepareContext] Error fetching email ticket:`, err);
+      } catch (autotaskErr) {
+        console.warn(`[PrepareContext] Autotask lookup failed for ${input.ticketId}: ${(autotaskErr as Error).message}`);
+        missingData.push({
+          field: 'autotask_ticket',
+          why: `Autotask lookup failed for T-format ticket: ${(autotaskErr as Error).message}`,
+        });
       }
     } else {
       // Original Autotask Flow
@@ -589,6 +547,7 @@ export class PrepareContextService {
           throw new Error(`Invalid numeric ticket ID: ${input.ticketId}`);
         }
         ticket = await autotaskClient.getTicket(ticketIdNum);
+        intakeSource = 'autotask';
         console.log(`[PrepareContext] Got Autotask ticket ${input.ticketId}`);
 
         // Coleta notas (signals)
@@ -613,7 +572,7 @@ export class PrepareContextService {
     }
 
     if (!ticket) {
-      throw new Error(`Cannot prepare context without valid ticket from Autotask or Database`);
+      throw new Error(`Cannot prepare context without valid ticket from Autotask`);
     }
     const sourceFindings: SourceFinding[] = [];
     const rejectedEvidence: RejectedEvidence[] = [];
@@ -624,11 +583,7 @@ export class PrepareContextService {
       await persistTicketTextArtifact(input.ticketId, input.sessionId, {
         ticket_id: input.ticketId,
         session_id: input.sessionId,
-        source: input.ticketId.toString().startsWith('EMAIL-')
-          ? 'email'
-          : !Number.isNaN(Number(input.ticketId))
-            ? 'autotask'
-            : 'unknown',
+        source: intakeSource,
         title_original: originalTicketTitle,
         text_original: originalTicketNarrative,
         text_clean: normalizedTicket.descriptionCanonical,

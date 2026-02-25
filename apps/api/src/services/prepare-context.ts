@@ -73,7 +73,11 @@ interface TicketSSOT {
     company_id?: number;
     company_name?: string;
     contact_id?: number;
+    contact_name?: string;
+    contact_email?: string;
     assigned_resource_id?: number;
+    assigned_resource_name?: string;
+    assigned_resource_email?: string;
   };
   company: string;
   requester_name: string;
@@ -592,6 +596,22 @@ export class PrepareContextService {
     const rejectedEvidence: RejectedEvidence[] = [];
     const rawTicketRecord = ticket as Record<string, unknown>;
     const autotaskCompanyId = Number(rawTicketRecord.companyID);
+    const autotaskContactId = Number(rawTicketRecord.contactID);
+    const autotaskAssignedResourceId = Number(rawTicketRecord.assignedResourceID);
+    let autotaskContactNameResolved = '';
+    let autotaskContactEmailResolved = '';
+    let autotaskAssignedResourceNameResolved = '';
+    let autotaskAssignedResourceEmailResolved = '';
+    const firstMeaningful = (...values: unknown[]) =>
+      values
+        .map((v) => String(v || '').trim())
+        .find((v) => Boolean(v && v.toLowerCase() !== 'unknown')) || '';
+    const joinName = (...parts: unknown[]) =>
+      parts
+        .map((v) => String(v || '').trim())
+        .filter(Boolean)
+        .join(' ')
+        .trim();
     if ((String((ticket as any)?.company || '').trim() === '' || String((ticket as any)?.company || '').trim().toLowerCase() === 'unknown')
       && Number.isFinite(autotaskCompanyId)) {
       try {
@@ -615,6 +635,77 @@ export class PrepareContextService {
         );
       }
     }
+    if (Number.isFinite(autotaskContactId)) {
+      try {
+        const contact = await autotaskClient.getContact(autotaskContactId);
+        const contactNameCandidate = firstMeaningful(
+          contact.fullName,
+          contact.displayName,
+          contact.contactName,
+          contact.name,
+          joinName(contact.firstName, contact.lastName),
+          joinName(contact.firstName, contact.middleInitial, contact.lastName)
+        );
+        const contactEmailCandidate = firstMeaningful(
+          contact.emailAddress,
+          contact.email,
+          contact.emailAddress2,
+          contact.emailAddress3
+        ).toLowerCase();
+
+        if (contactNameCandidate) {
+          autotaskContactNameResolved = contactNameCandidate;
+          if (!String(ticket.requester || '').trim() || String(ticket.requester || '').trim().toLowerCase() === 'unknown') {
+            ticket.requester = contactNameCandidate;
+          }
+          if (!String(ticket.canonicalRequesterName || '').trim()) {
+            ticket.canonicalRequesterName = contactNameCandidate;
+          }
+        }
+        if (contactEmailCandidate) {
+          autotaskContactEmailResolved = contactEmailCandidate;
+          if (!String(ticket.canonicalRequesterEmail || '').trim()) {
+            ticket.canonicalRequesterEmail = contactEmailCandidate;
+          }
+        }
+        if (contactNameCandidate || contactEmailCandidate) {
+          console.log(
+            `[PrepareContext] Resolved Autotask contact ${autotaskContactId}: ${contactNameCandidate || 'unknown'}${contactEmailCandidate ? ` <${contactEmailCandidate}>` : ''}`
+          );
+        }
+      } catch (error) {
+        console.warn(
+          `[PrepareContext] Could not resolve Autotask contact ${autotaskContactId}: ${(error as Error).message}`
+        );
+      }
+    }
+    if (Number.isFinite(autotaskAssignedResourceId)) {
+      try {
+        const resource = await autotaskClient.getResource(autotaskAssignedResourceId);
+        const resourceNameCandidate = firstMeaningful(
+          resource.fullName,
+          resource.displayName,
+          resource.name,
+          joinName(resource.firstName, resource.lastName)
+        );
+        const resourceEmailCandidate = firstMeaningful(
+          resource.email,
+          resource.emailAddress,
+          resource.userName
+        ).toLowerCase();
+        if (resourceNameCandidate) autotaskAssignedResourceNameResolved = resourceNameCandidate;
+        if (resourceEmailCandidate) autotaskAssignedResourceEmailResolved = resourceEmailCandidate;
+        if (resourceNameCandidate || resourceEmailCandidate) {
+          console.log(
+            `[PrepareContext] Resolved Autotask resource ${autotaskAssignedResourceId}: ${resourceNameCandidate || 'unknown'}${resourceEmailCandidate ? ` <${resourceEmailCandidate}>` : ''}`
+          );
+        }
+      } catch (error) {
+        console.warn(
+          `[PrepareContext] Could not resolve Autotask resource ${autotaskAssignedResourceId}: ${(error as Error).message}`
+        );
+      }
+    }
     const originalTicketTitle = String(ticket.title || '').trim();
     const originalTicketDescription = String((ticket as any)?.description || '').trim();
     const originalTicketNarrative = this.buildTicketNarrative(ticket);
@@ -626,12 +717,18 @@ export class PrepareContextService {
       const assignedResourceId = Number(raw.assignedResourceID);
       const ticketNumber = String(raw.ticketNumber || '').trim();
       const companyName = String((ticket as any)?.company || '').trim();
+      const contactName = String(autotaskContactNameResolved || '').trim();
+      const contactEmail = String(autotaskContactEmailResolved || '').trim().toLowerCase();
+      const assignedResourceName = String(autotaskAssignedResourceNameResolved || '').trim();
+      const assignedResourceEmail = String(autotaskAssignedResourceEmailResolved || '').trim().toLowerCase();
       const hasAutotaskAuthority =
         Number.isFinite(numericId) ||
         !!ticketNumber ||
         Number.isFinite(companyId) ||
         !!companyName ||
         Number.isFinite(contactId) ||
+        !!contactName ||
+        !!contactEmail ||
         Number.isFinite(assignedResourceId);
       if (!hasAutotaskAuthority) return null;
       return {
@@ -643,7 +740,11 @@ export class PrepareContextService {
         ...(Number.isFinite(companyId) ? { company_id: companyId } : {}),
         ...(companyName ? { company_name: companyName } : {}),
         ...(Number.isFinite(contactId) ? { contact_id: contactId } : {}),
+        ...(contactName ? { contact_name: contactName } : {}),
+        ...(contactEmail ? { contact_email: contactEmail } : {}),
         ...(Number.isFinite(assignedResourceId) ? { assigned_resource_id: assignedResourceId } : {}),
+        ...(assignedResourceName ? { assigned_resource_name: assignedResourceName } : {}),
+        ...(assignedResourceEmail ? { assigned_resource_email: assignedResourceEmail } : {}),
       };
     })();
     const normalizedTicket = await this.normalizeTicketForPipeline(ticket).catch(() => null);
@@ -4139,6 +4240,12 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
       // UI/API layers can prefer `autotask_authoritative.description` where they need the operator-entered text.
       if (!isUnknown(authoritative.company_name)) {
         out.company = String(authoritative.company_name).trim();
+      }
+      if (!isUnknown(authoritative.contact_name)) {
+        out.requester_name = this.normalizeName(String(authoritative.contact_name || ''));
+      }
+      if (!isUnknown(authoritative.contact_email)) {
+        out.requester_email = String(authoritative.contact_email || '').trim().toLowerCase();
       }
     }
 

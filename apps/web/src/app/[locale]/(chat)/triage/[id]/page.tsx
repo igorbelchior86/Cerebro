@@ -23,6 +23,8 @@ interface SessionData {
     affected_user_normalized?: string;
     affected_user_email_normalized?: string;
     company?: string;
+    assigned_resource_name?: string;
+    assigned_resource_email?: string;
     created_at?: string;
     priority?: string;
     normalization_audit?: {
@@ -818,6 +820,10 @@ export default function SessionDetail({
             }),
             'Unknown user'
           ),
+        },
+        {
+          key: 'Tech',
+          val: normalizePlainText(data?.ticket?.assigned_resource_name, 'Unknown'),
         },
         {
           key: 'ISP',

@@ -166,6 +166,34 @@ export class AutotaskClient {
   }
 
   /**
+   * Get contact by ID (read-only)
+   */
+  async getContact(contactId: number): Promise<Record<string, unknown>> {
+    const response = await this.request<{ records?: Record<string, unknown>[]; items?: Record<string, unknown>[]; item?: Record<string, unknown> }>(
+      `/contacts/${contactId}`
+    );
+    const rows = this.extractCollection<Record<string, unknown>>(response);
+    if (!rows[0]) {
+      throw new Error(`Contact ${contactId} not found`);
+    }
+    return rows[0];
+  }
+
+  /**
+   * Get resource by ID (read-only)
+   */
+  async getResource(resourceId: number): Promise<Record<string, unknown>> {
+    const response = await this.request<{ records?: Record<string, unknown>[]; items?: Record<string, unknown>[]; item?: Record<string, unknown> }>(
+      `/resources/${resourceId}`
+    );
+    const rows = this.extractCollection<Record<string, unknown>>(response);
+    if (!rows[0]) {
+      throw new Error(`Resource ${resourceId} not found`);
+    }
+    return rows[0];
+  }
+
+  /**
    * Get device information (read-only)
    */
   async getDevice(deviceId: number): Promise<AutotaskDevice> {

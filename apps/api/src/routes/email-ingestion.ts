@@ -338,7 +338,10 @@ router.get('/list', async (_req: Request, res: Response) => {
         };
         const selectUiUserFromSsot = (ssot: any, fallbackRequester: string) => {
             const affected = normalizeText(ssot?.affected_user_name, '');
-            const requester = normalizeText(ssot?.requester_name, '');
+            const requester = normalizeText(
+                ssot?.autotask_authoritative?.contact_name || ssot?.requester_name,
+                ''
+            );
             if (isSpecificAffectedUser(affected)) return affected;
             if (isMeaningful(requester, 'Unknown requester', 'requester', 'user')) return requester;
             return fallbackRequester;

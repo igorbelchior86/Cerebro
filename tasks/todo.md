@@ -1012,7 +1012,7 @@
 ---
 
 # Task: SSOT Autotask authoritative fields ainda incompleto (org permanece unknown) (2026-02-25)
-**Status**: implementing
+**Status**: completed
 **Started**: 2026-02-25
 
 ## Plan
@@ -1037,3 +1037,82 @@
 - What worked: reproduzir direto no ticket da tela + inspecionar shape real do ticket Autotask evitou suposições sobre campos inexistentes no endpoint `Tickets`.
 - What was tricky: `Tickets` traz `companyID` mas não o nome da empresa; o valor de display exige lookup adicional em `Companies`.
 - Time taken: ~25 min
+
+---
+
+# Task: Tabela objetiva de campos do ticket Autotask -> uso no pipeline -> lookups (2026-02-25)
+**Status**: completed
+**Started**: 2026-02-25
+
+## Plan
+- [x] Step 1: Confirmar na doc oficial quais campos-chave do ticket habilitam lookups derivados
+- [x] Step 2: Consolidar tabela prática orientada ao pipeline Cerebro
+- [x] Step 3: Entregar em linguagem humana com ordem de execução recomendada
+
+## Open Questions
+- Campos exatos disponíveis podem variar por configuração/edição do tenant Autotask e UDFs, mas IDs relacionais e campos core do ticket são estáveis.
+
+## Progress Notes
+- Reuso da análise anterior + validação prática recente no runtime: `Tickets` traz `companyID`, mas nome da empresa exige lookup em `Companies`.
+- Resposta será focada em execução do pipeline (PrepareContext -> crossing -> LLM), não apenas catálogo de API.
+
+## Review
+- What worked: combinar doc oficial com comportamento observado no tenant real tornou a tabela mais útil e precisa para o desenho do pipeline.
+- What was tricky: distinguir campos que são display-ready no próprio ticket vs campos que são apenas ponteiros (IDs) para lookups adicionais.
+- Time taken: ~10 min
+
+---
+
+# Task: Tabela de relação Autotask lookup -> SSOT -> UI + implementação (Contacts/Resources) (2026-02-25)
+**Status**: completed
+**Started**: 2026-02-25
+
+## Plan
+- [x] Step 1: Mapear blocos de UI que consomem `company/org/requester` e confirmar gaps no payload atual
+- [x] Step 2: Confirmar entidades/fields oficiais Autotask para `Companies`, `Contacts`, `Resources`
+- [x] Step 3: Implementar lookups `Contacts`/`Resources` no intake Autotask e promover campos autoritativos ao SSOT
+- [x] Step 4: Priorizar os novos campos no payload/lista da UI (requester/company) sem quebrar fallbacks
+- [x] Step 5: Validar runtime em ticket real + typecheck e documentar na wiki (changelog + tabela de relação)
+
+## Open Questions
+- Exposição de `assigned_resource_name/email` na UI imediata: nesta entrega vou persistir e expor no payload canônico; uso visual pode ficar para passo seguinte.
+
+## Progress Notes
+- UI detail page prioriza `data.ssot.company` e `data.ssot.requester_name`; sidebar também favorece SSOT antes de fallbacks.
+- Docs oficiais confirmadas: `Companies.companyName`, `Contacts.firstName/lastName/emailAddress`, `Resources.firstName/lastName/email`.
+- Validação prática já feita: `Tickets` não traz nome da empresa; exige lookup em `Companies` para display.
+- Implementado `AutotaskClient.getContact()` e `AutotaskClient.getResource()`; `PrepareContext` agora resolve contato e técnico atribuído via `contactID`/`assignedResourceID`.
+- `ticket_ssot.autotask_authoritative` expandido com `contact_name`, `contact_email`, `assigned_resource_name`, `assigned_resource_email`; anti-regressão passa a semear `requester_name/email` com os valores autoritativos de contato.
+- `/playbook/full-flow` expõe `contact_name/contact_email/assigned_resource_name/assigned_resource_email` no ticket canônico; `/email-ingestion/list` prioriza `autotask_authoritative.contact_name` na coluna requester.
+- Verificação runtime no ticket `T20260225.0013`: contato `Sandra Rumble <srumble@catresources.com>` e recurso `David Galloway <david@refreshtech.com>` resolvidos e persistidos no `ticket_ssot`.
+- Verificação sidebar: `T20260225.0013` retorna `company/org = CAT Resources, LLC` e `requester = Sandra Rumble`.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK.
+
+## Review
+- What worked: promover nomes/e-mails derivados de IDs Autotask (Contacts/Resources) no mesmo ponto do intake mantém o pipeline determinístico e reduz dependência de parsing/heurística para UI.
+- What was tricky: o endpoint `Tickets` traz IDs relacionais mas não todos os labels de display; precisei separar claramente “campo do ticket” de “lookup autoritativo derivado”.
+- Time taken: ~35 min
+
+---
+
+# Task: Exibir Assigned Tech (Autotask) no painel Context da triagem (2026-02-25)
+**Status**: completed
+**Started**: 2026-02-25
+
+## Plan
+- [x] Step 1: Mapear onde o painel `Context` é montado na tela de triagem
+- [x] Step 2: Adicionar campo `assigned_resource_name` ao tipo local do payload e renderizar item `Tech`
+- [x] Step 3: Validar com `pnpm --filter @playbook-brain/web typecheck` e documentar na wiki
+
+## Open Questions
+- Label final em inglês (`Tech`) foi escolhido por consistência com os demais cards curtos do painel (`Org`, `User`, `ISP`).
+
+## Progress Notes
+- `PlaybookPanel` aceita `context[]` dinâmico, então o patch ficou concentrado em `page.tsx` (montagem de `playbookPanelData.context`).
+- Campo usado: `data.ticket.assigned_resource_name` (já exposto pelo backend no payload canônico `/playbook/full-flow`).
+
+## Review
+(fill in after completion)
+- What worked: o `PlaybookPanel` já aceitava `context[]` dinâmico, então bastou adicionar um item `Tech` na montagem do `playbookPanelData` sem refatorar componentes.
+- What was tricky: nenhum ponto estrutural; só foi necessário estender o tipo local `SessionData.ticket` para manter o `typecheck` estrito.
+- Time taken: ~10 min

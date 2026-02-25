@@ -6,9 +6,10 @@ const md = new MarkdownIt({ html: false, linkify: true, typographer: true });
 
 interface MarkdownRendererProps {
   content: string;
+  className?: string;
 }
 
-export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
+export default function MarkdownRenderer({ content, className = '' }: MarkdownRendererProps) {
   const html = md.render(content);
 
   return (
@@ -40,7 +41,7 @@ export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
         .md-body tbody tr:nth-child(even) td { background: rgba(255,255,255,0.015); }
       `}</style>
       <div
-        className="md-body"
+        className={`md-body ${className}`.trim()}
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </>

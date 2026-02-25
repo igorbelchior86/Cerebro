@@ -128,6 +128,49 @@ function SectionLabel({ children, onToggle, isOpen }: { children: ReactNode; onT
   );
 }
 
+function CategoryIcon({ category, size = 12 }: { category: string; size?: number }) {
+  const iconProps = { width: size, height: size, strokeWidth: 2, stroke: 'currentColor', fill: 'none' };
+  switch (category) {
+    case 'Hardware':
+      return (
+        <svg {...iconProps} viewBox="0 0 24 24">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+          <line x1="8" y1="21" x2="16" y2="21" />
+          <line x1="12" y1="17" x2="12" y2="21" />
+        </svg>
+      );
+    case 'Network':
+      return (
+        <svg {...iconProps} viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="2" y1="12" x2="22" y2="12" />
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+        </svg>
+      );
+    case 'Identity':
+      return (
+        <svg {...iconProps} viewBox="0 0 24 24">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
+      );
+    case 'Security':
+      return (
+        <svg {...iconProps} viewBox="0 0 24 24">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...iconProps} viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+      );
+  }
+}
+
 function hypothesisCategory(text: string): string {
   const t = String(text || '').toLowerCase();
   if (/(laptop|monitor|display|usb|driver|hardware|dock)/.test(t)) return 'Hardware';
@@ -162,6 +205,13 @@ function formatEvidenceChipLabel(raw: string | { id: string; label?: string }): 
   if (value.startsWith('fact-provider-')) return 'Provider evidence';
 
   return value.length > 44 ? `${value.slice(0, 41)}...` : value;
+}
+
+function cleanTitle(text: string): string {
+  // Robust removal of [H1], [H2], [rank 1], etc., even if preceded by markdown stars like **[H1]...
+  return text
+    .replace(/^([\s*_]*)(?:\[H\d+\]|\[rank\s*\d+\]|\(\d+\))\s*/gi, '$1')
+    .trim();
 }
 
 export default function PlaybookPanel({ content, status = 'ready', data, sessionStatus, children }: PlaybookPanelProps) {
@@ -232,83 +282,150 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
               const category = hypothesisCategory(h.hypothesis);
               const rankBg = h.rank === 1 ? '#F97316' : h.rank === 2 ? '#EAB308' : '#5B7FFF';
               return (
-                <div key={h.rank} style={{ padding: '12px 13px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--border)', marginBottom: '8px', cursor: 'default', transition: 'var(--transition)' }}
-                  onMouseEnter={(e) => (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-strong)'}
-                  onMouseLeave={(e) => (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)'}
+                <div
+                  key={h.rank}
+                  style={{
+                    padding: '14px 14px 0 14px',
+                    borderRadius: '12px',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--bento-outline)',
+                    marginBottom: '10px',
+                    cursor: 'default',
+                    transition: 'all 0.2s ease',
+                    position: 'relative',
+                    overflow: 'hidden'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--accent)';
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.025)';
+                    e.currentTarget.style.transform = 'translateY(-1px)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--bento-outline)';
+                    e.currentTarget.style.background = 'var(--bg-card)';
+                    e.currentTarget.style.transform = 'translateY(0)';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <span style={{ width: '20px', height: '20px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '10px', fontWeight: 700, color: 'white', flexShrink: 0, background: rankBg }}>
-                      {h.rank}
-                    </span>
-                    <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                      {category}
-                    </span>
-                    <span
-                      style={{
-                        marginLeft: 'auto',
-                        display: 'inline-flex',
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '3px 7px 3px 3px',
+                      borderRadius: '8px',
+                      background: 'var(--bg-panel)',
+                      border: '1px solid var(--bento-outline)',
+                      color: rankBg
+                    }}>
+                      <span style={{
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '5px',
+                        display: 'flex',
                         alignItems: 'center',
-                        gap: '6px',
-                        padding: '2px 8px',
-                        borderRadius: '999px',
-                        border: `1px solid ${tone.border}`,
-                        background: tone.bg,
-                        color: tone.color,
+                        justifyContent: 'center',
                         fontSize: '10px',
-                        fontWeight: 700,
+                        fontWeight: 800,
+                        color: '#fff',
+                        background: rankBg
+                      }}>
+                        {h.rank}
+                      </span>
+                      <CategoryIcon category={category} size={11} />
+                      <span style={{
                         fontFamily: 'var(--font-jetbrains-mono, monospace)',
-                      }}
-                    >
-                      {tone.label} {Math.round(h.confidence * 100)}%
-                    </span>
-                    {h.evidence && h.evidence.length > 0 && (
-                      <button
-                        type="button"
-                        aria-label="View evidence"
-                        onClick={() => setOpenEvidenceFor((p) => (p === h.rank ? null : h.rank))}
+                        fontSize: '9px',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                        color: 'var(--text-secondary)'
+                      }}>
+                        {category}
+                      </span>
+                    </div>
+
+                    <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span
                         style={{
-                          width: '22px',
-                          height: '22px',
-                          borderRadius: '999px',
-                          border: '1px solid var(--border)',
-                          background: 'var(--bg-panel)',
-                          color: 'var(--accent)',
-                          fontFamily: 'var(--font-jetbrains-mono, monospace)',
-                          fontSize: '12px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '3px 9px',
+                          borderRadius: '7px',
+                          border: `1px solid ${tone.border}`,
+                          background: tone.bg,
+                          color: tone.color,
+                          fontSize: '10px',
                           fontWeight: 700,
-                          cursor: 'pointer',
+                          fontFamily: 'var(--font-jetbrains-mono, monospace)',
                         }}
                       >
-                        i
-                      </button>
-                    )}
+                        {tone.label} {Math.round(h.confidence * 100)}%
+                      </span>
+                      {h.evidence && h.evidence.length > 0 && (
+                        <button
+                          type="button"
+                          aria-label="View evidence"
+                          onClick={() => setOpenEvidenceFor((p) => (p === h.rank ? null : h.rank))}
+                          style={{
+                            width: '24px',
+                            height: '24px',
+                            borderRadius: '7px',
+                            border: '1px solid var(--bento-outline)',
+                            background: 'var(--bg-card)',
+                            color: 'var(--accent)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--accent)';
+                            e.currentTarget.style.background = 'rgba(91,127,255,0.08)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.borderColor = 'var(--bento-outline)';
+                            e.currentTarget.style.background = 'var(--bg-card)';
+                          }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10" />
+                            <line x1="12" y1="16" x2="12" y2="12" />
+                            <line x1="12" y1="8" x2="12.01" y2="8" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  <div style={{ fontSize: '12.5px', lineHeight: 1.5, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <div style={{ fontSize: '12.5px', lineHeight: 1.55, fontWeight: 600, color: 'var(--text-primary)', marginBottom: '14px' }}>
                     {h.hypothesis}
                   </div>
 
                   {openEvidenceFor === h.rank && h.evidence && h.evidence.length > 0 && (
                     <div
                       style={{
-                        marginTop: '10px',
-                        padding: '10px 11px',
-                        borderRadius: '8px',
-                        border: '1px solid var(--border-strong)',
-                        background: 'var(--bg-panel)',
+                        margin: '0 -14px 14px -14px',
+                        padding: '12px 14px',
+                        background: 'var(--modal-sidebar)',
+                        borderTop: '1px solid var(--bento-outline)',
+                        borderBottom: '1px solid var(--bento-outline)',
                       }}
                     >
-                      <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
-                        Evidence details
+                      <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8.5px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px', fontWeight: 700 }}>
+                        Supporting Evidence
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                         {h.evidence.map((ev) => {
                           const id = typeof ev === 'string' ? ev : ev.id;
                           const label = formatEvidenceChipLabel(ev);
                           return (
-                            <div key={id} style={{ border: '1px solid var(--border)', borderRadius: '7px', padding: '7px 8px', background: 'var(--bg-card)' }}>
-                              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.4 }}>{label}</div>
-                              <div style={{ marginTop: '3px', fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)' }}>{id}</div>
+                            <div key={id} style={{ border: '1px solid var(--bento-outline)', borderRadius: '8px', padding: '8px 10px', background: 'var(--bg-card)' }}>
+                              <div style={{ fontSize: '11px', color: 'var(--text-primary)', fontWeight: 500, lineHeight: 1.4 }}>{label}</div>
+                              <div style={{ marginTop: '3px', fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-muted)' }}>{id}</div>
                             </div>
                           );
                         })}
@@ -316,16 +433,14 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
                     </div>
                   )}
 
-                  <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: '62px' }}>
-                      Confidence
-                    </span>
-                    <div style={{ flex: 1, height: '5px', borderRadius: '999px', background: 'var(--border)', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${h.confidence * 100}%`, borderRadius: '999px', background: c }} />
-                    </div>
-                    <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '10px', fontWeight: 700, color: c }}>
-                      {Math.round(h.confidence * 100)}%
-                    </span>
+                  <div style={{ height: '3px', margin: '0 -14px', background: 'var(--bento-outline)', position: 'relative' }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${h.confidence * 100}%`,
+                      background: c,
+                      boxShadow: `0 0 8px ${c}66`,
+                      transition: 'width 1s cubic-bezier(0.4, 0, 0.2, 1)'
+                    }} />
                   </div>
                 </div>
               );
@@ -348,26 +463,100 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
         <div style={{ marginBottom: '22px' }}>
           <SectionLabel>Checklist</SectionLabel>
           {chk.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {chk.map((item, i) => {
                 const done = !!checked[item.id];
+                const cleanedText = cleanTitle(item.text);
                 return (
-                  <div key={item.id} onClick={() => setChecked((p) => ({ ...p, [item.id]: !p[item.id] }))}
-                    style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '10px 12px', borderRadius: '9px', background: 'var(--bg-card)', border: '1px solid var(--border)', cursor: 'pointer', opacity: done ? 0.55 : 1, transition: 'var(--transition)' }}
-                    onMouseEnter={(e) => { if (!done) (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-strong)'; }}
-                    onMouseLeave={(e) => { if (!done) (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)'; }}
+                  <div
+                    key={item.id}
+                    onClick={() => setChecked((p) => ({ ...p, [item.id]: !p[item.id] }))}
+                    style={{
+                      display: 'flex',
+                      gap: '12px',
+                      alignItems: 'flex-start',
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--bento-outline)',
+                      cursor: 'pointer',
+                      opacity: done ? 0.6 : 1,
+                      transition: 'all 0.2s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!done) {
+                        e.currentTarget.style.borderColor = 'var(--accent)';
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.025)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!done) {
+                        e.currentTarget.style.borderColor = 'var(--bento-outline)';
+                        e.currentTarget.style.background = 'var(--bg-card)';
+                      }
+                    }}
                   >
-                    <div style={{ width: '15px', height: '15px', borderRadius: '4px', border: `1.5px solid ${done ? '#1DB98A' : 'var(--border-strong)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '0.5px', background: done ? '#1DB98A' : 'transparent', transition: 'var(--transition)' }}>
-                      {done && <svg width="9" height="9" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+                    <div style={{
+                      width: '18px',
+                      height: '18px',
+                      borderRadius: '5px',
+                      border: `1.5px solid ${done ? '#1DB98A' : 'var(--border-strong)'}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                      marginTop: '1px',
+                      background: done ? '#1DB98A' : 'var(--bg-panel)',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      boxShadow: done ? '0 0 8px rgba(29,185,138,0.3)' : 'none'
+                    }}>
+                      {done && (
+                        <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                          <path d="M2.5 6L5 8.5L9.5 4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
                     </div>
-                    <span style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)', flexShrink: 0, marginTop: '0.5px', minWidth: '14px' }}>{i + 1}.</span>
-                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ fontSize: '12px', color: done ? 'var(--text-faint)' : 'var(--text-secondary)', lineHeight: 1.45, textDecoration: done ? 'line-through' : 'none' }}>
-                        <MarkdownRenderer content={item.text} />
+
+                    <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                        <span style={{
+                          fontFamily: 'var(--font-jetbrains-mono, monospace)',
+                          fontSize: '9px',
+                          fontWeight: 700,
+                          color: done ? 'var(--text-faint)' : 'var(--accent)',
+                          background: done ? 'var(--bg-badge)' : 'rgba(91,127,255,0.08)',
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          marginTop: '2px',
+                          flexShrink: 0
+                        }}>
+                          {i + 1}
+                        </span>
+                        <div style={{
+                          fontSize: '13px',
+                          fontWeight: 600,
+                          color: done ? 'var(--text-faint)' : 'var(--text-primary)',
+                          lineHeight: 1.5,
+                          textDecoration: done ? 'line-through' : 'none',
+                          transition: 'color 0.2s ease'
+                        }}>
+                          <MarkdownRenderer content={cleanedText} className="checklist-prose" />
+                        </div>
                       </div>
+
                       {item.details_md && (
-                        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '8px', opacity: done ? 0.75 : 1 }}>
-                          <MarkdownRenderer content={item.details_md} />
+                        <div style={{
+                          marginLeft: '26px',
+                          padding: '10px 12px',
+                          borderRadius: '8px',
+                          background: 'var(--modal-sidebar)',
+                          borderLeft: `2px solid ${done ? 'var(--border)' : 'var(--accent)'}`,
+                          opacity: done ? 0.7 : 1,
+                          fontSize: '11.5px',
+                          color: 'var(--text-secondary)',
+                          lineHeight: 1.55
+                        }}>
+                          <MarkdownRenderer content={item.details_md} className="checklist-prose" />
                         </div>
                       )}
                     </div>

@@ -520,3 +520,9 @@
 **Root cause**: Confundi “campo autoritativo para correlação” (ID) com “campo autoritativo para display” (nome), e não validei a tela final onde o usuário consome `org`.
 **Rule**: Quando um campo é promovido ao SSOT para alimentar UI, validar tanto identificadores (`*_id`) quanto valores de display efetivamente renderizados (ex.: `company`/`org`).
 **Pattern**: SSOT contém IDs corretos mas UI ainda mostra `unknown` => falta lookup de entidade relacionada e/ou priorização do nome canônico no payload.
+
+## Lesson: 2026-02-25
+**Mistake**: Interpretei “slider” como segmented toggle e depois como switch, entregando um controle visual diferente do solicitado.
+**Root cause**: Eu tratei o requisito como equivalência funcional (“alterna entre 2 estados”) em vez de equivalência de componente visual.
+**Rule**: Em pedidos de UI com nome explícito de componente (slider, dropdown, sheet, etc.), implementar o componente visual pedido antes de propor variantes.
+**Pattern**: Requisitos de UI que descrevem forma/interação (ex.: slider vs toggle) não podem ser normalizados para controles semanticamente parecidos.

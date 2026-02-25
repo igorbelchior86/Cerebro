@@ -28,6 +28,12 @@ export interface ActiveTicket {
   suppression_reason?: string | null;
   suppression_reason_label?: string | null;
   suppression_confidence?: number | null;
+  queue?: string;
+  queue_name?: string;
+  queue_id?: number | string;
+  assigned_resource_id?: number | string;
+  assigned_resource_name?: string;
+  assigned_resource_email?: string;
 }
 
 interface ChatSidebarProps {
@@ -61,6 +67,7 @@ const FILTERS = [
   { id: 'failed', localeKey: 'statusFailed' },
 ];
 const FILTER_IDS = new Set(FILTERS.map((f) => f.id));
+const GLOBAL_QUEUE_FALLBACKS = ['Service Desk', 'Escalations', 'Projects'];
 
 const STATUS_LABEL: Record<ActiveTicket['status'], string> = {
   completed: 'DONE',
@@ -154,7 +161,9 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [scope, setScope] = useState<'personal' | 'global'>('personal');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedGlobalQueue, setSelectedGlobalQueue] = useState('all');
   const [hideSuppressed, setHideSuppressed] = useState(true);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [clock, setClock] = useState('');
@@ -255,13 +264,65 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   const completed = ticketsBySuppression.filter((t) => t.status === 'completed').length;
   const processing = ticketsBySuppression.filter((t) => t.status === 'processing' || t.status === 'pending').length;
   const normalizedSearch = searchQuery.trim().toLowerCase();
+  const currentUserEmail = String(user?.email || '').trim().toLowerCase();
+  const currentUserName = normalizeText(user?.name || '', '').toLowerCase();
 
-  const visible = ticketsBySuppression.filter((t) => {
-    const statusMatch = filter === 'all'
+  const getTicketQueueLabel = (ticket: ActiveTicket) =>
+    normalizeText(ticket.queue_name ?? ticket.queue ?? '', '');
+  const getTicketAssigneeEmail = (ticket: ActiveTicket) =>
+    normalizeText(ticket.assigned_resource_email, '').toLowerCase();
+  const getTicketAssigneeName = (ticket: ActiveTicket) =>
+    normalizeText(ticket.assigned_resource_name, '').toLowerCase();
+
+  const queueLabels = Array.from(
+    new Set(
+      ticketsBySuppression
+        .map(getTicketQueueLabel)
+        .filter((value) => value !== '')
+    )
+  ).sort((a, b) => a.localeCompare(b));
+  const hasQueueMetadata = queueLabels.length > 0;
+  const queueOptions = [
+    { id: 'all', label: t('globalAllQueues') },
+    ...(hasQueueMetadata ? queueLabels : GLOBAL_QUEUE_FALLBACKS).map((label) => ({
+      id: label.toLowerCase(),
+      label,
+    })),
+  ];
+  const queueOptionIds = queueOptions.map((option) => option.id).join('|');
+  const hasAssignmentMetadata = ticketsBySuppression.some((ticket) =>
+    Boolean(getTicketAssigneeEmail(ticket) || getTicketAssigneeName(ticket))
+  );
+  const canResolveCurrentTechnician = Boolean(currentUserEmail || currentUserName);
+
+  useEffect(() => {
+    if (!queueOptions.some((option) => option.id === selectedGlobalQueue)) {
+      setSelectedGlobalQueue('all');
+    }
+  }, [queueOptionIds, selectedGlobalQueue]);
+
+  const scopedTickets = ticketsBySuppression.filter((ticket) => {
+    if (scope === 'personal') {
+      if (!hasAssignmentMetadata || !canResolveCurrentTechnician) return true;
+      const assignedEmail = getTicketAssigneeEmail(ticket);
+      const assignedName = getTicketAssigneeName(ticket);
+      if (currentUserEmail && assignedEmail) return assignedEmail === currentUserEmail;
+      if (currentUserName && assignedName) return assignedName === currentUserName;
+      return false;
+    }
+
+    if (!hasQueueMetadata || selectedGlobalQueue === 'all') return true;
+    return getTicketQueueLabel(ticket).toLowerCase() === selectedGlobalQueue;
+  });
+
+  const visible = scopedTickets.filter((t) => {
+    const statusMatch = scope === 'global'
       ? true
-      : filter === 'processing'
-        ? t.status === 'processing' || t.status === 'pending'
-        : t.status === filter;
+      : filter === 'all'
+        ? true
+        : filter === 'processing'
+          ? t.status === 'processing' || t.status === 'pending'
+          : t.status === filter;
     if (!statusMatch) return false;
     if (!normalizedSearch) return true;
 
@@ -275,6 +336,10 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
       t.requester,
       t.site,
       t.meta,
+      t.queue_name,
+      t.queue,
+      t.assigned_resource_name,
+      t.assigned_resource_email,
     ]
       .map((v) => normalizeText(v, ''))
       .join(' ')
@@ -379,17 +444,77 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
 
           {/* 2. Stats Card */}
           <div style={{ borderRadius: '20px', border: '1px solid var(--bento-outline)', background: 'var(--bg-bento-panel)', boxShadow: 'var(--shadow-card)', overflow: 'hidden', flexShrink: 0 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px', padding: '12px', position: 'relative', zIndex: 1 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px', padding: '10px 10px 8px', position: 'relative', zIndex: 1 }}>
               {[
                 { val: processing, label: t('statActive'), color: 'var(--accent)' },
                 { val: completed, label: t('statDoneToday'), color: 'var(--green)' },
                 { val: tickets.length > 0 ? '4m' : '—', label: t('statAvgTime'), color: 'var(--text-muted)' },
               ].map((s) => (
-                <div key={s.label} style={{ textAlign: 'center', padding: '8px 6px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--bento-outline)' }}>
-                  <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '15px', fontWeight: 700, letterSpacing: '-0.04em', marginBottom: '3px', color: s.color }}>{s.val}</div>
-                  <div style={{ fontSize: '8.5px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{s.label}</div>
+                <div key={s.label} style={{ textAlign: 'center', padding: '6px 5px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--bento-outline)' }}>
+                  <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '13px', fontWeight: 700, letterSpacing: '-0.04em', marginBottom: '2px', color: s.color }}>{s.val}</div>
+                  <div style={{ fontSize: '8px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{s.label}</div>
                 </div>
               ))}
+            </div>
+            <div style={{ padding: '0 10px 10px', position: 'relative', zIndex: 1 }}>
+              <div
+                role="tablist"
+                aria-label={t('scopeSwitcherAria')}
+                style={{
+                  position: 'relative',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gap: '4px',
+                  padding: '3px',
+                  borderRadius: '11px',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--bento-outline)',
+                }}
+              >
+                <div
+                  aria-hidden="true"
+                  style={{
+                    position: 'absolute',
+                    top: '3px',
+                    left: '3px',
+                    width: 'calc(50% - 3px)',
+                    height: 'calc(100% - 6px)',
+                    borderRadius: '8px',
+                    background: 'var(--accent-muted)',
+                    border: '1px solid var(--border-accent)',
+                    boxShadow: '0 6px 14px rgba(20,24,38,0.12)',
+                    transform: scope === 'personal' ? 'translateX(0)' : 'translateX(100%)',
+                    transition: 'var(--transition)',
+                    pointerEvents: 'none',
+                  }}
+                />
+                {(['personal', 'global'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    role="tab"
+                    aria-selected={scope === mode}
+                    onClick={() => setScope(mode)}
+                    style={{
+                      position: 'relative',
+                      zIndex: 1,
+                      border: 'none',
+                      background: 'transparent',
+                      color: scope === mode ? 'var(--accent)' : 'var(--text-muted)',
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      padding: '6px 0',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      transition: 'var(--transition)',
+                    }}
+                  >
+                    {mode === 'personal' ? t('scopePersonal') : t('scopeGlobal')}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -398,65 +523,106 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
 
             {/* Filters */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 12px 8px', position: 'relative', zIndex: 1 }}>
-              <div style={{ display: 'flex', gap: '3px', flex: 1, minWidth: 0, padding: '3px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--bento-outline)' }}>
-                {FILTERS.map((f) => (
-                  <button type="button" key={f.id} onClick={() => setFilter(f.id)} style={{ flex: 1, padding: '6px 0', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '9.5px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', background: filter === f.id ? 'var(--accent-muted)' : 'transparent', color: filter === f.id ? 'var(--accent)' : 'var(--text-muted)', transition: 'var(--transition)' }}>
-                    {t(f.localeKey as any)}
+              {scope === 'personal' ? (
+                <>
+                  <div style={{ display: 'flex', gap: '3px', flex: 1, minWidth: 0, padding: '3px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--bento-outline)' }}>
+                    {FILTERS.map((f) => (
+                      <button type="button" key={f.id} onClick={() => setFilter(f.id)} style={{ flex: 1, padding: '6px 0', borderRadius: '8px', border: 'none', cursor: 'pointer', fontSize: '9.5px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', background: filter === f.id ? 'var(--accent-muted)' : 'transparent', color: filter === f.id ? 'var(--accent)' : 'var(--text-muted)', transition: 'var(--transition)' }}>
+                        {t(f.localeKey as any)}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    aria-pressed={hideSuppressed}
+                    title={hideSuppressed ? t('hideSuppressedEnabled') : t('hideSuppressedDisabled')}
+                    onClick={() => {
+                      setHideSuppressed((prev) => {
+                        const next = !prev;
+                        localStorage.setItem(SIDEBAR_HIDE_SUPPRESSED_KEY, next ? '1' : '0');
+                        return next;
+                      });
+                    }}
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '8px',
+                      border: `1px solid ${hideSuppressed ? 'var(--border-accent)' : 'var(--bento-outline)'}`,
+                      background: hideSuppressed ? 'var(--accent-muted)' : 'var(--bg-card)',
+                      color: hideSuppressed ? 'var(--accent)' : 'var(--text-muted)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      position: 'relative',
+                      flexShrink: 0,
+                      cursor: 'pointer',
+                      transition: 'var(--transition)',
+                    }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M2.5 4h11M5 8h6M7 12h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                    </svg>
+                    {suppressedCount > 0 && (
+                      <span style={{
+                        position: 'absolute',
+                        top: '-4px',
+                        right: '-4px',
+                        minWidth: '14px',
+                        height: '14px',
+                        padding: '0 3px',
+                        borderRadius: '999px',
+                        background: hideSuppressed ? 'var(--accent)' : 'var(--bg-card)',
+                        border: `1px solid ${hideSuppressed ? 'var(--border-accent)' : 'var(--bento-outline)'}`,
+                        color: hideSuppressed ? '#fff' : 'var(--text-muted)',
+                        fontFamily: 'var(--font-jetbrains-mono, monospace)',
+                        fontSize: '8px',
+                        fontWeight: 700,
+                        lineHeight: '12px',
+                        textAlign: 'center',
+                      }}>
+                        {suppressedCount > 99 ? '99+' : suppressedCount}
+                      </span>
+                    )}
                   </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                aria-pressed={hideSuppressed}
-                title={hideSuppressed ? t('hideSuppressedEnabled') : t('hideSuppressedDisabled')}
-                onClick={() => {
-                  setHideSuppressed((prev) => {
-                    const next = !prev;
-                    localStorage.setItem(SIDEBAR_HIDE_SUPPRESSED_KEY, next ? '1' : '0');
-                    return next;
-                  });
-                }}
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '8px',
-                  border: `1px solid ${hideSuppressed ? 'var(--border-accent)' : 'var(--bento-outline)'}`,
-                  background: hideSuppressed ? 'var(--accent-muted)' : 'var(--bg-card)',
-                  color: hideSuppressed ? 'var(--accent)' : 'var(--text-muted)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  position: 'relative',
-                  flexShrink: 0,
-                  cursor: 'pointer',
-                  transition: 'var(--transition)',
-                }}
-              >
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="M2.5 4h11M5 8h6M7 12h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                </svg>
-                {suppressedCount > 0 && (
-                  <span style={{
-                    position: 'absolute',
-                    top: '-4px',
-                    right: '-4px',
-                    minWidth: '14px',
-                    height: '14px',
-                    padding: '0 3px',
-                    borderRadius: '999px',
-                    background: hideSuppressed ? 'var(--accent)' : 'var(--bg-card)',
-                    border: `1px solid ${hideSuppressed ? 'var(--border-accent)' : 'var(--bento-outline)'}`,
-                    color: hideSuppressed ? '#fff' : 'var(--text-muted)',
-                    fontFamily: 'var(--font-jetbrains-mono, monospace)',
-                    fontSize: '8px',
-                    fontWeight: 700,
-                    lineHeight: '12px',
-                    textAlign: 'center',
-                  }}>
-                    {suppressedCount > 99 ? '99+' : suppressedCount}
+                </>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', minWidth: 0 }}>
+                  <span style={{ fontSize: '8px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0 }}>
+                    {t('globalQueueLabel')}
                   </span>
-                )}
-              </button>
+                  <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                    <select
+                      value={selectedGlobalQueue}
+                      onChange={(e) => setSelectedGlobalQueue(e.target.value)}
+                      aria-label={t('globalQueueSelectAria')}
+                      style={{
+                        width: '100%',
+                        height: '30px',
+                        borderRadius: '10px',
+                        border: '1px solid var(--bento-outline)',
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-primary)',
+                        padding: '0 28px 0 10px',
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        outline: 'none',
+                        appearance: 'none',
+                        textOverflow: 'ellipsis',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {queueOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ position: 'absolute', right: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }}>
+                      <path d="M4.5 6.5L8 10l3.5-3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Ticket list */}

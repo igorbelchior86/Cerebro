@@ -46,6 +46,9 @@ type TicketLike = {
   ticketNumber?: string;
   title?: string;
   description?: string;
+  companyID?: string | number;
+  contactID?: string | number;
+  assignedResourceID?: string | number | null;
   company?: string;
   requester?: string;
   rawBody?: string;
@@ -61,6 +64,17 @@ type TicketLike = {
 
 interface TicketSSOT {
   ticket_id: string;
+  autotask_authoritative?: {
+    source: 'autotask';
+    ticket_id_numeric?: number;
+    ticket_number?: string;
+    title?: string;
+    description?: string;
+    company_id?: number;
+    company_name?: string;
+    contact_id?: number;
+    assigned_resource_id?: number;
+  };
   company: string;
   requester_name: string;
   requester_email: string;
@@ -576,8 +590,62 @@ export class PrepareContextService {
     }
     const sourceFindings: SourceFinding[] = [];
     const rejectedEvidence: RejectedEvidence[] = [];
+    const rawTicketRecord = ticket as Record<string, unknown>;
+    const autotaskCompanyId = Number(rawTicketRecord.companyID);
+    if ((String((ticket as any)?.company || '').trim() === '' || String((ticket as any)?.company || '').trim().toLowerCase() === 'unknown')
+      && Number.isFinite(autotaskCompanyId)) {
+      try {
+        const company = await autotaskClient.getCompany(autotaskCompanyId);
+        const companyNameCandidate = [
+          company.companyName,
+          company.company,
+          company.accountName,
+          company.name,
+          company.company_name,
+        ]
+          .map((v) => String(v || '').trim())
+          .find((v) => Boolean(v && v.toLowerCase() !== 'unknown'));
+        if (companyNameCandidate) {
+          ticket.company = companyNameCandidate;
+          console.log(`[PrepareContext] Resolved Autotask company ${autotaskCompanyId}: ${companyNameCandidate}`);
+        }
+      } catch (error) {
+        console.warn(
+          `[PrepareContext] Could not resolve Autotask company ${autotaskCompanyId}: ${(error as Error).message}`
+        );
+      }
+    }
     const originalTicketTitle = String(ticket.title || '').trim();
+    const originalTicketDescription = String((ticket as any)?.description || '').trim();
     const originalTicketNarrative = this.buildTicketNarrative(ticket);
+    const autotaskAuthoritativeSeed = (() => {
+      const raw = ticket as Record<string, unknown>;
+      const numericId = Number(raw.id);
+      const companyId = Number(raw.companyID);
+      const contactId = Number(raw.contactID);
+      const assignedResourceId = Number(raw.assignedResourceID);
+      const ticketNumber = String(raw.ticketNumber || '').trim();
+      const companyName = String((ticket as any)?.company || '').trim();
+      const hasAutotaskAuthority =
+        Number.isFinite(numericId) ||
+        !!ticketNumber ||
+        Number.isFinite(companyId) ||
+        !!companyName ||
+        Number.isFinite(contactId) ||
+        Number.isFinite(assignedResourceId);
+      if (!hasAutotaskAuthority) return null;
+      return {
+        source: 'autotask' as const,
+        ...(Number.isFinite(numericId) ? { ticket_id_numeric: numericId } : {}),
+        ...(ticketNumber ? { ticket_number: ticketNumber } : {}),
+        ...(originalTicketTitle ? { title: originalTicketTitle } : {}),
+        ...(originalTicketDescription ? { description: originalTicketDescription } : {}),
+        ...(Number.isFinite(companyId) ? { company_id: companyId } : {}),
+        ...(companyName ? { company_name: companyName } : {}),
+        ...(Number.isFinite(contactId) ? { contact_id: contactId } : {}),
+        ...(Number.isFinite(assignedResourceId) ? { assigned_resource_id: assignedResourceId } : {}),
+      };
+    })();
     const normalizedTicket = await this.normalizeTicketForPipeline(ticket).catch(() => null);
     if (normalizedTicket) {
       await persistTicketTextArtifact(input.ticketId, input.sessionId, {
@@ -2022,6 +2090,7 @@ export class PrepareContextService {
         ticket,
         normalizedTicket,
         companyName,
+        autotaskAuthoritativeSeed,
       }
     );
     if (fusionAudit) {
@@ -4027,6 +4096,7 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
         descriptionUi?: string;
       } | null;
       companyName?: string;
+      autotaskAuthoritativeSeed?: TicketSSOT['autotask_authoritative'] | null;
     }
   ): TicketSSOT {
     const out: TicketSSOT = { ...ssot };
@@ -4045,6 +4115,7 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
 
     const ticket = input.ticket;
     const normalized = input.normalizedTicket || null;
+    const authoritative = input.autotaskAuthoritativeSeed || null;
     const intakeCompanyRaw = String(ticket.company || '').trim();
     const inferredCompanyRaw = String(input.companyName || '').trim();
     const normalizeCompanyComparable = (value: string) =>
@@ -4055,6 +4126,21 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
       !isUnknown(currentCompanyRaw) && this.shouldPreferCompanyCandidateOverIntake(intakeCompanyRaw, currentCompanyRaw);
     const canOverrideDomainDerivedIntakeWithInferred =
       !isUnknown(inferredCompanyRaw) && this.shouldPreferCompanyCandidateOverIntake(intakeCompanyRaw, inferredCompanyRaw);
+
+    if (authoritative) {
+      out.autotask_authoritative = authoritative;
+      if (authoritative.ticket_number) {
+        out.ticket_id = String(authoritative.ticket_number);
+      }
+      if (authoritative.title) {
+        out.title = String(authoritative.title);
+      }
+      // Preserve normalized description in `description_clean`, but ensure the raw manual value is retained in SSOT.
+      // UI/API layers can prefer `autotask_authoritative.description` where they need the operator-entered text.
+      if (!isUnknown(authoritative.company_name)) {
+        out.company = String(authoritative.company_name).trim();
+      }
+    }
 
     // Company is display-critical. Preserve intake formatting unless the intake value is a domain-derived fallback
     // and a better display-ready company name was inferred or already assembled in the SSOT.

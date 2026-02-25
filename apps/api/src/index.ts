@@ -16,6 +16,7 @@ import diagnoseRoutes from './routes/diagnose.js';
 import playbookRoutes from './routes/playbook.js';
 import integrationsRoutes from './routes/integrations.js';
 import chatRoutes from './routes/chat.js';
+import emailIngestionRoutes from './routes/email-ingestion.js';
 import authRoutes from './routes/auth.js';
 import { requireAuth } from './middleware/auth.js';
 import { autoSeedAdmin } from './db/seed-admin.js';
@@ -95,6 +96,10 @@ app.use('/diagnose', requireAuth, diagnoseRoutes);
 app.use('/playbook', requireAuth, playbookRoutes);
 app.use('/integrations', requireAuth, integrationsRoutes);
 app.use('/chat', requireAuth, chatRoutes);
+
+// UI still uses these endpoints as a local inbox/session list API.
+// Email ingestion polling is disabled, but read/query routes remain mounted.
+app.use('/email-ingestion', emailIngestionRoutes);
 
 // ─── Error Handling ──────────────────────────────────────────
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

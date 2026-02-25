@@ -911,7 +911,7 @@
 - Time taken: ~25 min
 
 ## Task: Corrigir falha crítica `Cannot prepare context without valid ticket from Autotask` (2026-02-25)
-**Status**: planning
+**Status**: completed
 **Started**: 2026-02-25
 
 ## Plan
@@ -934,3 +934,106 @@
 - What worked: isolar diferença entre poller e `PrepareContext` (ambos Autotask) revelou bug de composição de client/zone, não bug de API.
 - What was tricky: o erro genérico mascarava a causa; precisei cruzar logs, sessões, credenciais e reproduzir `PrepareContext` diretamente.
 - Time taken: ~20 min
+
+## Task: Mapear dados possíveis a partir do ticket Autotask inicial (2026-02-25)
+**Status**: planning
+**Started**: 2026-02-25
+
+## Plan
+- [x] Step 1: Consultar documentação oficial Autotask REST sobre Ticket entity e endpoints relacionados
+- [x] Step 2: Mapear o que pode ser obtido diretamente do ticket inicial vs chamadas derivadas
+- [x] Step 3: Responder em linguagem humana (ordem, lista de dados, forma de execução)
+
+## Open Questions
+- Se o tenant expõe campos/UDFs customizados além do schema base, a documentação lista capacidade geral, mas os campos reais dependem da conta.
+
+## Progress Notes
+- Pedido é de análise funcional do fluxo; sem alteração de código.
+- Docs oficiais consultadas: `Tickets` entity, `TicketNotes` entity, e mapeamento de campos de webhooks para `Tickets`.
+- Mapeado em duas camadas: (a) dados do ticket payload; (b) dados derivados via child endpoints/IDs do próprio ticket.
+
+## Review
+- What worked: combinar `Tickets` + `TicketNotes` + mapeamento de webhook deu um quadro claro do que entra “de graça” no início do fluxo.
+- What was tricky: a documentação de campos é extensa; para responder de forma útil foi melhor organizar por categorias (direto vs derivado via IDs).
+- Time taken: ~15 min
+
+## Task: Promover campos manuais do Autotask para SSOT canônico (2026-02-25)
+**Status**: completed
+**Started**: 2026-02-25
+
+## Plan
+- [x] Step 1: Mapear persistência de `ticket_ssot` e payload servido para UI
+- [x] Step 2: Persistir campos autoritativos do Autotask no SSOT (IDs + campos manuais)
+- [x] Step 3: Priorizar esses campos no payload da API consumido pela UI
+- [x] Step 4: Validar persistência real no banco + typecheck
+- [x] Step 5: Documentar mudança na wiki
+
+## Open Questions
+- `companyID/contactID/assignedResourceID` ainda não são exibidos visualmente na UI; agora estão disponíveis no SSOT e no payload canônico da API para uso consistente futuro.
+
+## Progress Notes
+- Adicionado bloco `autotask_authoritative` no `ticket_ssot.payload`.
+- `ticket_id` e `title` top-level do SSOT agora podem ser ancorados nos valores autoritativos do Autotask.
+- `playbook` route passou a priorizar `ssot.autotask_authoritative` para `id/title/description` e expor `company_id/contact_id/assigned_resource_id`.
+- Validação em banco confirmou persistência de `ticket_number`, `ticket_id_numeric`, `company_id`, `contact_id`, `assigned_resource_id` para o ticket `132753`.
+
+## Review
+- What worked: usar um bloco canônico `autotask_authoritative` evita sobrescrever semânticas existentes (`description_clean`) e reduz duplicação de lógica na UI.
+- What was tricky: preservar `description_clean` normalizada enquanto garante distribuição do texto manual/autoritativo via payload canônico.
+- Time taken: ~20 min
+
+---
+
+# Task: Tickets chegam via Autotask mas não aparecem no Cerebro (sidebar/list) (2026-02-25)
+**Status**: completed
+**Started**: 2026-02-25
+
+## Plan
+- [x] Step 1: Reproduzir e confirmar diferença entre poller (Autotask) e endpoint de listagem da UI
+- [x] Step 2: Corrigir `/email-ingestion/list` para listar tickets de `triage_sessions` além de `tickets_processed`
+- [x] Step 3: Verificar endpoint/UI após correção e atualizar wiki/changelog
+
+## Open Questions
+- Se a sidebar deve exibir `ticketNumber` canônico (`T...`) para sessões Autotask cujo `triage_sessions.ticket_id` é numérico. Nesta correção, foco é visibilidade (aparecer na lista).
+
+## Progress Notes
+- Reproduzido: logs mostram `AutotaskPolling` encontrando tickets e `PrepareContext` lendo ticket Autotask, enquanto `/email-ingestion/list` ainda é ancorado em `tickets_processed`.
+- Evidência: `triage_sessions` contém tickets recentes numéricos (`132765`, `132764`, ...), mas a query da rota `/email-ingestion/list` parte de `tickets_processed`, que representa principalmente o histórico legado/email.
+- Fix aplicado: query da listagem agora usa `ticket_keys` (`tickets_processed.id UNION triage_sessions.ticket_id`) e mantém os joins/mapper atuais (`evidence_packs`, `ticket_ssot`) por `ticket_id`.
+- Verificação: `/email-ingestion/list` passou de `146` para `163` itens; topo da lista agora inclui tickets Autotask-only (`132765`, `132764`, `132763`, ...).
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK.
+
+## Review
+(fill in after completion)
+- What worked: corrigir a âncora da query na rota da sidebar resolveu o problema na raiz sem mexer na UI nem no poller.
+- What was tricky: a rota `/email-ingestion/list` foi mantida por compatibilidade de UI, então o bug parecia de frontend mas era um desacoplamento de fonte de dados no backend.
+- Time taken: ~20 min
+
+---
+
+# Task: SSOT Autotask authoritative fields ainda incompleto (org permanece unknown) (2026-02-25)
+**Status**: implementing
+**Started**: 2026-02-25
+
+## Plan
+- [x] Step 1: Reproduzir e confirmar quais campos da UI ainda saem como `unknown` no payload/SSOT
+- [x] Step 2: Corrigir intake Autotask para resolver nome da empresa via `companyID` e persistir no SSOT canônico
+- [x] Step 3: Validar no ticket real da tela + typecheck e documentar na wiki
+
+## Open Questions
+- Nenhuma para este fix. Escopo: preencher nome da empresa autoritativo (display) mantendo `company_id` já persistido.
+
+## Progress Notes
+- Confirmado no banco para `T20260225.0013`: `ticket_ssot.payload.autotask_authoritative.company_id` existe (`29690404`), mas `ticket_ssot.payload.company = 'unknown'`.
+- Inspeção do payload real do Autotask confirmou que `Tickets` retorna `companyID`, mas não retorna nome da empresa no próprio ticket (somente IDs), então é necessário lookup adicional em `Companies`.
+- `AutotaskClient` ganhou `getCompany(companyId)` e o `PrepareContext` agora resolve `ticket.company` via `companyID` quando o nome vem vazio/unknown no ticket.
+- `ticket_ssot.autotask_authoritative` agora inclui `company_name` e a API/lista priorizam esse valor para display (`company/org`) quando presente.
+- Verificação runtime (ticket real da tela): log `Resolved Autotask company 29690404: CAT Resources, LLC`; `ticket_ssot.company` e `autotask_authoritative.company_name` persistidos como `CAT Resources, LLC`.
+- Verificação sidebar (`/email-ingestion/list`): `T20260225.0013` agora retorna `company/org = CAT Resources, LLC`.
+- Verificação: `pnpm --filter @playbook-brain/api typecheck` OK.
+
+## Review
+(fill in after completion)
+- What worked: reproduzir direto no ticket da tela + inspecionar shape real do ticket Autotask evitou suposições sobre campos inexistentes no endpoint `Tickets`.
+- What was tricky: `Tickets` traz `companyID` mas não o nome da empresa; o valor de display exige lookup adicional em `Companies`.
+- Time taken: ~25 min

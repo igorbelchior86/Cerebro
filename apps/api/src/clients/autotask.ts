@@ -152,6 +152,20 @@ export class AutotaskClient {
   }
 
   /**
+   * Get company/account by ID (read-only)
+   */
+  async getCompany(companyId: number): Promise<Record<string, unknown>> {
+    const response = await this.request<{ records?: Record<string, unknown>[]; items?: Record<string, unknown>[]; item?: Record<string, unknown> }>(
+      `/companies/${companyId}`
+    );
+    const rows = this.extractCollection<Record<string, unknown>>(response);
+    if (!rows[0]) {
+      throw new Error(`Company ${companyId} not found`);
+    }
+    return rows[0];
+  }
+
+  /**
    * Get device information (read-only)
    */
   async getDevice(deviceId: number): Promise<AutotaskDevice> {

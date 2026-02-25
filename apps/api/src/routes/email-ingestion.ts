@@ -119,7 +119,16 @@ router.get('/list', async (_req: Request, res: Response) => {
         const includeManualSuppressed = Boolean(hasManualSuppressedColumn[0]?.exists);
 
         const pipelineRows = await query(
-            `WITH ticket_sessions AS (
+            `WITH ticket_keys AS (
+               SELECT tp.id AS ticket_id
+               FROM tickets_processed tp
+               UNION
+               SELECT DISTINCT ts.ticket_id
+               FROM triage_sessions ts
+               WHERE ts.ticket_id IS NOT NULL
+                 AND ts.ticket_id <> ''
+             ),
+             ticket_sessions AS (
                SELECT ts.id,
                       ts.ticket_id,
                       ts.status,
@@ -140,7 +149,7 @@ router.get('/list', async (_req: Request, res: Response) => {
                ORDER BY ticket_id, created_at DESC
              )
              SELECT ls.session_id,
-                    tp.id AS ticket_id,
+                    COALESCE(tp.id, tk.ticket_id) AS ticket_id,
                     ls.session_status,
                     ls.session_created_at,
                     ls.first_session_created_at,
@@ -153,30 +162,31 @@ router.get('/list', async (_req: Request, res: Response) => {
                     tp.created_at AS ticket_created_at,
                     ep.payload AS evidence_payload,
                     ssot.payload AS ssot_payload
-             FROM tickets_processed tp
-             LEFT JOIN latest_sessions ls ON ls.ticket_id = tp.id
+             FROM ticket_keys tk
+             LEFT JOIN tickets_processed tp ON tp.id = tk.ticket_id
+             LEFT JOIN latest_sessions ls ON ls.ticket_id = tk.ticket_id
              LEFT JOIN LATERAL (
                SELECT payload
                FROM triage_sessions ts_pack
                JOIN evidence_packs ep ON ep.session_id = ts_pack.id
-               WHERE ts_pack.ticket_id = tp.id
+               WHERE ts_pack.ticket_id = tk.ticket_id
                ORDER BY ep.created_at DESC
                LIMIT 1
              ) ep ON true
              LEFT JOIN LATERAL (
                SELECT payload
                FROM ticket_ssot
-               WHERE ticket_id = tp.id
+               WHERE ticket_id = tk.ticket_id
                ORDER BY updated_at DESC
                LIMIT 1
              ) ssot ON true
              ORDER BY
                CASE
-                 WHEN tp.id ~ '^T[0-9]{8}\\.[0-9]+$' THEN substring(tp.id from 2 for 8)
+                 WHEN COALESCE(tp.id, tk.ticket_id) ~ '^T[0-9]{8}\\.[0-9]+$' THEN substring(COALESCE(tp.id, tk.ticket_id) from 2 for 8)
                  ELSE NULL
                END DESC NULLS LAST,
                CASE
-                 WHEN tp.id ~ '^T[0-9]{8}\\.[0-9]+$' THEN LPAD(split_part(tp.id, '.', 2), 12, '0')
+                 WHEN COALESCE(tp.id, tk.ticket_id) ~ '^T[0-9]{8}\\.[0-9]+$' THEN LPAD(split_part(COALESCE(tp.id, tk.ticket_id), '.', 2), 12, '0')
                  ELSE NULL
                END DESC NULLS LAST,
                COALESCE(tp.created_at, ls.first_session_created_at) DESC
@@ -353,7 +363,7 @@ router.get('/list', async (_req: Request, res: Response) => {
 
                 const processedCompany = extractCompany(row.company, row.raw_body);
                 const packCompany = normalizeText(packOrg.name, '');
-                const ssotCompany = normalizeText(ssot.company, '');
+                const ssotCompany = normalizeText(ssot?.autotask_authoritative?.company_name || ssot.company, '');
                 const company = isMeaningful(ssotCompany, 'Unknown org', 'organization')
                     ? ssotCompany
                     : (isMeaningful(processedCompany, 'Unknown org', 'organization')

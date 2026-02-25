@@ -514,3 +514,9 @@
 **Root cause**: O poller e o `PrepareContext` usavam caminhos diferentes para montar o cliente; `PrepareContext` herdava `AUTOTASK_ZONE_URL` do env (placeholder) mesmo com credencial válida da UI/DB.
 **Rule**: Quando dois componentes chamam a mesma API e apenas um falha, comparar imediatamente a construção/configuração do client (headers, base URL, zone, timeouts), não só payload/parse.
 **Pattern**: Poller “finds tickets” mas `PrepareContext` falha ao buscar ticket => investigar divergência de config entre clients antes de mudar lógica de domínio.
+
+## Lesson: 2026-02-25 (promoting IDs to SSOT is not enough when UI renders display names)
+**Mistake**: Declarei a promoção de campos manuais do Autotask ao SSOT como completa, mas mantive apenas `company_id` canônico sem resolver o nome da empresa para os pontos da UI que exibem `org/company`.
+**Root cause**: Confundi “campo autoritativo para correlação” (ID) com “campo autoritativo para display” (nome), e não validei a tela final onde o usuário consome `org`.
+**Rule**: Quando um campo é promovido ao SSOT para alimentar UI, validar tanto identificadores (`*_id`) quanto valores de display efetivamente renderizados (ex.: `company`/`org`).
+**Pattern**: SSOT contém IDs corretos mas UI ainda mostra `unknown` => falta lookup de entidade relacionada e/ou priorização do nome canônico no payload.

@@ -1,0 +1,24 @@
+{
+  "captured_at": "2026-02-26T23:16:57Z",
+  "request": {
+    "method": "GET",
+    "path": "/health",
+    "correlation_id": "phase1-20260226T231657Z-health",
+    "job_id": "phase1-autotask-job-20260226T231657Z",
+    "body": null
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "phase1-20260226T231657Z-health",
+      "x_trace_id": "phase1-20260226T231657Z-health",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "status": "ok",
+      "timestamp": "2026-02-26T23:16:57.546Z"
+    },
+    "body_text": "{\"status\":\"ok\",\"timestamp\":\"2026-02-26T23:16:57.546Z\"}"
+  }
+}

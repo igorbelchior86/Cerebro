@@ -1,0 +1,134 @@
+{
+  "ticket_id": "T20260226.0033",
+  "command_id": "c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed",
+  "correlation_ids": {
+    "submit": "phase1-20260226T231657Z-submit",
+    "sync": "phase1-20260226T231657Z-sync",
+    "reconcile": "phase1-20260226T231657Z-reconcile"
+  },
+  "matching_audit_events": [
+    {
+      "audit_id": "7e82d99a-bde4-4f21-b6c1-7708877f4d1f",
+      "timestamp": "2026-02-26T23:16:57.955Z",
+      "action": "workflow.command.accepted",
+      "result": "success",
+      "reason": null,
+      "correlation": {
+        "trace_id": "phase1-20260226T231657Z-submit",
+        "ticket_id": "T20260226.0033",
+        "command_id": "c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed"
+      },
+      "metadata": {
+        "command_type": "update",
+        "idempotency_key": "phase1-autotask-idem-20260226T231657Z",
+        "audit_metadata": {
+          "validation_session": "phase1-autotask-e2e-20260226T231657Z",
+          "scenario": "S2",
+          "gate": "phase1"
+        }
+      }
+    },
+    {
+      "audit_id": "0f59e480-399b-4991-b693-59bcc3311a25",
+      "timestamp": "2026-02-26T23:16:57.983Z",
+      "action": "workflow.command.idempotent_replay",
+      "result": "success",
+      "reason": null,
+      "correlation": {
+        "trace_id": "phase1-20260226T231657Z-submit-duplicate",
+        "ticket_id": "T20260226.0033",
+        "command_id": "c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed"
+      },
+      "metadata": {
+        "idempotency_key": "phase1-autotask-idem-20260226T231657Z",
+        "existing_command_id": "c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed",
+        "existing_status": "accepted"
+      }
+    },
+    {
+      "audit_id": "21d573bc-d8a4-4551-b4b4-96fa2bbc0691",
+      "timestamp": "2026-02-26T23:17:05.901Z",
+      "action": "workflow.command.completed",
+      "result": "success",
+      "reason": null,
+      "correlation": {
+        "trace_id": "phase1-20260226T231657Z-submit",
+        "ticket_id": "T20260226.0033",
+        "command_id": "c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed"
+      },
+      "metadata": {
+        "command_type": "update",
+        "attempts": 1,
+        "result": {
+          "kind": "updated",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 30684582,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          }
+        }
+      }
+    },
+    {
+      "audit_id": "43b4800c-69d1-4180-8c9e-73e51a9b2e41",
+      "timestamp": "2026-02-26T23:17:05.998Z",
+      "action": "workflow.sync.applied",
+      "result": "success",
+      "reason": null,
+      "correlation": {
+        "trace_id": "phase1-20260226T231657Z-sync",
+        "ticket_id": "T20260226.0033",
+        "job_id": "phase1-autotask-job-20260226T231657Z",
+        "command_id": "c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed"
+      },
+      "metadata": {
+        "event_type": "ticket.updated",
+        "event_id": "phase1-sync-20260226T231657Z",
+        "provenance": {
+          "source": "autotask_webhook",
+          "fetched_at": "2026-02-26T23:17:05.992Z",
+          "adapter_version": "phase1-validation",
+          "sync_cursor": "phase1-sync-20260226T231657Z"
+        }
+      }
+    },
+    {
+      "audit_id": "a4aaf57e-380f-4141-8fa5-98b731713e3e",
+      "timestamp": "2026-02-26T23:17:06.002Z",
+      "action": "workflow.reconciliation.divergence_detected",
+      "result": "failure",
+      "reason": "autotask_status_differs_from_last_local_projection",
+      "correlation": {
+        "trace_id": "phase1-20260226T231657Z-sync",
+        "ticket_id": "T20260226.0033",
+        "job_id": "phase1-autotask-job-20260226T231657Z",
+        "command_id": "c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed"
+      },
+      "metadata": {
+        "issue_id": "5a468c21-e365-4a0b-85fe-0e584de4a481",
+        "event_id": "phase1-sync-20260226T231657Z"
+      }
+    },
+    {
+      "audit_id": "0b1421a8-8df2-42b7-8dee-3f88cd0e4599",
+      "timestamp": "2026-02-26T23:17:08.317Z",
+      "action": "workflow.reconciliation.match",
+      "result": "success",
+      "reason": null,
+      "correlation": {
+        "trace_id": "phase1-20260226T231657Z-reconcile",
+        "ticket_id": "T20260226.0033"
+      },
+      "metadata": {
+        "local_present": true,
+        "remote_present": true
+      }
+    }
+  ]
+}

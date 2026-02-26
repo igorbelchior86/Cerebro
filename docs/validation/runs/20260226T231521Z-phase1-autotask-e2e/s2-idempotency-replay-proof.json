@@ -1,0 +1,46 @@
+{
+  "session_id": "phase1-autotask-e2e-20260226T231657Z",
+  "timestamp": "2026-02-26T23:16:57Z",
+  "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+  "ticket_id": "T20260226.0033",
+  "idempotency_key": "phase1-autotask-idem-20260226T231657Z",
+  "command_id": "c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed",
+  "duplicate_command_id": "c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed",
+  "command_ids_equal": true,
+  "traces": {
+    "submit": "phase1-20260226T231657Z-submit",
+    "submit_duplicate": "phase1-20260226T231657Z-submit-duplicate",
+    "process": "phase1-20260226T231657Z-process",
+    "sync": "phase1-20260226T231657Z-sync",
+    "reconcile": "phase1-20260226T231657Z-reconcile"
+  },
+  "http": {
+    "submit": 202,
+    "submit_duplicate": 202,
+    "process": 200,
+    "process_replay": 200,
+    "status": 200,
+    "sync": 200,
+    "reconcile": 200,
+    "audit": 200
+  },
+  "outcomes": {
+    "command_terminal_status": "completed",
+    "process_completed": 1,
+    "process_replay_completed": 0,
+    "reconcile_matched": true,
+    "audit_count_total_for_ticket": 34,
+    "audit_command_accepted_events_for_command_id": 1,
+    "audit_command_completed_events_for_command_id": 1,
+    "audit_idempotent_replay_events_for_command_id": 1
+  },
+  "idempotency_assertion": {
+    "statement": "same command submitted twice resulted in a single external mutation",
+    "evidence": {
+      "same_command_id": true,
+      "single_completed_audit_event_for_command_id": true,
+      "replay_process_completed_zero": true,
+      "replay_event_logged": true
+    }
+  }
+}

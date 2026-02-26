@@ -1,0 +1,37 @@
+{
+  "generated_at": "2026-02-26T23:16:57Z",
+  "session_id": "phase1-autotask-e2e-20260226T231657Z",
+  "run_dir": "/Users/igorbelchior/Documents/Github/Cerebro/docs/validation/runs/20260226T231521Z-phase1-autotask-e2e",
+  "base_url": "http://localhost:3001",
+  "ticket_id": "T20260226.0033",
+  "command_id": "c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed",
+  "duplicate_command_id": "c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed",
+  "engine_baseline": "latest engine from Prompt 2 (current workspace HEAD)",
+  "required_checks": {
+    "api_typecheck_command": "pnpm --filter @playbook-brain/api typecheck",
+    "targeted_engine_tests_command": "pnpm --filter @playbook-brain/api test -- src/__tests__/services/ticket-workflow-core.test.ts src/__tests__/services/autotask-ticket-workflow-gateway.test.ts src/__tests__/routes/workflow.reconcile-route.test.ts",
+    "api_typecheck_log": "check-api-typecheck.log",
+    "targeted_engine_tests_log": "check-targeted-engine-tests.log"
+  },
+  "artifacts": [
+    "_health.json",
+    "_auth-login.json",
+    "_auth-me.json",
+    "_launch-policy.json",
+    "s2-command-submit.json",
+    "s2-command-submit-duplicate.json",
+    "s2-command-process.json",
+    "s2-command-process-replay.json",
+    "s2-command-status.json",
+    "s2-sync-evidence.json",
+    "s2-reconcile-result.json",
+    "s2-workflow-audit.json",
+    "s2-idempotency-replay-proof.json",
+    "s2-correlation-proof.json",
+    "phase1-gate-checklist.md",
+    "reconciliation-sample.md",
+    "phase1-summary.md",
+    "validation-run.log",
+    "capture-phase1-e2e.sh"
+  ]
+}

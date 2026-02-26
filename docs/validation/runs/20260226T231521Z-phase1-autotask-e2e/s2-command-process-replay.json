@@ -1,0 +1,33 @@
+{
+  "captured_at": "2026-02-26T23:17:05Z",
+  "request": {
+    "method": "POST",
+    "path": "/workflow/commands/process",
+    "correlation_id": "phase1-20260226T231657Z-process-replay",
+    "job_id": "phase1-autotask-job-20260226T231657Z",
+    "body": {
+      "limit": 10
+    }
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "phase1-20260226T231657Z-process-replay",
+      "x_trace_id": "phase1-20260226T231657Z-process-replay",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "success": true,
+      "data": {
+        "processed": 0,
+        "completed": 0,
+        "retried": 0,
+        "dlq": 0,
+        "failed": 0
+      },
+      "timestamp": "2026-02-26T23:17:05.938Z"
+    },
+    "body_text": "{\"success\":true,\"data\":{\"processed\":0,\"completed\":0,\"retried\":0,\"dlq\":0,\"failed\":0},\"timestamp\":\"2026-02-26T23:17:05.938Z\"}"
+  }
+}

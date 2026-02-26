@@ -41,4 +41,42 @@ describe('AutotaskTicketWorkflowGateway', () => {
       expect.objectContaining({ noteType: 3, publish: 2, noteText: 'note' })
     );
   });
+
+  it('handles explicit comment command using note payload aliases', async () => {
+    const mockClient = {
+      getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 777, ticketNumber: 'T20260226.0099' }),
+      updateTicket: jest.fn().mockResolvedValue({}),
+      createTicketNote: jest.fn().mockResolvedValue({}),
+      getTicket: jest.fn().mockResolvedValue({ id: 777, ticketNumber: 'T20260226.0099', status: 1 }),
+    } as any;
+
+    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    await gateway.executeCommand(buildCommand({
+      command_type: 'comment',
+      payload: {
+        ticket_id: 'T20260226.0099',
+        note_body: 'Public update',
+        note_visibility: 'public',
+      },
+    }));
+
+    expect(mockClient.createTicketNote).toHaveBeenCalledWith(
+      777,
+      expect.objectContaining({ noteText: 'Public update', noteType: 3, publish: 1 }),
+    );
+  });
+
+  it('rejects comment/note command without body', async () => {
+    const mockClient = {
+      getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 888, ticketNumber: 'T20260226.0100' }),
+      createTicketNote: jest.fn().mockResolvedValue({}),
+      getTicket: jest.fn().mockResolvedValue({ id: 888, ticketNumber: 'T20260226.0100', status: 1 }),
+    } as any;
+
+    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    await expect(gateway.executeCommand(buildCommand({
+      command_type: 'note',
+      payload: { ticket_id: 'T20260226.0100' },
+    }))).rejects.toThrow('requires comment_body');
+  });
 });

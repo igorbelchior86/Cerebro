@@ -115,6 +115,24 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
       return { kind: 'updated', ...(snapshot ? { snapshot } : {}) };
     }
 
+    if (command.command_type === 'comment' || command.command_type === 'note') {
+      const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
+      const commentBody = String(payload.comment_body ?? payload.note_body ?? payload.noteText ?? '').trim();
+      if (!commentBody) {
+        throw new Error(`Command ${command.command_id} requires comment_body for ${command.command_type}`);
+      }
+      const internal = String(payload.comment_visibility || payload.note_visibility || '').toLowerCase() === 'internal';
+      await client.createTicketNote(ticketId, {
+        noteText: commentBody,
+        // 3 = "Task Notes" (ticket note type), publish controls visibility scope.
+        noteType: Number.isFinite(Number(payload.note_type_id)) ? Number(payload.note_type_id) : 3,
+        // 1 = All Autotask Users, 2 = Internal Project Team.
+        publish: internal ? 2 : 1,
+      });
+      const snapshot = await this.safeFetchTicketSnapshot(client, ticketId);
+      return { kind: 'updated', ...(snapshot ? { snapshot } : {}) };
+    }
+
     if (command.command_type === 'time_entry') {
       const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
       const entry = await client.createTimeEntry({

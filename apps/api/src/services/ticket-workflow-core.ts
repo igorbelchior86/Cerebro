@@ -14,6 +14,8 @@ export type WorkflowCommandType =
   | 'update'
   | 'assign'
   | 'status'
+  | 'comment'
+  | 'note'
   | 'time_entry';
 
 export type WorkflowActorKind = 'user' | 'system' | 'ai';
@@ -590,12 +592,12 @@ export class TicketWorkflowCoreService {
       updated_at: nowIso(),
     };
 
-    const commentBody = String(patch.comment_body || '').trim();
+    const commentBody = String(patch.comment_body ?? patch.note_body ?? patch.noteText ?? '').trim();
     if (commentBody) {
       next.comments = [
         ...(existing.comments || []),
         {
-          visibility: normalizeVisibility(patch.comment_visibility),
+          visibility: normalizeVisibility(patch.comment_visibility ?? patch.note_visibility),
           body: commentBody,
           created_at: nowIso(),
         },

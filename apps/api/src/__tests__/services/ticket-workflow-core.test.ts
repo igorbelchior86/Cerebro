@@ -66,7 +66,7 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     expect(second.command.idempotency_key).toBe('idem-dupe');
   });
 
-  it('executes happy path create -> assign -> update and projects inbox state', async () => {
+  it('executes happy path create -> assign -> status -> comment and projects inbox state', async () => {
     const gateway: TicketWorkflowGateway = {
       executeCommand: jest
         .fn()
@@ -80,6 +80,11 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
           kind: 'assigned',
           assigned_to: '42',
           snapshot: { id: 5001, title: 'Printer down', status: 'Assigned', assigned_to: '42' },
+        })
+        .mockResolvedValueOnce({
+          kind: 'status',
+          status: 'In Progress',
+          snapshot: { id: 5001, title: 'Printer down', description: 'Queue stuck', status: 'In Progress', assigned_to: '42' },
         })
         .mockResolvedValueOnce({
           kind: 'updated',
@@ -107,23 +112,37 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     await service.submitCommand(assignCmd);
     await service.processPendingCommands();
 
-    const updateCmd = buildCommandEnvelope({
+    const statusCmd = buildCommandEnvelope({
       tenantId,
       targetIntegration: 'Autotask',
-      commandType: 'update',
+      commandType: 'status',
+      payload: {
+        ticket_id: '5001',
+        status: 'In Progress',
+      },
+      actor,
+      idempotencyKey: 'e2e-status',
+      correlation: { trace_id: 'trace-e2e', ticket_id: '5001' },
+    });
+    await service.submitCommand(statusCmd);
+    await service.processPendingCommands();
+
+    const commentCmd = buildCommandEnvelope({
+      tenantId,
+      targetIntegration: 'Autotask',
+      commandType: 'comment',
       payload: {
         ticket_id: '5001',
         title: 'Printer down (urgent)',
         description: 'Queue stuck - floor 3',
-        status: 'In Progress',
         comment_body: 'User called again. Escalating.',
         comment_visibility: 'internal',
       },
       actor,
-      idempotencyKey: 'e2e-update',
+      idempotencyKey: 'e2e-comment',
       correlation: { trace_id: 'trace-e2e', ticket_id: '5001' },
     });
-    await service.submitCommand(updateCmd);
+    await service.submitCommand(commentCmd);
     await service.processPendingCommands();
 
     const inbox = await service.listInbox(tenantId);
@@ -241,6 +260,33 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     expect(secondSweep.dlq).toBe(1);
     const finalCommand = await service.getCommand(cmd.command_id);
     expect(finalCommand?.status).toBe('dlq');
+  });
+
+  it('marks terminal errors as failed without retrying', async () => {
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn().mockRejectedValue(new Error('Autotask validation failed: invalid queue')),
+    };
+    const { service } = createService(gateway, 3);
+    const cmd = createCommand({
+      idempotencyKey: 'terminal-fail',
+      correlation: { trace_id: 'trace-terminal', ticket_id: 'AT-TERM-1' },
+    });
+    await service.submitCommand(cmd);
+
+    const sweep = await service.processPendingCommands();
+    expect(sweep.failed).toBe(1);
+    expect(sweep.retried).toBe(0);
+    expect(sweep.dlq).toBe(0);
+
+    const finalCommand = await service.getCommand(cmd.command_id);
+    expect(finalCommand?.status).toBe('failed');
+
+    const audit = await service.listAuditByTicket(tenantId, 'AT-TERM-1');
+    const failed = audit.find((record) => record.action === 'workflow.command.failed');
+    expect(failed?.metadata).toMatchObject({
+      failure_class: 'terminal',
+      status: 'failed',
+    });
   });
 
   it('surfaces reconciliation divergence when remote snapshot mismatches local inbox state', async () => {

@@ -1,0 +1,75 @@
+{
+  "captured_at": "2026-02-26T23:17:05Z",
+  "request": {
+    "method": "GET",
+    "path": "/workflow/commands/c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed",
+    "correlation_id": "phase1-20260226T231657Z-status",
+    "job_id": "phase1-autotask-job-20260226T231657Z",
+    "body": null
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "phase1-20260226T231657Z-status",
+      "x_trace_id": "phase1-20260226T231657Z-status",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "success": true,
+      "data": {
+        "command": {
+          "command_id": "c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "update",
+          "payload": {
+            "ticket_id": "T20260226.0033",
+            "status": "In Progress",
+            "comment_body": "Phase1 gate proof 20260226T231657Z",
+            "comment_visibility": "internal"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "phase1-autotask-idem-20260226T231657Z",
+          "audit_metadata": {
+            "validation_session": "phase1-autotask-e2e-20260226T231657Z",
+            "scenario": "S2",
+            "gate": "phase1"
+          },
+          "correlation": {
+            "trace_id": "phase1-20260226T231657Z-submit",
+            "ticket_id": "T20260226.0033",
+            "command_id": "c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed"
+          },
+          "requested_at": "2026-02-26T23:16:57.953Z"
+        },
+        "status": "completed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-26T23:16:57.953Z",
+        "updated_at": "2026-02-26T23:17:05.895Z",
+        "result": {
+          "kind": "updated",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 30684582,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          },
+          "completed_at": "2026-02-26T23:17:05.895Z"
+        }
+      },
+      "timestamp": "2026-02-26T23:17:05.964Z"
+    },
+    "body_text": "{\"success\":true,\"data\":{\"command\":{\"command_id\":\"c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed\",\"tenant_id\":\"5b5f7e25-2396-4bec-a584-41352be7e876\",\"target_integration\":\"Autotask\",\"command_type\":\"update\",\"payload\":{\"ticket_id\":\"T20260226.0033\",\"status\":\"In Progress\",\"comment_body\":\"Phase1 gate proof 20260226T231657Z\",\"comment_visibility\":\"internal\"},\"actor\":{\"kind\":\"user\",\"id\":\"606d9dcc-624f-42bd-95fe-5bac5f8fc2ed\",\"origin\":\"api\"},\"idempotency_key\":\"phase1-autotask-idem-20260226T231657Z\",\"audit_metadata\":{\"validation_session\":\"phase1-autotask-e2e-20260226T231657Z\",\"scenario\":\"S2\",\"gate\":\"phase1\"},\"correlation\":{\"trace_id\":\"phase1-20260226T231657Z-submit\",\"ticket_id\":\"T20260226.0033\",\"command_id\":\"c6c25dbd-f17a-4a00-8f69-bcf8ba74d8ed\"},\"requested_at\":\"2026-02-26T23:16:57.953Z\"},\"status\":\"completed\",\"attempts\":1,\"max_attempts\":3,\"created_at\":\"2026-02-26T23:16:57.953Z\",\"updated_at\":\"2026-02-26T23:17:05.895Z\",\"result\":{\"kind\":\"updated\",\"snapshot\":{\"id\":132810,\"ticket_number\":\"T20260226.0033\",\"title\":\"Test\",\"description\":null,\"status\":8,\"assigned_to\":30684582,\"queue_id\":29682833,\"company_id\":0,\"status_label\":\"In Progress\"},\"completed_at\":\"2026-02-26T23:17:05.895Z\"}},\"timestamp\":\"2026-02-26T23:17:05.964Z\"}"
+  }
+}

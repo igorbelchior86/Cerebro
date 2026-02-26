@@ -1,0 +1,27 @@
+{
+  "captured_at": "2026-02-26T23:17:08Z",
+  "request": {
+    "method": "POST",
+    "path": "/workflow/reconcile/T20260226.0033",
+    "correlation_id": "phase1-20260226T231657Z-reconcile",
+    "job_id": "phase1-autotask-job-20260226T231657Z",
+    "body": null
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "phase1-20260226T231657Z-reconcile",
+      "x_trace_id": "phase1-20260226T231657Z-reconcile",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "success": true,
+      "data": {
+        "matched": true
+      },
+      "timestamp": "2026-02-26T23:17:08.319Z"
+    },
+    "body_text": "{\"success\":true,\"data\":{\"matched\":true},\"timestamp\":\"2026-02-26T23:17:08.319Z\"}"
+  }
+}

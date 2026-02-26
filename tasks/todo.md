@@ -1,3 +1,61 @@
+# Task: Phase 1 Autotask two-way engine behavior hardening (assign/status/comment + replay/retry/sync/reconcile)
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Validate frozen contract surfaces from existing CP0/P0 artifacts and current workflow engine implementation.
+- [x] Step 2: Implement explicit command handler support for `comment`/`note` on Autotask gateway/core while preserving existing contracts.
+- [x] Step 3: Add/adjust required tests for idempotency replay, retryable path, terminal path, command happy path, sync ingestion updates, and reconcile match/mismatch.
+- [x] Step 4: Run targeted verification tests and typecheck for changed surfaces.
+- [x] Step 5: Update wiki docs in `/wiki/features`, `/wiki/architecture`, `/wiki/decisions`, `/wiki/changelog`.
+- [x] Step 6: Fill Review with evidence and residual limitations.
+
+## Open Questions
+- `context7` MCP is not exposed in this environment (`list_mcp_resources`/`list_mcp_resource_templates` returned empty). Documentation will use repo contracts/artifacts as fallback.
+
+## Progress Notes
+- Task initialized from explicit user scope for Autotask Phase 1 happy-path engine behavior.
+- Existing `TicketWorkflowCoreService` already implements idempotency, retry/backoff+DLQ, inbound sync, reconcile classification, and audit trail; deltas will be minimal and scoped.
+- Added explicit workflow command types `comment` and `note`, with gateway execution path mapped to Autotask ticket notes.
+- Kept backward-compatible `update` command semantics unchanged, while extending local projection alias support (`note_body`, `noteText`, `note_visibility`).
+- Expanded tests for explicit `assign -> status -> comment` happy path and terminal command-failure path (`failed` without retry).
+- Verification passed: targeted workflow/gateway/route tests (16/16) and API typecheck.
+- Added wiki entries in all required folders for this code change.
+
+## Review
+- What worked: Existing engine architecture already covered most Phase 1 requirements; minimal targeted deltas closed explicit command-handler and test-matrix gaps quickly.
+- What was tricky: `context7` MCP was not available in-session, so documentation references had to rely on local frozen contracts/artifacts.
+- Time taken: one focused implementation+verification cycle.
+
+---
+# Task: Phase 1 Autotask Two-way Happy Path E2E - Contract Freeze and Endpoint Mapping
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Confirm official Autotask REST sources and extract endpoint/method constraints for assign/status/comment
+- [x] Step 2: Freeze minimum two-way command contract in shared types (no engine behavior expansion)
+- [x] Step 3: Author endpoint mapping + idempotency/retry/error classification + reconciliation/audit/safe-write-scope docs
+- [x] Step 4: Update execution docs cross-references and required wiki entries (features/architecture/decisions/changelog)
+- [x] Step 5: Verify with typecheck for changed package(s) and existing contract tests
+- [x] Step 6: Fill review section with verification evidence and residual risks
+
+## Open Questions
+- Context7 did not provide an Autotask library ID; official Autotask docs are being used directly as primary source.
+
+## Progress Notes
+- Task started under Cerebro contract with launch policy preserved (`autotask=two_way`, others read-only).
+- Official source extraction completed from Autotask REST docs (auth, Tickets entity URLs/methods, TicketNotes child resource).
+- Added frozen shared contract file and endpoint/reconciliation/audit/safe-scope spec; cross-referenced in execution guide and wiki.
+- Verification passed: `pnpm --filter @playbook-brain/types typecheck` and `pnpm --filter @playbook-brain/api test -- src/__tests__/clients/autotask.test.ts --runInBand`.
+
+## Review
+- What worked: Contract freeze was implemented with minimal footprint using shared types + single spec doc + mandatory wiki set.
+- What was tricky: Context7 did not expose an Autotask library, requiring direct official doc usage while keeping source-traceable references.
+- Time taken: 1 focused implementation/verification cycle
+
+---
+
 # Task: Agent L Phase 5 External Wave 1 Launch Execution + Hypercare (Rerun 4)
 **Status**: completed
 **Started**: 2026-02-26
@@ -776,3 +834,42 @@
 - What worked: Agent J follow-up artifacts were structured enough to directly collapse the open-gate set in the founder packet without creating a new signoff file path.
 - What was tricky: The remediation bundle was untracked, so a fresh workspace scan was required to avoid stale “not found” conclusions.
 - Time taken: short rerun reconciliation + verification pass
+
+---
+
+# Task: Phase 1 gate validation evidence (Autotask two-way happy path)
+**Status**: planning
+**Started**: 2026-02-26
+
+## Plan
+- [ ] Step 1: Confirm latest engine baseline (Prompt 2 dependency) and gather required command/test contract from existing live evidence flow.
+- [ ] Step 2: Execute required checks (`api typecheck` + targeted engine tests) and capture logs into a fresh Phase 1 run bundle.
+- [ ] Step 3: Execute one live/realistic Autotask two-way E2E command flow (submit -> process success -> sync -> reconcile -> audit trail with correlation IDs).
+- [ ] Step 4: Execute idempotency replay evidence (same command submitted twice -> one external mutation).
+- [ ] Step 5: Produce reconciliation sample artifact (match and/or mismatch remediation note) and Phase 1 gate checklist with PASS/FAIL rationale.
+- [ ] Step 6: Write concise summary markdown with final gate decision `MET/NOT MET` under the run bundle.
+
+## Open Questions
+- None blocking; using existing approved safe-ticket pattern and current local stack assumptions from latest Agent M flow.
+
+## Progress Notes
+- Task initialized by request for Phase 1 objective proof package.
+
+## Review
+- What worked:
+- What was tricky:
+- Time taken:
+
+### Execution Update (2026-02-26)
+- Status updated: completed
+- Step 1 complete: latest engine baseline anchored at current workspace HEAD (Prompt 2 dependency) and existing Agent M flow contract reused.
+- Step 2 complete: required checks passed (`typecheck` + targeted engine tests) with logs in `docs/validation/runs/20260226T231521Z-phase1-autotask-e2e/`.
+- Step 3 complete: live E2E captured (`submit -> process -> status completed -> sync -> reconcile matched -> audit/correlation`).
+- Step 4 complete: idempotency replay captured (same command replay, one mutation).
+- Step 5 complete: reconciliation sample + mismatch remediation documented.
+- Step 6 complete: concise summary with gate decision generated.
+
+### Review (2026-02-26)
+- What worked: Reusing the proven Agent M S2 contract allowed deterministic live capture with objective, machine-readable artifacts.
+- What was tricky: Needed one artifact synthesis correction (`command_terminal_status` extraction) and shell-safe markdown generation.
+- Time taken: one focused validation cycle.

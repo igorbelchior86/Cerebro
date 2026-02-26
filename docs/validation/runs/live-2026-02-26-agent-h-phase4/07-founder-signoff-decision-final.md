@@ -7,8 +7,8 @@
 - Decision owner: `Founder`
 - Prepared by: `Agent K (Phase 4 Finalization)`
 - Package date: `2026-02-26`
-- Evidence baseline date: `2026-02-26` (Agent H live bundle + Agent J remediation follow-up + Agent M G1 rerun reviewed)
-- Next checkpoint: `2026-02-28` (or earlier after hard-gate rerun evidence is attached)
+- Evidence baseline date: `2026-02-26` (Agent H live bundle + Agent J remediation follow-up + Agent M G1 closure rerun reviewed)
+- Next checkpoint: `Founder final G4 decision` after review of updated G1 closure bundle
 
 ## 2. Source of Truth (Reviewed)
 
@@ -25,6 +25,8 @@
 - Agent J verification summary: `docs/validation/runs/followup-2026-02-26-agent-j-phase4-remediation/agent-j-verification-summary.json`
 - Agent M G1 live rerun bundle: `docs/validation/runs/live-20260226T211708Z-agent-m-g1-s2-proof/`
 - Agent M closure summary: `docs/validation/runs/live-20260226T211708Z-agent-m-g1-s2-proof/g1-closure-summary.md`
+- Agent M G1 rerun bundle (approved ticket): `docs/validation/runs/live-20260226T214911Z-agent-m-g1-s2-proof/`
+- Agent M closure summary (approved ticket): `docs/validation/runs/live-20260226T214911Z-agent-m-g1-s2-proof/g1-closure-summary.md`
 
 ## 3. Remediation Evidence Status
 
@@ -54,13 +56,13 @@
 | Surface | Final normalized result | Rationale |
 |---|---|---|
 | F0 | `PASS` | AI decision provenance/HITL evidence present and retrievable |
-| F1 | `PARTIAL` | Idempotent command path shown; no successful live Autotask mutation proof |
+| F1 | `PASS` | Live Autotask S2 two-way happy-path proof captured with command completion + reconcile match |
 | F2 | `PASS` | Read-only enrichments + explicit audited rejections validated |
 | F3 | `PARTIAL` | Handoff draft/provenance validated, not full persisted UI workflow path |
 | F4 | `PASS (CONDITIONAL INPUT)` | Agent J follow-up reproduces mismatch as expected queue-input coverage conditional, not silent integrity failure |
-| Autotask two-way | `PARTIAL` | Sync/command path evidence exists; happy-path real-ticket write proof missing |
+| Autotask two-way | `PASS` | Live safe-ticket write path completed with audit + correlation + reconcile success |
 | Non-Autotask integrations (RO) | `PASS` | IT Glue/Ninja/SentinelOne/Check Point read-only enforcement validated |
-| Platform/NFR | `PASS` (reconcile failure-path targeted) / `PARTIAL` (overall live coverage) | Agent J verifies classified retry/degraded reconcile signaling; live happy-path still missing |
+| Platform/NFR | `PASS` | Agent J failure-path evidence preserved and Agent M live happy-path now proven |
 
 ## 5. Decision Rationale (Why `CONDITIONAL`, not `GO`)
 
@@ -69,17 +71,17 @@
 - Agent J remediation follow-up materially reduced the open hard-gate set:
   - `DEF-H-001` reconcile `429` classification/audit gap is fixed in code and verified by targeted tests.
   - `DEF-H-002` is documented as validation-input composition conditional, not a platform integrity defect.
-- Agent M reran G1 live S2 flow and attached complete artifacts, but the happy-path still failed objective closure criteria:
-  - command terminal state was `failed` (`Autotask API error: 404 Not Found`);
-  - reconcile returned `mismatch` (`autotask_snapshot_mismatch`) rather than a success contract;
-  - no explicit approved safe test-ticket authorization artifact was found in accessible repo evidence.
-- Phase 4 PRD hard-gate closure therefore remains incomplete.
-- Founder signoff artifact is explicit and review-ready, but `GO` still depends on the remaining live evidence gate.
+- Agent M reran G1 live S2 flow on approved ticket `T20260226.0033` and attached complete evidence:
+  - command terminal state `completed`;
+  - sync event observed and audited;
+  - reconcile returned success (`matched: true`);
+  - end-to-end correlation IDs preserved in submit/process/status/sync/reconcile/audit artifacts.
+- Phase 4 PRD hard-gate technical evidence is now complete; founder final decision remains required.
 
 ## 6. Hard Gates (Objective Conditions to Upgrade to `GO`)
 
 ### Gate G1 — Autotask two-way happy-path proof (required)
-- Status: `NOT CLOSED` (live rerun executed; closure criteria not met)
+- Status: `CLOSED` (live rerun executed; closure criteria met)
 - Owner: `Backend/API owner + validation operator`
 - Objective evidence required:
   - One successful end-to-end Autotask write path on a safe real test ticket approved for mutation
@@ -89,13 +91,13 @@
   - Updated `s2-workflow-command-*.json`
   - Updated `s2-workflow-audit.json`
   - Any additional S2 proof snapshots in a new live rerun bundle
-- Latest evidence evaluation (Agent M, `2026-02-26`):
-  - `docs/validation/runs/live-20260226T211708Z-agent-m-g1-s2-proof/s2-command-submit.json` -> accepted (`202`)
-  - `docs/validation/runs/live-20260226T211708Z-agent-m-g1-s2-proof/s2-command-status.json` -> terminal `failed` (`404 Not Found`)
-  - `docs/validation/runs/live-20260226T211708Z-agent-m-g1-s2-proof/s2-sync-evidence.json` -> observed (`200`)
-  - `docs/validation/runs/live-20260226T211708Z-agent-m-g1-s2-proof/s2-reconcile-result.json` -> `mismatch` (`200` with issue, not success-match)
-  - `docs/validation/runs/live-20260226T211708Z-agent-m-g1-s2-proof/s2-workflow-audit.json` -> audit trail present with correlation linkage
-  - `docs/validation/runs/live-20260226T211708Z-agent-m-g1-s2-proof/preflight.json` -> approved safe ticket scope evidence missing
+- Latest evidence evaluation (Agent M rerun with approved ticket `T20260226.0033`, `2026-02-26`):
+  - `docs/validation/runs/live-20260226T214911Z-agent-m-g1-s2-proof/s2-command-submit.json` -> accepted (`202`)
+  - `docs/validation/runs/live-20260226T214911Z-agent-m-g1-s2-proof/s2-command-status.json` -> terminal `completed` (`200`)
+  - `docs/validation/runs/live-20260226T214911Z-agent-m-g1-s2-proof/s2-sync-evidence.json` -> observed (`200`)
+  - `docs/validation/runs/live-20260226T214911Z-agent-m-g1-s2-proof/s2-reconcile-result.json` -> `matched: true` (`200`)
+  - `docs/validation/runs/live-20260226T214911Z-agent-m-g1-s2-proof/s2-workflow-audit.json` -> audit trail present with correlation linkage
+  - `docs/validation/runs/live-20260226T214911Z-agent-m-g1-s2-proof/preflight.json` -> approved safe ticket scope `PASS`; launch policy unchanged `PASS`
 
 ### Gate G2 — Reconcile 429 degraded/retry semantics (DEF-H-001)
 - Status: `CLOSED (code + targeted verification); live confirmation piggybacks on G1 rerun`
@@ -155,5 +157,5 @@
 
 ## 10. Launch Readiness Constraint (Phase 5 Wave 1)
 
-- This package is `READY FOR FOUNDER REVIEW`, but **not sufficient for Phase 5 external Wave 1 launch approval** while `G1` remains open (and `G4` founder decision is pending).
-- Phase 5 Wave 1 decision input may proceed only after attaching rerun/remediation evidence and refreshing the decision state.
+- This package is `READY FOR FOUNDER REVIEW`; hard gate G1 is closed and G4 founder decision is pending.
+- Phase 5 Wave 1 decision input can proceed after founder records explicit final decision (`GO / CONDITIONAL / NO-GO`).

@@ -28,6 +28,12 @@ export interface AutotaskQueueOption {
   isActive?: boolean;
 }
 
+export interface AutotaskPicklistOption {
+  id: number;
+  label: string;
+  isActive?: boolean;
+}
+
 /** Discovery endpoint — acts as universal entry point for zone lookup */
 const DISCOVERY_BASE = 'https://webservices2.autotask.net/atservicesrest/v1.0';
 
@@ -90,7 +96,12 @@ export class AutotaskClient {
     });
 
     if (!response.ok) {
-      throw new Error(`Autotask API error: ${response.status} ${response.statusText}`);
+      const errorBody =
+        typeof (response as any).text === 'function'
+          ? await (response as any).text().catch(() => '')
+          : '';
+      const suffix = errorBody ? ` - ${errorBody.slice(0, 800)}` : '';
+      throw new Error(`Autotask API error: ${response.status} ${response.statusText}${suffix}`);
     }
 
     return response.json() as Promise<T>;
@@ -247,7 +258,7 @@ export class AutotaskClient {
    * Read queue picklist options from Tickets entity metadata.
    * This is more reliable than querying queue assignments because it returns the canonical queue labels.
    */
-  async getTicketQueues(): Promise<AutotaskQueueOption[]> {
+  private async getTicketFieldPicklist(fieldName: string): Promise<AutotaskPicklistOption[]> {
     const response = await this.request<any>('/tickets/entityInformation/fields');
     const fields = Array.isArray(response)
       ? response
@@ -257,16 +268,16 @@ export class AutotaskClient {
           ? response.items
           : [];
 
-    const queueField = fields.find((field: any) =>
-      String(field?.name || field?.fieldName || '').toLowerCase() === 'queueid'
+    const targetField = fields.find((field: any) =>
+      String(field?.name || field?.fieldName || '').toLowerCase() === fieldName.toLowerCase()
     );
-    const rawValues = Array.isArray(queueField?.picklistValues)
-      ? queueField.picklistValues
-      : Array.isArray(queueField?.pickListValues)
-        ? queueField.pickListValues
+    const rawValues = Array.isArray(targetField?.picklistValues)
+      ? targetField.picklistValues
+      : Array.isArray(targetField?.pickListValues)
+        ? targetField.pickListValues
         : [];
 
-    const queues = rawValues
+    const options = rawValues
       .map((entry: any) => {
         const rawId = entry?.value ?? entry?.id ?? entry?.code ?? entry?.picklistValue;
         const id = Number(rawId);
@@ -287,11 +298,64 @@ export class AutotaskClient {
       })
       .filter((q: AutotaskQueueOption | null): q is AutotaskQueueOption => Boolean(q));
 
-    const deduped = new Map<number, AutotaskQueueOption>();
-    for (const q of queues) {
-      if (!deduped.has(q.id)) deduped.set(q.id, q);
+    const deduped = new Map<number, AutotaskPicklistOption>();
+    for (const option of options) {
+      if (!deduped.has(option.id)) deduped.set(option.id, option);
     }
     return Array.from(deduped.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  async getTicketQueues(): Promise<AutotaskQueueOption[]> {
+    return this.getTicketFieldPicklist('queueID');
+  }
+
+  async getTicketStatusOptions(): Promise<AutotaskPicklistOption[]> {
+    return this.getTicketFieldPicklist('status');
+  }
+
+  private async getTicketNoteFieldPicklist(fieldName: string): Promise<AutotaskPicklistOption[]> {
+    const response = await this.request<any>('/ticketNotes/entityInformation/fields');
+    const fields = Array.isArray(response)
+      ? response
+      : Array.isArray(response?.fields)
+        ? response.fields
+        : Array.isArray(response?.items)
+          ? response.items
+          : [];
+    const targetField = fields.find((field: any) =>
+      String(field?.name || field?.fieldName || '').toLowerCase() === fieldName.toLowerCase()
+    );
+    const rawValues = Array.isArray(targetField?.picklistValues)
+      ? targetField.picklistValues
+      : Array.isArray(targetField?.pickListValues)
+        ? targetField.pickListValues
+        : [];
+    return rawValues
+      .map((entry: any) => {
+        const rawId = entry?.value ?? entry?.id ?? entry?.code ?? entry?.picklistValue;
+        const id = Number(rawId);
+        const label = String(entry?.label ?? entry?.displayName ?? entry?.text ?? entry?.name ?? '').trim();
+        if (!Number.isFinite(id) || !label) return null;
+        return { id, label };
+      })
+      .filter((option: AutotaskPicklistOption | null): option is AutotaskPicklistOption => Boolean(option));
+  }
+
+  private mapPicklistLabelToId(
+    options: AutotaskPicklistOption[],
+    rawValue: unknown,
+    fallbackMatchers: string[] = []
+  ): number | undefined {
+    const raw = String(rawValue ?? '').trim().toLowerCase();
+    if (!raw) return undefined;
+    if (/^\d+$/.test(raw)) return Number(raw);
+    const exact = options.find((option) => option.label.trim().toLowerCase() === raw);
+    if (exact) return exact.id;
+    for (const matcher of fallbackMatchers) {
+      const candidate = options.find((option) => option.label.trim().toLowerCase().includes(matcher));
+      if (candidate) return candidate.id;
+    }
+    return undefined;
   }
 
   async createTicket(payload: Record<string, unknown>): Promise<AutotaskTicket> {
@@ -305,14 +369,73 @@ export class AutotaskClient {
     return rows[0];
   }
 
+  private async resolveTicketEntityId(ticketId: number | string): Promise<number> {
+    if (typeof ticketId === 'number' && Number.isFinite(ticketId)) return ticketId;
+    const raw = String(ticketId ?? '').trim();
+    if (!raw) throw new Error('ticketId is required');
+    if (/^\d+$/.test(raw)) return Number(raw);
+    const ticket = await this.getTicketByTicketNumber(raw);
+    const resolved = Number((ticket as any)?.id);
+    if (!Number.isFinite(resolved)) {
+      throw new Error(`Autotask ticket entity ID not found for ${raw}`);
+    }
+    return resolved;
+  }
+
   async updateTicket(ticketId: number | string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const endpoint = `/tickets/${encodeURIComponent(String(ticketId))}`;
-    return this.requestJson<Record<string, unknown>>('PATCH', endpoint, { body: payload });
+    const resolvedTicketId = await this.resolveTicketEntityId(ticketId);
+    // Autotask update contract uses PATCH /tickets with entity id in body.
+    return this.requestJson<Record<string, unknown>>('PATCH', '/tickets', {
+      body: {
+        id: resolvedTicketId,
+        ...payload,
+      },
+    });
   }
 
   async createTicketNote(ticketId: number | string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const endpoint = `/tickets/${encodeURIComponent(String(ticketId))}/notes`;
-    return this.requestJson<Record<string, unknown>>('POST', endpoint, { body: payload });
+    const resolvedTicketId = await this.resolveTicketEntityId(ticketId);
+    const body: Record<string, unknown> = { ...payload };
+    if (body.description === undefined && typeof body.noteText === 'string') {
+      body.description = body.noteText;
+    }
+    if (body.title === undefined) {
+      const source = typeof body.noteText === 'string' ? body.noteText : typeof body.description === 'string' ? body.description : '';
+      const firstLine = String(source).split('\n')[0]?.trim() || '';
+      body.title = (firstLine || 'Cerebro workflow update').slice(0, 250);
+    }
+    if (typeof body.noteType === 'string' || typeof body.publish === 'boolean' || typeof body.publish === 'string') {
+      try {
+        const [noteTypeOptions, publishOptions] = await Promise.all([
+          this.getTicketNoteFieldPicklist('noteType'),
+          this.getTicketNoteFieldPicklist('publish'),
+        ]);
+        if (typeof body.noteType === 'string') {
+          const mappedNoteType = this.mapPicklistLabelToId(noteTypeOptions, body.noteType, [
+            String(body.noteType).trim().toLowerCase(),
+          ]);
+          if (mappedNoteType !== undefined) body.noteType = mappedNoteType;
+        }
+        if (typeof body.publish === 'boolean') {
+          const mappedPublish = body.publish
+            ? this.mapPicklistLabelToId(publishOptions, 'all autotask users', ['all autotask users', 'all'])
+            : this.mapPicklistLabelToId(publishOptions, 'internal', ['internal']);
+          if (mappedPublish !== undefined) body.publish = mappedPublish;
+        } else if (typeof body.publish === 'string') {
+          const mappedPublish = this.mapPicklistLabelToId(publishOptions, body.publish, [
+            String(body.publish).trim().toLowerCase(),
+          ]);
+          if (mappedPublish !== undefined) body.publish = mappedPublish;
+        }
+      } catch {
+        // Keep original payload if metadata lookup is unavailable.
+      }
+    }
+    return this.requestJson<Record<string, unknown>>(
+      'POST',
+      `/tickets/${encodeURIComponent(String(resolvedTicketId))}/notes`,
+      { body }
+    );
   }
 
   async createTimeEntry(payload: Record<string, unknown>): Promise<Record<string, unknown>> {

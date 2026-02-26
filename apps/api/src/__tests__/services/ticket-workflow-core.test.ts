@@ -282,6 +282,27 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     expect(audit.some((r) => r.action === 'workflow.reconciliation.mismatch')).toBe(true);
   });
 
+  it('treats status code vs status label as equivalent during reconcile', async () => {
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn().mockResolvedValue({
+        kind: 'created',
+        external_ticket_id: '7002',
+        snapshot: { status: 'In Progress', assigned_to: '10' },
+      }),
+      fetchTicketSnapshot: jest.fn().mockResolvedValue({ status: '8', status_label: 'In Progress', assigned_to: '10' }),
+    };
+    const { service } = createService(gateway);
+    const createCmd = createCommand({
+      idempotencyKey: 'reconcile-equivalent',
+      correlation: { trace_id: 'trace-rec-equivalent', ticket_id: '7002' },
+    });
+    await service.submitCommand(createCmd);
+    await service.processPendingCommands();
+
+    const result = await service.reconcileTicket(tenantId, '7002', { trace_id: 'trace-rec-equivalent', ticket_id: '7002' });
+    expect(result.matched).toBe(true);
+  });
+
   it('persists workflow runtime state across repository reload when file backing is enabled', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'cerebro-workflow-repo-'));
     const filePath = join(dir, 'workflow-runtime.json');

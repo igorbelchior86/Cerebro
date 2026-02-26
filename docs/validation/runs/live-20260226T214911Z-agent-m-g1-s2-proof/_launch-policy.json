@@ -1,0 +1,35 @@
+{
+  "captured_at": "2026-02-26T21:49:11Z",
+  "request": {
+    "method": "GET",
+    "path": "/manager-ops/p0/rollout/policy",
+    "correlation_id": "agent-m-s2-20260226T214911Z-policy",
+    "job_id": "agent-m-job-20260226T214911Z",
+    "body": null
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "agent-m-s2-20260226T214911Z-policy",
+      "x_trace_id": "agent-m-s2-20260226T214911Z-policy",
+      "x_correlation_id": "",
+      "content_type": "application/json; charset=utf-8"
+    },
+    "body_json": {
+      "success": true,
+      "data": {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "frozen": true,
+        "launch_policy": {
+          "autotask": "two_way",
+          "itglue": "read_only",
+          "ninja": "read_only",
+          "sentinelone": "read_only",
+          "checkpoint": "read_only"
+        }
+      },
+      "timestamp": "2026-02-26T21:49:11.579Z"
+    },
+    "body_text": "{\"success\":true,\"data\":{\"tenant_id\":\"5b5f7e25-2396-4bec-a584-41352be7e876\",\"frozen\":true,\"launch_policy\":{\"autotask\":\"two_way\",\"itglue\":\"read_only\",\"ninja\":\"read_only\",\"sentinelone\":\"read_only\",\"checkpoint\":\"read_only\"}},\"timestamp\":\"2026-02-26T21:49:11.579Z\"}"
+  }
+}

@@ -184,6 +184,23 @@ function normalizeVisibility(input: unknown): 'internal' | 'public' {
   return String(input || '').toLowerCase() === 'internal' ? 'internal' : 'public';
 }
 
+function normalizeStatusToken(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function statusesMatch(localStatus: unknown, remoteStatus: unknown, remoteStatusLabel?: unknown): boolean {
+  const local = normalizeStatusToken(localStatus);
+  const remote = normalizeStatusToken(remoteStatus);
+  const remoteLabel = normalizeStatusToken(remoteStatusLabel);
+  if (!local || !remote) return true;
+  if (local === remote) return true;
+  if (remoteLabel && local === remoteLabel) return true;
+  return false;
+}
+
 function classifyError(error: unknown): 'transient' | 'terminal' {
   if (error instanceof WorkflowTransientError) return 'transient';
   const message = String((error as any)?.message || error || '').toLowerCase();
@@ -791,9 +808,10 @@ export class TicketWorkflowCoreService {
 
     const localStatus = String(local?.status || '');
     const remoteStatus = String((remote as any).status || '');
+    const remoteStatusLabel = String((remote as any).status_label || '');
     const localAssigned = String(local?.assigned_to || '');
     const remoteAssigned = String((remote as any).assigned_to || '');
-    if ((localStatus && remoteStatus && localStatus !== remoteStatus) || (localAssigned && remoteAssigned && localAssigned !== remoteAssigned)) {
+    if ((!statusesMatch(localStatus, remoteStatus, remoteStatusLabel)) || (localAssigned && remoteAssigned && localAssigned !== remoteAssigned)) {
       const issue: ReconciliationIssue = {
         id: randomUUID(),
         tenant_id: tenantId,
@@ -802,7 +820,7 @@ export class TicketWorkflowCoreService {
         severity: 'warning',
         reason: 'autotask_snapshot_mismatch',
         local_snapshot: { status: localStatus, assigned_to: localAssigned },
-        remote_snapshot: { status: remoteStatus, assigned_to: remoteAssigned },
+        remote_snapshot: { status: remoteStatus, status_label: remoteStatusLabel, assigned_to: remoteAssigned },
         correlation,
         provenance: { source: 'autotask_reconcile', fetched_at: nowIso() },
       };

@@ -1,0 +1,27 @@
+{
+  "captured_at": "2026-02-26T21:49:21Z",
+  "request": {
+    "method": "POST",
+    "path": "/workflow/reconcile/T20260226.0033",
+    "correlation_id": "agent-m-s2-20260226T214911Z-reconcile",
+    "job_id": "agent-m-job-20260226T214911Z",
+    "body": null
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "agent-m-s2-20260226T214911Z-reconcile",
+      "x_trace_id": "agent-m-s2-20260226T214911Z-reconcile",
+      "x_correlation_id": "",
+      "content_type": "application/json; charset=utf-8"
+    },
+    "body_json": {
+      "success": true,
+      "data": {
+        "matched": true
+      },
+      "timestamp": "2026-02-26T21:49:21.595Z"
+    },
+    "body_text": "{\"success\":true,\"data\":{\"matched\":true},\"timestamp\":\"2026-02-26T21:49:21.595Z\"}"
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "captured_at": "2026-02-26T21:49:19Z",
+  "request": {
+    "method": "POST",
+    "path": "/workflow/sync/autotask",
+    "correlation_id": "agent-m-s2-20260226T214911Z-sync",
+    "job_id": "agent-m-job-20260226T214911Z",
+    "body": {
+      "event_id": "agent-m-sync-20260226T214911Z",
+      "event_type": "ticket.updated",
+      "entity_id": "T20260226.0033",
+      "payload": {
+        "ticket_id": "T20260226.0033",
+        "status": "In Progress",
+        "source": "agent-m-live-proof"
+      },
+      "correlation": {
+        "trace_id": "agent-m-s2-20260226T214911Z-sync",
+        "ticket_id": "T20260226.0033",
+        "job_id": "agent-m-job-20260226T214911Z",
+        "command_id": "4a73f6e2-c22b-49c3-b5d1-80abafea7261"
+      },
+      "provenance": {
+        "source": "autotask_webhook",
+        "adapter_version": "agent-m-validation",
+        "sync_cursor": "agent-m-sync-20260226T214911Z"
+      }
+    }
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "agent-m-s2-20260226T214911Z-sync",
+      "x_trace_id": "agent-m-s2-20260226T214911Z-sync",
+      "x_correlation_id": "",
+      "content_type": "application/json; charset=utf-8"
+    },
+    "body_json": {
+      "success": true,
+      "data": {
+        "duplicate": false,
+        "applied": true,
+        "divergence": true
+      },
+      "timestamp": "2026-02-26T21:49:19.392Z"
+    },
+    "body_text": "{\"success\":true,\"data\":{\"duplicate\":false,\"applied\":true,\"divergence\":true},\"timestamp\":\"2026-02-26T21:49:19.392Z\"}"
+  }
+}

@@ -136,4 +136,64 @@ describe('AutotaskClient', () => {
       expect((result as any).id).toBe(111);
     });
   });
+
+  describe('write contracts', () => {
+    it('should PATCH /tickets with body id when updating by ticket number', async () => {
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ items: [{ id: 333, ticketNumber: 'T20260226.0033' }] })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ item: { id: 333 } })
+        });
+
+      await client.updateTicket('T20260226.0033', { status: 'In Progress' });
+
+      const queryUrl = new URL((global.fetch as jest.Mock).mock.calls[0][0] as string);
+      expect(queryUrl.pathname.toLowerCase()).toContain('/tickets/query');
+
+      const patchUrl = new URL((global.fetch as jest.Mock).mock.calls[1][0] as string);
+      const patchInit = (global.fetch as jest.Mock).mock.calls[1][1];
+      expect(patchUrl.pathname.toLowerCase()).toContain('/tickets');
+      expect(patchInit.method).toBe('PATCH');
+      expect(JSON.parse(String(patchInit.body))).toMatchObject({ id: 333, status: 'In Progress' });
+    });
+
+    it('should POST /tickets/{id}/notes when creating notes by ticket number', async () => {
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ items: [{ id: 444, ticketNumber: 'T20260226.0044' }] })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            fields: [{ name: 'noteType', picklistValues: [{ value: 7, label: 'Internal' }] }]
+          })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            fields: [{
+              name: 'publish',
+              picklistValues: [{ value: 1, label: 'All Autotask Users' }, { value: 2, label: 'Internal' }]
+            }]
+          })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ item: { id: 12345 } })
+        });
+
+      await client.createTicketNote('T20260226.0044', { noteText: 'hello', noteType: 'Internal' });
+
+      const postUrl = new URL((global.fetch as jest.Mock).mock.calls[3][0] as string);
+      const postInit = (global.fetch as jest.Mock).mock.calls[3][1];
+      expect(postUrl.pathname.toLowerCase()).toContain('/tickets/444/notes');
+      expect(postInit.method).toBe('POST');
+      expect(JSON.parse(String(postInit.body))).toMatchObject({ noteText: 'hello', description: 'hello', noteType: 7, title: 'hello' });
+    });
+  });
 });

@@ -1,0 +1,51 @@
+{
+  "captured_at": "2026-02-26T21:49:11Z",
+  "base_url": "http://localhost:3001",
+  "checks": {
+    "api_reachable": {
+      "ok": true,
+      "status_code": 200,
+      "headers": {
+        "x_request_id": "fcb68da4-034c-46c1-bfea-cf5319e6bcf6",
+        "x_trace_id": "fcb68da4-034c-46c1-bfea-cf5319e6bcf6",
+        "x_correlation_id": "",
+        "content_type": "application/json; charset=utf-8"
+      },
+      "body_json": {
+        "status": "ok",
+        "timestamp": "2026-02-26T21:49:11.144Z"
+      }
+    },
+    "auth_token": {
+      "ok": true,
+      "type": "session_cookie",
+      "redacted": true
+    },
+    "tenant_context": {
+      "ok": true,
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876"
+    },
+    "safe_test_ticket": {
+      "ok": true,
+      "ticket_id": "T20260226.0033",
+      "source": "Explicit user approval provided in-session for ticket mutation scope."
+    },
+    "launch_policy": {
+      "ok": true,
+      "expected": {
+        "autotask": "TWO_WAY",
+        "itglue": "READ_ONLY",
+        "ninja": "READ_ONLY",
+        "sentinelone": "READ_ONLY",
+        "checkpoint": "READ_ONLY"
+      },
+      "observed": {
+        "autotask": "two_way",
+        "itglue": "read_only",
+        "ninja": "read_only",
+        "sentinelone": "read_only",
+        "checkpoint": "read_only"
+      }
+    }
+  }
+}

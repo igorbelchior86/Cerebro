@@ -1,0 +1,23 @@
+{
+  "tool": "agent-m-live-g1-s2-proof",
+  "version": 1,
+  "captured_at": "2026-02-26T21:49:21Z",
+  "session_id": "refresh-val-2026-02-26-agent-m-g1",
+  "base_url": "http://localhost:3001",
+  "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+  "ticket_id": "T20260226.0033",
+  "command_id": "4a73f6e2-c22b-49c3-b5d1-80abafea7261",
+  "g1_status": "CLOSED",
+  "files": [
+    "manifest.json",
+    "preflight.json",
+    "s2-command-submit.json",
+    "s2-command-process.json",
+    "s2-command-status.json",
+    "s2-sync-evidence.json",
+    "s2-reconcile-result.json",
+    "s2-workflow-audit.json",
+    "s2-correlation-proof.json",
+    "g1-closure-summary.md"
+  ]
+}

@@ -1,3 +1,35 @@
+# Task: Agent M G1 blocker root-cause fix (Autotask S2 404 + reconcile mismatch)
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Reproduce and isolate exact failing Autotask API contract mismatch against official REST docs and current client/gateway code
+- [x] Step 2: Implement minimal fix for ticket identifier/write endpoint handling in Autotask workflow gateway/client
+- [x] Step 3: Add targeted tests for ticket-number command path (`T...`) ensuring write path resolves to valid Autotask ticket ID
+- [x] Step 4: Run verification (`apps/api` targeted tests + typecheck)
+- [x] Step 5: Re-run live Agent M S2 flow on approved ticket `T20260226.0033` and generate fresh evidence bundle
+- [x] Step 6: Update signoff artifact and task review with objective post-fix results
+- [x] Step 7: Update wiki documentation for code changes (features/architecture/changelog/decisions as applicable)
+
+## Open Questions
+- Whether status value mapping (`In Progress` label vs Autotask numeric status code) still blocks reconcile match after write endpoint fix.
+
+## Progress Notes
+- User provided screenshot proof that `T20260226.0033` exists in Autotask.
+- Root-cause investigation started with workflow-orchestrator discipline.
+- Root cause confirmed in live runs: write flow progressed from `404` to `500` and failed at ticket note contract (`noteType` integer then required `title`).
+- Implemented fixes in Autotask client/gateway/core: note `title` fallback, status metadata enrichment (`status_label`), and reconcile status equivalence (`code` vs `label`).
+- Verification passed: targeted tests (`autotask client`, `autotask gateway`, `workflow core`) and API `typecheck`.
+- New live bundle: `docs/validation/runs/live-20260226T214911Z-agent-m-g1-s2-proof/` with `command completed`, `sync observed`, `reconcile matched: true`, audit trail, and end-to-end correlation.
+- Bundle summary/manifest corrected to `G1 CLOSED` (script still had legacy reconcile criterion expecting `data.status=="match"` instead of `data.matched==true`).
+- Founder signoff packet updated with latest Agent M closure evidence and G1 status moved to `CLOSED` (G4 founder decision pending).
+
+## Review
+- What worked: incremental live evidence loops exposed exact Autotask contract errors, and targeted fixes closed command + reconcile happy path without broad refactor.
+- What was tricky: reconcile evidence parser in capture summary used outdated contract shape (`status=="match"`), requiring artifact correction after successful API result (`matched:true`).
+- Time taken: one focused root-cause/fix/verify/rerun cycle.
+
+---
 # Task: Agent M Phase 4 G1 closure (live Autotask S2 two-way happy-path proof)
 **Status**: completed
 **Started**: 2026-02-26
@@ -17,6 +49,10 @@
 ## Progress Notes
 - User requested strict-scope Agent M execution for G1 closure evidence bundle.
 - Contracts applied: CEREBRO operational contract + plan-first + no scope expansion beyond G1.
+- User provided explicit approved safe ticket scope for rerun: `T20260226.0033`.
+- Agent M rerun initiated with the same S2 flow and full evidence bundle regeneration.
+- Rerun bundle generated: `docs/validation/runs/live-20260226T212500Z-agent-m-g1-s2-proof/`.
+- Preflight now passes approved safe ticket check, but G1 remains `NOT CLOSED` because command terminal status is still `failed` (`Autotask API error: 404 Not Found`) and reconcile remains `mismatch`.
 - Live stack was started and one authenticated S2 flow executed against `http://localhost:3001`.
 - New evidence bundle generated at `docs/validation/runs/live-20260226T211708Z-agent-m-g1-s2-proof/` with full required artifact set.
 - Preflight checks passed for API reachability, auth, tenant context, and unchanged launch policy (`autotask=two_way`, others `read_only`), but no explicit approved safe ticket artifact was found in accessible repo evidence.

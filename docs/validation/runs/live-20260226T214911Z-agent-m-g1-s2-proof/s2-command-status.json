@@ -1,0 +1,76 @@
+{
+  "captured_at": "2026-02-26T21:49:19Z",
+  "request": {
+    "method": "GET",
+    "path": "/workflow/commands/4a73f6e2-c22b-49c3-b5d1-80abafea7261",
+    "correlation_id": "agent-m-s2-20260226T214911Z-status",
+    "job_id": "agent-m-job-20260226T214911Z",
+    "body": null
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "agent-m-s2-20260226T214911Z-status",
+      "x_trace_id": "agent-m-s2-20260226T214911Z-status",
+      "x_correlation_id": "",
+      "content_type": "application/json; charset=utf-8"
+    },
+    "body_json": {
+      "success": true,
+      "data": {
+        "command": {
+          "command_id": "4a73f6e2-c22b-49c3-b5d1-80abafea7261",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "update",
+          "payload": {
+            "ticket_id": "T20260226.0033",
+            "status": "In Progress",
+            "comment_body": "Agent M G1 live S2 proof 20260226T214911Z",
+            "comment_visibility": "internal"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "agent-m-s2-idem-20260226T214911Z",
+          "audit_metadata": {
+            "validation_session": "refresh-val-2026-02-26-agent-m-g1",
+            "scenario": "S2",
+            "agent": "agent-m"
+          },
+          "correlation": {
+            "trace_id": "agent-m-s2-20260226T214911Z-submit",
+            "ticket_id": "T20260226.0033",
+            "job_id": "agent-m-job-20260226T214911Z",
+            "command_id": "4a73f6e2-c22b-49c3-b5d1-80abafea7261"
+          },
+          "requested_at": "2026-02-26T21:49:11.741Z"
+        },
+        "status": "completed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-26T21:49:11.741Z",
+        "updated_at": "2026-02-26T21:49:19.310Z",
+        "result": {
+          "kind": "updated",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 30684582,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          },
+          "completed_at": "2026-02-26T21:49:19.310Z"
+        }
+      },
+      "timestamp": "2026-02-26T21:49:19.355Z"
+    },
+    "body_text": "{\"success\":true,\"data\":{\"command\":{\"command_id\":\"4a73f6e2-c22b-49c3-b5d1-80abafea7261\",\"tenant_id\":\"5b5f7e25-2396-4bec-a584-41352be7e876\",\"target_integration\":\"Autotask\",\"command_type\":\"update\",\"payload\":{\"ticket_id\":\"T20260226.0033\",\"status\":\"In Progress\",\"comment_body\":\"Agent M G1 live S2 proof 20260226T214911Z\",\"comment_visibility\":\"internal\"},\"actor\":{\"kind\":\"user\",\"id\":\"606d9dcc-624f-42bd-95fe-5bac5f8fc2ed\",\"origin\":\"api\"},\"idempotency_key\":\"agent-m-s2-idem-20260226T214911Z\",\"audit_metadata\":{\"validation_session\":\"refresh-val-2026-02-26-agent-m-g1\",\"scenario\":\"S2\",\"agent\":\"agent-m\"},\"correlation\":{\"trace_id\":\"agent-m-s2-20260226T214911Z-submit\",\"ticket_id\":\"T20260226.0033\",\"job_id\":\"agent-m-job-20260226T214911Z\",\"command_id\":\"4a73f6e2-c22b-49c3-b5d1-80abafea7261\"},\"requested_at\":\"2026-02-26T21:49:11.741Z\"},\"status\":\"completed\",\"attempts\":1,\"max_attempts\":3,\"created_at\":\"2026-02-26T21:49:11.741Z\",\"updated_at\":\"2026-02-26T21:49:19.310Z\",\"result\":{\"kind\":\"updated\",\"snapshot\":{\"id\":132810,\"ticket_number\":\"T20260226.0033\",\"title\":\"Test\",\"description\":null,\"status\":8,\"assigned_to\":30684582,\"queue_id\":29682833,\"company_id\":0,\"status_label\":\"In Progress\"},\"completed_at\":\"2026-02-26T21:49:19.310Z\"}},\"timestamp\":\"2026-02-26T21:49:19.355Z\"}"
+  }
+}

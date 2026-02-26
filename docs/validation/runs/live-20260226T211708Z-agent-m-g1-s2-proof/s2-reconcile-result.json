@@ -1,0 +1,51 @@
+{
+  "captured_at": "2026-02-26T21:17:11Z",
+  "request": {
+    "method": "POST",
+    "path": "/workflow/reconcile/T20260226.0032",
+    "correlation_id": "agent-m-s2-20260226T211708Z-reconcile",
+    "job_id": "agent-m-job-20260226T211708Z",
+    "body": null
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "agent-m-s2-20260226T211708Z-reconcile",
+      "x_trace_id": "agent-m-s2-20260226T211708Z-reconcile",
+      "x_correlation_id": "",
+      "content_type": "application/json; charset=utf-8"
+    },
+    "body_json": {
+      "success": true,
+      "data": {
+        "matched": false,
+        "issue": {
+          "id": "c4d681d7-a308-4be3-8aa8-840ab25889d3",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "ticket_id": "T20260226.0032",
+          "detected_at": "2026-02-26T21:17:11.559Z",
+          "severity": "warning",
+          "reason": "autotask_snapshot_mismatch",
+          "local_snapshot": {
+            "status": "In Progress",
+            "assigned_to": ""
+          },
+          "remote_snapshot": {
+            "status": "1",
+            "assigned_to": ""
+          },
+          "correlation": {
+            "trace_id": "agent-m-s2-20260226T211708Z-reconcile",
+            "ticket_id": "T20260226.0032"
+          },
+          "provenance": {
+            "source": "autotask_reconcile",
+            "fetched_at": "2026-02-26T21:17:11.559Z"
+          }
+        }
+      },
+      "timestamp": "2026-02-26T21:17:11.561Z"
+    },
+    "body_text": "{\"success\":true,\"data\":{\"matched\":false,\"issue\":{\"id\":\"c4d681d7-a308-4be3-8aa8-840ab25889d3\",\"tenant_id\":\"5b5f7e25-2396-4bec-a584-41352be7e876\",\"ticket_id\":\"T20260226.0032\",\"detected_at\":\"2026-02-26T21:17:11.559Z\",\"severity\":\"warning\",\"reason\":\"autotask_snapshot_mismatch\",\"local_snapshot\":{\"status\":\"In Progress\",\"assigned_to\":\"\"},\"remote_snapshot\":{\"status\":\"1\",\"assigned_to\":\"\"},\"correlation\":{\"trace_id\":\"agent-m-s2-20260226T211708Z-reconcile\",\"ticket_id\":\"T20260226.0032\"},\"provenance\":{\"source\":\"autotask_reconcile\",\"fetched_at\":\"2026-02-26T21:17:11.559Z\"}}},\"timestamp\":\"2026-02-26T21:17:11.561Z\"}"
+  }
+}

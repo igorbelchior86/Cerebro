@@ -73,6 +73,47 @@
         "updated_at": "2026-02-26T18:41:32.796Z",
         "last_error": "Autotask API error: 404 Not Found"
       }
+    ],
+    [
+      "9dbe3825-0571-4405-b1f2-9f6239f5402c",
+      {
+        "command": {
+          "command_id": "9dbe3825-0571-4405-b1f2-9f6239f5402c",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "update",
+          "payload": {
+            "ticket_id": "T20260226.0032",
+            "status": "In Progress",
+            "comment_body": "Agent M G1 live S2 proof 20260226T211708Z",
+            "comment_visibility": "internal"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "agent-m-s2-idem-20260226T211708Z",
+          "audit_metadata": {
+            "validation_session": "refresh-val-2026-02-26-agent-m-g1",
+            "scenario": "S2",
+            "agent": "agent-m"
+          },
+          "correlation": {
+            "trace_id": "agent-m-s2-20260226T211708Z-submit",
+            "ticket_id": "T20260226.0032",
+            "job_id": "agent-m-job-20260226T211708Z",
+            "command_id": "9dbe3825-0571-4405-b1f2-9f6239f5402c"
+          },
+          "requested_at": "2026-02-26T21:17:09.035Z"
+        },
+        "status": "failed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-26T21:17:09.036Z",
+        "updated_at": "2026-02-26T21:17:10.304Z",
+        "last_error": "Autotask API error: 404 Not Found"
+      }
     ]
   ],
   "commandsByIdempotency": [
@@ -83,6 +124,10 @@
     [
       "5b5f7e25-2396-4bec-a584-41352be7e876::agent-h-s2-idem-001",
       "1b5f760a-7ff8-404d-927b-2e2275e51ece"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::agent-m-s2-idem-20260226T211708Z",
+      "9dbe3825-0571-4405-b1f2-9f6239f5402c"
     ]
   ],
   "audits": [
@@ -638,6 +683,221 @@
           "fetched_at": "2026-02-26T19:35:02.233Z"
         }
       }
+    },
+    {
+      "audit_id": "1dbb9a99-f45a-4483-b490-6b3d1a36fa15",
+      "timestamp": "2026-02-26T20:21:59.880Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0031"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132808",
+        "ticket_id": "T20260226.0031"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132808:ticket.created:2026-02-26T20:19:12.543Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T20:21:59.874Z"
+        }
+      }
+    },
+    {
+      "audit_id": "39abd7b4-cc7a-456e-8659-d66c76ddd943",
+      "timestamp": "2026-02-26T20:55:02.120Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0032"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132809",
+        "ticket_id": "T20260226.0032"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132809:ticket.created:2026-02-26T20:54:31.910Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T20:55:02.117Z"
+        }
+      }
+    },
+    {
+      "audit_id": "205720f7-fd0e-4515-beeb-ee5fc0ed346f",
+      "timestamp": "2026-02-26T21:17:09.039Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0032"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "agent-m-s2-20260226T211708Z-submit",
+        "ticket_id": "T20260226.0032",
+        "job_id": "agent-m-job-20260226T211708Z",
+        "command_id": "9dbe3825-0571-4405-b1f2-9f6239f5402c"
+      },
+      "metadata": {
+        "command_type": "update",
+        "idempotency_key": "agent-m-s2-idem-20260226T211708Z",
+        "audit_metadata": {
+          "validation_session": "refresh-val-2026-02-26-agent-m-g1",
+          "scenario": "S2",
+          "agent": "agent-m"
+        }
+      }
+    },
+    {
+      "audit_id": "7a815b3c-6dbd-4fd8-815e-015dae6c8acf",
+      "timestamp": "2026-02-26T21:17:10.306Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.failed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0032"
+      },
+      "result": "failure",
+      "reason": "Autotask API error: 404 Not Found",
+      "correlation": {
+        "trace_id": "agent-m-s2-20260226T211708Z-submit",
+        "ticket_id": "T20260226.0032",
+        "job_id": "agent-m-job-20260226T211708Z",
+        "command_id": "9dbe3825-0571-4405-b1f2-9f6239f5402c"
+      },
+      "metadata": {
+        "command_type": "update",
+        "failure_class": "terminal",
+        "attempts": 1,
+        "status": "failed"
+      }
+    },
+    {
+      "audit_id": "64c328af-dffc-4003-82e9-7215637f105f",
+      "timestamp": "2026-02-26T21:17:10.374Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_webhook"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0032"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "agent-m-s2-20260226T211708Z-sync",
+        "ticket_id": "T20260226.0032",
+        "job_id": "agent-m-job-20260226T211708Z",
+        "command_id": "9dbe3825-0571-4405-b1f2-9f6239f5402c"
+      },
+      "metadata": {
+        "event_type": "ticket.updated",
+        "event_id": "agent-m-sync-20260226T211708Z",
+        "provenance": {
+          "source": "autotask_webhook",
+          "fetched_at": "2026-02-26T21:17:10.373Z",
+          "adapter_version": "agent-m-validation",
+          "sync_cursor": "agent-m-sync-20260226T211708Z"
+        }
+      }
+    },
+    {
+      "audit_id": "0fcca5ff-0af9-47eb-ba2b-77310915f1b2",
+      "timestamp": "2026-02-26T21:17:11.560Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-reconcile",
+        "origin": "autotask_reconcile"
+      },
+      "action": "workflow.reconciliation.mismatch",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0032"
+      },
+      "result": "failure",
+      "reason": "autotask_snapshot_mismatch",
+      "correlation": {
+        "trace_id": "agent-m-s2-20260226T211708Z-reconcile",
+        "ticket_id": "T20260226.0032"
+      },
+      "metadata": {
+        "issue_id": "c4d681d7-a308-4be3-8aa8-840ab25889d3",
+        "local_snapshot": {
+          "status": "In Progress",
+          "assigned_to": ""
+        },
+        "remote_snapshot": {
+          "status": "1",
+          "assigned_to": ""
+        }
+      }
+    },
+    {
+      "audit_id": "4604103e-ef75-47a7-8e8b-f3c15ef0bca0",
+      "timestamp": "2026-02-26T21:22:44.388Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132810",
+        "ticket_id": "T20260226.0033"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132810:ticket.created:2026-02-26T21:22:27.203Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T21:22:44.384Z"
+        }
+      }
     }
   ],
   "processedSyncEvents": [
@@ -654,7 +914,11 @@
     "5b5f7e25-2396-4bec-a584-41352be7e876::agent-h-sync-evt-001",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132805:ticket.created:2026-02-26T19:07:36.093Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132806:ticket.created:2026-02-26T19:17:06.657Z",
-    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132807:ticket.created:2026-02-26T19:34:54.780Z"
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132807:ticket.created:2026-02-26T19:34:54.780Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132808:ticket.created:2026-02-26T20:19:12.543Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132809:ticket.created:2026-02-26T20:54:31.910Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::agent-m-sync-20260226T211708Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132810:ticket.created:2026-02-26T21:22:27.203Z"
   ],
   "inbox": [
     [
@@ -908,7 +1172,85 @@
         "source_of_truth": "Autotask",
         "updated_at": "2026-02-26T19:35:02.235Z"
       }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0031",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0031",
+        "external_id": "132808",
+        "title": "Ensure Email Delivery from Current and New Autodesk Forma Domains",
+        "description": "Please see email below. Can you please ensure that we continue to receive emails from the current domain and the new domain? More info is listed below.\r\n\r\nThanks!\r\n\r\nGretchen Hommrich Adams\r\nPMC | Consulting Engineers<http://www.powermgmt.com/>\r\n(615) 760-2621\r\n\r\nFrom: David Sierra <dsierra@powermgmt.com>\r\nSent: Thursday, February 26, 2026 12:33 PM\r\nTo: Gretchen Hommrich <ghommrich@powermgmt.com>\r\nSubject: Fw: Important: Autodesk Forma Email Notification Sender Update\r\n\r\nI'm not sure if you or anyone else gets these emails.\r\n\r\n\r\nThanks,\r\n\r\n-Dave\r\n\r\n\r\n\r\nDAVID H. SIERRA, P.E.\r\n\r\nMechanical Engineer\r\n\r\n\r\n\r\nPMC | Consulting Engineers\r\n\r\nDirect: 615-760-2622\r\n\r\nwww.powermgmt.com<http://www.powermgmt.com/>\r\n\r\n\r\n\r\n________________________________\r\nFrom: Autodesk Construction Team <comms@acs.autodesk.com<mailto:comms@acs.autodesk.com>>\r\nSent: Thursday, February 26, 2026 11:09 AM\r\nTo: David Sierra <dsierra@powermgmt.com<mailto:dsierra@powermgmt.com>>\r\nSubject: Important: Autodesk Forma Email Notification Sender Update\r\n\r\n\r\nDear Account Administrator,\r\n\r\nStarting March 24, 2026, as part of the update from Autodesk Construction Cloud to Autodesk Forma, notification emails will transition to updated email sender domains (i.e. no-reply@mail.forma[.region].autodesk.com<mailto:no-reply@mail.forma[.region].autodesk.com>, etc.)\r\n\r\nAction recommended:\r\nTo allow notification emails to continue to be delivered as expected, please:\r\n\r\n  1.  Continue to maintain acc.autodesk.com on any existing allowlisting or safe-sender settings\r\n  2.  Visit the Help content here<https://emconstruction.autodesk.com/n/NTcyLUpTVi03NzUAAAGgOeYFv1WUVdlkNNQYewjpxV-sA_isadcRsljtUEkdGuWc49dVxBYygluasHF_SxhXBV6NyAw=> for details and instructions about the Autodesk Forma email sender domain updates\r\n  3.  Update any existing allowlisting or safe-sender settings to include your region-specific domains listed in the Help content\r\n\r\nIf your organization uses email security controls or quarantine workflows, you may wish to confirm delivery settings are aligned.\r\n\r\nPlease remind project members to review any personal inbox rules related to notification emails. Additionally, project teams can always update their in-product notification settings. Finally, no product URLs or links are currently changing.\r\n\r\nAdditional email notifications and in-product reminders over the next month will reinforce this update. If you have any questions, please use the in-product support chat.\r\n\r\nThank you,\r\nAutodesk Forma\r\n\r\nAutodesk\r\nOne Market Street, Suite 400, San Francisco, CA 94105\r\n? Autodesk, Inc. All rights reserved\r\nUnsubscribe<https://emconstruction.autodesk.com/NTcyLUpTVi03NzUAAAGgOeYFv8G0Wol_z2jHZmoI-GjvILnFdvpFEcd91MRY8aA-DqnOE-pgFpU7mUmhFzcC43rIEag=> | Privacy Policy<https://emconstruction.autodesk.com/NTcyLUpTVi03NzUAAAGgOeYFv-bhZwbzYLCDyHJxkmmMjzmYJC4cmQx8Azis12Vjny8vve0mjXIgn52JSeV0vvGDF5w=>\r\n\r\nCaution\r\nExternal Message\r\n________________________________",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-26T20:21:59.879Z",
+        "last_event_occurred_at": "2026-02-26T20:19:12.543Z",
+        "last_event_id": "autotask-poller:132808:ticket.created:2026-02-26T20:19:12.543Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T20:21:59.879Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0032",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0032",
+        "external_id": "132809",
+        "title": "Undelivered Mail Returned to Sender",
+        "description": "From MAILER-DAEMON@autotask.net (Mail Delivery System): This is the mail system at host phl-p-mail04.autotask.net.\r\n\r\nI'm sorry to have to inform you that your message could not\r\nbe delivered to one or more recipients. It's attached below.\r\n\r\nFor further assistance, please send mail to postmaster.\r\n\r\nIf you do so, please include this problem report. You can\r\ndelete your own text from the attached returned message.\r\n\r\n                   The mail system\r\n\r\n<do-not-reply@portal.checkpoint.com>: connect to\r\n    tls2-us.checkpoint.com[209.87.222.180]:25: Connection timed out",
+        "status": "In Progress",
+        "comments": [],
+        "last_sync_at": "2026-02-26T21:17:10.374Z",
+        "last_event_occurred_at": "2026-02-26T21:17:10.373Z",
+        "last_event_id": "agent-m-sync-20260226T211708Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T21:17:10.374Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0033",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0033",
+        "external_id": "132810",
+        "title": "Test",
+        "status": "1",
+        "assigned_to": "30684582",
+        "queue_id": 29682833,
+        "comments": [],
+        "last_sync_at": "2026-02-26T21:22:44.387Z",
+        "last_event_occurred_at": "2026-02-26T21:22:27.203Z",
+        "last_event_id": "autotask-poller:132810:ticket.created:2026-02-26T21:22:27.203Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T21:22:44.387Z"
+      }
     ]
   ],
-  "reconciliationIssues": []
+  "reconciliationIssues": [
+    {
+      "id": "c4d681d7-a308-4be3-8aa8-840ab25889d3",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "ticket_id": "T20260226.0032",
+      "detected_at": "2026-02-26T21:17:11.559Z",
+      "severity": "warning",
+      "reason": "autotask_snapshot_mismatch",
+      "local_snapshot": {
+        "status": "In Progress",
+        "assigned_to": ""
+      },
+      "remote_snapshot": {
+        "status": "1",
+        "assigned_to": ""
+      },
+      "correlation": {
+        "trace_id": "agent-m-s2-20260226T211708Z-reconcile",
+        "ticket_id": "T20260226.0032"
+      },
+      "provenance": {
+        "source": "autotask_reconcile",
+        "fetched_at": "2026-02-26T21:17:11.559Z"
+      }
+    }
+  ]
 }

@@ -1,0 +1,8 @@
+5:- Decision status: `CONDITIONAL`
+21:- Remediation follow-up bundle (Agent J): `docs/validation/runs/followup-2026-02-26-agent-j-phase4-remediation/`
+29:- Agent J remediation output: `FOUND` and reviewed (`followup-2026-02-26-agent-j-phase4-remediation`).
+75:### Gate G1 — Autotask two-way happy-path proof (required)
+87:### Gate G2 — Reconcile 429 degraded/retry semantics (DEF-H-001)
+97:### Gate G3 — F4 integrity mismatch rerun closure (DEF-H-002)
+107:### Gate G4 — Founder signoff confirmation after evidence refresh (required)
+145:- This package is `READY FOR FOUNDER REVIEW`, but **not sufficient for Phase 5 external Wave 1 launch approval** while `G1` remains open (and `G4` founder decision is pending).

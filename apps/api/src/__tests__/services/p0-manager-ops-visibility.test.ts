@@ -108,4 +108,21 @@ describe('P0ManagerOpsVisibilityService', () => {
       ])
     );
   });
+
+  it('flags queue coverage mismatch when visibility snapshot input omits an AI-reviewed ticket (expected conditional)', () => {
+    const service = new P0ManagerOpsVisibilityService();
+    const snapshot = service.buildSnapshot({
+      tenantId: 'tenant-1',
+      queueItems: [{ ticket_id: 'T-QUEUE-1', queue: 'Service Desk', sla_status: 'healthy' }],
+      aiDecisions: [buildDecision({ decision_id: 'd-missing', ticket_id: 'VAL-H-S1-001', hitl_status: 'pending', confidence: 0.58 })],
+      auditRecords: [],
+      sampleSize: 5,
+    });
+
+    expect(snapshot.qa_sampling.tickets.some((t) => t.ticket_id === 'VAL-H-S1-001')).toBe(true);
+    expect(snapshot.integrity_checks.ok).toBe(false);
+    expect(snapshot.integrity_checks.issues).toEqual(
+      expect.arrayContaining([expect.stringContaining('ai_decision_not_in_queue_snapshot:d-missing')]),
+    );
+  });
 });

@@ -1,4 +1,5 @@
 import { Router, type Request, type Response, type Router as ExpressRouter } from 'express';
+import { classifyQueueError } from '../platform/errors.js';
 import {
   WorkflowPolicyError,
   buildCommandEnvelope,
@@ -176,6 +177,20 @@ router.post('/reconcile/:ticketId', async (req, res, next) => {
     });
     res.json({ success: true, data: result, timestamp: new Date().toISOString() });
   } catch (error) {
+    const classified = classifyQueueError(error);
+    if (classified.code === 'RATE_LIMIT' || classified.code === 'TIMEOUT') {
+      const statusCode = classified.code === 'RATE_LIMIT' ? 429 : 504;
+      res.status(statusCode).json({
+        error: classified.code === 'RATE_LIMIT' ? 'RATE_LIMITED' : 'GATEWAY_TIMEOUT',
+        code: `WORKFLOW_RECONCILE_${classified.code}`,
+        message: 'Autotask reconcile snapshot fetch failed; retry later',
+        statusCode,
+        retryable: true,
+        classification: classified,
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
     next(error);
   }
 });

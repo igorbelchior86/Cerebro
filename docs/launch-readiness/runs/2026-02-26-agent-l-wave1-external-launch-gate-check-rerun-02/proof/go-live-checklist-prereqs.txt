@@ -1,0 +1,3 @@
+4:- [ ] P0 stack credentials configured (Autotask, IT Glue, Ninja, SentinelOne, Check Point)
+5:- [ ] Autotask two-way test passed on approved test ticket
+26:- [ ] Founder signoff: go-live approved

@@ -1,0 +1,48 @@
+{
+  "captured_at": "2026-02-26T21:17:11Z",
+  "session_id": "refresh-val-2026-02-26-agent-m-g1",
+  "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+  "ticket_id": "T20260226.0032",
+  "command_id": "9dbe3825-0571-4405-b1f2-9f6239f5402c",
+  "stages": [
+    {
+      "stage": "submit",
+      "http_status": 202,
+      "correlation_id": "agent-m-s2-20260226T211708Z-submit"
+    },
+    {
+      "stage": "process",
+      "http_status": 200,
+      "correlation_id": "agent-m-s2-20260226T211708Z-process"
+    },
+    {
+      "stage": "status",
+      "http_status": 200,
+      "correlation_id": "agent-m-s2-20260226T211708Z-status"
+    },
+    {
+      "stage": "sync",
+      "http_status": 200,
+      "correlation_id": "agent-m-s2-20260226T211708Z-sync"
+    },
+    {
+      "stage": "reconcile",
+      "http_status": 200,
+      "correlation_id": "agent-m-s2-20260226T211708Z-reconcile"
+    },
+    {
+      "stage": "audit",
+      "http_status": 200,
+      "correlation_id": "agent-m-s2-20260226T211708Z-audit"
+    }
+  ],
+  "audit_linkage": {
+    "audit_count": 5,
+    "trace_ids_from_audit": [
+      "agent-m-s2-20260226T211708Z-reconcile",
+      "agent-m-s2-20260226T211708Z-submit",
+      "agent-m-s2-20260226T211708Z-sync",
+      "autotask-poller-132809"
+    ]
+  }
+}

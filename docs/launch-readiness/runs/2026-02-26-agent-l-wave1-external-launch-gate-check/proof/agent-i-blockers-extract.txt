@@ -1,0 +1,3 @@
+71:  - Founder + tenant admin signoff: blocked (no external tenant/founder signoff artifact attached)
+105:- `BLK-002`: No real design-partner tenant identity/credentials and approved onboarding test tickets provided for P0 integration onboarding.
+109:- **Recommendation: PAUSE (do not proceed to external Wave 1 yet)**.

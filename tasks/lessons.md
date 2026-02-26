@@ -597,3 +597,9 @@
 **Root cause**: Eu priorizei continuidade de metadata/UX local acima de uma restrição arquitetural explícita e repetida pelo usuário.
 **Rule**: Quando o usuário disser que um fluxo legado foi removido e quer zero referência, eliminar completamente chamadas, fallbacks, comentários e docs relacionados naquele path antes de qualquer refinamento.
 **Pattern**: Integração UI em boundary novo + fonte legado “conveniente” => risco de violar regra de arquitetura se eu tentar mesclar por conveniência.
+
+## Lesson: 2026-02-26 (re-scan latest untracked validation follow-up bundles before final signoff)
+**Mistake**: Finalizei um pacote de signoff da Fase 4 usando apenas o bundle live do Agent H e declarei ausência de remediação, mas o follow-up do Agent J já existia como artefato não rastreado no workspace.
+**Root cause**: No primeiro passe, o scan de "latest evidence" não tratou diretórios `docs/validation/runs/followup-*` não rastreados como candidatos de mesma prioridade.
+**Rule**: Em tarefas de signoff/readiness com múltiplos agentes, sempre reescanear `docs/validation/runs/` (incluindo bundles `followup-*` não rastreados) imediatamente antes de consolidar a decisão final.
+**Pattern**: Pacote final cita "remediation not found" enquanto existem novos arquivos `followup-*` no `git status` => rerun obrigatório do consolidation pass.

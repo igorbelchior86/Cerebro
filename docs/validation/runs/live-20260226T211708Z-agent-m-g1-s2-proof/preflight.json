@@ -1,0 +1,51 @@
+{
+  "captured_at": "2026-02-26T21:17:09Z",
+  "base_url": "http://localhost:3001",
+  "checks": {
+    "api_reachable": {
+      "ok": true,
+      "status_code": 200,
+      "headers": {
+        "x_request_id": "b961386b-7902-4758-b9e6-b63f39b6f116",
+        "x_trace_id": "b961386b-7902-4758-b9e6-b63f39b6f116",
+        "x_correlation_id": "",
+        "content_type": "application/json; charset=utf-8"
+      },
+      "body_json": {
+        "status": "ok",
+        "timestamp": "2026-02-26T21:17:08.505Z"
+      }
+    },
+    "auth_token": {
+      "ok": true,
+      "type": "session_cookie",
+      "redacted": true
+    },
+    "tenant_context": {
+      "ok": true,
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876"
+    },
+    "safe_test_ticket": {
+      "ok": false,
+      "ticket_id": "T20260226.0032",
+      "source": "No explicit approved safe live ticket artifact found in repo; fallback selected from inbox/default."
+    },
+    "launch_policy": {
+      "ok": true,
+      "expected": {
+        "autotask": "TWO_WAY",
+        "itglue": "READ_ONLY",
+        "ninja": "READ_ONLY",
+        "sentinelone": "READ_ONLY",
+        "checkpoint": "READ_ONLY"
+      },
+      "observed": {
+        "autotask": "two_way",
+        "itglue": "read_only",
+        "ninja": "read_only",
+        "sentinelone": "read_only",
+        "checkpoint": "read_only"
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "scenario": "DEF-H-001 targeted route reproduction (mocked upstream 429)",
+  "result": {
+    "statusCode": 429,
+    "body": {
+      "error": "RATE_LIMITED",
+      "code": "WORKFLOW_RECONCILE_RATE_LIMIT",
+      "message": "Autotask reconcile snapshot fetch failed; retry later",
+      "statusCode": 429,
+      "retryable": true,
+      "classification": {
+        "code": "RATE_LIMIT",
+        "disposition": "retry",
+        "reason": "Autotask API error: 429 "
+      }
+    }
+  },
+  "verified_by": "apps/api/src/__tests__/routes/workflow.reconcile-route.test.ts",
+  "timestamp": "2026-02-26T00:00:00.000Z"
+}

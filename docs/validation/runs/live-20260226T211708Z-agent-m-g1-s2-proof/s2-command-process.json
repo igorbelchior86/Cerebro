@@ -1,0 +1,33 @@
+{
+  "captured_at": "2026-02-26T21:17:10Z",
+  "request": {
+    "method": "POST",
+    "path": "/workflow/commands/process",
+    "correlation_id": "agent-m-s2-20260226T211708Z-process",
+    "job_id": "agent-m-job-20260226T211708Z",
+    "body": {
+      "limit": 10
+    }
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "agent-m-s2-20260226T211708Z-process",
+      "x_trace_id": "agent-m-s2-20260226T211708Z-process",
+      "x_correlation_id": "",
+      "content_type": "application/json; charset=utf-8"
+    },
+    "body_json": {
+      "success": true,
+      "data": {
+        "processed": 1,
+        "completed": 0,
+        "retried": 0,
+        "dlq": 0,
+        "failed": 1
+      },
+      "timestamp": "2026-02-26T21:17:10.307Z"
+    },
+    "body_text": "{\"success\":true,\"data\":{\"processed\":1,\"completed\":0,\"retried\":0,\"dlq\":0,\"failed\":1},\"timestamp\":\"2026-02-26T21:17:10.307Z\"}"
+  }
+}

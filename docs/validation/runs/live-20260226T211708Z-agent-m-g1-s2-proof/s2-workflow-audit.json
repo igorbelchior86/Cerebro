@@ -1,0 +1,184 @@
+{
+  "captured_at": "2026-02-26T21:17:11Z",
+  "request": {
+    "method": "GET",
+    "path": "/workflow/audit/T20260226.0032",
+    "correlation_id": "agent-m-s2-20260226T211708Z-audit",
+    "job_id": "agent-m-job-20260226T211708Z",
+    "body": null
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "agent-m-s2-20260226T211708Z-audit",
+      "x_trace_id": "agent-m-s2-20260226T211708Z-audit",
+      "x_correlation_id": "",
+      "content_type": "application/json; charset=utf-8"
+    },
+    "body_json": {
+      "success": true,
+      "data": [
+        {
+          "audit_id": "39abd7b4-cc7a-456e-8659-d66c76ddd943",
+          "timestamp": "2026-02-26T20:55:02.120Z",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "actor": {
+            "kind": "system",
+            "id": "autotask-sync",
+            "origin": "autotask_poller"
+          },
+          "action": "workflow.sync.applied",
+          "target": {
+            "integration": "Autotask",
+            "entity_type": "ticket",
+            "entity_id": "T20260226.0032"
+          },
+          "result": "success",
+          "correlation": {
+            "trace_id": "autotask-poller-132809",
+            "ticket_id": "T20260226.0032"
+          },
+          "metadata": {
+            "event_type": "ticket.created",
+            "event_id": "autotask-poller:132809:ticket.created:2026-02-26T20:54:31.910Z",
+            "provenance": {
+              "source": "autotask_poller",
+              "fetched_at": "2026-02-26T20:55:02.117Z"
+            }
+          }
+        },
+        {
+          "audit_id": "205720f7-fd0e-4515-beeb-ee5fc0ed346f",
+          "timestamp": "2026-02-26T21:17:09.039Z",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "action": "workflow.command.accepted",
+          "target": {
+            "integration": "Autotask",
+            "entity_type": "ticket",
+            "entity_id": "T20260226.0032"
+          },
+          "result": "success",
+          "correlation": {
+            "trace_id": "agent-m-s2-20260226T211708Z-submit",
+            "ticket_id": "T20260226.0032",
+            "job_id": "agent-m-job-20260226T211708Z",
+            "command_id": "9dbe3825-0571-4405-b1f2-9f6239f5402c"
+          },
+          "metadata": {
+            "command_type": "update",
+            "idempotency_key": "agent-m-s2-idem-20260226T211708Z",
+            "audit_metadata": {
+              "validation_session": "refresh-val-2026-02-26-agent-m-g1",
+              "scenario": "S2",
+              "agent": "agent-m"
+            }
+          }
+        },
+        {
+          "audit_id": "7a815b3c-6dbd-4fd8-815e-015dae6c8acf",
+          "timestamp": "2026-02-26T21:17:10.306Z",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "action": "workflow.command.failed",
+          "target": {
+            "integration": "Autotask",
+            "entity_type": "ticket",
+            "entity_id": "T20260226.0032"
+          },
+          "result": "failure",
+          "reason": "Autotask API error: 404 Not Found",
+          "correlation": {
+            "trace_id": "agent-m-s2-20260226T211708Z-submit",
+            "ticket_id": "T20260226.0032",
+            "job_id": "agent-m-job-20260226T211708Z",
+            "command_id": "9dbe3825-0571-4405-b1f2-9f6239f5402c"
+          },
+          "metadata": {
+            "command_type": "update",
+            "failure_class": "terminal",
+            "attempts": 1,
+            "status": "failed"
+          }
+        },
+        {
+          "audit_id": "64c328af-dffc-4003-82e9-7215637f105f",
+          "timestamp": "2026-02-26T21:17:10.374Z",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "actor": {
+            "kind": "system",
+            "id": "autotask-sync",
+            "origin": "autotask_webhook"
+          },
+          "action": "workflow.sync.applied",
+          "target": {
+            "integration": "Autotask",
+            "entity_type": "ticket",
+            "entity_id": "T20260226.0032"
+          },
+          "result": "success",
+          "correlation": {
+            "trace_id": "agent-m-s2-20260226T211708Z-sync",
+            "ticket_id": "T20260226.0032",
+            "job_id": "agent-m-job-20260226T211708Z",
+            "command_id": "9dbe3825-0571-4405-b1f2-9f6239f5402c"
+          },
+          "metadata": {
+            "event_type": "ticket.updated",
+            "event_id": "agent-m-sync-20260226T211708Z",
+            "provenance": {
+              "source": "autotask_webhook",
+              "fetched_at": "2026-02-26T21:17:10.373Z",
+              "adapter_version": "agent-m-validation",
+              "sync_cursor": "agent-m-sync-20260226T211708Z"
+            }
+          }
+        },
+        {
+          "audit_id": "0fcca5ff-0af9-47eb-ba2b-77310915f1b2",
+          "timestamp": "2026-02-26T21:17:11.560Z",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "actor": {
+            "kind": "system",
+            "id": "autotask-reconcile",
+            "origin": "autotask_reconcile"
+          },
+          "action": "workflow.reconciliation.mismatch",
+          "target": {
+            "integration": "Autotask",
+            "entity_type": "ticket",
+            "entity_id": "T20260226.0032"
+          },
+          "result": "failure",
+          "reason": "autotask_snapshot_mismatch",
+          "correlation": {
+            "trace_id": "agent-m-s2-20260226T211708Z-reconcile",
+            "ticket_id": "T20260226.0032"
+          },
+          "metadata": {
+            "issue_id": "c4d681d7-a308-4be3-8aa8-840ab25889d3",
+            "local_snapshot": {
+              "status": "In Progress",
+              "assigned_to": ""
+            },
+            "remote_snapshot": {
+              "status": "1",
+              "assigned_to": ""
+            }
+          }
+        }
+      ],
+      "count": 5,
+      "timestamp": "2026-02-26T21:17:11.597Z"
+    },
+    "body_text": "{\"success\":true,\"data\":[{\"audit_id\":\"39abd7b4-cc7a-456e-8659-d66c76ddd943\",\"timestamp\":\"2026-02-26T20:55:02.120Z\",\"tenant_id\":\"5b5f7e25-2396-4bec-a584-41352be7e876\",\"actor\":{\"kind\":\"system\",\"id\":\"autotask-sync\",\"origin\":\"autotask_poller\"},\"action\":\"workflow.sync.applied\",\"target\":{\"integration\":\"Autotask\",\"entity_type\":\"ticket\",\"entity_id\":\"T20260226.0032\"},\"result\":\"success\",\"correlation\":{\"trace_id\":\"autotask-poller-132809\",\"ticket_id\":\"T20260226.0032\"},\"metadata\":{\"event_type\":\"ticket.created\",\"event_id\":\"autotask-poller:132809:ticket.created:2026-02-26T20:54:31.910Z\",\"provenance\":{\"source\":\"autotask_poller\",\"fetched_at\":\"2026-02-26T20:55:02.117Z\"}}},{\"audit_id\":\"205720f7-fd0e-4515-beeb-ee5fc0ed346f\",\"timestamp\":\"2026-02-26T21:17:09.039Z\",\"tenant_id\":\"5b5f7e25-2396-4bec-a584-41352be7e876\",\"actor\":{\"kind\":\"user\",\"id\":\"606d9dcc-624f-42bd-95fe-5bac5f8fc2ed\",\"origin\":\"api\"},\"action\":\"workflow.command.accepted\",\"target\":{\"integration\":\"Autotask\",\"entity_type\":\"ticket\",\"entity_id\":\"T20260226.0032\"},\"result\":\"success\",\"correlation\":{\"trace_id\":\"agent-m-s2-20260226T211708Z-submit\",\"ticket_id\":\"T20260226.0032\",\"job_id\":\"agent-m-job-20260226T211708Z\",\"command_id\":\"9dbe3825-0571-4405-b1f2-9f6239f5402c\"},\"metadata\":{\"command_type\":\"update\",\"idempotency_key\":\"agent-m-s2-idem-20260226T211708Z\",\"audit_metadata\":{\"validation_session\":\"refresh-val-2026-02-26-agent-m-g1\",\"scenario\":\"S2\",\"agent\":\"agent-m\"}}},{\"audit_id\":\"7a815b3c-6dbd-4fd8-815e-015dae6c8acf\",\"timestamp\":\"2026-02-26T21:17:10.306Z\",\"tenant_id\":\"5b5f7e25-2396-4bec-a584-41352be7e876\",\"actor\":{\"kind\":\"user\",\"id\":\"606d9dcc-624f-42bd-95fe-5bac5f8fc2ed\",\"origin\":\"api\"},\"action\":\"workflow.command.failed\",\"target\":{\"integration\":\"Autotask\",\"entity_type\":\"ticket\",\"entity_id\":\"T20260226.0032\"},\"result\":\"failure\",\"reason\":\"Autotask API error: 404 Not Found\",\"correlation\":{\"trace_id\":\"agent-m-s2-20260226T211708Z-submit\",\"ticket_id\":\"T20260226.0032\",\"job_id\":\"agent-m-job-20260226T211708Z\",\"command_id\":\"9dbe3825-0571-4405-b1f2-9f6239f5402c\"},\"metadata\":{\"command_type\":\"update\",\"failure_class\":\"terminal\",\"attempts\":1,\"status\":\"failed\"}},{\"audit_id\":\"64c328af-dffc-4003-82e9-7215637f105f\",\"timestamp\":\"2026-02-26T21:17:10.374Z\",\"tenant_id\":\"5b5f7e25-2396-4bec-a584-41352be7e876\",\"actor\":{\"kind\":\"system\",\"id\":\"autotask-sync\",\"origin\":\"autotask_webhook\"},\"action\":\"workflow.sync.applied\",\"target\":{\"integration\":\"Autotask\",\"entity_type\":\"ticket\",\"entity_id\":\"T20260226.0032\"},\"result\":\"success\",\"correlation\":{\"trace_id\":\"agent-m-s2-20260226T211708Z-sync\",\"ticket_id\":\"T20260226.0032\",\"job_id\":\"agent-m-job-20260226T211708Z\",\"command_id\":\"9dbe3825-0571-4405-b1f2-9f6239f5402c\"},\"metadata\":{\"event_type\":\"ticket.updated\",\"event_id\":\"agent-m-sync-20260226T211708Z\",\"provenance\":{\"source\":\"autotask_webhook\",\"fetched_at\":\"2026-02-26T21:17:10.373Z\",\"adapter_version\":\"agent-m-validation\",\"sync_cursor\":\"agent-m-sync-20260226T211708Z\"}}},{\"audit_id\":\"0fcca5ff-0af9-47eb-ba2b-77310915f1b2\",\"timestamp\":\"2026-02-26T21:17:11.560Z\",\"tenant_id\":\"5b5f7e25-2396-4bec-a584-41352be7e876\",\"actor\":{\"kind\":\"system\",\"id\":\"autotask-reconcile\",\"origin\":\"autotask_reconcile\"},\"action\":\"workflow.reconciliation.mismatch\",\"target\":{\"integration\":\"Autotask\",\"entity_type\":\"ticket\",\"entity_id\":\"T20260226.0032\"},\"result\":\"failure\",\"reason\":\"autotask_snapshot_mismatch\",\"correlation\":{\"trace_id\":\"agent-m-s2-20260226T211708Z-reconcile\",\"ticket_id\":\"T20260226.0032\"},\"metadata\":{\"issue_id\":\"c4d681d7-a308-4be3-8aa8-840ab25889d3\",\"local_snapshot\":{\"status\":\"In Progress\",\"assigned_to\":\"\"},\"remote_snapshot\":{\"status\":\"1\",\"assigned_to\":\"\"}}}],\"count\":5,\"timestamp\":\"2026-02-26T21:17:11.597Z\"}"
+  }
+}

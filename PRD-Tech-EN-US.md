@@ -1043,17 +1043,26 @@ Batch 2 (next 3 parallel prompts) completion summary:
 - `[x]` Agent F (Phase 5 prep): rollout-control durability hardening, rollout/rollback procedures, launch-readiness runbooks/checklists, rollout dry-run
 - `[x]` Batch 2 validation green (`types/api typecheck`, targeted D/F suites, evidence-capture dry-run, rollout dry-run)
 
+Batch 3 (UI + live validation + local launch preflight) completion summary:
+- `[~]` Agent G (P0 frontend UI wiring): first visible P0 UI routes/surfaces implemented and web build/typecheck green; browser validation showed inbox working but ticket detail and manager ops pages require follow-up integration/bug fixes
+- `[x]` Agent H (Phase 4 live validation execution): authenticated live API validation executed, evidence bundle captured, acceptance matrix/QA sampling/defect log/conditional decision packet populated
+- `[x]` Agent I (Phase 5 local preflight execution): real local tenant-scoped rollout/rollback drills executed, guardrails verified in practice, hypercare-style signals captured, recommendation `PAUSE` pending founder signoff + partner credentials
+- `[x]` Batch 3 CLI validation green (`web typecheck/build`, `api typecheck`, rollout-control tests, rollout dry-run, artifact integrity checks)
+
 Known follow-ups already identified (not blockers for Batch 1 completion):
 - `[x]` Replace in-memory runtime stores/scaffolds (queue/audit/trust/workflow state) with durable backing for bounded P0 single-host operation (file-backed JSON persistence for workflow/trust/rollout control)
 - `[x]` Consolidate Agent C additive trust-layer types to import CP0 shared contracts directly (`cp0-contracts.ts`) via CP0-based trust contracts
 - `[x]` Wire existing Autotask polling runtime into the new workflow core sync ingestion path
 - `[~]` Upgrade local file-backed durability to multi-process/shared transactional storage for production-grade scale
-- `[~]` Execute live Refresh internal validation session (Phase 4) with real tenant/operator flows and fill decision packet
-- `[~]` Execute controlled design-partner launch Wave 0/1 with real telemetry and hypercare evidence
+- `[x]` Execute live Refresh internal validation session (Phase 4) with real tenant/operator flows and fill decision packet (conditional result captured)
+- `[x]` Execute controlled design-partner launch Wave 0/1 local preflight with telemetry and hypercare evidence (local preflight only; external wave still pending)
+- `[~]` Fix/finish integrated P0 UI ticket detail and manager ops pages in the canonical Cerebro UX (Agent G follow-up)
+- `[~]` Close Phase 4 hard gates from live validation (Autotask two-way happy-path proof, F4 integrity mismatch remediation, founder signoff artifact)
+- `[~]` Execute external design-partner Wave 1 rollout with approved signoff + real partner credentials/onboarding scope
 
 #### UI Visibility Remark (Reminder)
 
-At this stage (Batches 1-2), most delivered work is backend/platform/runtime, internal routes, hardening, and operational tooling. Minimal or no visible product UI changes are expected yet.
+At this stage (Batches 1-3), backend/platform/runtime and operational tooling are implemented; UI wiring has started, but visible P0 UX is still in transition and requires integration polish/fixes.
 
 UI-visible changes should start when implementation explicitly targets frontend wiring for:
 - inbox screens consuming the new workflow core
@@ -1081,7 +1090,7 @@ Reminder for future reviews: do not use "no visible UI change" as a signal that 
 - error handling + retry/DLQ
 
 ##### WS-C. Inbox & Workflow Core
-**Status:** `[x] Completed (Batch 1)` — unified inbox projection + ticket command routes/flows (P0 core path)
+**Status:** `[~] Backend complete; frontend integration in progress (Batches 1-3)` — unified inbox projection + ticket command routes/flows implemented, first UI wiring delivered, detail-page integration still needs follow-up
 - unified inbox (chat/email)
 - ticket command UX
 - internal/public comments
@@ -1102,7 +1111,7 @@ Reminder for future reviews: do not use "no visible UI change" as a signal that 
 - Check Point perimeter/network/security enrichment
 
 ##### WS-F. Manager Visibility + Ops Readiness
-**Status:** `[~] Substantially completed (Batches 1-2)` — manager visibility + AI/audit views + QA sampling + runbooks + validation/launch frameworks implemented; live execution/measurement still pending
+**Status:** `[~] Substantially completed (Batches 1-3)` — manager visibility + AI/audit views + QA sampling + runbooks + validation/launch frameworks implemented; live API validation executed, UI integration and launch signoff/partner execution still pending
 - queue/SLA dashboard
 - automation/AI audit views
 - runbooks for degraded mode and reconciliation
@@ -1166,7 +1175,7 @@ Reminder for future reviews: do not use "no visible UI change" as a signal that 
 - reconciliation jobs and degraded-mode runbooks tested
 
 ##### Phase 4 — Refresh Internal Validation (Weeks 12-14)
-**Status:** `[~] Framework complete (Batch 2); live Refresh execution pending`
+**Status:** `[~] Live validation executed (Batch 3); remediation loop + founder signoff pending`
 **Primary goal:** validate with real workflows and identify gaps before external launch
 
 - production-like usage with Refresh operators/technicians
@@ -1179,7 +1188,7 @@ Reminder for future reviews: do not use "no visible UI change" as a signal that 
 - launch/no-launch decision documented
 
 ##### Phase 5 — Controlled Design-Partner Launch (Weeks 15-18)
-**Status:** `[~] Launch-readiness preparation complete (Batch 2); live cohort rollout pending`
+**Status:** `[~] Local preflight executed (Batch 3); external Wave 1 rollout pending founder signoff + partner credentials`
 **Primary goal:** limited external rollout with guardrails
 
 - per-tenant feature-flag rollout

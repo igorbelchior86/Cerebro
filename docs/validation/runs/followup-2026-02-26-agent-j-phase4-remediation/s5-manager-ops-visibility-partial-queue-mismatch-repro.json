@@ -1,0 +1,23 @@
+{
+  "scenario": "DEF-H-002 targeted reproduction (partial queue snapshot input omits AI-reviewed ticket)",
+  "queue_items": [
+    { "ticket_id": "T-QUEUE-1", "queue": "Service Desk", "sla_status": "healthy" }
+  ],
+  "ai_decisions": [
+    { "decision_id": "d-missing", "ticket_id": "VAL-H-S1-001", "hitl_status": "pending", "confidence": 0.58 }
+  ],
+  "expected_behavior": "integrity_checks flags ai_decision_not_in_queue_snapshot to prevent false confidence when queue snapshot input is partial",
+  "result": {
+    "qa_sampling": {
+      "tickets": [
+        { "ticket_id": "VAL-H-S1-001", "reason": "HITL pending + Low confidence" }
+      ]
+    },
+    "integrity_checks": {
+      "ok": false,
+      "issues": ["ai_decision_not_in_queue_snapshot:d-missing"]
+    }
+  },
+  "verified_by": "apps/api/src/__tests__/services/p0-manager-ops-visibility.test.ts",
+  "timestamp": "2026-02-26T00:00:00.000Z"
+}

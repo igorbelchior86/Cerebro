@@ -347,4 +347,29 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     const audit = await service.listAuditByTicket(tenantId, '9999');
     expect(audit.some((r) => r.action === 'workflow.reconciliation.skipped_fetch_unavailable')).toBe(true);
   });
+
+  it('audits reconcile fetch failure classification when Autotask snapshot fetch is rate-limited', async () => {
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn(),
+      fetchTicketSnapshot: jest.fn().mockRejectedValue(new Error('Autotask API error: 429 ')),
+    };
+    const { service } = createService(gateway);
+
+    await expect(
+      service.reconcileTicket(tenantId, 'VAL-H-S2-001', { trace_id: 'trace-rate-limit', ticket_id: 'VAL-H-S2-001' }),
+    ).rejects.toThrow('429');
+
+    const audit = await service.listAuditByTicket(tenantId, 'VAL-H-S2-001');
+    const fetchFailed = audit.find((r) => r.action === 'workflow.reconciliation.fetch_failed');
+    expect(fetchFailed).toBeTruthy();
+    expect(fetchFailed?.reason).toBe('autotask_snapshot_fetch_rate_limited');
+    expect(fetchFailed?.metadata).toMatchObject({
+      retryable: true,
+      degraded_mode: true,
+      classification: expect.objectContaining({
+        code: 'RATE_LIMIT',
+        disposition: 'retry',
+      }),
+    });
+  });
 });

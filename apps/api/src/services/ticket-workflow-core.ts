@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { readJsonFileSafe, writeJsonFileAtomic } from './runtime-json-file.js';
+import { classifyQueueError } from '../platform/errors.js';
 
 export type WorkflowTargetIntegration =
   | 'Autotask'
@@ -732,7 +733,35 @@ export class TicketWorkflowCoreService {
       });
       return { matched: true };
     }
-    const remote = await this.gateway.fetchTicketSnapshot(tenantId, ticketId);
+    let remote: Record<string, unknown> | null;
+    try {
+      remote = await this.gateway.fetchTicketSnapshot(tenantId, ticketId);
+    } catch (error) {
+      const classified = classifyQueueError(error);
+      const upstreamMessage = error instanceof Error ? error.message : String(error);
+      const reason =
+        classified.code === 'RATE_LIMIT'
+          ? 'autotask_snapshot_fetch_rate_limited'
+          : classified.code === 'TIMEOUT'
+            ? 'autotask_snapshot_fetch_timeout'
+            : 'autotask_snapshot_fetch_failed';
+      await this.writeAudit({
+        tenant_id: tenantId,
+        actor: { kind: 'system', id: 'autotask-reconcile', origin: 'autotask_reconcile' },
+        action: 'workflow.reconciliation.fetch_failed',
+        target: auditTarget('Autotask', 'ticket', ticketId),
+        result: 'failure',
+        reason,
+        correlation,
+        metadata: {
+          classification: classified,
+          retryable: classified.disposition === 'retry',
+          degraded_mode: true,
+          upstream_error: upstreamMessage,
+        },
+      });
+      throw error;
+    }
     if (!remote) {
       const issue: ReconciliationIssue = {
         id: randomUUID(),

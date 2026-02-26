@@ -1,0 +1,13 @@
+{
+  "bundle": "followup-2026-02-26-agent-j-phase4-remediation",
+  "created_by": "Agent J",
+  "created_at": "2026-02-26T00:00:00.000Z",
+  "artifacts": [
+    "02-p0-acceptance-matrix-filled.md",
+    "05-defect-triage-log.md",
+    "06-launch-decision-packet-draft.md",
+    "s2-autotask-reconcile-429-classified.json",
+    "s5-manager-ops-visibility-partial-queue-mismatch-repro.json",
+    "agent-j-verification-summary.json"
+  ]
+}

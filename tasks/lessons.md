@@ -568,3 +568,9 @@
 **Root cause**: No payload da sidebar, o identificador exibido/transportado pode ser o `ticketNumber` (ex.: `T20260225.0013`), que exige lookup por query (`ticketNumber`) e não por rota de entidade.
 **Rule**: Em integrações Autotask, tratar `id` (entity id) e `ticketNumber` como identificadores distintos; quando o payload UI usa `ticket_id` string, detectar formato e escolher o método de lookup apropriado.
 **Pattern**: `GET /tickets/{id}` retorna 404 para itens visíveis no Autotask, mas query por `ticketNumber` resolve => mismatch entre `id` interno e `ticketNumber` no pipeline/UI.
+
+## Lesson: 2026-02-25 (display identifier must match operator-facing Autotask ticket number)
+**Mistake**: A sidebar estava exibindo o `id` interno numérico do Autotask (ex.: `132777`) em vez do `ticketNumber` (`T20260225.0035`) que os técnicos usam no dia a dia.
+**Root cause**: O payload reutilizava `row.ticket_id`/ID interno como campo de display sem priorizar `autotask_authoritative.ticket_number`.
+**Rule**: Para UI operacional, exibir sempre o identificador canônico do produto externo (aqui: Autotask `ticketNumber`) e preservar IDs internos separadamente para chave/seleção/integração.
+**Pattern**: Operador compara UI com ferramenta externa e “não reconhece” o ID => revisar separação entre `display_id` e `entity_id`.

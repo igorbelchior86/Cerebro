@@ -4,7 +4,10 @@
 
 import { Router, type Router as ExpressRouter } from 'express';
 import { AutotaskClient } from '../clients/index.js';
-import { queryOne } from '../db/index.js';
+import { query, queryOne } from '../db/index.js';
+import { pgStore } from '../services/email/pg-store.js';
+import { triageOrchestrator } from '../services/triage-orchestrator.js';
+import type { AutotaskTicket } from '@playbook-brain/types';
 
 const router: ExpressRouter = Router();
 
@@ -14,6 +17,24 @@ interface AutotaskCreds {
   secret: string;
   zoneUrl?: string;
 }
+
+type SidebarTicketRow = {
+  id: string;
+  ticket_id: string;
+  ticket_number?: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  priority?: 'P1' | 'P2' | 'P3' | 'P4';
+  title?: string;
+  description?: string;
+  company?: string;
+  requester?: string;
+  org?: string;
+  site?: string;
+  created_at?: string;
+  queue?: string;
+  queue_name?: string;
+  queue_id?: number;
+};
 
 // Lazy client — only created when a request arrives; avoids startup crash if env vars are absent.
 function getClient() {
@@ -48,6 +69,114 @@ async function getTenantScopedClient(): Promise<AutotaskClient | null> {
     // Fall back to env-based client below.
   }
   return getClient();
+}
+
+function parseIntParam(value: unknown, fallback: number, { min, max }: { min: number; max: number }) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function mapAutotaskStatusToSidebar(statusValue: unknown): SidebarTicketRow['status'] {
+  const normalized = String(statusValue ?? '').trim().toLowerCase();
+  if (!normalized) return 'pending';
+  if (/(complete|completed|closed|done|resolved)/.test(normalized)) return 'completed';
+  if (/(fail|error)/.test(normalized)) return 'failed';
+  if (/(progress|processing|assigned|working)/.test(normalized)) return 'processing';
+  return 'pending';
+}
+
+function mapAutotaskPriority(priorityValue: unknown): 'P1' | 'P2' | 'P3' | 'P4' {
+  const numeric = Number(priorityValue);
+  if (numeric === 1) return 'P1';
+  if (numeric === 2) return 'P2';
+  if (numeric === 3) return 'P3';
+  if (numeric === 4) return 'P4';
+  return 'P3';
+}
+
+function sortTicketsByCreateDateDesc(a: AutotaskTicket, b: AutotaskTicket): number {
+  const at = new Date(String((a as any)?.createDate || 0)).getTime();
+  const bt = new Date(String((b as any)?.createDate || 0)).getTime();
+  const delta = (Number.isFinite(bt) ? bt : 0) - (Number.isFinite(at) ? at : 0);
+  if (delta !== 0) return delta;
+  return String((b as any)?.ticketNumber || b.id || '').localeCompare(String((a as any)?.ticketNumber || a.id || ''));
+}
+
+async function getQueueCatalogMap(client: AutotaskClient): Promise<Map<number, string>> {
+  const queues = await client.getTicketQueues();
+  const map = new Map<number, string>();
+  for (const q of queues) {
+    const id = Number(q.id);
+    const label = String(q.label || '').trim();
+    if (Number.isFinite(id) && label) map.set(id, label);
+  }
+  return map;
+}
+
+function toSidebarTicketFromAutotask(ticket: AutotaskTicket, queueLabelMap: Map<number, string>): SidebarTicketRow {
+  const raw = ticket as any;
+  const internalId = String(raw.id ?? '').trim();
+  const ticketNumber = String(raw.ticketNumber || '').trim();
+  const displayId = ticketNumber || internalId;
+  const queueId = Number(raw.queueID);
+  const queueName = Number.isFinite(queueId) ? String(queueLabelMap.get(queueId) || '').trim() : '';
+  const companyName = String(raw.companyName || raw.company || '').trim();
+  const requesterName = String(raw.contactName || raw.requesterName || '').trim();
+
+  return {
+    id: internalId || displayId,
+    ticket_id: displayId,
+    ...(ticketNumber ? { ticket_number: ticketNumber } : {}),
+    status: mapAutotaskStatusToSidebar(raw.status),
+    priority: mapAutotaskPriority(raw.priority),
+    ...(raw.title ? { title: String(raw.title) } : {}),
+    ...(raw.description ? { description: String(raw.description) } : {}),
+    ...(companyName ? { company: companyName, org: companyName } : {}),
+    ...(requesterName ? { requester: requesterName } : {}),
+    ...(raw.createDate ? { created_at: String(raw.createDate) } : {}),
+    ...(Number.isFinite(queueId) ? { queue_id: queueId } : {}),
+    ...(queueName ? { queue: queueName, queue_name: queueName } : {}),
+  };
+}
+
+function buildAutotaskTicketSearch(options: {
+  maxRecords: number;
+  queueId?: number;
+  createDateAfterIso?: string;
+}): string {
+  const filter = [
+    ...(typeof options.queueId === 'number'
+      ? [{ op: 'eq', field: 'queueID', value: options.queueId }]
+      : []),
+    ...(options.createDateAfterIso
+      ? [{ op: 'gt', field: 'createDate', value: options.createDateAfterIso }]
+      : []),
+  ];
+  return JSON.stringify({ MaxRecords: options.maxRecords, filter });
+}
+
+async function getExistingTicketCoverageMap(ticketIds: string[]) {
+  if (ticketIds.length === 0) return new Map<string, { inProcessed: boolean; inSessions: boolean; inSsot: boolean }>();
+  const rows = await query<{
+    ticket_id: string;
+    in_processed: boolean;
+    in_sessions: boolean;
+    in_ssot: boolean;
+  }>(
+    `WITH keys AS (SELECT unnest($1::text[]) AS ticket_id)
+     SELECT k.ticket_id,
+            EXISTS (SELECT 1 FROM tickets_processed tp WHERE tp.id = k.ticket_id) AS in_processed,
+            EXISTS (SELECT 1 FROM triage_sessions ts WHERE ts.ticket_id = k.ticket_id) AS in_sessions,
+            EXISTS (SELECT 1 FROM ticket_ssot s WHERE s.ticket_id = k.ticket_id) AS in_ssot
+     FROM keys k`,
+    [ticketIds]
+  );
+  return new Map(rows.map((r) => [r.ticket_id, {
+    inProcessed: Boolean(r.in_processed),
+    inSessions: Boolean(r.in_sessions),
+    inSsot: Boolean(r.in_ssot),
+  }]));
 }
 
 /**
@@ -173,6 +302,163 @@ router.get('/queues', async (_req, res, next) => {
       success: true,
       data: queues,
       count: queues.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /autotask/sidebar-tickets
+ * Direct queue-backed ticket list for Global sidebar mode (bypasses Cerebro pipeline coverage limits).
+ */
+router.get('/sidebar-tickets', async (req, res, next) => {
+  try {
+    const client = await getTenantScopedClient();
+    if (!client) {
+      res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
+      return;
+    }
+
+    const maxRecords = parseIntParam(req.query.limit, 75, { min: 1, max: 200 });
+    const queueIdRaw = String(req.query.queueId ?? '').trim();
+    const queueId = Number.parseInt(queueIdRaw, 10);
+    const hasQueueId = Number.isFinite(queueId);
+    if (!hasQueueId) {
+      res.status(400).json({ error: 'queueId query parameter is required for direct sidebar tickets' });
+      return;
+    }
+    // Without a recency window, Autotask query paging can return old historical rows first.
+    // Default to a recent window for sidebar UX; callers may override.
+    const lookbackHours = parseIntParam(req.query.lookbackHours, 24 * 30, { min: 1, max: 24 * 365 });
+    const createDateAfterIso = lookbackHours > 0
+      ? new Date(Date.now() - lookbackHours * 60 * 60 * 1000).toISOString()
+      : undefined;
+
+    const search = buildAutotaskTicketSearch({
+      maxRecords,
+      ...(hasQueueId ? { queueId } : {}),
+      ...(createDateAfterIso ? { createDateAfterIso } : {}),
+    });
+    const [tickets, queueLabelMap] = await Promise.all([
+      client.searchTickets(search, maxRecords, 0),
+      getQueueCatalogMap(client).catch(() => new Map<number, string>()),
+    ]);
+
+    const rows = tickets
+      .slice()
+      .sort(sortTicketsByCreateDateDesc)
+      .map((ticket) => toSidebarTicketFromAutotask(ticket, queueLabelMap));
+
+    res.json({
+      success: true,
+      data: rows,
+      count: rows.length,
+      source: 'autotask_direct',
+      queueId,
+      lookbackHours,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /autotask/backfill-recent
+ * Seed/reconcile recent Autotask tickets into Cerebro pipeline tables for sidebar coverage.
+ */
+router.post('/backfill-recent', async (req, res, next) => {
+  try {
+    const client = await getTenantScopedClient();
+    if (!client) {
+      res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
+      return;
+    }
+
+    const lookbackHours = parseIntParam(req.body?.lookbackHours, 24, { min: 1, max: 24 * 30 });
+    const maxRecords = parseIntParam(req.body?.maxTickets, 100, { min: 1, max: 200 });
+    const maybeQueueId = Number.parseInt(String(req.body?.queueId ?? ''), 10);
+    const queueId = Number.isFinite(maybeQueueId) ? maybeQueueId : undefined;
+    const runPipeline = Boolean(req.body?.runPipeline);
+    const dryRun = Boolean(req.body?.dryRun);
+
+    const createDateAfterIso = new Date(Date.now() - lookbackHours * 60 * 60 * 1000).toISOString();
+    const search = buildAutotaskTicketSearch({
+      maxRecords,
+      ...(typeof queueId === 'number' ? { queueId } : {}),
+      createDateAfterIso,
+    });
+    const tickets = (await client.searchTickets(search, maxRecords, 0))
+      .slice()
+      .sort(sortTicketsByCreateDateDesc);
+
+    const ticketKeys = tickets.map((ticket) => String((ticket as any)?.ticketNumber || (ticket as any)?.id || '').trim()).filter(Boolean);
+    const coverage = await getExistingTicketCoverageMap(ticketKeys);
+
+    const missing = tickets.filter((ticket) => {
+      const key = String((ticket as any)?.ticketNumber || (ticket as any)?.id || '').trim();
+      const hit = coverage.get(key);
+      return !(hit?.inProcessed || hit?.inSessions || hit?.inSsot);
+    });
+
+    let seededProcessed = 0;
+    let pipelineTriggered = 0;
+    const pipelineErrors: Array<{ ticket_id: string; error: string }> = [];
+
+    for (const ticket of missing) {
+      const raw = ticket as any;
+      const ticketKey = String(raw.ticketNumber || raw.id || '').trim();
+      if (!ticketKey) continue;
+
+      if (!dryRun) {
+        await pgStore.saveProcessedTicket({
+          id: ticketKey,
+          title: String(raw.title || '').trim() || `Autotask Ticket ${ticketKey}`,
+          description: String(raw.description || '').trim(),
+          company: String(raw.companyName || raw.company || '').trim() || null,
+          requester: String(raw.contactName || raw.requesterName || 'Autotask').trim() || 'Autotask',
+          source: 'autotask',
+          status: 'open',
+          rawBody: String(raw.description || '').trim(),
+          isReply: false,
+          createdAt: String(raw.createDate || new Date().toISOString()),
+        });
+        seededProcessed += 1;
+      }
+
+      if (runPipeline && !dryRun) {
+        try {
+          await triageOrchestrator.runPipeline(ticketKey, undefined, 'autotask');
+          pipelineTriggered += 1;
+        } catch (err: any) {
+          pipelineErrors.push({ ticket_id: ticketKey, error: String(err?.message || err || 'unknown error') });
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        lookbackHours,
+        maxTickets: maxRecords,
+        ...(typeof queueId === 'number' ? { queueId } : {}),
+        dryRun,
+        runPipeline,
+        scanned: tickets.length,
+        missingCoverage: missing.length,
+        seededProcessed,
+        pipelineTriggered,
+        pipelineErrorsCount: pipelineErrors.length,
+        sampleMissing: missing.slice(0, 10).map((ticket) => ({
+          id: (ticket as any)?.id ?? null,
+          ticketNumber: (ticket as any)?.ticketNumber ?? null,
+          queueID: (ticket as any)?.queueID ?? null,
+          title: (ticket as any)?.title ?? null,
+        })),
+        ...(pipelineErrors.length > 0 ? { pipelineErrors: pipelineErrors.slice(0, 10) } : {}),
+      },
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

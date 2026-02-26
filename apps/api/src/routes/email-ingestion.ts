@@ -599,10 +599,18 @@ router.get('/list', async (_req: Request, res: Response) => {
                 const assignedResourceId = Number(assignedResourceIdRaw);
                 const assignedResourceName = normalizeText(ssot?.autotask_authoritative?.assigned_resource_name, '');
                 const assignedResourceEmail = normalizeText(ssot?.autotask_authoritative?.assigned_resource_email, '').toLowerCase();
+                const rawTicketId = String(row.ticket_id || '').trim();
+                const ssotTicketNumber = normalizeText(ssot?.autotask_authoritative?.ticket_number, '');
+                const packTicketNumber = normalizeText(packTicket.ticketNumber, '');
+                const canonicalTicketNumber = isMeaningful(ssotTicketNumber)
+                    ? ssotTicketNumber
+                    : (isMeaningful(packTicketNumber) ? packTicketNumber : '');
+                const uiTicketId = canonicalTicketNumber || rawTicketId;
 
                 return {
-                    id: String(row.ticket_id),
-                    ticket_id: String(row.ticket_id),
+                    id: rawTicketId,
+                    ticket_id: uiTicketId,
+                    ...(canonicalTicketNumber ? { ticket_number: canonicalTicketNumber } : {}),
                     status: normalizeStatus(row.session_status || 'pending'),
                     priority: 'P3',
                     title,

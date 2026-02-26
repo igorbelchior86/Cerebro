@@ -12,6 +12,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 export interface ActiveTicket {
   id: string;
   ticket_id: string;
+  ticket_number?: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
   priority?: 'P1' | 'P2' | 'P3' | 'P4';
   title?: string;
@@ -178,6 +179,8 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGlobalQueue, setSelectedGlobalQueue] = useState('all');
   const [globalQueuesCatalog, setGlobalQueuesCatalog] = useState<AutotaskQueueCatalogItem[]>([]);
+  const [globalQueueTickets, setGlobalQueueTickets] = useState<ActiveTicket[]>([]);
+  const [globalQueueTicketsLoading, setGlobalQueueTicketsLoading] = useState(false);
   const [hideSuppressed, setHideSuppressed] = useState(true);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [clock, setClock] = useState('');
@@ -309,8 +312,14 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
     }
   };
 
-  const suppressedCount = tickets.filter((t) => Boolean(t.suppressed)).length;
-  const ticketsBySuppression = hideSuppressed ? tickets.filter((t) => !t.suppressed) : tickets;
+  const selectedGlobalQueueId = selectedGlobalQueue.startsWith('queue:')
+    ? Number(selectedGlobalQueue.slice('queue:'.length))
+    : null;
+  const useDirectGlobalQueueSource = scope === 'global' && Number.isFinite(selectedGlobalQueueId);
+  const listTickets = useDirectGlobalQueueSource ? globalQueueTickets : tickets;
+  const listLoading = useDirectGlobalQueueSource ? globalQueueTicketsLoading : Boolean(isLoading);
+  const suppressedCount = listTickets.filter((t) => Boolean(t.suppressed)).length;
+  const ticketsBySuppression = hideSuppressed ? listTickets.filter((t) => !t.suppressed) : listTickets;
   const completed = ticketsBySuppression.filter((t) => t.status === 'completed').length;
   const processing = ticketsBySuppression.filter((t) => t.status === 'processing' || t.status === 'pending').length;
   const normalizedSearch = searchQuery.trim().toLowerCase();
@@ -377,6 +386,78 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
       setSelectedGlobalQueue('all');
     }
   }, [queueOptionIds, selectedGlobalQueue]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    if (!useDirectGlobalQueueSource || !Number.isFinite(selectedGlobalQueueId)) {
+      setGlobalQueueTickets([]);
+      setGlobalQueueTicketsLoading(false);
+      return () => {
+        ignore = true;
+      };
+    }
+
+    const fetchGlobalQueueTickets = async () => {
+      setGlobalQueueTicketsLoading(true);
+      try {
+        const params = new URLSearchParams({
+          queueId: String(selectedGlobalQueueId),
+          limit: '150',
+        });
+        const res = await fetch(`${API}/autotask/sidebar-tickets?${params.toString()}`, { credentials: 'include' });
+        if (!res.ok) {
+          if (!ignore) setGlobalQueueTickets([]);
+          return;
+        }
+        const payload = await res.json().catch(() => null) as { success?: boolean; data?: unknown[] } | null;
+        if (!payload?.success || !Array.isArray(payload.data) || ignore) {
+          if (!ignore) setGlobalQueueTickets([]);
+          return;
+        }
+
+        const normalized = payload.data
+          .map((row) => row as Partial<ActiveTicket>)
+          .map((row) => {
+            const internalId = normalizeText(row.id, '');
+            const displayId = normalizeText(row.ticket_number ?? row.ticket_id, internalId);
+            if (!internalId && !displayId) return null;
+            const status = row.status && ['pending', 'processing', 'completed', 'failed'].includes(row.status)
+              ? row.status
+              : 'pending';
+            return {
+              id: internalId || displayId,
+              ticket_id: displayId || internalId,
+              ...(row.ticket_number ? { ticket_number: normalizeText(row.ticket_number, displayId || internalId) } : {}),
+              status,
+              ...(row.priority ? { priority: row.priority } : {}),
+              ...(row.title ? { title: row.title } : {}),
+              ...(row.description ? { description: row.description } : {}),
+              ...(row.company ? { company: row.company } : {}),
+              ...(row.requester ? { requester: row.requester } : {}),
+              ...(row.org ? { org: row.org } : {}),
+              ...(row.site ? { site: row.site } : {}),
+              ...(row.created_at ? { created_at: row.created_at } : {}),
+              ...(row.queue ? { queue: row.queue } : {}),
+              ...(row.queue_name ? { queue_name: row.queue_name } : {}),
+              ...(row.queue_id !== undefined ? { queue_id: row.queue_id } : {}),
+            } as ActiveTicket;
+          })
+          .filter((item): item is ActiveTicket => Boolean(item));
+
+        if (!ignore) setGlobalQueueTickets(normalized);
+      } catch {
+        if (!ignore) setGlobalQueueTickets([]);
+      } finally {
+        if (!ignore) setGlobalQueueTicketsLoading(false);
+      }
+    };
+
+    fetchGlobalQueueTickets();
+    return () => {
+      ignore = true;
+    };
+  }, [useDirectGlobalQueueSource, selectedGlobalQueueId]);
 
   const scopedTickets = ticketsBySuppression.filter((ticket) => {
     if (scope === 'personal') {
@@ -719,7 +800,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
               onScroll={(e) => persistSidebarState(filter, (e.currentTarget as HTMLDivElement).scrollTop)}
               style={{ flex: 1, overflowY: 'auto', padding: '4px 10px 10px', display: 'flex', flexDirection: 'column', gap: '7px', position: 'relative', zIndex: 1 }}
             >
-              {isLoading && tickets.length === 0 ? (
+              {listLoading && listTickets.length === 0 ? (
                 [1, 2].map((i) => <div key={i} style={{ height: '80px', borderRadius: '9px', background: 'var(--bg-card)', border: '1px solid var(--border)', opacity: 0.6 }} />)
               ) : visible.length === 0 ? (
                 <p style={{ marginTop: '20px', fontSize: '11px', color: 'var(--text-faint)', textAlign: 'center' }}>{t('noTickets')}</p>
@@ -731,7 +812,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                 const suppressionLabel = normalizeText(ticket.suppression_reason_label ?? ticket.suppression_reason ?? '', t('suppressedReasonNoise'));
                 const normalized = {
                   priority,
-                  id: normalizeText(ticket.ticket_id, ticket.id),
+                  id: normalizeText(ticket.ticket_number ?? ticket.ticket_id, ticket.id),
                   status: STATUS_LABEL[ticket.status] ?? 'PENDING',
                   title: normalizeTicketTitle(ticket.title, t('defaultIssue')),
                   company: normalizeText(ticket.company ?? ticket.org, t('unknownOrg')),

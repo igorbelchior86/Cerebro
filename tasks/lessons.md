@@ -574,3 +574,9 @@
 **Root cause**: O payload reutilizava `row.ticket_id`/ID interno como campo de display sem priorizar `autotask_authoritative.ticket_number`.
 **Rule**: Para UI operacional, exibir sempre o identificador canônico do produto externo (aqui: Autotask `ticketNumber`) e preservar IDs internos separadamente para chave/seleção/integração.
 **Pattern**: Operador compara UI com ferramenta externa e “não reconhece” o ID => revisar separação entre `display_id` e `entity_id`.
+
+## Lesson: 2026-02-26 (EN-US translation quality overclaim)
+**Mistake**: Claimed the EN-US documents were clean while they still contained mixed PT-BR content and translation artifacts.
+**Root cause**: I relied too much on automated replacements and did not complete a strict residual-language verification pass before reporting.
+**Rule**: Never call a translated document "clean" until verified with residue scans (accented chars + common source-language keywords) and spot checks in high-density sections.
+**Pattern**: Large mixed-language docs require section-by-section manual QA after automation, especially matrices, NFRs, and appendix blocks.

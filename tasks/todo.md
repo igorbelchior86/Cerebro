@@ -1,30 +1,26 @@
-# Task: Executar passos 1 e 2 (Global direto por queue + backfill de ingestão)
-
+# Task: EN-US implementation plan for Cerebro PRDs
 **Status**: completed
-**Started**: 2026-02-25
+**Started**: 2026-02-26
 
 ## Plan
-- [x] Step 1: Adicionar endpoint backend para `Global` buscar tickets diretamente do Autotask por queue (shape compatível com sidebar)
-- [x] Step 2: Integrar `ChatSidebar` para usar fonte direta do Autotask no modo `Global` por queue selecionada
-- [x] Step 3: Adicionar endpoint de backfill/reconciliação de tickets Autotask recentes para aumentar cobertura do pipeline/sidebar
-- [x] Step 4: Executar verificação (typecheck + smoke tests/curl) e atualizar wiki
+- [x] Step 1: Review `PRD-Exec-EN-US.md` and `PRD-Tech-EN-US.md` structure and identify insertion points for architecture + implementation plan ✓
+- [x] Step 2: Define target architecture (logical components, data flows, integration modes, deployment/runtime concerns) for `PRD-Tech-EN-US.md` ✓
+- [x] Step 3: Define what/when implementation sequencing (P0/P1/P2 + phases/milestones/dependencies) across Exec and Tech docs ✓
+- [x] Step 4: Update both EN-US PRDs with consistent architecture and implementation plan sections ✓
+- [x] Step 5: Verify consistency between docs and fill review notes ✓
 
 ## Open Questions
-- Endpoint de backfill implementado com opção `runPipeline`; smoke test/execução foram feitos em modo seguro (`runPipeline=false`) para ampliar cobertura da sidebar sem custo de LLM.
+- None blocking. Assumption: architecture details go to PRD-Tech; what/when summary goes to both PRDs (Exec = high-level, Tech = detailed).
 
 ## Progress Notes
-- Pedido atual: executar os próximos passos 1 e 2 sugeridos anteriormente (fonte Global direta do Autotask + backfill/reconciliação de ingestão).
-- Contexto confirmado: ainda existem tickets do Autotask (inclusive de hoje) fora do pipeline/sidebar (`tickets_processed`/`triage_sessions`/`ticket_ssot`).
-- Passo 1 (backend): adicionado `GET /autotask/sidebar-tickets` (auth-required) com shape compatível da sidebar, filtro por `queueId`, lookup de labels de queue e janela de recência padrão (30 dias) para evitar páginas históricas do Autotask.
-- Passo 1 (frontend): `ChatSidebar` usa a fonte direta do Autotask no modo `Global` quando uma queue específica (`queue:<id>`) está selecionada; `All queues` continua usando a lista atual do pipeline.
-- Passo 2 (backend): adicionado `POST /autotask/backfill-recent` (auth-required) para reconciliar tickets Autotask recentes com cobertura do Cerebro (`tickets_processed`/`triage_sessions`/`ticket_ssot`), com opções `dryRun` e `runPipeline`.
-- Smoke test autenticado do passo 1: `GET /autotask/sidebar-tickets?queueId=29682833&limit=10` retornou payload normalizado com `ticket_id` em formato `T...`, `queue_name`, `created_at` e `source=autotask_direct`.
-- Importante: o primeiro smoke test do endpoint direto mostrou tickets antigos (2014) devido à ordenação/paginação do Autotask; correção aplicada adicionando `lookbackHours` padrão (720h / 30 dias).
-- Execução real do backfill (via script interno com a mesma lógica, por causa de auth no curl local): `autotaskRecent=32`, `missingCoverageRecent=21`, `seeded=21`.
-- Verificação após backfill: `/email-ingestion/list` passou de `count=175`/`todayCount=27` para `count=196`/`todayCount=48`; `todayStillMissingAfterSeed=0`.
-- Smoke test autenticado do passo 2 (`POST /autotask/backfill-recent` dryRun): `missingCoverage=0` após o seed.
+- Initialized task tracking for workflow-orchestrator process.
+
+- Reviewed EN-US PRDs and identified placement: architecture in Tech, what/when summary in Exec + detail in Tech.
+- Added executive architecture snapshot + phased implementation sequencing in `PRD-Exec-EN-US.md`.
+- Added target implementation architecture + workstreams/sequencing + founder/AI timeline summary in `PRD-Tech-EN-US.md`.
+- Replaced legacy multi-engineer phase block with founder + AI agents delivery timeline.
 
 ## Review
-- What worked: separar os passos em endpoint direto (Global) e reconciliação/backfill resolveu o problema de produto sem acoplar mais a UI ao payload cru do Autotask.
-- What was tricky: a paginação/ordem do Autotask por queue retornou histórico antigo na primeira página; foi necessário impor janela de recência padrão para a UX do sidebar.
-- Time taken:
+- What worked: Clear split between Exec (decision-ready summary) and Tech (architecture + detailed sequencing) kept the docs aligned without duplication.
+- What was tricky: `PRD-Tech-EN-US.md` already had partial execution content, so the new implementation plan had to complement (not conflict with) existing matrices/NFRs/backlog.
+- Time taken: ~1 session (architecture + planning additions + verification).

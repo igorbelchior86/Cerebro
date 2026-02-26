@@ -1,5 +1,5 @@
 # PRODUCT REQUIREMENTS DOCUMENT (PRD)
-## Thread: AI & Automation Engine for MSPs
+## Cerebro: AI Service Delivery & Troubleshooting Platform for MSPs
 
 **Data de Criação:** Fevereiro 2026  
 **Versão:** 1.0  
@@ -26,35 +26,55 @@
 
 ## EXECUTIVE SUMMARY
 
-Thread é a primeira **AI Service Desk Engine** construída especificamente para **Managed Service Providers (MSPs)**. O produto combina chat moderno (Teams, Slack), automação inteligente via AI (triagem, roteamento, categorização), e integração nativa com **PSAs** (ConnectWise, Autotask, HaloPSA).
+Cerebro é uma **plataforma de service delivery e troubleshooting intelligence para MSPs**. A expansão do produto combina atendimento moderno (chat, email e voz), automação com IA (triagem, roteamento, categorização, assistente técnico) e contexto operacional da stack MSP (**Autotask + IT Glue + Ninja**), com foco em reduzir tempo até resolução e overhead operacional.
+
+> **Estratégia de expansão (Cerebro):** a expansão inicial será baseada nas integrações já disponíveis no produto (**Autotask + IT Glue + Ninja**). Todas as demais integrações entram como roadmap futuro. O objetivo é atingir **paridade funcional por fluxo crítico** com o benchmark de mercado, não necessariamente por lista de integrações no dia 1.
 
 ### Estatísticas-Chave
 - **Eficiência de Technician:** +35% (redução de tempo administrativo)
 - **Triage & Resolution Automáticos:** 10-25% de tickets resolvidos sem intervenção humana
 - **Precisão de Automação:** 96% em categorização, prioridade, tipo de ticket
 - **ROI:** Garantido em 24-60 horas após onboarding
-- **Modelos de PSA Suportados:** ConnectWise Manage, Autotask, HaloPSA (com expansão)
+- **Baseline de Integrações (Cerebro Expansion):** Autotask (PSA), IT Glue (documentação), Ninja (RMM)
 
 ### Diferenciais Competitivos
 1. **Conversa + PSA Integrada:** Eliminação da duplicação de interfaces
 2. **Voice AI + Chat:** Cobertura omnichannel (voz, chat, email, SMS)
 3. **Sem Multi-Year Lock-in:** Contratos mês-a-mês
-4. **60-Day Money-Back Guarantee:** ROI garantido ou reembolso total
+4. **Troubleshooting Intelligence:** Contexto operacional + AI orientada à resolução
 5. **Maior Dataset Conversacional da Indústria:** Treinado em resolução real de tickets MSP
 
 ---
 
 ## VISÃO GERAL DO PRODUTO
 
-### O que é Thread?
+### O que é o Cerebro?
 
-Thread é uma **plataforma de service delivery inteligente** que:
+Cerebro é uma **plataforma de service delivery e troubleshooting intelligence** que:
 
 1. **Unifica Canais:** Chat (Teams, Slack, Web, Desktop) + Voz (Phone AI) + Email + SMS
 2. **Automatiza Tickets:** IA faz triagem, categorização, roteamento, criação de time entries
-3. **Integra com PSA:** Sincronização em tempo real (sem refresh manual)
+3. **Integra com PSA + Stack MSP:** Sincronização em tempo real (sem refresh manual) + contexto operacional (IT Glue / Ninja)
 4. **Potencializa Technicians:** Sugestões de resolução, contexto completo, histórico do cliente
 5. **Mede ROI:** Calculadora integrada, métricas de economia, dashboard executivo
+
+### O que já temos (base atual do Cerebro)
+
+- Produto com origem em troubleshooting real (workflow do fundador)
+- Integrações já disponíveis para a expansão inicial: **Autotask + IT Glue + Ninja**
+- Capacidade de usar contexto técnico/operacional como diferencial no atendimento
+- Base para IA aplicada a triagem, sumarização e recomendação de próximos passos
+
+### O que pretendemos (fusão: Cerebro atual + benchmark de mercado)
+
+- Entregar os fluxos críticos de service desk esperados pelo mercado sem trade-off funcional
+- Expandir o Cerebro de troubleshooting para uma plataforma completa de service delivery MSP
+- Diferenciar em **troubleshooting intelligence**:
+  - hipótese inicial de causa
+  - contexto correlato de ativos/documentação/alertas
+  - handoff técnico de alta qualidade
+  - aprendizado contínuo por incidentes resolvidos
+- Começar com `Autotask + IT Glue + Ninja` e expandir integrações conforme demanda comercial
 
 ### Segmentação de Usuários
 
@@ -129,7 +149,7 @@ Thread é uma **plataforma de service delivery inteligente** que:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Thread Platform                           │
+│                    Cerebro Platform                           │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
 │  ┌──────────────────────────────────────────────────────┐   │
@@ -230,7 +250,7 @@ Auto-Create Ticket no PSA
 ```
 
 ##### 3b. **Magic AI (Technician Assistant)**
-- **In-Thread Chat:** "Hey Magic, summarize this" / "Draft response for customer"
+- **In-App AI Chat:** "Hey Magic, summarize this" / "Draft response for customer"
 - **Capabilities:**
   - Redigir respostas ao cliente
   - Confirmar detalhes do ticket
@@ -275,7 +295,7 @@ Auto-Create Ticket no PSA
 
 ##### Fluxo de Sincronização
 ```
-Thread AI Action (Auto-categorize, assign, etc)
+Cerebro AI Action (Auto-categorize, assign, etc)
     ↓
 Generate PSA Command
     ↓
@@ -287,7 +307,7 @@ Retry Logic (exponential backoff)
     ↓
 Webhook Confirmation
     ↓
-Update Thread UI (real-time)
+Update Cerebro UI (real-time)
 ```
 
 #### 5. **Data Layer & Knowledge Base**
@@ -319,7 +339,7 @@ Update Thread UI (real-time)
 - **Bulk Actions:** Select 10 tickets, bulk assign/close
 
 #### 1.2 Ticket Auto-Population
-- **Magic Fields:** Thread AI preenche automaticamente
+- **Magic Fields:** Cerebro AI preenche automaticamente
   - Title (customer intent em 1 frase)
   - Category (network, printing, email, etc)
   - Priority (P1-P4 baseado em keywords + histórico)
@@ -337,7 +357,7 @@ Update Thread UI (real-time)
 #### 1.4 Collaboration Features
 - **@ Mentions:** @alice "Can you take this?" → ticket assigned
 - **Internal Comments:** Notes não visíveis ao customer (v.s. public)
-- **Thread Conversations:** Nested replies em chat (vs. flat)
+- **Conversational Threads:** Nested replies em chat (vs. flat)
 - **Emoji Reactions:** Ack, thumbs up, etc
 - **Pin Important Messages:** Keep reference links visible
 
@@ -379,7 +399,7 @@ ACTIONS:
 ```
 
 #### 2.3 Auto-Time Entry
-- **Smart Capture:** Thread logs work sem input manual
+- **Smart Capture:** Cerebro logs work sem input manual
 - **Stopwatch Timer:** Start/stop integrado no chat
 - **AI Estimation:** "This looks like a 30-min task"
 - **Compliance:** Auto-populated per ITIL + billable/internal flags
@@ -403,7 +423,7 @@ ACTIONS:
   - Warm intro: Senior picks up with context
 
 #### 3.3 Automatic Transcription & Logging
-- **Real-Time:** Call happens, Thread shows transcript live
+- **Real-Time:** Call happens, Cerebro shows transcript live
 - **Post-Call:** Full transcript in ticket (searchable)
 - **Gist Creation:** "Customer complained about latency. Rebooted server. Resolved."
 - **Summary:** Auto-creates or updates ticket with key details
@@ -419,7 +439,7 @@ ACTIONS:
 #### 4.1 Email Integration
 - **Inbound:** Emails parsed, auto-ticket creation
 - **Threading:** Replies grouped with original ticket
-- **Outbound:** Tech responds in Thread, auto-sends to customer email
+- **Outbound:** Tech responds in Cerebro, auto-sends to customer email
 - **Attachment Handling:** Screenshots, logs uploaded to ticket
 
 #### 4.2 Two-Way SMS
@@ -432,21 +452,21 @@ ACTIONS:
 
 #### 5.1 PSA Integration (Native)
 - **Two-Way Sync:** No refresh needed ever
-- **Conflict Resolution:** If tech updates in PSA, Thread reflects instantly
+- **Conflict Resolution:** If tech updates in PSA, Cerebro reflects instantly
 - **Field Mapping:** Customizable (drag-drop which fields sync)
-- **Webhook Support:** PSA → Thread for status updates
+- **Webhook Support:** PSA → Cerebro for status updates
 
 **Sync Flow:**
 ```
-Customer texts Thread
+Customer texts Cerebro
     ↓ (50ms)
 AI processes, suggests category
     ↓ (200ms)
 Create ticket call to PSA API
     ↓ (500ms-2s depending on PSA)
-PSA webhook confirms → Thread shows ticket #
+PSA webhook confirms → Cerebro shows ticket #
     ↓
-Tech sees in Thread inbox + PSA
+Tech sees in Cerebro inbox + PSA
 ```
 
 #### 5.2 Latency Guarantees
@@ -545,145 +565,50 @@ Tech sees in Thread inbox + PSA
 ---
 
 ## MODELOS DE PRICING
+### Nota de escopo (fase atual)
 
-### Tiers de Serviço
+Conteúdo de venda/comercialização (pricing, GTM, modelo contratual e estratégia comercial) foi consolidado na seção final:
 
-#### Tier 1: AI Essentials
-**$19 / managed customer / month**
+- `## COMERCIALIZAÇÃO FUTURA (Consolidado)`
 
-**Ideal para:** MSPs com primeiros passos em AI, workflow simples
-
-**Inclui:**
-- Assistive Triage (suggestions, não automático)
-- Inbox unificado (Teams + Slack)
-- Workflows básicos (sem custom conditions)
-- Unlimited AI usage
-- Email integration
-- PSA sync em tempo real
-- 60-day money-back guarantee
-
-**Limites:**
-- Sem Voice AI
-- Sem Contact Intelligence
-- Sem Sentiment Analysis
-- Sem AI Chat (Magic)
-
----
-
-#### Tier 2: AI Pro ⭐ **Recomendado**
-**$34 / managed customer / month + $800 (one-time setup)**
-
-**Ideal para:** MSPs focados em ROI máximo, automação end-to-end
-
-**Inclui TUDO de Essentials, PLUS:**
-- **Triage & Reminder Agents** (automático, não sugestão)
-- **Contact Intelligence** (caller mapping, customer profile)
-- **AI Chat (Magic)** para technicians
-- **Sentiment Analysis** em tempo real
-- **Custom Workflows** (avançado)
-- **Advanced Analytics** dashboard
-- **Priority Support** (chat + email)
-- **Dedicated Success Manager** (for 50+ seats)
-
-**Add-ons (à la carte):**
-- **Integrated Chat:** +$5/customer/month
-  - Teams/Slack/Web/Desktop embeds
-  - Pre-built templates
-  
-- **Voice AI:** +$15/customer/month
-  - Instant answering
-  - Warm transfers
-  - Transcription + logging
-  - Call recording
-  - Real-time sentiment
-
-- **AI Ticket Credits:** $0.50/credit
-  - 1 credit = 1 ticket com AI triage
-  - Para break-fix ou clientes pequenos
-
----
-
-### Modelos de Volume
-
-#### Pricing Example: MSP de 100 Clientes
-
-| Componente | Quantidade | Unit Price | Total Mensal |
-|-----------|-----------|-----------|-------------|
-| AI Pro (100 customers) | 100 | $34 | $3,400 |
-| Voice AI (50 customers) | 50 | $15 | $750 |
-| Integrated Chat (100) | 100 | $5 | $500 |
-| **Monthly Total** | - | - | **$4,650** |
-| **Annual** | - | - | **$55,800** |
-| **Setup (one-time)** | - | - | **$800** |
-
-#### ROI Projection (Same MSP)
-```
-Current State:
-- 100 customers
-- 50 technicians (avg salary $65k/year = $31.25/hour)
-- Current admin time: 40% dispatch + prep work
-- Admin cost: 50 techs × $31.25/hr × 40% = 20 FTE
-
-With Thread AI Pro:
-- Admin overhead reduced to 10% (30% saved)
-- 15 FTE freed up
-- 15 × $31.25/hr × 2080 hours = $937,500 annual capacity
-
-ROI:
-- Thread cost: $55,800/year
-- Capacity gain value: $937,500
-- Net: $937,500 - $55,800 = $881,700 / year
-- Payback period: 22 days (!!)
-```
-
-### Flexibilidade Contratual
-- **Mês a Mês:** Sem lock-in
-- **60-Day Money-Back:** Se não atingir ROI em 60 dias, reembolso total
-- **Volume Discounts:** 500+ clientes = negocie custom terms
+Nesta fase, o foco é desenvolvimento e validação interna na Refresh.
 
 ---
 
 ## INTEGRAÇÕES
 
-### PSA (Primary)
+### PSA (Primary - Cerebro Expansion Baseline)
 
-#### ConnectWise Manage
-- **API Type:** REST + OAuth2
-- **Sync Scope:** Tickets, Companies, Contacts, Services, Time Entries
-- **Real-time:** Webhooks para status updates
-- **Authentication:** OAuth2 (automatic refresh)
-- **Custom Fields:** Mapeáveis no UI (drag-drop)
-- **Rate Limits:** Respeitadas (1000 req/min)
+#### Autotask (Launch Baseline)
+- **API:** GraphQL + REST hybrid
+- **Sync Scope (Phase 1):** Tickets, Companies, Contacts, Time Entries
+- **Webhooks/Polling:** Real-time when available + resilient polling fallback
+- **Authentication:** OAuth/API credentials com rotação segura
+- **Custom Fields:** Mapeáveis no UI (priorizar fields críticos de triage/dispatch)
+- **Rate Limits:** Respeitadas com backoff + filas por tenant
 
 **Integrations Roadmap:**
 ```
-Phase 1 (Live):
-✅ ConnectWise Manage (full)
-✅ Autotask (full)
-✅ HaloPSA (full)
+Phase 1 (Cerebro Expansion - Initial Commercial Launch):
+✅ Autotask (PSA) - primary ticketing system
+✅ IT Glue - documentation/context enrichment
+✅ Ninja - RMM events/device context
 
-Phase 2 (Q2 2026):
-🔄 Datto PSA (in progress)
-🔄 ServiceTitan (planned)
-🔄 Kaseya BMS (planned)
+Phase 2 (Next Integrations):
+🔄 ConnectWise Manage
+🔄 HaloPSA
+🔄 SMS provider(s) for two-way messaging
 
-Phase 3 (Q3-Q4 2026):
+Phase 3 (Broader PSA/ITSM):
+📋 Datto PSA / Kaseya BMS
 📋 Jira Service Management
-📋 FreshService / Freshdesk
-📋 Zendesk
+📋 FreshService / Zendesk
 ```
 
-#### Autotask
-- **API:** GraphQL + REST hybrid
-- **Webhooks:** Real-time ticket status
-- **Managed Services:** Full resource sync
-- **Custom Objects:** Supported
-
-#### HaloPSA
-- **API:** REST + GraphQL
-- **Strengths:** Strong UK/EU presence
-- **Integrations:** Native Slack integration
-- **Auth:** API token (no OAuth yet)
+#### Future PSA Integrations (Roadmap)
+- **ConnectWise Manage:** alta prioridade por market share MSP
+- **HaloPSA:** prioridade regional/segmento (UK/EU)
+- **Outros ITSM/PSA:** conforme demanda comercial e viabilidade de sync em tempo real
 
 ### Communication Platforms
 
@@ -696,14 +621,14 @@ Phase 3 (Q3-Q4 2026):
 
 #### Slack
 - **App:** Public marketplace app
-- **Channels:** Thread channels (one per customer or category)
+- **Channels:** Dedicated channels (one per customer or category)
 - **Workflows:** Native Slack workflow builder integration
 - **Threads:** Nested replies for clean UI
 - **Status:** 🟢 Available, 🔴 Busy, etc
 
 #### Email
 - **IMAP/POP3:** Email forwarding + ingestion
-- **SMTP:** Outbound via Thread
+- **SMTP:** Outbound via Cerebro
 - **Threading:** Replies grouped to original ticket
 - **Attachment Handling:** Screenshots, logs, PDFs
 
@@ -715,15 +640,16 @@ Phase 3 (Q3-Q4 2026):
   - Avaya
   - Microsoft Teams Phone
   - Vonage Nexmo
-- **Forwarding:** Redirect main number to Thread number
+- **Forwarding:** Redirect main number to Cerebro number
 - **IVR Integration:** Optional button-press routing
 
 ### Third-Party Tools
 
 #### RMM (Remote Monitoring & Management)
-- **Connectwise Automate:** Agent events → tickets
-- **Kaseya/VSA:** Automated remediation
-- **N-Able N-Central:** Event triggers
+- **Ninja (Launch Baseline):** Device alerts/events → ticket creation/enrichment
+- **Ninja Device Context:** endpoint, status, last seen, alert severity no side panel
+- **Ninja Workflows:** trigger automations a partir de eventos/alertas
+- **Kaseya / N-Able / ConnectWise Automate:** roadmap futuro
 
 #### Ticketing & Workflows
 - **Zapier:** Inbound webhooks for custom integrations
@@ -731,10 +657,9 @@ Phase 3 (Q3-Q4 2026):
 - **Custom API:** REST endpoints for partners
 
 #### Knowledge Management
-- **Confluence:** Auto-sync KB articles
-- **SharePoint:** Document ingestion
-- **Jira:** Issue linking + wiki
-- **Notion:** Manual upload of articles
+- **IT Glue (Launch Baseline):** documentação, runbooks, configs, ativos e credenciais (metadata-only where applicable)
+- **IT Glue Context Enrichment:** auto-link por customer/site/device para triage/resolução
+- **Confluence / SharePoint / Jira / Notion:** roadmap futuro
 
 #### CRM
 - **HubSpot:** Contact sync
@@ -876,7 +801,7 @@ Continuous improvement loop
 ✅ Unified Inbox (Teams, Slack, Web)  
 ✅ Triage AI + Auto-Categorization  
 ✅ Voice AI (instant answering)  
-✅ PSA Integrations (CW, Autotask, Halo)  
+✅ Baseline Cerebro Expansion Integrations (Autotask, IT Glue, Ninja)  
 ✅ Workflows (pre-built + custom)  
 ✅ Email integration  
 ✅ Time entry automation  
@@ -885,11 +810,11 @@ Continuous improvement loop
 🔄 **SMS Two-Way** (in progress)  
 🔄 **Sentiment Analysis** (rolling out)  
 🔄 **Lemma AI Orchestration Platform** (composable workflows)  
-🔄 **Service Now Integration** (enterprise PSA)  
+🔄 **ConnectWise / HaloPSA Integrations** (expand PSA coverage)  
 🔄 **AI Agent Team** (create custom agents)  
 
 ### Phase 3: Medium-Term (Q4 2026 - Q1 2027)
-📋 **RMM Deep Integration** (Kaseya, N-Able)  
+📋 **RMM Expansion** (Kaseya, N-Able, others)  
 📋 **Advanced Workflows** (state machines, branching logic)  
 📋 **Predictive Analytics** (forecast ticket load 2 weeks out)  
 📋 **Knowledge Graph** (auto-connect related tickets)  
@@ -936,7 +861,7 @@ Continuous improvement loop
 | **24/7 Availability** | ✅ Voice AI handles after-hours |
 | **Self-Service Rate** | +25% (AI suggests KB articles) |
 
-### Para Thread Business
+### Para o Negócio Cerebro
 
 | Métrica | Foco |
 |---------|------|
@@ -989,23 +914,230 @@ Monitoring:
 - Prometheus (metrics)
 ```
 
+### Parity Matrix (Benchmark de Mercado) por Persona e Fluxo Crítico
+
+Objetivo: garantir que o Cerebro entre na disputa sem trade-off de funcionalidades essenciais percebidas pelo MSP.
+
+| Persona | Fluxo Crítico | Baseline de Mercado (Esperado) | Paridade Mínima Cerebro (Launch) | Critério de Aceite |
+|---------|---------------|-----------------------------|----------------------------------|--------------------|
+| **Service Manager / Dispatcher** | Triagem + roteamento inicial | Inbox unificado, categorização AI, prioridade, assign | Inbox unificado + AI triage + assign em Autotask + regras de roteamento | Ticket nasce com campos mínimos corretos + assign em <2 min |
+| **Service Manager / Dispatcher** | Visibilidade operacional | fila, SLA, status, alertas | dashboard de fila/SLA + alertas por prioridade + auditoria | Manager identifica backlog/SLA risk sem abrir PSA |
+| **Technician** | Atendimento e resolução | responder no chat, contexto do cliente, histórico, AI assist | responder no canal + contexto Autotask/IT Glue/Ninja + AI draft/sumarização | Tech resolve sem trocar de tela para buscar contexto crítico |
+| **Technician** | Handoff / escalonamento | resumo automático, comentários internos, reassign | resumo AI + comentários internos + reassign + tag de escalonamento | Senior recebe contexto pronto, sem retrabalho |
+| **End-User** | Abertura e acompanhamento | canal familiar, updates rápidos, threading | abertura por chat/email + updates + threading básico | usuário recebe confirmação + status claro rapidamente |
+| **Executivo / Owner MSP** | Prova de ROI | métricas de economia, throughput, auto-resolve | dashboard ROI inicial (admin time, TFR, auto-triage, throughput) | valor percebido em até 30-60 dias |
+
+### Differentiation Matrix (Algo a Mais sem perder Paridade)
+
+Objetivo: competir com o benchmark de mercado mantendo baseline de service desk, mas com vantagem nativa de troubleshooting.
+
+| Tema | Paridade Obrigatória | Diferencial Cerebro | Benefício Competitivo |
+|------|-----------------------|---------------------|-----------------------|
+| **Triage** | categorização/prioridade/roteamento | triage orientado a troubleshooting (hipótese inicial + próximos passos) | menos ping-pong e menor tempo até resolução |
+| **Contexto** | histórico de tickets/cliente | contexto operacional unificado (Autotask + IT Glue + Ninja) por ticket/device/site | técnico recebe contexto acionável, não só histórico |
+| **Handoff** | resumo e reassign | handoff com evidências técnicas, mudanças recentes e alertas correlatos | escalonamento mais rápido e com menos perda de contexto |
+| **Knowledge** | sugestão de KB | geração de runbook a partir de incidentes resolvidos + vinculação a ativos/clientes | aprendizado cumulativo com foco em execução |
+| **Ops Control** | workflows no-code | simulação/dry-run de automação + policy gates por tenant | adoção mais segura em MSPs conservadores |
+| **Analytics** | KPI de service desk | métricas de troubleshooting (MTTH, rework, repeat incident, causa provável) | prova de valor além de dispatch/admin |
+
+### MVP Comercialmente Vendável (não apenas técnico)
+
+Objetivo: lançar algo que um MSP pague para usar, com promessa de valor mensurável e rollout controlado.
+
+#### MVP Comercial - Escopo Obrigatório (Launch)
+
+1. **Unified Inbox (Chat + Email)**
+   - threading básico
+   - assign/reassign
+   - comentários internos vs públicos
+2. **Autotask Native Integration (core)**
+   - ticket create/update/sync
+   - contacts/companies sync mínimo
+   - time entry assistido (manual + sugestão AI)
+3. **IT Glue Context Enrichment**
+   - lookup contextual por customer/site/device
+   - links relevantes e runbooks/documentação sugerida
+4. **Ninja Event + Device Context**
+   - ingestão de alertas para criação/enriquecimento de ticket
+   - side panel com status/dispositivo/alertas relacionados
+5. **AI Triage + AI Assist**
+   - title/category/priority/type suggestions com confidence
+   - summary/handoff draft
+   - KB/runbook suggestion
+6. **Manager Visibility**
+   - queue/SLA dashboard básico
+   - auditoria de automações e sugestões AI
+7. **Operational Readiness**
+   - onboarding guiado para Autotask + IT Glue + Ninja
+   - rollback/fallback para operação manual
+
+#### MVP Comercial - Fora do Launch (Roadmap)
+- Voice AI full
+- SMS two-way
+- Multi-PSA (ConnectWise, HaloPSA, etc.)
+- Workflow builder avançado (state machine/branching)
+- Agentic execution/autonomous remediation
+
+### Requisitos Não Funcionais (NFRs)
+
+#### 1. SLO / Performance / Disponibilidade
+- **UI local actions (cache/UI state):** P95 < 150ms
+- **AI triage suggestion (sem external PSA write):** P95 < 3s
+- **PSA round-trip (Autotask create/update):** P95 < 5s, com fila e retry
+- **Event ingestion (Ninja -> Cerebro visible):** P95 < 30s
+- **Disponibilidade da plataforma (core inbox + API):** 99.9% mensal (target launch)
+- **RPO / RTO (produção):** RPO <= 15 min, RTO <= 4h (target inicial)
+
+#### 2. Segurança / Multi-Tenant / Compliance
+- **Tenant Isolation:** isolamento lógico estrito em dados, filas, caches e índices
+- **RBAC:** Admin / Manager / Technician / Viewer com escopo por tenant
+- **Audit Trail:** ações críticas e decisões de automação registradas (quem/o quê/quando)
+- **Secrets Management:** credenciais de integração criptografadas + rotação suportada
+- **Encryption:** TLS em trânsito + criptografia em repouso
+- **Data Retention Policies:** configurável por tenant (logs, transcripts, auditoria)
+- **PII Handling:** redaction/masking em logs e datasets de treinamento
+
+#### 3. Observabilidade / Operação
+- **3 sinais obrigatórios:** métricas, logs, traces (com correlação por `trace_id` / `tenant_id` / `ticket_id`)
+- **Health checks:** API, workers, filas, integrações (Autotask/IT Glue/Ninja)
+- **Alerting:** erro de sync, backlog de fila, falha de webhook/poller, latência degradada
+- **Operational dashboards:** volume de eventos, retries, DLQ, sucesso por integração
+- **Runbooks operacionais:** incident response para falha de integração e degradação parcial
+
+#### 4. Rollout / Fallback / Resiliência
+- **Feature flags por tenant:** rollout controlado (AI triage, automações, enrichments)
+- **Progressive rollout:** piloto interno -> design partners -> cohort expandido
+- **Fallback manual:** qualquer automação crítica deve permitir override humano
+- **Retry + DLQ:** integrações assíncronas com idempotência e dead-letter queue
+- **Degraded mode:** falha de integração externa não derruba inbox/core UX
+- **Backfill/Reconciliation:** jobs de reconciliação para divergências de sync
+
+### AI Quality Gates (Thresholds + HITL + Auditoria)
+
+#### 1. Policy de Confidence por Tipo de Ação
+- **Sugestão de campos (title/category/type):** permitir auto-preenchimento visual com confidence >= 0.70
+- **Prioridade/roteamento:** auto-aplicar apenas com confidence >= 0.85 e regra de negócio compatível
+- **Auto-resposta ao cliente:** requer confidence >= 0.90 + match de KB/runbook validado
+- **Auto-resolução:** permitido somente em workflows explicitamente aprovados (FAQ/low-risk)
+
+#### 2. Human-in-the-Loop (HITL)
+- **Mandatory approval:** P1/P2, clientes VIP, sentimento negativo, baixa confiança, categorias sensíveis
+- **Explainability mínima:** exibir sinais usados (keywords, histórico, KB match, device alert)
+- **One-click feedback:** Accept / Edit / Reject para alimentar melhoria de prompts/modelos
+- **Escalation path:** se confidence baixa ou conflito entre sinais, enviar para manager/dispatcher
+
+#### 3. Auditoria e QA Contínuo
+- **Sampling QA:** revisar amostras de triage, roteamento, auto-resposta e auto-resolução
+- **Golden set por tenant/segmento:** conjunto de casos para regressão antes de mudanças em prompt/modelo
+- **Versionamento de prompts/modelos:** registrar versão usada em cada decisão AI
+- **Rollback operacional:** reverter versão de prompt/modelo por tenant/cohort
+- **KPIs de qualidade AI:** acceptance rate, override rate, false-escalation rate, false-auto-resolve rate
+
+### Execution PRD (Backlog Priorizado P0 / P1 / P2)
+
+Objetivo: traduzir a estratégia em backlog executável por fluxo e por integração, preservando foco comercial do launch.
+
+#### P0 (Must Ship - Launch Comercial)
+
+##### Fluxos Críticos
+- **F0. Intake & Triage:** inbox unificado (chat/email), criação/atualização de ticket, triagem AI com confidence e revisão humana
+- **F1. Dispatch & Routing:** assign/reassign, prioridade, comentários internos, regras de roteamento
+- **F2. Technician Context:** side panel com contexto de customer/ticket/device/docs (Autotask + IT Glue + Ninja)
+- **F3. Handoff & Escalation:** resumo AI, tag de escalonamento, histórico recente e alertas correlatos
+- **F4. Manager Visibility:** fila, SLA risk, auditoria de automações/sugestões AI
+
+##### Integrações (Launch)
+- **Autotask (P0):** ticket CRUD/sync, contacts/companies, time entries assistidos, reconciliação básica
+- **IT Glue (P0):** lookup contextual por customer/site/device, links/runbooks sugeridos, cache e permissões por tenant
+- **Ninja (P0):** ingestão de alertas, correlação com device/customer, enriquecimento de ticket, status de device
+
+##### Plataforma / Operação (P0)
+- **Tenant isolation + RBAC**
+- **Observabilidade (logs/metrics/traces correlacionados)**
+- **Retry/DLQ/idempotência para integrações**
+- **Feature flags por tenant**
+- **Audit trail de decisões AI e automações**
+
+#### P1 (Should Ship - Expansão Imediata Pós-Launch)
+
+##### Fluxos
+- **Voice AI (fase inicial):** atendimento básico + transcript + handoff
+- **SMS two-way:** updates e conversas simples
+- **Workflow builder (v1):** no-code para regras comuns de MSP
+- **Analytics de ROI (v1.5):** dashboards mais completos por tenant/customer
+
+##### Integrações
+- **ConnectWise Manage**
+- **HaloPSA**
+- **Conectores adicionais de documentação/conhecimento** (Confluence/SharePoint)
+
+#### P2 (Could Ship - Diferenciação Avançada)
+
+##### Fluxos / IA
+- **Agentic workflows controlados** (execução assistida com policy gates)
+- **Troubleshooting graph / causal hints**
+- **Predictive analytics** (repeat incidents, risco de SLA, forecasting)
+- **Runbook generation & optimization loop**
+
+##### Integrações
+- **RMM expansion** (Kaseya, N-Able, etc.)
+- **PSA/ITSM expansion** (Jira SM, Freshservice, Zendesk, etc.)
+
+### Investor / Board Readability (Versão Executiva do PRD)
+
+Objetivo: resumir a tese de produto, execução e risco em formato de leitura rápida para liderança/investidores.
+
+#### 1. Problema
+- MSPs operam com alto custo administrativo, triagem manual inconsistente e contexto fragmentado entre PSA, documentação e RMM.
+
+#### 2. Solução (Cerebro)
+- Plataforma de service delivery + troubleshooting intelligence para MSPs, iniciando com a stack `Autotask + IT Glue + Ninja`.
+
+#### 3. Diferencial
+- Além de dispatch/triagem, o Cerebro melhora a **qualidade de resolução** via contexto operacional e IA orientada a troubleshooting.
+
+#### 4. Estratégia de Entrada
+- Paridade funcional nos fluxos críticos de service desk (sem trade-off essencial)
+- Design partners MSP com stack `Autotask + IT Glue + Ninja`
+- Prova de ROI em 30-60 dias via métricas operacionais
+
+#### 5. Riscos Principais
+- Complexidade de integração/sincronização multi-sistema
+- Qualidade e segurança de automações AI
+- Adoção operacional por technicians/managers
+- Dependência de onboarding e rollout bem executados
+
+#### 6. Mitigações
+- Escopo P0 focado em fluxos críticos
+- AI quality gates + HITL + auditoria contínua
+- Feature flags por tenant + rollout progressivo
+- NFRs e observabilidade definidos desde o launch
+
+#### 7. Milestones (Board-Level)
+- **M1:** Launch comercial com Autotask + IT Glue + Ninja (P0)
+- **M2:** Expansão de canais/automação e dashboards (P1)
+- **M3:** Expansão de integrações (ConnectWise/Halo) + diferenciação de troubleshooting (P2 inicial)
+- **M4:** Consolidação de vantagem competitiva em resolução/automação avançada
+
 ### Core Development Phases
 
 #### Phase 0: MVP (2-3 months)
 **Goal:** Validate PMF, launch first integrations
 
 1. **Unified Inbox** (Teams + basic chat)
-2. **Ticket CRUD + PSA sync** (ConnectWise only)
+2. **Ticket CRUD + PSA sync** (Autotask first)
 3. **Simple Triage AI** (using OpenAI GPT-4)
 4. **Basic workflows** (pre-built only)
 5. **Email ingestion**
+6. **IT Glue context enrichment (basic)**
+7. **Ninja alert ingestion + device context (basic)**
 
 **Team:** 6-8 engineers (backend, frontend, ML)
 
 #### Phase 1: Core Features (3-4 months)
 1. **Voice AI** (phone integration)
 2. **Slack integration**
-3. **Autotask/Halo support**
+3. **ConnectWise/Halo support**
 4. **Custom workflows builder** (no-code)
 5. **Analytics dashboard**
 6. **Time entry automation**
@@ -1037,7 +1169,7 @@ Monitoring:
 
 ### Competitors & Positioning
 
-| Competitor | Strengths | Weaknesses | Thread Advantage |
+| Competitor | Strengths | Weaknesses | Benchmark Advantage |
 |-----------|-----------|-----------|------------------|
 | **Tidio** | Chat builder | Limited PSA integration | Native PSA + Voice AI |
 | **HubSpot Service Hub** | CRM integration | Expensive, over-featured | Lean, MSP-focused, ROI guarantee |
@@ -1046,30 +1178,32 @@ Monitoring:
 | **Intercom** | Customer messaging | SaaS-focused, not MSP | MSP-specific, tech-focused |
 | **In-house custom** | Total control | 6-12 mo build, $500k+ | Time-to-market, ongoing maintenance |
 
-**Thread's Unique Position:**
+**Benchmark Incumbent Position (referência):**
 - Only true **AI Service Desk for MSPs**
 - Native **PSA integration** (ConnectWise native)
 - **Voice AI included** (not add-on)
 - **ROI guarantee** (60-day money-back)
 - **Familiar interface** (Slack/Teams, not new tool)
 
+**Cerebro Expansion Wedge (proposed):**
+- Preserve benchmark-equivalent service desk baseline on critical flows
+- Start with **Autotask + IT Glue + Ninja** integration suite (where execution speed is highest)
+- Differentiate on **troubleshooting intelligence** (context, hypothesis, handoff quality, repeat-incident reduction)
+
 ---
 
 ## SUMMARY & NEXT STEPS
 
-### Rekomendasi para construir produto similar:
+### Próximos passos para expansão do Cerebro:
 
 1. **Start com MVP:** Inbox + 1 PSA integration + basic AI triage
    - Validate PMF with 3-5 beta MSP customers
-   - Measure: Can they achieve ROI in 60 days?
+   - Measure: Can they achieve ROI in 30-60 days?
 
-2. **Assemble Team:**
-   - 2-3 senior backend engineers
-   - 1-2 frontend engineers
-   - 1 ML engineer (or use API-first approach com OpenAI)
-   - 1 DevOps / infrastructure
-   - 1 product manager
-   - 1 support specialist
+2. **Operating Model (Founder + AI Agents):**
+   - 1 founder/operator (produto + engenharia + validação)
+   - AI agents especializados (coding, review, architecture, QA, docs)
+   - Execução iterativa com automação de tarefas repetitivas e documentação contínua
 
 3. **Technology Priorities:**
    - Real-time sync (WebSocket + event streaming essential)
@@ -1077,22 +1211,85 @@ Monitoring:
    - Multi-tenancy (key for SaaS economics)
    - Security from day 1 (encryption, auth, audit logs)
 
-4. **Go-to-Market:**
-   - Target 50-100 beta MSPs (direct sales)
-   - Provide 60-day money-back guarantee (critical for trust)
-   - Measure & publicize ROI (case studies)
-   - Partner with PSA vendors (co-sell)
-
-5. **Pricing Strategy:**
-   - Freemium or 14-day trial (low friction)
-   - Per-customer model (aligns with MSP billing)
-   - Volume discounts at 500+ customers
-   - Simple tiers (not too many SKUs)
+4. **Commercialization (Future):**
+   - Conteúdo consolidado na seção final do documento
 
 ### Expected Timeline:
 - MVP → Market: **4-6 months**
 - Break-even: **12-18 months** (depending on sales velocity)
 - Market leadership: **3-5 years** (if execution strong + funding adequate)
+
+---
+
+## COMERCIALIZAÇÃO FUTURA (Consolidado)
+
+> Esta seção é um consolidado de hipóteses/comercialização para uso futuro. No momento, o foco é **desenvolver e validar internamente na Refresh**. Não é plano de execução imediato.
+
+### Princípios desta fase
+- Prioridade atual: produto, validação operacional interna e prova de valor real
+- Comercialização externa: fase futura, após validação de fluxos críticos e qualidade operacional
+- Pricing abaixo: **referência cronológica/histórica** de hipóteses, não decisão atual
+
+### Pricing (Referência Cronológica / Histórica)
+
+#### Tiers de Serviço (hipótese futura)
+
+##### Tier 1: AI Essentials
+**$19 / managed customer / month**
+
+##### Tier 2: AI Pro (hipótese futura)
+**$34 / managed customer / month + $800 (one-time setup)**
+
+##### Add-ons (hipótese futura)
+- **Integrated Chat:** +$5/customer/month
+- **Voice AI:** +$15/customer/month
+- **AI Ticket Credits:** $0.50/credit
+
+#### Exemplo de Volume (referência histórica)
+
+| Componente | Quantidade | Unit Price | Total Mensal |
+|-----------|-----------|-----------|-------------|
+| AI Pro (100 customers) | 100 | $34 | $3,400 |
+| Voice AI (50 customers) | 50 | $15 | $750 |
+| Integrated Chat (100) | 100 | $5 | $500 |
+| **Monthly Total** | - | - | **$4,650** |
+| **Annual** | - | - | **$55,800** |
+| **Setup (one-time)** | - | - | **$800** |
+
+#### ROI Projection (referência histórica)
+```
+Current State:
+- 100 customers
+- 50 technicians (avg salary $65k/year = $31.25/hour)
+- Current admin time: 40% dispatch + prep work
+- Admin cost: 50 techs × $31.25/hr × 40% = 20 FTE
+
+With Cerebro AI Pro:
+- Admin overhead reduced to 10% (30% saved)
+- 15 FTE freed up
+- 15 × $31.25/hr × 2080 hours = $937,500 annual capacity
+
+ROI:
+- Cerebro cost: $55,800/year
+- Capacity gain value: $937,500
+- Net: $937,500 - $55,800 = $881,700 / year
+- Payback period: 22 days (!!)
+```
+
+### Flexibilidade Contratual (hipótese futura)
+- **Mês a Mês:** Sem lock-in
+- **60-Day Money-Back:** Se não atingir ROI em 60 dias, reembolso total
+- **Volume Discounts:** 500+ clientes = negocie custom terms
+
+### Go-to-Market (futuro, pós-validação interna)
+- Target inicial de design partners MSP (após validação na Refresh)
+- Medir e publicizar ROI/case studies somente após consistência operacional
+- Possíveis parcerias com vendors de PSA/RMM/documentação em fase posterior
+
+### Estratégia de Pricing (futura)
+- Modelo por customer/tenant (alinhado ao billing de MSP)
+- Tiers simples com add-ons claros
+- Trial controlado quando onboarding e suporte estiverem padronizados
 
 ---
 
@@ -1116,6 +1313,11 @@ Monitoring:
 - Pricing: https://www.getthread.com/thread-pricing
 - Voice AI: https://www.getthread.com/voice-ai
 - Roadmap: https://www.getthread.com/roadmap
+
+### C. Benchmark Competitivo (Thread)
+- Benchmark competitivo utilizado para paridade funcional de fluxos críticos
+- Referências concentradas nos Apêndices para manter o corpo do PRD centrado no Cerebro
+- Estratégia do documento: paridade por fluxo crítico + diferenciação em troubleshooting intelligence
 
 ---
 

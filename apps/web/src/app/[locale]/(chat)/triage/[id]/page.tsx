@@ -151,6 +151,7 @@ export default function SessionDetail({
   const [isManualSuppressionSaving, setIsManualSuppressionSaving] = useState(false);
   const [isWorkflowReconcileRunning, setIsWorkflowReconcileRunning] = useState(false);
   const [workflowActionError, setWorkflowActionError] = useState('');
+  const [isDevPanelOpen, setIsDevPanelOpen] = useState(false);
 
   const p0LookupTicketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
   const workflowInboxState = usePollingResource(listWorkflowInbox, { intervalMs: 10000 });
@@ -881,24 +882,6 @@ export default function SessionDetail({
             ? { highlight: '#1DB98A' }
             : {}),
         },
-        {
-          key: 'Launch Policy',
-          val: 'Autotask two-way · Others read-only',
-          highlight: '#5B7FFF',
-        },
-        {
-          key: 'AI Handoff',
-          val: latestManagerAi
-            ? `${latestManagerAi.hitl_status === 'pending' ? 'HITL pending' : 'Suggestion-ready'}`
-            : (managerOpsAccessError ? 'Admin access required' : 'Not generated'),
-          ...(latestManagerAi?.hitl_status === 'pending' ? { highlight: '#F59E0B' } : {}),
-        },
-        {
-          key: 'AI Confidence',
-          val: latestManagerAi ? `${Math.round(Number(latestManagerAi.confidence || 0) * 100)}%` : 'n/a',
-          ...(latestManagerAi ? { highlight: latestManagerAi.hitl_status === 'pending' ? '#F59E0B' : '#1DB98A' } : {}),
-        },
-        ...buildEnrichmentContextItems(enrichmentProviderStatus),
       ],
       hypotheses: Array.isArray(data.diagnosis?.top_hypotheses)
         ? data.diagnosis.top_hypotheses.slice(0, 3).map((h: any, i: number) => ({
@@ -949,22 +932,7 @@ export default function SessionDetail({
           status={playbookStatus}
           sessionStatus={data?.session?.status}
           {...(playbookPanelData ? { data: playbookPanelData } : {})}
-        >
-          <a
-            href="/manager-ops/p0?internal=1"
-            title="Internal validation harness (manager ops)"
-            style={triPaneFooterLinkChipStyle()}
-          >
-            Internal Ops (P0)
-          </a>
-          <a
-            href={`/workflow/p0/${encodeURIComponent(ticketNumber)}?internal=1`}
-            title="Internal validation harness (workflow detail)"
-            style={triPaneFooterLinkChipStyle()}
-          >
-            Internal Workflow (P0)
-          </a>
-        </PlaybookPanel>
+        />
       }
       mainContent={
         <div className="flex-1 flex flex-col" style={{ background: 'transparent', minWidth: 0, height: '100%', minHeight: 0, padding: '12px', gap: '8px' }}>
@@ -1003,22 +971,6 @@ export default function SessionDetail({
                   <path d="M10 3L4.5 8.5L2 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 {t('statusPlaybookReady')}
-              </span>
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  padding: '3px 8px',
-                  borderRadius: '8px',
-                  fontSize: '10px',
-                  fontWeight: 600,
-                  color: 'var(--accent)',
-                  background: 'rgba(91,127,255,0.07)',
-                  border: '1px solid rgba(91,127,255,0.20)',
-                }}
-                title="P0 launch policy"
-              >
-                AT 2W · Others RO
               </span>
               <button
                 onClick={handleToggleManualSuppression}
@@ -1153,70 +1105,6 @@ export default function SessionDetail({
               minHeight: 0,
             }}
           >
-            <div
-              className="rounded-xl p-3 mb-4"
-              style={{
-                background: 'var(--bg-panel)',
-                border: '1px solid var(--bento-outline)',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.02)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
-                <div style={{ fontFamily: 'var(--font-jetbrains-mono)', fontSize: '9px', fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'var(--text-faint)' }}>
-                  Workflow Runtime + P0 Trust Signals
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={triPaneBadgeStyle('info')}>{workflowTicket ? 'Workflow inbox wired' : 'Workflow inbox pending'}</span>
-                  <span style={triPaneBadgeStyle('neutral')}>Autotask TWO-WAY</span>
-                  <span style={triPaneBadgeStyle('warn')}>Others READ-ONLY</span>
-                </div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px', marginBottom: '8px' }}>
-                <div style={triPaneMetricCardStyle()}>
-                  <div style={triPaneMetricLabelStyle()}>Workflow status</div>
-                  <div style={triPaneMetricValueStyle()}>
-                    {workflowTicket?.status || (workflowAccessError ? 'access error' : 'not in inbox')}
-                  </div>
-                </div>
-                <div style={triPaneMetricCardStyle()}>
-                  <div style={triPaneMetricLabelStyle()}>Audit rows</div>
-                  <div style={triPaneMetricValueStyle()}>{workflowAuditRows.length}</div>
-                </div>
-                <div style={triPaneMetricCardStyle()}>
-                  <div style={triPaneMetricLabelStyle()}>Reconcile issues</div>
-                  <div style={triPaneMetricValueStyle()}>
-                    {workflowReconcileRows.length}
-                    {workflowReconcileTopSeverity ? ` · ${workflowReconcileTopSeverity}` : ''}
-                  </div>
-                </div>
-                <div style={triPaneMetricCardStyle()}>
-                  <div style={triPaneMetricLabelStyle()}>AI handoff</div>
-                  <div style={triPaneMetricValueStyle()}>
-                    {latestManagerAi
-                      ? `${latestManagerAi.hitl_status}${Number.isFinite(Number(latestManagerAi.confidence)) ? ` · ${Math.round(Number(latestManagerAi.confidence) * 100)}%` : ''}`
-                      : (managerOpsAccessError ? 'admin access required' : 'not generated')}
-                  </div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                {Object.entries(enrichmentProviderStatus).map(([provider, status]) => (
-                  <span key={provider} style={triPaneBadgeStyle(status.tone)}>
-                    {status.shortLabel}: {status.label}
-                  </span>
-                ))}
-                {workflowLastAudit ? (
-                  <span style={triPaneBadgeStyle(workflowLastAudit.result === 'success' ? 'good' : workflowLastAudit.result === 'rejected' ? 'warn' : 'bad')}>
-                    Last workflow audit: {workflowLastAudit.action}
-                  </span>
-                ) : null}
-              </div>
-              {(workflowActionError || workflowAccessError || managerOpsAccessError) ? (
-                <div style={{ marginTop: '8px', fontSize: '11px', color: '#f59e0b' }}>
-                  {[workflowActionError, workflowAccessError, managerOpsAccessError].filter(Boolean).join(' · ')}
-                </div>
-              ) : null}
-            </div>
-
             {error && (
               <div
                 className="rounded-xl p-4 mb-4 text-sm"
@@ -1262,6 +1150,175 @@ export default function SessionDetail({
               'Escalate to L3',
             ]}
           />
+
+          <button
+            type="button"
+            onClick={() => setIsDevPanelOpen((v) => !v)}
+            aria-expanded={isDevPanelOpen}
+            aria-controls="p0-dev-floating-panel"
+            title={isDevPanelOpen ? 'Hide development tools panel' : 'Show development tools panel'}
+            style={{
+              position: 'fixed',
+              right: '18px',
+              bottom: '18px',
+              zIndex: 60,
+              borderRadius: '14px',
+              border: '1px solid rgba(91,127,255,0.24)',
+              background: isDevPanelOpen ? 'rgba(91,127,255,0.14)' : 'rgba(255,255,255,0.96)',
+              color: isDevPanelOpen ? '#4f6fe9' : 'var(--text-primary)',
+              padding: '10px 12px',
+              boxShadow: '0 10px 30px rgba(0,0,0,0.12)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '12px',
+              fontWeight: 600,
+              backdropFilter: 'blur(14px)',
+            }}
+          >
+            <span style={{
+              width: '8px', height: '8px', borderRadius: '50%',
+              background: isDevPanelOpen ? '#4f6fe9' : '#9ca3af',
+              boxShadow: isDevPanelOpen ? '0 0 10px rgba(79,111,233,0.5)' : 'none',
+            }} />
+            {isDevPanelOpen ? 'Hide dev tools' : 'Show dev tools'}
+          </button>
+
+          {isDevPanelOpen ? (
+            <div
+              id="p0-dev-floating-panel"
+              role="dialog"
+              aria-label="Development tools for workflow and P0 signals"
+              style={{
+                position: 'fixed',
+                right: '18px',
+                bottom: '72px',
+                width: 'min(460px, calc(100vw - 36px))',
+                maxHeight: 'min(68vh, 760px)',
+                overflowY: 'auto',
+                zIndex: 59,
+                borderRadius: '18px',
+                border: '1px solid var(--bento-outline)',
+                background: 'rgba(245,247,252,0.96)',
+                boxShadow: '0 18px 48px rgba(12,18,33,0.18)',
+                backdropFilter: 'blur(18px)',
+                padding: '14px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>Development tools (P0 validation)</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ticket-level workflow health, AI signals, read-only integrations, and internal validation links.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsDevPanelOpen(false)}
+                  style={{
+                    width: '28px', height: '28px', borderRadius: '9px',
+                    border: '1px solid var(--bento-outline)', background: '#fff', color: 'var(--text-muted)'
+                  }}
+                  aria-label="Close development tools panel"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                <div style={triPaneMetricCardStyle()}>
+                  <div style={triPaneMetricLabelStyle()}>Launch policy</div>
+                  <div style={{ ...triPaneMetricValueStyle(), whiteSpace: 'normal' }}>Autotask can write updates. Other integrations are read-only.</div>
+                </div>
+                <div style={triPaneMetricCardStyle()}>
+                  <div style={triPaneMetricLabelStyle()}>Workflow connection</div>
+                  <div style={triPaneMetricValueStyle()}>
+                    {workflowTicket ? 'This ticket is present in the workflow inbox.' : (workflowAccessError ? 'Workflow data needs access or is unavailable.' : 'This ticket is not in the workflow inbox yet.')}
+                  </div>
+                </div>
+                <div style={triPaneMetricCardStyle()}>
+                  <div style={triPaneMetricLabelStyle()}>AI handoff status</div>
+                  <div style={triPaneMetricValueStyle()}>
+                    {latestManagerAi
+                      ? latestManagerAi.hitl_status === 'pending'
+                        ? 'Waiting for human review'
+                        : 'AI handoff is available'
+                      : (managerOpsAccessError ? 'Admin access required to view AI signals' : 'AI handoff has not been generated')}
+                  </div>
+                </div>
+                <div style={triPaneMetricCardStyle()}>
+                  <div style={triPaneMetricLabelStyle()}>AI confidence</div>
+                  <div style={triPaneMetricValueStyle()}>
+                    {latestManagerAi ? `${Math.round(Number(latestManagerAi.confidence || 0) * 100)}%` : 'Not available'}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ ...triPaneMetricLabelStyle(), marginBottom: '6px' }}>Workflow health details</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div style={triPaneMetricCardStyle()}>
+                    <div style={triPaneMetricLabelStyle()}>Workflow status</div>
+                    <div style={triPaneMetricValueStyle()}>{workflowTicket?.status || (workflowAccessError ? 'Unavailable' : 'Not available')}</div>
+                  </div>
+                  <div style={triPaneMetricCardStyle()}>
+                    <div style={triPaneMetricLabelStyle()}>Workflow audit events</div>
+                    <div style={triPaneMetricValueStyle()}>{workflowAuditRows.length}</div>
+                  </div>
+                  <div style={triPaneMetricCardStyle()}>
+                    <div style={triPaneMetricLabelStyle()}>Reconciliation issues</div>
+                    <div style={triPaneMetricValueStyle()}>{workflowReconcileRows.length === 0 ? 'None' : `${workflowReconcileRows.length} (${workflowReconcileTopSeverity || 'info'})`}</div>
+                  </div>
+                  <div style={triPaneMetricCardStyle()}>
+                    <div style={triPaneMetricLabelStyle()}>Latest workflow audit</div>
+                    <div style={triPaneMetricValueStyle()}>{workflowLastAudit ? humanizeWorkflowAuditAction(workflowLastAudit.action) : 'No workflow audit event yet'}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ ...triPaneMetricLabelStyle(), marginBottom: '6px' }}>Read-only integration status</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  {Object.entries(enrichmentProviderStatus).map(([provider, status]) => (
+                    <div key={provider} style={triPaneMetricCardStyle()}>
+                      <div style={triPaneMetricLabelStyle()}>{humanizeProviderName(provider)}</div>
+                      <div style={triPaneMetricValueStyle()}>{humanizeProviderStatus(status.label)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {(workflowActionError || workflowAccessError || managerOpsAccessError) ? (
+                <div style={{
+                  border: '1px solid rgba(245,158,11,0.22)',
+                  background: 'rgba(245,158,11,0.08)',
+                  borderRadius: '12px',
+                  padding: '10px 12px',
+                  marginBottom: '10px',
+                  color: '#b45309',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                }}>
+                  {[workflowActionError, workflowAccessError, managerOpsAccessError].filter(Boolean).join(' · ')}
+                </div>
+              ) : null}
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                <a
+                  href="/manager-ops/p0?internal=1"
+                  title="Internal validation screen for manager operations P0 signals"
+                  style={triPaneFooterLinkChipStyle()}
+                >
+                  Open internal manager validation screen
+                </a>
+                <a
+                  href={`/workflow/p0/${encodeURIComponent(ticketNumber)}?internal=1`}
+                  title="Internal validation screen for workflow details P0 signals"
+                  style={triPaneFooterLinkChipStyle()}
+                >
+                  Open internal workflow validation screen
+                </a>
+              </div>
+            </div>
+          ) : null}
         </div>
       }
     />
@@ -1419,4 +1476,41 @@ function buildEnrichmentContextItems(statusByProvider: Record<string, ProviderSt
             : {}),
     };
   });
+}
+
+function humanizeWorkflowAuditAction(action?: string): string {
+  const raw = String(action || '').trim();
+  if (!raw) return 'No workflow audit event yet';
+
+  const direct: Record<string, string> = {
+    'workflow.sync.applied': 'Workflow sync applied',
+    'workflow.sync.skipped': 'Workflow sync skipped',
+    'workflow.reconcile.requested': 'Workflow reconciliation requested',
+    'workflow.reconcile.completed': 'Workflow reconciliation completed',
+    'workflow.reconcile.failed': 'Workflow reconciliation failed',
+  };
+  if (direct[raw]) return direct[raw];
+
+  return raw
+    .replace(/\./g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function humanizeProviderName(providerKey: string): string {
+  const map: Record<string, string> = {
+    itglue: 'IT Glue (read-only)',
+    ninjaone: 'Ninja (read-only)',
+    sentinelone: 'SentinelOne (read-only)',
+    check_point: 'Check Point (read-only)',
+  };
+  return map[providerKey] || `${providerKey} (read-only)`;
+}
+
+function humanizeProviderStatus(statusLabel?: string): string {
+  const raw = String(statusLabel || '').trim().toLowerCase();
+  if (!raw) return 'Not available';
+  if (raw === 'not loaded') return 'Not loaded yet';
+  if (raw === 'read-only ok') return 'Read-only data loaded successfully';
+  if (raw === 'partial failure') return 'Partial failure (degraded data)';
+  return raw.replace(/\b\w/g, (c) => c.toUpperCase());
 }

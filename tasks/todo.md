@@ -442,3 +442,62 @@
 - What worked: Full `.next` cleanup + dev server restart resolved the missing chunk runtime immediately, confirming artifact/runtime drift instead of code regression.
 - What was tricky: Shell policy blocked `rm -rf`, so cleanup had to be done via a `node` filesystem call.
 - Time taken: short operational fix + verification pass
+
+---
+
+# Task: Move P0 Admin/Dev Signals into Floating Contextual Pane (Tri-Pane UX Cleanup)
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Identify all admin/dev P0 UI elements currently rendered in the canonical tri-pane (`triage/[id]`) that must move to a floating pane
+- [x] Step 2: Add a floating toggle button (bottom-right) and contextual floating pane shell (open/close) in `triage/[id]`
+- [x] Step 3: Move launch policy badge, workflow/trust status strip, and internal harness links into the floating pane
+- [x] Step 4: Rewrite labels/content into human language (admin/dev readable, not shorthand/debug jargon)
+- [x] Step 5: Verify `typecheck` + `build`, and ensure canonical UI no longer shows those elements inline
+- [x] Step 6: Update wiki docs (`features`, `architecture`, `decisions`, `changelog`) with this UX cleanup adjustment
+- [x] Step 7: Fill review notes and finalize report
+
+## Open Questions
+- None blocking. Keeping the floating pane ticket-contextual and local to `triage/[id]` matches the requested scope and avoids broader shell changes.
+
+## Progress Notes
+- User requested admin/dev P0 instrumentation remain available during development, but removed from the canonical UI flow and moved to a floating contextual pane.
+- Requirements: bottom-right floating button, open/close pane, move existing dev/admin P0 items, use human language labels.
+- Implemented floating toggle + contextual pane in `triage/[id]`, moved shorthand launch-policy badge, workflow/trust strip, and internal harness links into the pane.
+- Removed P0 debug/status cards from the canonical right-side context panel; the panel now presents human-language labels for launch policy, AI handoff/confidence, workflow health, and read-only integration statuses.
+- Verification passed after regenerating Next generated types (`build` then `typecheck`).
+
+## Review
+- What worked:
+- What worked: Localized refactor inside `triage/[id]` preserved the tri-pane shell while keeping admin/dev visibility available on demand through a small floating panel.
+- What was tricky: `typecheck` temporarily failed because `.next/types` was missing after cache cleanup; running `next build` regenerated the Next type files and fixed the issue.
+- Time taken: one UI refactor + verification + documentation pass
+
+---
+
+# Task: Fix Next.js Dev Vendor Chunk Cache Error (`@opentelemetry` vendor-chunks missing)
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Confirm running `next dev` process and treat error as stale `.next` dev artifact mismatch
+- [x] Step 2: Stop the `apps/web` dev server cleanly
+- [x] Step 3: Remove `apps/web/.next` and restart `pnpm --filter @playbook-brain/web dev`
+- [x] Step 4: Verify server readiness and smoke the triage route that was failing
+- [x] Step 5: Fill review notes and mark completed
+
+## Open Questions
+- None blocking. This matches the recurring Next.js dev cache/chunk mismatch pattern already observed today.
+
+## Progress Notes
+- User reported another missing module runtime error in `apps/web/.next/server/webpack-runtime.js`, now for `./vendor-chunks/@opentelemetry+api@1.9.0.js` while rendering `triage/[id]`.
+- Confirmed active `next dev` processes were still running while `.next` artifacts had drifted.
+- Stopped dev processes, removed `apps/web/.next`, restarted `pnpm --filter @playbook-brain/web dev`.
+- Dev server compiled `/_not-found` and `/[locale]/triage/[id]` successfully; log shows `GET /en/triage/T20260226.0030 200`.
+
+## Review
+- What worked:
+- What worked: Same root-cause fix as prior chunk errors (`.next` cleanup + dev restart) resolved the missing vendor chunk immediately.
+- What was tricky: First `fs.rmSync` hit `ENOTEMPTY` due to process/file race; rerunning after `pkill` + short wait solved it.
+- Time taken: short operational restart/cleanup cycle

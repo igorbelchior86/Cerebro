@@ -464,6 +464,186 @@ export interface TriageFlowResult {
   error?: string;
 }
 
+// ─── P0 Trust Layer Contracts (Agent C) ──────────────────────
+
+export type IntegrationPolicyMode = 'read_only' | 'two_way';
+
+export type P0ReadonlyIntegrationSource = 'itglue' | 'ninjaone' | 'sentinelone' | 'check_point';
+
+export interface CorrelationRefs {
+  trace_id?: string;
+  ticket_id?: string;
+  job_id?: string;
+  command_id?: string;
+}
+
+export interface ProvenanceRef {
+  source: string;
+  fetched_at: string;
+  adapter_version?: string;
+  record_ids?: string[];
+  prompt_version?: string;
+  model_version?: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface P0AuditRecord {
+  audit_id: string;
+  tenant_id: string;
+  actor: {
+    type: 'user' | 'system' | 'ai';
+    id?: string;
+    name?: string;
+  };
+  action: string;
+  target: {
+    type: string;
+    id?: string;
+    integration?: string;
+  };
+  result: 'success' | 'failure' | 'rejected';
+  reason?: string;
+  timestamp: string;
+  correlation: CorrelationRefs;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ContextCard {
+  source: 'Autotask' | 'IT Glue' | 'Ninja' | 'SentinelOne' | 'Check Point';
+  kind: 'context_card';
+  title: string;
+  summary: string;
+  status: 'ok' | 'partial' | 'error';
+  mode: IntegrationPolicyMode;
+  fields: Record<string, unknown>;
+  provenance: ProvenanceRef;
+}
+
+export interface ContextEvidenceRecord {
+  id: string;
+  source: 'IT Glue' | 'Ninja' | 'SentinelOne' | 'Check Point';
+  type: string;
+  summary: string;
+  severity?: 'low' | 'medium' | 'high' | 'critical';
+  observed_at?: string;
+  provenance: ProvenanceRef;
+}
+
+export interface TicketContextEnvelopeP0 {
+  ticket_id: string;
+  tenant_id: string;
+  cards: ContextCard[];
+  evidence: ContextEvidenceRecord[];
+  provenance: {
+    generated_at: string;
+    sources: ProvenanceRef[];
+  };
+  policy: {
+    mode: IntegrationPolicyMode;
+    enforced_sources: P0ReadonlyIntegrationSource[];
+    enforcement: 'explicit_reject_and_audit';
+  };
+  correlation: CorrelationRefs;
+  degraded_mode?: {
+    partial_failures: Array<{
+      source: P0ReadonlyIntegrationSource;
+      error: string;
+      retryable: boolean;
+    }>;
+    core_ticket_handling_preserved: boolean;
+  };
+}
+
+export interface AIDecisionSuggestion {
+  suggestion_only: boolean;
+  summary: string;
+  top_hypothesis?: string;
+  recommended_actions: RecommendedAction[];
+  do_not_do: string[];
+  handoff_notes?: string[];
+}
+
+export type AIDecisionType = 'triage' | 'priority' | 'routing' | 'summary' | 'handoff';
+
+export type HitlStatus = 'not_required' | 'pending' | 'approved' | 'rejected';
+
+export interface AIDecisionRecord {
+  decision_id: string;
+  tenant_id: string;
+  ticket_id: string;
+  decision_type: AIDecisionType;
+  suggestion: AIDecisionSuggestion;
+  confidence: number;
+  rationale: string;
+  signals_used: string[];
+  provenance_refs: ProvenanceRef[];
+  hitl_status: HitlStatus;
+  prompt_version: string;
+  model_version: string;
+  timestamp: string;
+  correlation: CorrelationRefs;
+  policy_gate: {
+    outcome: 'pass' | 'hitl_required';
+    reasons: string[];
+  };
+}
+
+export interface AIAssistDrafts {
+  summary_md: string;
+  handoff_md: string;
+}
+
+export interface ManagerQueueSnapshotItem {
+  ticket_id: string;
+  queue: string;
+  priority?: string;
+  sla_status: 'healthy' | 'at_risk' | 'breached' | 'unknown';
+  age_minutes?: number;
+  ai_validation_state?: 'pending_review' | 'sampled' | 'validated' | 'rejected';
+}
+
+export interface ManagerVisibilitySnapshot {
+  tenant_id: string;
+  generated_at: string;
+  queue_sla: {
+    total_tickets: number;
+    by_queue: Array<{
+      queue: string;
+      total: number;
+      healthy: number;
+      at_risk: number;
+      breached: number;
+      unknown: number;
+    }>;
+  };
+  ai_audit: {
+    total_decisions: number;
+    pending_hitl: number;
+    avg_confidence: number;
+    by_decision_type: Record<string, number>;
+  };
+  automation_audit: {
+    total_records: number;
+    rejected_actions: number;
+    read_only_rejections: number;
+    recent: P0AuditRecord[];
+  };
+  qa_sampling: {
+    sample_size: number;
+    tickets: Array<{
+      ticket_id: string;
+      reason: string;
+      confidence?: number;
+      hitl_status?: HitlStatus;
+      sla_status?: ManagerQueueSnapshotItem['sla_status'];
+    }>;
+  };
+  integrity_checks: {
+    ok: boolean;
+    issues: string[];
+  };
+}
+
 // ─── Connector Types ──────────────────────────────────────────
 
 export interface AutotaskTicket {
@@ -511,3 +691,5 @@ export interface ITGlueDocument {
   createdAt: string;
   updatedAt: string;
 }
+
+export * from './cp0-contracts.js';

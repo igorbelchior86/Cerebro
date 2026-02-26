@@ -18,11 +18,14 @@ import integrationsRoutes from './routes/integrations.js';
 import chatRoutes from './routes/chat.js';
 import emailIngestionRoutes from './routes/email-ingestion.js';
 import authRoutes from './routes/auth.js';
+import workflowRoutes from './routes/workflow.js';
+import managerOpsRoutes from './routes/manager-ops.js';
 import { requireAuth } from './middleware/auth.js';
 import { autoSeedAdmin } from './db/seed-admin.js';
 import { triageOrchestrator } from './services/triage-orchestrator.js';
 import { autotaskPollingService } from './services/autotask-polling.js';
 import { bootstrapWorkspaceRuntimeSettings } from './services/runtime-settings.js';
+import { createObservabilityMiddleware, createObservabilityRuntime, requestContextMiddleware } from './platform/index.js';
 
 // Load environment variables — look for .env at monorepo root (../../../ relative to dist/)
 const __filename = fileURLToPath(import.meta.url);
@@ -31,17 +34,13 @@ config({ path: resolve(__dirname, '../../../', '.env') });
 
 const app: Express = express();
 
+const observabilityRuntime = createObservabilityRuntime();
+
 // Middleware
 app.use(express.json());
 app.use(cookieParser());
-
-// Initialize AsyncLocalStorage for Postgres Row-Level-Security filters
-import { tenantContext } from './lib/tenantContext.js';
-app.use((req, res, next) => {
-  tenantContext.run({ tenantId: undefined, bypassRLS: false }, () => {
-    next();
-  });
-});
+app.use(requestContextMiddleware);
+app.use(createObservabilityMiddleware(observabilityRuntime));
 
 
 // ─── CORS Configuration ──────────────────────────────────────
@@ -59,7 +58,10 @@ app.use((req, res, next) => {
   }
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-bootstrap-token');
+  res.header(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, x-bootstrap-token, x-request-id, x-trace-id, x-ticket-id, x-job-id, x-command-id',
+  );
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
   } else {
@@ -96,6 +98,8 @@ app.use('/diagnose', requireAuth, diagnoseRoutes);
 app.use('/playbook', requireAuth, playbookRoutes);
 app.use('/integrations', requireAuth, integrationsRoutes);
 app.use('/chat', requireAuth, chatRoutes);
+app.use('/workflow', requireAuth, workflowRoutes);
+app.use('/manager-ops', requireAuth, managerOpsRoutes);
 
 // UI still uses these endpoints as a local inbox/session list API.
 // Email ingestion polling is disabled, but read/query routes remain mounted.

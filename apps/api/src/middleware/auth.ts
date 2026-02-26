@@ -6,6 +6,7 @@ import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
 import { tenantContext } from '../lib/tenantContext.js';
+import { mapAuthRoleToP0Role } from '../platform/rbac.js';
 
 export interface AuthPayload {
   sub: string;                          // user UUID
@@ -66,6 +67,9 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     const store = tenantContext.getStore();
     if (store && payload.tid) {
       store.tenantId = payload.tid;
+      store.actorId = payload.sub;
+      store.actorType = 'user';
+      store.actorRole = mapAuthRoleToP0Role(payload.role);
     }
 
     next();

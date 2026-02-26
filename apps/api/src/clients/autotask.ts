@@ -69,15 +69,24 @@ export class AutotaskClient {
   }
 
   private async request<T>(endpoint: string, params?: Record<string, string | number>) {
+    return this.requestJson<T>('GET', endpoint, params ? { params } : undefined);
+  }
+
+  private async requestJson<T>(
+    method: 'GET' | 'POST' | 'PATCH' | 'PUT',
+    endpoint: string,
+    options?: { params?: Record<string, string | number>; body?: unknown }
+  ) {
     const base = await this.discoverZone();
     const url = new URL(`${base}${endpoint}`);
-    if (params) {
-      Object.entries(params).forEach(([k, v]) => url.searchParams.append(k, String(v)));
+    if (options?.params) {
+      Object.entries(options.params).forEach(([k, v]) => url.searchParams.append(k, String(v)));
     }
 
     const response = await fetch(url.toString(), {
-      method: 'GET',
+      method,
       headers: this.authHeaders(),
+      ...(options?.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
     });
 
     if (!response.ok) {
@@ -283,5 +292,30 @@ export class AutotaskClient {
       if (!deduped.has(q.id)) deduped.set(q.id, q);
     }
     return Array.from(deduped.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }
+
+  async createTicket(payload: Record<string, unknown>): Promise<AutotaskTicket> {
+    const response = await this.requestJson<{ item?: AutotaskTicket; items?: AutotaskTicket[]; records?: AutotaskTicket[] }>(
+      'POST',
+      '/tickets',
+      { body: payload }
+    );
+    const rows = this.extractCollection(response);
+    if (!rows[0]) throw new Error('Autotask createTicket returned no ticket');
+    return rows[0];
+  }
+
+  async updateTicket(ticketId: number | string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const endpoint = `/tickets/${encodeURIComponent(String(ticketId))}`;
+    return this.requestJson<Record<string, unknown>>('PATCH', endpoint, { body: payload });
+  }
+
+  async createTicketNote(ticketId: number | string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const endpoint = `/tickets/${encodeURIComponent(String(ticketId))}/notes`;
+    return this.requestJson<Record<string, unknown>>('POST', endpoint, { body: payload });
+  }
+
+  async createTimeEntry(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.requestJson<Record<string, unknown>>('POST', '/timeEntries', { body: payload });
   }
 }

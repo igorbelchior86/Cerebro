@@ -31,6 +31,7 @@ export default {
         useESM: true,
         tsconfig: {
           module: 'esnext',
+          moduleResolution: 'bundler',
           target: 'ES2020',
           lib: ['ES2020'],
           esModuleInterop: true,

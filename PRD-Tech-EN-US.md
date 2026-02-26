@@ -1037,10 +1037,31 @@ Batch 1 (first 3 parallel prompts) completion summary:
 - `[x]` Targeted P0 test pack green (`platform + workflow core + trust layer`)
 - `[x]` `@playbook-brain/api` typecheck green after Agent C route strict-typing fix
 
+Batch 2 (next 3 parallel prompts) completion summary:
+- `[x]` Agent D (P0 hardening): file-backed local durability for workflow/trust runtime state, Autotask poller -> workflow sync wiring, CP0 trust-contract consolidation, hardening tests
+- `[x]` Agent E (Phase 4 framework): Refresh internal validation framework, acceptance matrix, evidence capture script/dry-run, QA sampling workflow, defect triage + launch/no-launch packet templates
+- `[x]` Agent F (Phase 5 prep): rollout-control durability hardening, rollout/rollback procedures, launch-readiness runbooks/checklists, rollout dry-run
+- `[x]` Batch 2 validation green (`types/api typecheck`, targeted D/F suites, evidence-capture dry-run, rollout dry-run)
+
 Known follow-ups already identified (not blockers for Batch 1 completion):
-- `[~]` Replace in-memory runtime stores/scaffolds (queue/audit/trust/workflow state) with durable backing for production-grade operation
-- `[~]` Consolidate Agent C additive trust-layer types to import CP0 shared contracts directly (`cp0-contracts.ts`)
-- `[~]` Wire existing Autotask polling runtime into the new workflow core sync ingestion path
+- `[x]` Replace in-memory runtime stores/scaffolds (queue/audit/trust/workflow state) with durable backing for bounded P0 single-host operation (file-backed JSON persistence for workflow/trust/rollout control)
+- `[x]` Consolidate Agent C additive trust-layer types to import CP0 shared contracts directly (`cp0-contracts.ts`) via CP0-based trust contracts
+- `[x]` Wire existing Autotask polling runtime into the new workflow core sync ingestion path
+- `[~]` Upgrade local file-backed durability to multi-process/shared transactional storage for production-grade scale
+- `[~]` Execute live Refresh internal validation session (Phase 4) with real tenant/operator flows and fill decision packet
+- `[~]` Execute controlled design-partner launch Wave 0/1 with real telemetry and hypercare evidence
+
+#### UI Visibility Remark (Reminder)
+
+At this stage (Batches 1-2), most delivered work is backend/platform/runtime, internal routes, hardening, and operational tooling. Minimal or no visible product UI changes are expected yet.
+
+UI-visible changes should start when implementation explicitly targets frontend wiring for:
+- inbox screens consuming the new workflow core
+- technician context panel (enrichment + AI handoff surfaces)
+- manager dashboards consuming `/manager-ops/p0/*`
+- rollout/admin UI controls (if included in scope)
+
+Reminder for future reviews: do not use "no visible UI change" as a signal that progress is low during backend/hardening batches.
 
 #### Workstreams (What)
 
@@ -1053,7 +1074,7 @@ Known follow-ups already identified (not blockers for Batch 1 completion):
 - integration credential management
 
 ##### WS-B. Autotask Two-Way Core
-**Status:** `[x] Completed (Batch 1)` — P0 command/sync/reconciliation backbone implemented and tested (runtime store currently in-memory)
+**Status:** `[x] Completed (Batches 1-2)` — P0 command/sync/reconciliation backbone implemented, poller->workflow sync wired, hardening tests added
 - command model (create/update/assign/status/time entries)
 - sync ingestion (webhook/polling)
 - reconciliation + idempotency
@@ -1067,21 +1088,21 @@ Known follow-ups already identified (not blockers for Batch 1 completion):
 - routing rules and assignment workflow
 
 ##### WS-D. AI Triage + Assist
-**Status:** `[x] Completed (Batch 1)` — suggestion-first triage + confidence/provenance + HITL + summary/handoff drafts
+**Status:** `[x] Completed (Batches 1-2)` — suggestion-first triage + confidence/provenance + HITL + summary/handoff drafts; CP0 trust-contract alignment hardened
 - triage inference pipeline
 - confidence scores + rationale/provenance
 - policy gates + HITL
 - AI summary/handoff drafting
 
 ##### WS-E. Read-Only Context Enrichment
-**Status:** `[x] Completed (Batch 1)` — IT Glue, Ninja, SentinelOne, Check Point read-only normalization + explicit mutation rejection/audit
+**Status:** `[x] Completed (Batches 1-2)` — IT Glue, Ninja, SentinelOne, Check Point read-only normalization + explicit mutation rejection/audit + durability/hardening coverage
 - IT Glue context cards
 - Ninja alert/device enrichment
 - SentinelOne alert/incident/endpoint enrichment
 - Check Point perimeter/network/security enrichment
 
 ##### WS-F. Manager Visibility + Ops Readiness
-**Status:** `[~] Partially completed (Batch 1)` — manager visibility + AI/audit views and QA sampling implemented; operational runbooks and internal validation execution still pending
+**Status:** `[~] Substantially completed (Batches 1-2)` — manager visibility + AI/audit views + QA sampling + runbooks + validation/launch frameworks implemented; live execution/measurement still pending
 - queue/SLA dashboard
 - automation/AI audit views
 - runbooks for degraded mode and reconciliation
@@ -1132,7 +1153,7 @@ Known follow-ups already identified (not blockers for Batch 1 completion):
 - handoff summary uses enriched evidence/provenance
 
 ##### Phase 3 — Manager Visibility, Controls, and Hardening (Weeks 9-11)
-**Status:** `[~] Largely completed in Batch 1; hardening/runbooks/integration wiring follow-up remains`
+**Status:** `[x] Completed (Batch 2)` — hardening, runbooks, poller wiring, durability layer, and rollout-control hardening implemented and validated via targeted tests/dry-runs
 **Primary goal:** operational trust and internal validation readiness
 
 - WS-F dashboards/audit views
@@ -1145,7 +1166,7 @@ Known follow-ups already identified (not blockers for Batch 1 completion):
 - reconciliation jobs and degraded-mode runbooks tested
 
 ##### Phase 4 — Refresh Internal Validation (Weeks 12-14)
-**Status:** `[ ] Not started (recommended next 3-agent batch)`
+**Status:** `[~] Framework complete (Batch 2); live Refresh execution pending`
 **Primary goal:** validate with real workflows and identify gaps before external launch
 
 - production-like usage with Refresh operators/technicians
@@ -1158,7 +1179,7 @@ Known follow-ups already identified (not blockers for Batch 1 completion):
 - launch/no-launch decision documented
 
 ##### Phase 5 — Controlled Design-Partner Launch (Weeks 15-18)
-**Status:** `[ ] Not started (recommended subsequent batch after validation)`
+**Status:** `[~] Launch-readiness preparation complete (Batch 2); live cohort rollout pending`
 **Primary goal:** limited external rollout with guardrails
 
 - per-tenant feature-flag rollout

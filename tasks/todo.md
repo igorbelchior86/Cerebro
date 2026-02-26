@@ -273,3 +273,39 @@
 - What worked: Minimal patch resolved the blocker without touching AI triage service logic or tests.
 - What was tricky: Preserving exact runtime behavior while satisfying strict optional-property semantics.
 - Time taken: short fix + verification pass.
+
+---
+
+# Task: Agent G P0 Frontend UI Wiring (Inbox + Technician Context + Manager Ops)
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Inspect current `apps/web` routing/layout and map P0 backend contracts (`/workflow/*`, `/manager-ops/p0/*`) to frontend view models and routes
+- [x] Step 2: Implement P0 frontend data client + polling hooks and route/navigation integration for inbox/detail + manager ops pages (additive only)
+- [x] Step 3: Build technician context panel (read-only enrichments + AI triage/handoff display) with explicit launch-policy messaging and degraded/error states
+- [x] Step 4: Build manager ops P0 visibility surfaces (queue/SLA, AI decisions, audit visibility, optional rollout controls if route exists)
+- [x] Step 5: Run frontend verification (typecheck/build, tests if available, smoke/error-state checks) and capture results
+- [x] Step 6: Update local wiki docs (`features`, `architecture`, `decisions`, `changelog`) for UI wiring changes and constraints
+- [x] Step 7: Fill review notes and finalize delivery report
+
+## Open Questions
+- `apps/web` UI can be built and typechecked without an authenticated browser session, but full manual authenticated smoke in this shell session depends on valid local login cookies.
+- Technician context panel uses `/manager-ops/p0/*` trust-layer endpoints that are currently admin-protected; UI now exposes access-aware degraded states for non-admin sessions.
+
+## Progress Notes
+- Initialized Agent G with workflow-orchestrator discipline and repo scan.
+- Confirmed backend P0 routes exist in `apps/api/src/routes/workflow.ts` and `apps/api/src/routes/manager-ops.ts`.
+- Confirmed `apps/web` uses Next.js App Router and cookie-authenticated fetches (`credentials: include`).
+- Dry-run validation snapshots were empty, so frontend view models were derived from backend services/tests as source of truth.
+- Queried Context7 (Next.js App Router docs) for routing/client-component parameter terminology before implementation.
+- Added P0 frontend pages for `/workflow/p0`, `/workflow/p0/[ticketId]`, and `/manager-ops/p0` plus polling hook and typed API client.
+- Implemented technician context panel from workflow + trust-layer surfaces with explicit read-only launch policy messaging and degraded-state banners.
+- Implemented manager ops visibility UI wired to `/manager-ops/p0/visibility`, `/p0/ai-decisions`, `/p0/audit`, and rollout policy/flags GET endpoints (read-only display).
+- Added main layout navigation links for P0 Inbox and Manager Ops.
+- Verification: `pnpm --filter @playbook-brain/web typecheck` passed; `pnpm --filter @playbook-brain/web build` passed (Next build completed with existing `next-intl` webpack cache warnings only); API `/health` returned 200 and protected P0 endpoints returned expected 401 without session.
+
+## Review
+- What worked: Additive frontend routes/components were enough to expose P0 workflow and manager visibility without touching legacy triage/chat flows. Reusing workflow inbox as the queue source allowed `/manager-ops/p0/visibility` wiring with a labeled heuristic SLA status.
+- What was tricky: Trust-layer endpoints do not expose persisted enrichment envelopes directly, so the technician enrichment surface had to be built from trust audit evidence/status records while keeping the UI explicit about read-only constraints and degraded behavior.
+- Time taken: one implementation/verification/documentation session

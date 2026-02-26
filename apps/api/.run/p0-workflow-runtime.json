@@ -117,13 +117,163 @@
           "fetched_at": "2026-02-26T16:53:11.155Z"
         }
       }
+    },
+    {
+      "audit_id": "d773f08a-69d7-42ed-9b67-7eca0b9d4f19",
+      "timestamp": "2026-02-26T17:06:09.591Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0022"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132799",
+        "ticket_id": "T20260226.0022"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132799:ticket.created:2026-02-26T16:59:17.917Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T17:06:09.588Z"
+        }
+      }
+    },
+    {
+      "audit_id": "cc539e2a-a04a-48d8-a812-100734a053b9",
+      "timestamp": "2026-02-26T17:58:07.221Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0023"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132800",
+        "ticket_id": "T20260226.0023"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132800:ticket.created:2026-02-26T17:39:22.227Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T17:58:07.218Z"
+        }
+      }
+    },
+    {
+      "audit_id": "6fc07f64-fd7b-4850-818e-c115e5aa3049",
+      "timestamp": "2026-02-26T17:59:38.401Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0024"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132801",
+        "ticket_id": "T20260226.0024"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132801:ticket.created:2026-02-26T17:40:36.297Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T17:59:38.397Z"
+        }
+      }
+    },
+    {
+      "audit_id": "c3d58b50-5587-4398-960b-b8bdf6e8d898",
+      "timestamp": "2026-02-26T18:05:18.238Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0025"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132802",
+        "ticket_id": "T20260226.0025"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132802:ticket.created:2026-02-26T18:00:55.340Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T18:05:18.233Z"
+        }
+      }
+    },
+    {
+      "audit_id": "4758675f-3759-4045-b05d-96ee7982bbc9",
+      "timestamp": "2026-02-26T18:28:57.677Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0026"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132803",
+        "ticket_id": "T20260226.0026"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132803:ticket.created:2026-02-26T18:25:11.053Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T18:28:57.674Z"
+        }
+      }
     }
   ],
   "processedSyncEvents": [
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132795:ticket.created:2026-02-26T15:42:49.897Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132796:ticket.created:2026-02-26T16:34:59.383Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132797:ticket.created:2026-02-26T16:43:09.523Z",
-    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132798:ticket.created:2026-02-26T16:50:15.897Z"
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132798:ticket.created:2026-02-26T16:50:15.897Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132799:ticket.created:2026-02-26T16:59:17.917Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132800:ticket.created:2026-02-26T17:39:22.227Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132801:ticket.created:2026-02-26T17:40:36.297Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132802:ticket.created:2026-02-26T18:00:55.340Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132803:ticket.created:2026-02-26T18:25:11.053Z"
   ],
   "inbox": [
     [
@@ -197,6 +347,97 @@
         "last_event_id": "autotask-poller:132798:ticket.created:2026-02-26T16:50:15.897Z",
         "source_of_truth": "Autotask",
         "updated_at": "2026-02-26T16:53:11.157Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0022",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0022",
+        "external_id": "132799",
+        "title": "Re: Clio Single sign-on",
+        "description": "From Lee Taylor <lee@stratuslegalconsulting.com>: Hello Refresh,\r\nI am the firm's Clio consultant. Please let me know if you need any\r\nadditional information from me.\r\nBelow is set up instructions for SSO in Clio.\r\nhttps://help.clio.com/hc/en-us/articles/41135505613339-Single-Sign-On\r\nBest,\r\nLee\r\n\r\nLee F. Taylor\r\nAttorney/Founder,\r\nStratus Legal Consulting\r\nwww.stratuslegalconsulting.com\r\n[image: Clio Gold Certified Partner Badge]\r\ndba Lee F. Taylor Law, PLLC\r\n\r\n\r\n\r\nOn Wed, Feb 25, 2026 at 3:59?PM Diego Lopez <dlopez@shanklelaw.com> wrote:\r\n\r\n> Hello — In anticipation of going live with Clio, we would like to set up\r\n> Single sign-on with Microsoft. Would you please assist us with this process\r\n> next Thursday, March 5th. We can set up a call at 12:00pm or after in which\r\n> I could give you access to our Clio Admin account to enable it for our\r\n> staff. Thank you.\r\n>\r\n>\r\n>\r\n> [image: photo] <http://www.shanklelaw.com>\r\n>\r\n> *Diego Lopez*\r\n> *Operations Manager, Shankle Law Firm*\r\n>\r\n> [image: icon] 6115 Park South Drive, Suite 310, Charlotte, NC 28210\r\n> <https://maps.google.com/?q=6115%20Park%20South%20Drive,%20Suite%20310,%20Charlotte,%20NC%2028210>\r\n>\r\n> [image: icon] 704-370-1212  [image: icon] 704-370-1213\r\n>\r\n> [image: icon] www.shanklelaw.com\r\n>\r\n> [image: icon] dlopez@shanklelaw.com\r\n>\r\n> IMPORTANT: The contents of this email and any attachments are\r\n> confidential. They are intended for the named recipient(s) only. If you\r\n> have received this email by mistake, please notify the sender immediately\r\n> and do not disclose the contents to anyone or make copies thereof.\r\n>\r\n> [image: __tpx__]\r\n>",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-26T17:06:09.590Z",
+        "last_event_occurred_at": "2026-02-26T16:59:17.917Z",
+        "last_event_id": "autotask-poller:132799:ticket.created:2026-02-26T16:59:17.917Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T17:06:09.590Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0023",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0023",
+        "external_id": "132800",
+        "title": "Request for Access to Nacha File",
+        "description": "Per your discussion with Cristina, I need access to the Nacha file.\r\n\r\n\r\nBest regards,\r\n\r\n\r\n\r\nKim Privette\r\nSenior Staff Accountant\r\n\r\n\r\n\r\n[cid:318be0fa-e512-43b7-b23a-18fe7bcf4879]\r\n\r\na Composite Resources Company\r\n\r\n4203 International Drive\r\n\r\nRock Hill, SC 29732\r\n\r\n\r\n\r\nP|803.325.9300 x2016\r\n\r\nD|803.233.2391",
+        "status": "1",
+        "assigned_to": "29683572",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-26T17:58:07.220Z",
+        "last_event_occurred_at": "2026-02-26T17:39:22.227Z",
+        "last_event_id": "autotask-poller:132800:ticket.created:2026-02-26T17:39:22.227Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T17:58:07.220Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0024",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0024",
+        "external_id": "132801",
+        "title": "Microsoft 365 security: You have messages in quarantine",
+        "description": "From \"quarantine@messaging.microsoft.com\" <quarantine@messaging.microsoft.com>: Review These Messages\r\n\r\n \t 2 messages are being held for you to review as of 2/26/2026 5:20:52 PM (UTC).\r\n\r\n \t Review them within 30 days of the received date by going to the Quarantine page in the Security Center.\r\n\r\n \t Prevented phish messages\r\n\r\n \t Sender: \t marketing@hotelbookinghome.com\r\n\r\n \t Subject: \t ITAD Summit 2026 (IT Asset Disposition) - Secure Your Hotel early at Las Vegas\r\n\r\n \t Date: \t 2/26/2026 4:41:24 PM\r\n\r\n \t Review Message \t \t Release\r\n\r\n \t Sender: \t marketing@globalexpocapitals.com\r\n\r\n \t Subject: \t ITAD Summit 2026 (IT Asset Disposition) - Secure Your Hotel early at Las Vegas\r\n\r\n \t Date: \t 2/26/2026 4:49:45 PM\r\n\r\n \t Review Message \t \t Release\r\n\r\n \t © 2026 Microsoft Corporation. All rights reserved.\r\n\r\n \t Privacy Statement\r\n\r\n \t Acceptable Use Policy\r\n\r\n((SignedCardPayload))",
+        "status": "19",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-26T17:59:38.399Z",
+        "last_event_occurred_at": "2026-02-26T17:40:36.297Z",
+        "last_event_id": "autotask-poller:132801:ticket.created:2026-02-26T17:40:36.297Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T17:59:38.399Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0025",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0025",
+        "external_id": "132802",
+        "title": "Access needed for shared mailbox and teams channel",
+        "description": "Javon Hopkins jhopkins@charlotteworks.com<mailto:jhopkins@charlotteworks.com> needs access to the shared email box grants@charlotteworks.com<mailto:grants@charlotteworks.com>  He also needs access to the teams channel Charlotte Works Board-Documents\r\n\r\n[cid:image001.png@01DCA71F.C30239C0]\r\n\r\n\r\nBeverly Shepard\r\nComptroller\r\n8601 McAlpine Park Dr Ste 130\r\nCharlotte NC 28211\r\n704-502-3923 | www.charlotteworks.com<http://www.charlotteworks.com/>\r\n\r\n\r\n\r\nOur Mission: Leading the development of a skilled and in-demand workforce by engaging businesses, aligning community partners, empowering and connecting job seekers to meaningful employment, and fostering inclusive economic growth.",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-26T18:05:18.236Z",
+        "last_event_occurred_at": "2026-02-26T18:00:55.340Z",
+        "last_event_id": "autotask-poller:132802:ticket.created:2026-02-26T18:00:55.340Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T18:05:18.236Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0026",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0026",
+        "external_id": "132803",
+        "title": "Setup Drag and Drop Functionality for Emails from Outlook to Clio",
+        "description": "Hi there! I was wondering if someone could assist me with setting up the capability of dragging emails from Outlook and dropping them into a folder in Clio.\r\n\r\nThank you!\r\n\r\nBest,\r\n\r\n\r\nMonique Jackson\r\n\r\nParalegal\r\n\r\n\r\n\r\n[A close up of a sign  Description automatically generated]\r\n\r\n\r\n\r\nPhone: 704-844-1400\r\n\r\nFax: 704-845-1503\r\n\r\nEmail:  mjackson@wbbatty.com<mailto:mgutman@wbbatty.com>\r\n\r\n196 N. Trade Street\r\n\r\nMatthews, NC 28105\r\n\r\nwww.wbblawyers.com<http://www.wbblawyers.com/>",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-26T18:28:57.676Z",
+        "last_event_occurred_at": "2026-02-26T18:25:11.053Z",
+        "last_event_id": "autotask-poller:132803:ticket.created:2026-02-26T18:25:11.053Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T18:28:57.676Z"
       }
     ]
   ],

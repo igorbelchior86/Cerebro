@@ -1,0 +1,8 @@
+26:- [ ] Test ticket(s) identified for safe onboarding validation
+31:- [ ] Credentials configured for tenant
+40:- [ ] Credentials configured
+47:- [ ] Credentials configured
+54:- [ ] Credentials configured
+60:- [ ] Credentials configured
+77:- [ ] Founder signoff
+78:- [ ] Tenant admin signoff

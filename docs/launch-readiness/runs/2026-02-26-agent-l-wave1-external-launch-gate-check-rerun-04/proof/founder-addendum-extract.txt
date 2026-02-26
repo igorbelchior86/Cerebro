@@ -1,0 +1,13 @@
+7:### Gate Revalidation (G1–G4)
+14:- **G4 (Founder final authorization):** **CLOSED BY THIS ADDENDUM** *(if signed below)*
+18:**Final Decision:** `GO` for controlled external Wave 1 launch, subject to checklist below being complete before enablement.
+22:- [ ] Real design-partner tenant identified and approved
+23:- [ ] Credentials verified and safely stored
+24:- [ ] Approved onboarding test scope/tickets documented
+25:- [ ] Hypercare window scheduled (date/time/timezone)
+26:- [ ] Incident channel + owner + escalation path defined
+27:- [ ] Rollback owner confirmed
+28:- [ ] Launch policy frozen and confirmed:
+39:**Founder Name:** ____________________  
+40:**Founder Decision Timestamp (UTC):** ____________________  
+41:**Signature / Approval Marker:** ____________________

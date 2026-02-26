@@ -1,0 +1,9 @@
+docs/launch-readiness/runs
+docs/launch-readiness/runs/2026-02-26-agent-i-wave1-local-preflight
+docs/launch-readiness/runs/2026-02-26-agent-i-wave1-local-preflight/http
+docs/launch-readiness/runs/2026-02-26-agent-l-wave1-external-launch-gate-check
+docs/launch-readiness/runs/2026-02-26-agent-l-wave1-external-launch-gate-check-rerun-02
+docs/launch-readiness/runs/2026-02-26-agent-l-wave1-external-launch-gate-check-rerun-02/proof
+docs/launch-readiness/runs/2026-02-26-agent-l-wave1-external-launch-gate-check-rerun-03
+docs/launch-readiness/runs/2026-02-26-agent-l-wave1-external-launch-gate-check-rerun-03/proof
+docs/launch-readiness/runs/2026-02-26-agent-l-wave1-external-launch-gate-check/proof

@@ -1,0 +1,7 @@
+5:- Decision status: `CONDITIONAL`
+83:### Gate G1 — Autotask two-way happy-path proof (required)
+84:- Status: `CLOSED` (live rerun executed; closure criteria met)
+122:### Gate G4 — Founder signoff confirmation after evidence refresh (required)
+123:- Status: `OPEN`
+160:- This package is `READY FOR FOUNDER REVIEW`; hard gate G1 is closed and G4 founder decision is pending.
+161:- Phase 5 Wave 1 decision input can proceed after founder records explicit final decision (`GO / CONDITIONAL / NO-GO`).

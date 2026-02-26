@@ -1,3 +1,14 @@
+# Executive Brief (Strategy + Roadmap)
+## Cerebro Expansion: MSP Service Delivery + Troubleshooting Intelligence
+
+**Date:** February 2026  
+**Version:** 1.0  
+
+This document is for direction and decisions (why, what, when, risks).  
+For product requirements, see: Product PRD.  
+For delivery sequencing, architecture, and implementation details, see: Execution Guide.
+
+---
 # PRD Exec - Cerebro Expansion (MSP Service Delivery + Troubleshooting Intelligence)
 
 **Date:** February 2026  

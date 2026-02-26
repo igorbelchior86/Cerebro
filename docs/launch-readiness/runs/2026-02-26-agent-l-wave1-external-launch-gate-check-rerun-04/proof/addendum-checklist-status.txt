@@ -1,0 +1,6 @@
+22:- [ ] Real design-partner tenant identified and approved
+23:- [ ] Credentials verified and safely stored
+24:- [ ] Approved onboarding test scope/tickets documented
+25:- [ ] Hypercare window scheduled (date/time/timezone)
+26:- [ ] Incident channel + owner + escalation path defined
+27:- [ ] Rollback owner confirmed

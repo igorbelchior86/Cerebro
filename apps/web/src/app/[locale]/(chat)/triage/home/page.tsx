@@ -6,6 +6,7 @@ import ChatSidebar, { type ActiveTicket } from '@/components/ChatSidebar';
 import ChatMessage, { type Message } from '@/components/ChatMessage';
 import ChatInput from '@/components/ChatInput';
 import ResizableLayout from '@/components/ResizableLayout';
+import { loadTriPaneSidebarTickets } from '@/lib/workflow-sidebar-adapter';
 
 import { useRouter } from '@/i18n/routing';
 
@@ -43,21 +44,12 @@ export default function HomePage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Fetch tickets from email ingestion processed tickets table
+  // Fetch canonical sidebar tickets from workflow inbox only (P0 source of truth)
   useEffect(() => {
     const fetchTickets = async () => {
       try {
-        const res = await fetch(`${API}/email-ingestion/list`, {
-          credentials: 'include',
-        });
-        if (res.ok) {
-          const json = await res.json();
-          if (json.success && Array.isArray(json.data)) {
-            setSidebarTickets(json.data as ActiveTicket[]);
-          }
-        } else {
-          console.error('Failed to load tickets', res.status);
-        }
+        const tickets = await loadTriPaneSidebarTickets();
+        setSidebarTickets(tickets);
       } catch (err) {
         console.error('Failed to load tickets', err);
       } finally {
@@ -164,6 +156,19 @@ export default function HomePage() {
               </span>
             </div>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span
+                style={{
+                  fontSize: '9px',
+                  color: 'var(--text-muted)',
+                  border: '1px solid var(--bento-outline)',
+                  borderRadius: '999px',
+                  padding: '2px 6px',
+                  background: 'var(--bg-panel)',
+                }}
+                title="P0 launch policy in-context"
+              >
+                AT 2W · Others RO
+              </span>
               <span
                 style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-2)', display: 'inline-block' }}
                 className="animate-pulse"

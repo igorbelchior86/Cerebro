@@ -53,8 +53,8 @@ export default function P0ManagerOpsPage() {
 
   return (
     <P0PageShell
-      title="P0 Manager Ops"
-      subtitle="Validation/ops visibility UI wired to `/manager-ops/p0/*` (queue/SLA, AI decisions, audit, QA sample, integrity, rollout posture)."
+      title="Internal Validation Harness · P0 Manager Ops"
+      subtitle="Temporary internal/admin validation surface for `/manager-ops/p0/*`. Not part of the primary tri-pane Cerebro operator UX."
       actions={(
         <>
           <InlineButton onClick={() => void inbox.refresh()} disabled={inbox.refreshing}>Refresh inbox source</InlineButton>

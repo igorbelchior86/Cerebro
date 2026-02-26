@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import axios from 'axios';
 import ChatSidebar, { ActiveTicket } from '@/components/ChatSidebar';
@@ -9,6 +9,21 @@ import ChatInput from '@/components/ChatInput';
 import PlaybookPanel from '@/components/PlaybookPanel';
 import ResizableLayout from '@/components/ResizableLayout';
 import { usePathname } from 'next/navigation';
+import { usePollingResource } from '@/hooks/usePollingResource';
+import {
+  listManagerOpsAiDecisions,
+  listManagerOpsAudit,
+  listWorkflowAudit,
+  listWorkflowInbox,
+  listWorkflowReconciliationIssues,
+  reconcileWorkflowTicket,
+  type ManagerOpsAIDecision,
+  type WorkflowAuditRecord,
+  type WorkflowInboxTicket,
+  type WorkflowReconciliationIssue,
+} from '@/lib/p0-ui-client';
+import { loadTriPaneSidebarTickets } from '@/lib/workflow-sidebar-adapter';
+import type { P0AuditRecord } from '@playbook-brain/types';
 
 interface SessionData {
   session: { id: string; ticket_id: string; status: 'pending' | 'processing' | 'approved' | 'failed' | 'needs_more_info' | 'blocked' };
@@ -134,6 +149,21 @@ export default function SessionDetail({
   const [isLoadingTickets, setIsLoadingTickets] = useState(true);
   const [isManualSuppressed, setIsManualSuppressed] = useState(false);
   const [isManualSuppressionSaving, setIsManualSuppressionSaving] = useState(false);
+  const [isWorkflowReconcileRunning, setIsWorkflowReconcileRunning] = useState(false);
+  const [workflowActionError, setWorkflowActionError] = useState('');
+
+  const p0LookupTicketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
+  const workflowInboxState = usePollingResource(listWorkflowInbox, { intervalMs: 10000 });
+  const workflowAuditState = usePollingResource(
+    () => listWorkflowAudit(p0LookupTicketId),
+    { intervalMs: 12000, enabled: Boolean(p0LookupTicketId) }
+  );
+  const workflowReconciliationState = usePollingResource(
+    () => listWorkflowReconciliationIssues(p0LookupTicketId),
+    { intervalMs: 15000, enabled: Boolean(p0LookupTicketId) }
+  );
+  const managerAiState = usePollingResource(() => listManagerOpsAiDecisions(200), { intervalMs: 15000 });
+  const managerAuditState = usePollingResource(() => listManagerOpsAudit(300), { intervalMs: 15000 });
 
   const cleanTitle = (value?: string) =>
     (value || '')
@@ -618,7 +648,7 @@ export default function SessionDetail({
     ]);
   }, [selectedTicketId, t]);
 
-  // Fetch tickets from email ingestion processed tickets table
+  // Fetch canonical tri-pane sidebar tickets from workflow inbox only (P0 source of truth)
   useEffect(() => {
     let cancelled = false;
     let inFlight = false;
@@ -627,14 +657,8 @@ export default function SessionDetail({
       if (inFlight) return;
       inFlight = true;
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-        const res = await fetch(`${apiUrl}/email-ingestion/list`, { credentials: 'include' });
-        if (res.ok) {
-          const json = await res.json();
-          if (!cancelled && json.success && Array.isArray(json.data)) {
-            setSidebarTickets(json.data as ActiveTicket[]);
-          }
-        }
+        const tickets = await loadTriPaneSidebarTickets();
+        if (!cancelled) setSidebarTickets(tickets);
       } catch (err) {
         console.error('Failed to load tickets', err);
       } finally {
@@ -714,49 +738,28 @@ export default function SessionDetail({
     }
   };
 
-  const handleToggleManualSuppression = async () => {
-    const ticketId = String(data?.session.ticket_id || selectedTicketId || '').trim();
-    if (!ticketId || isManualSuppressionSaving) return;
-    setIsManualSuppressionSaving(true);
+  const handleReconcileWorkflowTicket = async () => {
+    const ticketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
+    if (!ticketId || isWorkflowReconcileRunning) return;
+    setIsWorkflowReconcileRunning(true);
+    setWorkflowActionError('');
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const res = await fetch(`${apiUrl}/email-ingestion/tickets/${encodeURIComponent(ticketId)}/manual-suppression`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ suppressed: !isManualSuppressed }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(String((payload as any)?.error || `HTTP ${res.status}`));
-      }
-      const nextManualSuppressed = Boolean((payload as any)?.manual_suppressed);
-      setIsManualSuppressed(nextManualSuppressed);
-      setSidebarTickets((prev) => prev.map((ticket) => {
-        const currentId = String(ticket.ticket_id || ticket.id || '');
-        if (currentId !== ticketId) return ticket;
-        const autoSuppressed = ticket.suppression_reason !== 'manual_override' ? Boolean(ticket.suppressed) : false;
-        return {
-          ...ticket,
-          manual_suppressed: nextManualSuppressed,
-          suppressed: nextManualSuppressed || autoSuppressed,
-          suppression_reason: nextManualSuppressed
-            ? String((payload as any)?.suppression_reason || 'manual_override')
-            : (autoSuppressed ? ticket.suppression_reason ?? null : null),
-          suppression_reason_label: nextManualSuppressed
-            ? String((payload as any)?.suppression_reason_label || 'Manual suppression')
-            : (autoSuppressed ? ticket.suppression_reason_label ?? null : null),
-          suppression_confidence: nextManualSuppressed
-            ? null
-            : (autoSuppressed ? ticket.suppression_confidence ?? null : null),
-        };
-      }));
+      await reconcileWorkflowTicket(ticketId);
+      await Promise.all([
+        workflowAuditState.refresh(),
+        workflowReconciliationState.refresh(),
+        workflowInboxState.refresh(),
+      ]);
     } catch (err) {
-      console.error('Failed to update manual suppression', err);
-      setError((err as Error)?.message || 'Failed to update suppression');
+      setWorkflowActionError((err as Error)?.message || 'Workflow reconcile failed');
     } finally {
-      setIsManualSuppressionSaving(false);
+      setIsWorkflowReconcileRunning(false);
     }
+  };
+
+  const handleToggleManualSuppression = async () => {
+    // Legacy suppression control is intentionally disabled in this flow.
+    setError('Manual suppression is disabled in this flow. Email ingestion endpoints were removed from the UI integration path.');
   };
 
   const displayTickets = sidebarTickets;
@@ -796,6 +799,31 @@ export default function SessionDetail({
     canonicalCompanyUi,
     canonicalRequesterUi,
   ].filter(Boolean).join(' · ') || getTicketContextMeta(selectedTicketView);
+
+  const workflowTicket = (workflowInboxState.data || []).find(
+    (row) => row.ticket_id === ticketNumber || row.ticket_id === canonicalTicketId
+  );
+  const managerAiForTicket = (managerAiState.data || []).filter((row) => row.ticket_id === ticketNumber || row.ticket_id === canonicalTicketId);
+  const latestManagerAi = managerAiForTicket[0];
+  const managerAuditForTicket = (managerAuditState.data || []).filter((row) => trustAuditMatchesTicket(row, ticketNumber, canonicalTicketId));
+  const enrichmentProviderStatus = buildEnrichmentProviderStatus(managerAuditForTicket);
+  const workflowAuditRows = workflowAuditState.data || [];
+  const workflowReconcileRows = workflowReconciliationState.data || [];
+  const workflowLastAudit = workflowAuditRows[0];
+  const workflowReconcileTopSeverity = workflowReconcileRows.some((row) => row.severity === 'error')
+    ? 'error'
+    : workflowReconcileRows.some((row) => row.severity === 'warning')
+      ? 'warning'
+      : workflowReconcileRows.length > 0
+        ? 'info'
+        : null;
+  const managerOpsAccessError = firstOpsAccessError(managerAiState.error, managerAuditState.error);
+  const workflowAccessError = firstOpsAccessError(
+    workflowInboxState.error,
+    workflowAuditState.error,
+    workflowReconciliationState.error
+  );
+
   const digestFacts = Array.isArray(data?.evidence_pack?.evidence_digest?.facts_confirmed)
     ? data?.evidence_pack?.evidence_digest?.facts_confirmed
     : [];
@@ -853,6 +881,24 @@ export default function SessionDetail({
             ? { highlight: '#1DB98A' }
             : {}),
         },
+        {
+          key: 'Launch Policy',
+          val: 'Autotask two-way · Others read-only',
+          highlight: '#5B7FFF',
+        },
+        {
+          key: 'AI Handoff',
+          val: latestManagerAi
+            ? `${latestManagerAi.hitl_status === 'pending' ? 'HITL pending' : 'Suggestion-ready'}`
+            : (managerOpsAccessError ? 'Admin access required' : 'Not generated'),
+          ...(latestManagerAi?.hitl_status === 'pending' ? { highlight: '#F59E0B' } : {}),
+        },
+        {
+          key: 'AI Confidence',
+          val: latestManagerAi ? `${Math.round(Number(latestManagerAi.confidence || 0) * 100)}%` : 'n/a',
+          ...(latestManagerAi ? { highlight: latestManagerAi.hitl_status === 'pending' ? '#F59E0B' : '#1DB98A' } : {}),
+        },
+        ...buildEnrichmentContextItems(enrichmentProviderStatus),
       ],
       hypotheses: Array.isArray(data.diagnosis?.top_hypotheses)
         ? data.diagnosis.top_hypotheses.slice(0, 3).map((h: any, i: number) => ({
@@ -903,7 +949,22 @@ export default function SessionDetail({
           status={playbookStatus}
           sessionStatus={data?.session?.status}
           {...(playbookPanelData ? { data: playbookPanelData } : {})}
-        />
+        >
+          <a
+            href="/manager-ops/p0?internal=1"
+            title="Internal validation harness (manager ops)"
+            style={triPaneFooterLinkChipStyle()}
+          >
+            Internal Ops (P0)
+          </a>
+          <a
+            href={`/workflow/p0/${encodeURIComponent(ticketNumber)}?internal=1`}
+            title="Internal validation harness (workflow detail)"
+            style={triPaneFooterLinkChipStyle()}
+          >
+            Internal Workflow (P0)
+          </a>
+        </PlaybookPanel>
       }
       mainContent={
         <div className="flex-1 flex flex-col" style={{ background: 'transparent', minWidth: 0, height: '100%', minHeight: 0, padding: '12px', gap: '8px' }}>
@@ -942,6 +1003,22 @@ export default function SessionDetail({
                   <path d="M10 3L4.5 8.5L2 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 {t('statusPlaybookReady')}
+              </span>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '3px 8px',
+                  borderRadius: '8px',
+                  fontSize: '10px',
+                  fontWeight: 600,
+                  color: 'var(--accent)',
+                  background: 'rgba(91,127,255,0.07)',
+                  border: '1px solid rgba(91,127,255,0.20)',
+                }}
+                title="P0 launch policy"
+              >
+                AT 2W · Others RO
               </span>
               <button
                 onClick={handleToggleManualSuppression}
@@ -990,6 +1067,31 @@ export default function SessionDetail({
                 <svg width="15" height="15" viewBox="0 0 20 20" fill="none">
                   <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
                   <path d="M7 13L13 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
+              <button
+                onClick={handleReconcileWorkflowTicket}
+                disabled={isWorkflowReconcileRunning || !ticketNumber}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '10px',
+                  color: isWorkflowReconcileRunning ? '#EAB308' : '#5B7FFF',
+                  background: isWorkflowReconcileRunning ? 'rgba(234,179,8,0.10)' : 'rgba(91,127,255,0.05)',
+                  border: isWorkflowReconcileRunning ? '1px solid rgba(234,179,8,0.25)' : '1px solid rgba(91,127,255,0.20)',
+                  cursor: isWorkflowReconcileRunning ? 'not-allowed' : 'pointer',
+                  opacity: isWorkflowReconcileRunning ? 0.8 : 1,
+                  transition: 'all 0.2s ease',
+                }}
+                title="Reconcile workflow ticket (Autotask snapshot vs workflow projection)"
+                aria-label="Reconcile workflow ticket"
+              >
+                <svg width="15" height="15" viewBox="0 0 20 20" fill="none">
+                  <path d="M4 10a6 6 0 0 1 10.2-4.2L16 7.7M16 10a6 6 0 0 1-10.2 4.2L4 12.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M16 4.5v3.2h-3.2M4 15.5v-3.2h3.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </button>
               <button
@@ -1051,6 +1153,70 @@ export default function SessionDetail({
               minHeight: 0,
             }}
           >
+            <div
+              className="rounded-xl p-3 mb-4"
+              style={{
+                background: 'var(--bg-panel)',
+                border: '1px solid var(--bento-outline)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.02)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
+                <div style={{ fontFamily: 'var(--font-jetbrains-mono)', fontSize: '9px', fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'var(--text-faint)' }}>
+                  Workflow Runtime + P0 Trust Signals
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={triPaneBadgeStyle('info')}>{workflowTicket ? 'Workflow inbox wired' : 'Workflow inbox pending'}</span>
+                  <span style={triPaneBadgeStyle('neutral')}>Autotask TWO-WAY</span>
+                  <span style={triPaneBadgeStyle('warn')}>Others READ-ONLY</span>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '8px', marginBottom: '8px' }}>
+                <div style={triPaneMetricCardStyle()}>
+                  <div style={triPaneMetricLabelStyle()}>Workflow status</div>
+                  <div style={triPaneMetricValueStyle()}>
+                    {workflowTicket?.status || (workflowAccessError ? 'access error' : 'not in inbox')}
+                  </div>
+                </div>
+                <div style={triPaneMetricCardStyle()}>
+                  <div style={triPaneMetricLabelStyle()}>Audit rows</div>
+                  <div style={triPaneMetricValueStyle()}>{workflowAuditRows.length}</div>
+                </div>
+                <div style={triPaneMetricCardStyle()}>
+                  <div style={triPaneMetricLabelStyle()}>Reconcile issues</div>
+                  <div style={triPaneMetricValueStyle()}>
+                    {workflowReconcileRows.length}
+                    {workflowReconcileTopSeverity ? ` · ${workflowReconcileTopSeverity}` : ''}
+                  </div>
+                </div>
+                <div style={triPaneMetricCardStyle()}>
+                  <div style={triPaneMetricLabelStyle()}>AI handoff</div>
+                  <div style={triPaneMetricValueStyle()}>
+                    {latestManagerAi
+                      ? `${latestManagerAi.hitl_status}${Number.isFinite(Number(latestManagerAi.confidence)) ? ` · ${Math.round(Number(latestManagerAi.confidence) * 100)}%` : ''}`
+                      : (managerOpsAccessError ? 'admin access required' : 'not generated')}
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {Object.entries(enrichmentProviderStatus).map(([provider, status]) => (
+                  <span key={provider} style={triPaneBadgeStyle(status.tone)}>
+                    {status.shortLabel}: {status.label}
+                  </span>
+                ))}
+                {workflowLastAudit ? (
+                  <span style={triPaneBadgeStyle(workflowLastAudit.result === 'success' ? 'good' : workflowLastAudit.result === 'rejected' ? 'warn' : 'bad')}>
+                    Last workflow audit: {workflowLastAudit.action}
+                  </span>
+                ) : null}
+              </div>
+              {(workflowActionError || workflowAccessError || managerOpsAccessError) ? (
+                <div style={{ marginTop: '8px', fontSize: '11px', color: '#f59e0b' }}>
+                  {[workflowActionError, workflowAccessError, managerOpsAccessError].filter(Boolean).join(' · ')}
+                </div>
+              ) : null}
+            </div>
+
             {error && (
               <div
                 className="rounded-xl p-4 mb-4 text-sm"
@@ -1100,4 +1266,157 @@ export default function SessionDetail({
       }
     />
   );
+}
+
+type TriPaneBadgeTone = 'neutral' | 'info' | 'good' | 'warn' | 'bad';
+
+function triPaneBadgeStyle(tone: TriPaneBadgeTone): CSSProperties {
+  const palette: Record<TriPaneBadgeTone, { color: string; bg: string; border: string }> = {
+    neutral: { color: 'var(--text-secondary)', bg: 'rgba(255,255,255,0.03)', border: 'var(--bento-outline)' },
+    info: { color: '#5B7FFF', bg: 'rgba(91,127,255,0.08)', border: 'rgba(91,127,255,0.22)' },
+    good: { color: '#1DB98A', bg: 'rgba(29,185,138,0.08)', border: 'rgba(29,185,138,0.20)' },
+    warn: { color: '#F59E0B', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.22)' },
+    bad: { color: '#F87171', bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.22)' },
+  };
+  const colors = palette[tone];
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    padding: '2px 7px',
+    borderRadius: '999px',
+    border: `1px solid ${colors.border}`,
+    background: colors.bg,
+    color: colors.color,
+    fontSize: '10px',
+    fontWeight: 600,
+  };
+}
+
+function triPaneMetricCardStyle(): CSSProperties {
+  return {
+    border: '1px solid var(--bento-outline)',
+    borderRadius: '10px',
+    background: 'var(--bg-card)',
+    padding: '8px 10px',
+    minWidth: 0,
+  };
+}
+
+function triPaneMetricLabelStyle(): CSSProperties {
+  return {
+    fontFamily: 'var(--font-jetbrains-mono)',
+    fontSize: '8.5px',
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: 'var(--text-faint)',
+    marginBottom: '4px',
+  };
+}
+
+function triPaneMetricValueStyle(): CSSProperties {
+  return {
+    fontSize: '11.5px',
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  };
+}
+
+function triPaneFooterLinkChipStyle(): CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '6px 9px',
+    borderRadius: '8px',
+    border: '1px solid var(--bento-outline)',
+    background: 'var(--bg-card)',
+    color: 'var(--text-secondary)',
+    fontSize: '11px',
+    fontWeight: 500,
+    textDecoration: 'none',
+    whiteSpace: 'nowrap',
+  };
+}
+
+function firstOpsAccessError(...errors: Array<string | null | undefined>): string {
+  const first = errors.find(Boolean);
+  if (!first) return '';
+  if (/403|insufficient permissions|forbidden/i.test(first)) return 'Admin-only P0 trust/ops signals in current backend policy';
+  return first;
+}
+
+function trustAuditMatchesTicket(row: P0AuditRecord, ...ticketIds: Array<string | undefined>) {
+  const ids = new Set(ticketIds.map((id) => String(id || '').trim()).filter(Boolean));
+  if (ids.size === 0) return false;
+  const correlationId = String(row.correlation?.ticket_id || '').trim();
+  const targetId = String(row.target?.id || '').trim();
+  const metadataTicketId = typeof row.metadata?.ticket_id === 'string' ? String(row.metadata.ticket_id).trim() : '';
+  return (correlationId && ids.has(correlationId)) || (targetId && ids.has(targetId)) || (metadataTicketId && ids.has(metadataTicketId));
+}
+
+type ProviderStatus = {
+  label: string;
+  shortLabel: string;
+  tone: TriPaneBadgeTone;
+  key: string;
+};
+
+function buildEnrichmentProviderStatus(rows: P0AuditRecord[]): Record<string, ProviderStatus> {
+  const providers = [
+    { key: 'itglue', shortLabel: 'ITG' },
+    { key: 'ninjaone', shortLabel: 'Ninja' },
+    { key: 'sentinelone', shortLabel: 'S1' },
+    { key: 'check_point', shortLabel: 'CP' },
+  ] as const;
+
+  const latestByProvider = new Map<string, P0AuditRecord>();
+  for (const row of rows) {
+    const match = row.action.match(/^enrichment\.read\.(itglue|ninjaone|sentinelone|check_point)$/);
+    if (!match) continue;
+    const key = String(match[1]);
+    const current = latestByProvider.get(key);
+    if (!current || String(current.timestamp) < String(row.timestamp)) latestByProvider.set(key, row);
+  }
+
+  const output: Record<string, ProviderStatus> = {};
+  for (const provider of providers) {
+    const latest = latestByProvider.get(provider.key);
+    if (!latest) {
+      output[provider.key] = { key: provider.key, shortLabel: provider.shortLabel, label: 'not loaded', tone: 'neutral' };
+      continue;
+    }
+    if (latest.result === 'success') {
+      output[provider.key] = { key: provider.key, shortLabel: provider.shortLabel, label: 'read-only ok', tone: 'good' };
+      continue;
+    }
+    if (latest.result === 'failure') {
+      output[provider.key] = { key: provider.key, shortLabel: provider.shortLabel, label: 'partial failure', tone: 'warn' };
+      continue;
+    }
+    output[provider.key] = { key: provider.key, shortLabel: provider.shortLabel, label: latest.result, tone: 'bad' };
+  }
+  return output;
+}
+
+function buildEnrichmentContextItems(statusByProvider: Record<string, ProviderStatus>) {
+  const ordered = ['itglue', 'ninjaone', 'sentinelone', 'check_point'];
+  return ordered.map((key) => {
+    const row = statusByProvider[key];
+    if (!row) return { key: key.toUpperCase(), val: 'Unknown' };
+    return {
+      key: `${row.shortLabel} RO`,
+      val: row.label,
+      ...(row.tone === 'good'
+        ? { highlight: '#1DB98A' }
+        : row.tone === 'warn'
+          ? { highlight: '#F59E0B' }
+          : row.tone === 'bad'
+            ? { highlight: '#F87171' }
+            : {}),
+    };
+  });
 }

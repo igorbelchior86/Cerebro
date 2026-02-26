@@ -61,8 +61,8 @@ export default function P0InboxPage() {
 
   return (
     <P0PageShell
-      title="P0 Workflow Inbox"
-      subtitle="Unified inbox projection from /workflow/inbox (Autotask two-way source-of-truth sync)."
+      title="Internal Validation Harness · P0 Workflow Inbox"
+      subtitle="Temporary validation surface. Canonical UX is the tri-pane Cerebro shell; this page remains for internal P0 route checks."
       actions={(
         <>
           <InlineButton onClick={() => void inbox.refresh()} disabled={inbox.loading || inbox.refreshing}>

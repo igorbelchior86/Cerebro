@@ -591,3 +591,9 @@
 **Root cause**: Validação foi correta para aquele snapshot, mas eu não tratei a tarefa como "moving target" em branch compartilhada de múltiplos agentes.
 **Rule**: Em execuções de readiness em branch multi-agente, sempre fazer uma segunda checagem rápida de verificação crítica (typecheck/smoke) antes de considerar o pacote final estável.
 **Pattern**: Se a tarefa depende de outputs de outros agentes (D/E), rodar um "revalidation pass" e atualizar evidência/riscos.
+
+## Lesson: 2026-02-26 (remove deprecated paths immediately when user says zero references)
+**Mistake**: Mantive fallback/merge com um caminho legado (`email-ingestion`) após o usuário já ter definido que esse fluxo foi removido e não deveria ter nenhuma referência.
+**Root cause**: Eu priorizei continuidade de metadata/UX local acima de uma restrição arquitetural explícita e repetida pelo usuário.
+**Rule**: Quando o usuário disser que um fluxo legado foi removido e quer zero referência, eliminar completamente chamadas, fallbacks, comentários e docs relacionados naquele path antes de qualquer refinamento.
+**Pattern**: Integração UI em boundary novo + fonte legado “conveniente” => risco de violar regra de arquitetura se eu tentar mesclar por conveniência.

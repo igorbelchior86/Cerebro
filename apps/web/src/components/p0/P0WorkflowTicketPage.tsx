@@ -76,8 +76,8 @@ export default function P0WorkflowTicketPage({ ticketId }: { ticketId: string })
 
   return (
     <P0PageShell
-      title={`P0 Ticket Context · ${ticketId}`}
-      subtitle="Workflow detail + technician context panel (AI handoff + read-only enrichments) + operational traces."
+      title={`Internal Validation Harness · P0 Ticket Context · ${ticketId}`}
+      subtitle="Temporary P0 route-level validation surface. Canonical technician workflow/context UX now lives in the existing tri-pane Cerebro shell."
       actions={(
         <>
           <Link

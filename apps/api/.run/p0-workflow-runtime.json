@@ -551,6 +551,93 @@
           "adapter_version": "agent-h-val"
         }
       }
+    },
+    {
+      "audit_id": "51872e19-0c10-44a5-8320-8eadc5e6ae9b",
+      "timestamp": "2026-02-26T19:08:02.563Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0028"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132805",
+        "ticket_id": "T20260226.0028"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132805:ticket.created:2026-02-26T19:07:36.093Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T19:08:02.558Z"
+        }
+      }
+    },
+    {
+      "audit_id": "a0ebc882-5414-4880-8913-1a7c0c993d5e",
+      "timestamp": "2026-02-26T19:18:02.751Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0029"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132806",
+        "ticket_id": "T20260226.0029"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132806:ticket.created:2026-02-26T19:17:06.657Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T19:18:02.748Z"
+        }
+      }
+    },
+    {
+      "audit_id": "abcb7360-d6b7-4fde-ad22-10b8d81eba98",
+      "timestamp": "2026-02-26T19:35:02.236Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0030"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132807",
+        "ticket_id": "T20260226.0030"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132807:ticket.created:2026-02-26T19:34:54.780Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T19:35:02.233Z"
+        }
+      }
     }
   ],
   "processedSyncEvents": [
@@ -564,7 +651,10 @@
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132802:ticket.created:2026-02-26T18:00:55.340Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132803:ticket.created:2026-02-26T18:25:11.053Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132804:ticket.created:2026-02-26T18:36:52.827Z",
-    "5b5f7e25-2396-4bec-a584-41352be7e876::agent-h-sync-evt-001"
+    "5b5f7e25-2396-4bec-a584-41352be7e876::agent-h-sync-evt-001",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132805:ticket.created:2026-02-26T19:07:36.093Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132806:ticket.created:2026-02-26T19:17:06.657Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132807:ticket.created:2026-02-26T19:34:54.780Z"
   ],
   "inbox": [
     [
@@ -763,6 +853,60 @@
         "last_event_id": "agent-h-sync-evt-001",
         "source_of_truth": "Autotask",
         "updated_at": "2026-02-26T18:41:32.857Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0028",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0028",
+        "external_id": "132805",
+        "title": "New IT Service Request",
+        "description": "new one",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-26T19:08:02.561Z",
+        "last_event_occurred_at": "2026-02-26T19:07:36.093Z",
+        "last_event_id": "autotask-poller:132805:ticket.created:2026-02-26T19:07:36.093Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T19:08:02.561Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0029",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0029",
+        "external_id": "132806",
+        "title": "FW: microsoft admin account",
+        "description": "From: Scott York <syork@artisanalwatersolutions.com>\r\nSent: Thursday, February 26, 2026 2:07 PM\r\nTo: Fae Parker Shaffer <fae@refreshtech.com>; Bob Shaffer <bob@refreshtech.com>\r\nSubject: microsoft admin account\r\n\r\nSome people who received this message don't often get email from syork@artisanalwatersolutions.com<mailto:syork@artisanalwatersolutions.com>. Learn why this is important<https://aka.ms/LearnAboutSenderIdentification>\r\nHi Fae,\r\n\r\nI called earlier about getting full access to my Microsoft account and no longer having refresh technology managing my subscriptions. How do we go about this process? I want to pay Microsoft directly and manage these accounts on my own. I called your office earlier and said they were opening a ticket but I have not heard back.\r\n\r\n\r\n[cid:image001.png@01DCA729.3C4EFEE0]\r\n\r\n\r\nScott York\r\nMANAGING DIRECTOR\r\n[cid:image002.png@01DCA729.3C4EFEE0]\r\n\r\nsyork@artisanalwatersolutions.com<mailto:syork@artisanalwatersolutions.com>\r\n[cid:image003.png@01DCA729.3C4EFEE0]\r\n\r\n704-315-6344\r\n[cid:image004.png@01DCA729.3C4EFEE0]\r\n\r\n18637 Northline Dr, Suite H, Cornelius, NC 28031\r\n[cid:image005.png@01DCA729.3C4EFEE0]\r\n\r\nwww.artisanalwatersolutions.com<https://artisanalwatersolutions.com/>\r\n\r\n\r\nCaution\r\nThis email originated outside the organization. Do not click any links or attachments unless you know the sender.\r\n________________________________",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-26T19:18:02.750Z",
+        "last_event_occurred_at": "2026-02-26T19:17:06.657Z",
+        "last_event_id": "autotask-poller:132806:ticket.created:2026-02-26T19:17:06.657Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T19:18:02.750Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0030",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0030",
+        "external_id": "132807",
+        "title": "Voicemail password",
+        "description": "Stu\r\n\r\nWould you help me in getting a password for my voicemail.\r\n\r\nThanks\r\n\r\nDavid Ogle\r\nMaintenance Lead\r\nFabrication & Sewing\r\n\r\n[CAT Resources]\r\nA Composite Resources Company\r\n4203 International Drive\r\nRock Hill, SC 29732\r\n\r\nP|803.325.9300\r\nD|803.325.9372",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-26T19:35:02.235Z",
+        "last_event_occurred_at": "2026-02-26T19:34:54.780Z",
+        "last_event_id": "autotask-poller:132807:ticket.created:2026-02-26T19:34:54.780Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T19:35:02.235Z"
       }
     ]
   ],

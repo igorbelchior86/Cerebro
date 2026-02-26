@@ -35,20 +35,6 @@ export default function MainLayout({
             Dashboard
           </a>
           <a
-            href="/workflow/p0"
-            className="px-3 py-1.5 rounded-lg text-sm transition"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            P0 Inbox
-          </a>
-          <a
-            href="/manager-ops/p0"
-            className="px-3 py-1.5 rounded-lg text-sm transition"
-            style={{ color: 'var(--text-secondary)' }}
-          >
-            Manager Ops
-          </a>
-          <a
             href="/triage/new"
             className="px-3 py-1.5 rounded-lg text-sm font-medium transition"
             style={{

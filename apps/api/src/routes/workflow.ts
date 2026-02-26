@@ -1,63 +1,12 @@
 import { Router, type Request, type Response, type Router as ExpressRouter } from 'express';
-import { queryOne } from '../db/index.js';
-import { AutotaskClient } from '../clients/autotask.js';
-import { AutotaskTicketWorkflowGateway } from '../services/autotask-ticket-workflow-gateway.js';
 import {
-  InMemoryTicketWorkflowRepository,
-  TicketWorkflowCoreService,
   WorkflowPolicyError,
   buildCommandEnvelope,
   type WorkflowEventEnvelope,
 } from '../services/ticket-workflow-core.js';
+import { workflowService } from '../services/workflow-runtime.js';
 
 const router: ExpressRouter = Router();
-
-interface AutotaskCreds {
-  apiIntegrationCode: string;
-  username: string;
-  secret: string;
-  zoneUrl?: string;
-}
-
-async function getTenantAutotaskClient(_tenantId: string): Promise<AutotaskClient | null> {
-  // Current repo stores tenant-scoped creds in integration_credentials and relies on RLS.
-  try {
-    const row = await queryOne<{ credentials: AutotaskCreds }>(
-      `SELECT credentials
-       FROM integration_credentials
-       WHERE service = 'autotask'
-       ORDER BY updated_at DESC
-       LIMIT 1`
-    );
-    const creds = row?.credentials;
-    if (creds?.apiIntegrationCode && creds?.username && creds?.secret) {
-      return new AutotaskClient({
-        apiIntegrationCode: creds.apiIntegrationCode,
-        username: creds.username,
-        secret: creds.secret,
-        ...(creds.zoneUrl ? { zoneUrl: creds.zoneUrl } : {}),
-      });
-    }
-  } catch {
-    // fall through to env creds
-  }
-
-  const code = String(process.env.AUTOTASK_API_INTEGRATION_CODE || '').trim();
-  const username = String(process.env.AUTOTASK_USERNAME || '').trim();
-  const secret = String(process.env.AUTOTASK_SECRET || '').trim();
-  const zoneUrl = String(process.env.AUTOTASK_ZONE_URL || '').trim();
-  if (!code || !username || !secret) return null;
-  return new AutotaskClient({
-    apiIntegrationCode: code,
-    username,
-    secret,
-    ...(zoneUrl ? { zoneUrl } : {}),
-  });
-}
-
-const workflowRepo = new InMemoryTicketWorkflowRepository();
-const workflowGateway = new AutotaskTicketWorkflowGateway(getTenantAutotaskClient);
-const workflowService = new TicketWorkflowCoreService(workflowRepo, workflowGateway, { maxAttempts: 3 });
 
 function requireTenant(req: Request, res: Response): string | null {
   const tenantId = req.auth?.tid;
@@ -256,4 +205,3 @@ router.get('/audit/:ticketId', async (req, res, next) => {
 });
 
 export default router;
-

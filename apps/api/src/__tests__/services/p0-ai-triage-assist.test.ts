@@ -1,4 +1,4 @@
-import type { DiagnosisOutput, EvidencePack, ValidationOutput } from '@playbook-brain/types';
+import type { CP0AiDecisionRecord, DiagnosisOutput, EvidencePack, ValidationOutput } from '@playbook-brain/types';
 import { P0AiTriageAssistService } from '../../services/p0-ai-triage-assist.js';
 import { InMemoryP0TrustStore } from '../../services/p0-trust-store.js';
 
@@ -85,7 +85,14 @@ describe('P0AiTriageAssistService', () => {
     expect(decision.prompt_version).toBe('prompt-v1');
     expect(decision.model_version).toBe('model-v1');
     expect(decision.provenance_refs.some((p) => p.source === 'ai_model')).toBe(true);
-    expect(decision.signals_used).toEqual(expect.arrayContaining(['signal:ninja:sig-1', 'doc:itglue:doc-1']));
+    expect(decision.signals_used).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: 'ninja', ref: 'signal:sig-1' }),
+        expect.objectContaining({ source: 'itglue', ref: 'doc:doc-1' }),
+      ])
+    );
+    const cp0View: CP0AiDecisionRecord = decision;
+    expect(cp0View.signals_used.length).toBeGreaterThan(0);
     expect(drafts.summary_md).toContain('AI Triage Summary');
     expect(drafts.handoff_md).toContain('Operator validation checklist');
     expect(store.listAIDecisions({ tenantId: 'tenant-1' })).toHaveLength(1);
@@ -134,4 +141,3 @@ describe('P0AiTriageAssistService', () => {
     );
   });
 });
-

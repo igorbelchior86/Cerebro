@@ -1,3 +1,162 @@
+# Task: Agent E Phase 4 Refresh Internal Validation Execution & Evidence (Rerun)
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Register rerun scope and verify existing Phase 4 harness artifacts/scripts are still present
+- [x] Step 2: Execute a fresh validation evidence capture dry-run bundle (new output directory)
+- [x] Step 3: Verify generated bundle contents/manifest and record rerun evidence
+- [x] Step 4: Fill review notes and finalize rerun report
+
+## Open Questions
+- None blocking. This rerun targets execution evidence only (no scope expansion, no new Phase 4 artifacts unless a failure occurs).
+
+## Progress Notes
+- User requested a new run of Agent E validation execution/evidence flow.
+- Reusing existing `scripts/p0-validation-evidence-capture.mjs` and Phase 4 artifact pack; goal is fresh execution proof.
+- Verified harness artifacts exist (`script_ok`, `matrix_ok`, `qa_ok`).
+- Executed `--dry-run` bundle at `docs/validation/runs/dry-run-2026-02-26-agent-e-rerun-01/`.
+- Confirmed rerun manifest (`captured_at=2026-02-26T16:52:22.315Z`) and 6 snapshot files (`health`, `workflow`, `manager-ops` set).
+
+## Review
+- What worked:
+- What worked: Existing Phase 4 harness is reusable; rerun required only execution + manifest verification, no code changes.
+- What was tricky: Ensuring the response reflects a new execution proof instead of repeating the prior run summary.
+- Time taken: short rerun + verification pass
+
+---
+
+# Task: Agent F Phase 5 launch readiness rerun (revalidation + rollout durability hardening)
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Revalidate Phase 5 artifacts and current repo state (including Agent D/E outputs) against acceptance criteria
+- [x] Step 2: Harden rollout control runtime state if a minimal safe improvement is available (no migrations / no policy changes)
+- [x] Step 3: Add/extend tests for any rerun hardening changes
+- [x] Step 4: Re-run verification (targeted tests, dry-run, API typecheck) and record evidence
+- [x] Step 5: Update launch-readiness docs/wiki if rerun changes code or materially changes operational assumptions
+
+## Open Questions
+- Whether rollout state durability can reuse Agent D file-backed runtime helpers with minimal impact.
+
+## Progress Notes
+- Rerun triggered after multi-agent branch advanced (Agent D/E outputs now present).
+- Revalidated existence of Phase 5 rollout tooling + docs from prior Agent F pass.
+- Identified likely improvement: rollout control state still in-memory while Agent D added reusable file-backed runtime JSON helpers.
+- Hardened rollout control with optional local file-backed persistence (`.run/p0-rollout-control.json`) using `runtime-json-file` atomic writes and reload-on-start.
+- Extended rollout tests with persistence reload coverage.
+- Updated launch-readiness rollback procedures to reflect local file-backed (single-host) durability constraints.
+- Verification rerun results: rollout tests passed (5/5), rollout dry-run passed, and `pnpm --filter @playbook-brain/api typecheck` passed.
+
+## Review
+- What worked: Reusing Agent D runtime persistence helper enabled a low-risk durability upgrade for rollout state without touching policy enforcement or adding schema changes.
+- What was tricky: Shared-branch state required explicit revalidation to avoid stale verification claims from the prior Agent F pass.
+- Time taken: ~1 short rerun hardening + revalidation session
+
+---
+
+# Task: Agent D P0 hardening (durability + workflow sync wiring + CP0 contract consolidation)
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Inspect Agent B/C runtime surfaces (workflow repo/service singleton usage, poller ingestion path, trust-layer type imports) and define minimal hardening deltas
+- [x] Step 2: Introduce shared workflow runtime composition + durable/minimally persistent backing for critical P0 runtime state (workflow/trust store) with bounded adapter abstraction
+- [x] Step 3: Wire Autotask poller ingestion into workflow sync path while preserving existing triage orchestration behavior and launch policy guardrails
+- [x] Step 4: Consolidate Agent C trust-layer services/routes to CP0 shared contracts (`cp0-contracts.ts`) where applicable, eliminating semantic duplicate model usage
+- [x] Step 5: Harden reconciliation/retry/DLQ/degraded-mode handling and add/extend tests (including poller->workflow sync wiring, contract conformance, durability/reload verification)
+- [x] Step 6: Run required verification (API typecheck + targeted P0 suites) and record evidence
+- [x] Step 7: Update local wiki docs (`architecture`, `decisions`, `changelog`, `features`) with runbooks for sync failure / partial enrichment failure / reconciliation divergence / DLQ triage
+
+## Open Questions
+- Will implement file-backed JSON persistence for P0 runtime state as the minimal bounded durability layer unless a repo-native DB table already exists for workflow/trust state.
+- Poller wiring will preserve current `triageOrchestrator.runPipeline(...)` behavior and add workflow sync ingestion as an additive path.
+
+## Progress Notes
+- Started Agent D hardening pass with workflow-orchestrator discipline and repo scan.
+- Identified key fragility points: route-local `InMemoryTicketWorkflowRepository` singleton (isolated from poller) and `InMemoryP0TrustStore`.
+- Confirmed `TicketWorkflowCoreService.processAutotaskSyncEvent(...)` already exists and can be reused for poller ingestion path.
+- Confirmed Agent C trust-layer currently imports duplicate semantic models (`AIDecisionRecord`, `P0AuditRecord`) instead of CP0 shared contracts.
+- Implemented shared `workflow-runtime` singleton and moved `/workflow` route wiring to the shared runtime.
+- Added file-backed JSON persistence (atomic temp-file rename) for workflow runtime repo and P0 trust store.
+- Wired `autotask-polling` to emit `ticket.created` workflow sync events before triage execution, with explicit degraded logging when tenant context is unavailable.
+- Consolidated Agent C trust-layer contracts through `p0-trust-contracts.ts` (CP0-based audit/AI/correlation contracts) and normalized emitted `trace_id`.
+- Expanded reconciliation auditing for `match`, `mismatch`, `snapshot_missing`, and `skipped_fetch_unavailable`.
+- Added tests for poller->workflow sync wiring, degraded no-tenant poller mode, workflow repo reload persistence, trust-store reload persistence, and CP0 AI signal structure.
+- Verification completed: `pnpm --filter @playbook-brain/api typecheck` passed and targeted P0 suite passed (12 suites / 33 tests).
+- Updated wiki in `architecture`, `decisions`, `changelog`, and `features` with operational runbooks.
+
+## Review
+- What worked: Shared workflow runtime + bounded file-backed persistence closed the main P0 fragility points without DB migrations or broad refactors, and poller wiring reused existing sync ingestion logic.
+- What was tricky: CP0 contract consolidation exposed `exactOptionalPropertyTypes` mismatches (`trace_id`, `metadata`) that required explicit normalization in trust-layer emitters.
+- Time taken: ~1 implementation + verification + documentation session
+
+---
+
+# Task: Agent F Phase 5 controlled design-partner launch readiness and rollout guardrails
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Review Phase 5 PRD/exec requirements and audit existing rollout/feature-flag/onboarding/ops artifacts in repo
+- [x] Step 2: Implement minimal per-tenant rollout visibility/control tooling (admin/internal endpoint and/or script) if scaffold gaps block repeatable rollout
+- [x] Step 3: Add targeted tests for rollout flag posture/control behavior and launch policy guardrail preservation
+- [x] Step 4: Create executable launch-readiness artifacts (controlled rollout plan, onboarding runbooks, rollback/fallback procedures, incident playbooks, go-live checklist)
+- [x] Step 5: Dry-run verification (tests + rollout/rollback posture simulation + checklist/tabletop evidence) and record results
+- [x] Step 6: Update local wiki (`features`, `architecture`, `decisions`, `changelog`) for any code changes and operational control flow docs
+
+## Open Questions
+- Whether existing manager-ops routes already provide enough rollout visibility for founder operations (initial audit indicates no feature-flag posture endpoints).
+
+## Progress Notes
+- Initialized workflow-orchestrator execution for Agent F.
+- Reviewed Phase 5/NFR rollout requirements in `PRD-Tech-EN-US.md` and `PRD-Exec-EN-US.md`.
+- Confirmed feature-flag scaffold exists in `apps/api/src/platform/feature-flags.ts` but is not wired to admin/internal rollout routes yet.
+- Added `P0RolloutControlService` (tenant-scoped flag posture/set/rollback + change history) and wired `manager-ops` rollout endpoints (`policy`, `flags`, `rollback`).
+- Added unit tests for rollout posture defaults, tenant isolation, rollback paths, and invalid flag handling.
+- Added dry-run script `scripts/p0-rollout-dry-run.ts` and executed mock tenant rollout/rollback simulation confirming policy snapshot remains unchanged.
+- Created executable launch-readiness docs under `docs/launch-readiness/` and required wiki updates in `features/architecture/decisions/changelog`.
+- Verification: targeted rollout test suite passed; `apps/api` typecheck still fails on pre-existing Agent C/B baseline type mismatches unrelated to this rollout delta.
+
+## Review
+- What worked: Additive `manager-ops` rollout endpoints + in-memory service closed the Phase 5 rollout hardening gap without touching runtime command/enrichment semantics or CP0 policy enforcement.
+- What was tricky: `apps/api` workspace `typecheck` is already red from pre-existing CP0 type-shape mismatches; verification had to rely on targeted tests + dry-run evidence for this delta.
+- Time taken: ~1 implementation + docs + verification session
+
+---
+
+# Task: Agent E Phase 4 Refresh Internal Validation Execution & Evidence
+**Status**: planning
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Extract Phase 4 / P0 validation requirements from PRDs and prompt-pack; map to existing `/workflow` + `/manager-ops/p0/*` surfaces
+- [x] Step 2: Create repo-native validation artifact set (runbook/checklist, scenarios, acceptance matrix, QA sampling workflow, defect triage template, launch/no-launch packet)
+- [x] Step 3: Add optional lightweight evidence capture utility for P0 validation snapshots (workflow + manager-ops endpoints) with a dry-run mode
+- [x] Step 4: Dry-run validation/evidence capture procedure (local/simulated), record execution proof and update artifacts if needed
+- [x] Step 5: Update required wiki docs (`features`, `architecture`, `decisions`, `changelog`) and complete review notes
+
+## Open Questions
+- `workflow/` and `manager-ops/p0/` repo folders referenced in the prompt do not exist as top-level directories; using API route surfaces (`/workflow`, `/manager-ops/p0/*`) in `apps/api/src/routes/*` as the implementation basis.
+- Evidence capture will support authenticated API calls, but local verification may use `--dry-run` if a running stack + valid admin token are unavailable in this session.
+
+## Progress Notes
+- Initialized Agent E workflow-orchestrator run with plan-first protocol.
+- Reviewed PRD Phase 4, P0 acceptance scope, and integrated verification checklist (CP3) in prompt-pack.
+- Confirmed concrete validation surfaces in `apps/api/src/routes/workflow.ts` and `apps/api/src/routes/manager-ops.ts`.
+- Queried Context7 (`/nodejs/node`) for Node CLI/`fetch`/`process.argv` usage patterns before implementing the evidence capture script.
+- Created Phase 4 validation framework docs under `docs/validation/phase4-refresh/` and a sample queue fixture under `docs/validation/fixtures/`.
+- Added `scripts/p0-validation-evidence-capture.mjs` (live + `--dry-run` modes) to export validation evidence snapshots from `/workflow` and `/manager-ops/p0/*`.
+- Verified script help output and executed dry-run bundle generation at `docs/validation/runs/dry-run-2026-02-26-agent-e/` with manifest + snapshot files.
+
+## Review
+- What worked: Keeping validation outputs as repo-native markdown templates plus a minimal standalone script covered all requested Phase 4 deliverables without touching runtime APIs.
+- What was tricky: The prompt referenced top-level `/workflow/*` and `/manager-ops/p0/*` directories, but the actual implementation surfaces are API routes; I mapped scope to existing route handlers and documented that assumption explicitly.
+- Time taken: ~1 focused implementation/documentation/verification session
+
+---
+
 # Task: Agent C P0 trust layer (AI triage + read-only enrichments + manager ops visibility)
 **Status**: completed
 **Started**: 2026-02-26

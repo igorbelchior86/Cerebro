@@ -19,4 +19,26 @@ export class InMemoryFeatureFlagService {
       reason: enabled ? 'configured' : 'default_false',
     };
   }
+
+  exportState(): Array<{ tenant_id: string; flag_key: string; enabled: boolean }> {
+    return Array.from(this.flags.entries()).map(([composite, enabled]) => {
+      const idx = composite.indexOf(':');
+      if (idx <= 0) {
+        return { tenant_id: composite, flag_key: '', enabled };
+      }
+      return {
+        tenant_id: composite.slice(0, idx),
+        flag_key: composite.slice(idx + 1),
+        enabled,
+      };
+    });
+  }
+
+  importState(entries: Array<{ tenant_id: string; flag_key: string; enabled: boolean }>): void {
+    this.flags.clear();
+    for (const entry of entries) {
+      if (!entry?.tenant_id || !entry?.flag_key) continue;
+      this.flags.set(`${entry.tenant_id}:${entry.flag_key}`, Boolean(entry.enabled));
+    }
+  }
 }

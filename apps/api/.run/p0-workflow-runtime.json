@@ -1,0 +1,204 @@
+{
+  "commandsById": [],
+  "commandsByIdempotency": [],
+  "audits": [
+    {
+      "audit_id": "bf2497a3-2559-4b59-9446-018bf761477d",
+      "timestamp": "2026-02-26T16:40:59.627Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0018"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132795",
+        "ticket_id": "T20260226.0018"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132795:ticket.created:2026-02-26T15:42:49.897Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T16:40:59.624Z"
+        }
+      }
+    },
+    {
+      "audit_id": "e1b4d34c-5376-44bc-8511-0711325ba91a",
+      "timestamp": "2026-02-26T16:40:59.639Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0019"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132796",
+        "ticket_id": "T20260226.0019"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132796:ticket.created:2026-02-26T16:34:59.383Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T16:40:59.636Z"
+        }
+      }
+    },
+    {
+      "audit_id": "51026c6b-d37a-40c8-af8f-98cc67c108be",
+      "timestamp": "2026-02-26T16:43:42.172Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0020"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132797",
+        "ticket_id": "T20260226.0020"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132797:ticket.created:2026-02-26T16:43:09.523Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T16:43:42.169Z"
+        }
+      }
+    },
+    {
+      "audit_id": "fc0e4ae4-6490-4764-b2bf-b82b6cf82743",
+      "timestamp": "2026-02-26T16:53:11.158Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0021"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132798",
+        "ticket_id": "T20260226.0021"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132798:ticket.created:2026-02-26T16:50:15.897Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T16:53:11.155Z"
+        }
+      }
+    }
+  ],
+  "processedSyncEvents": [
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132795:ticket.created:2026-02-26T15:42:49.897Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132796:ticket.created:2026-02-26T16:34:59.383Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132797:ticket.created:2026-02-26T16:43:09.523Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132798:ticket.created:2026-02-26T16:50:15.897Z"
+  ],
+  "inbox": [
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0018",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0018",
+        "external_id": "132795",
+        "title": "Enhance Outlook Rooms Calendar for Managing Multiple Conference Rooms and Meeting Details",
+        "description": "Good morning,\r\n\r\nI'm hoping someone can help me with a way to select rooms for meetings.  We have multiple conference rooms and multiple users (including our NCWorks team who are not CW employees).  I'm not sure if I am explaining this well, but we need a better way to manage the following spaces:\r\n\r\n\r\n  *   Conference Room 1\r\n  *   Conference Room 2\r\n  *   Combined Conference Rooms 1 & 2 (there is a retractable wall and for larger meetings, we need to use both)\r\n  *   NextGen Conference Room\r\n  *   Team Room 2\r\n  *   Team Room 3\r\n  *   Charlotte Works Conference Room\r\n\r\nIf there is a way to add fields, we it would be helpful to add:\r\n\r\n  *   Number of attendees\r\n  *   Technology needs\r\n  *   Other\r\n\r\nWe probably need to have a conversation to better explain this.  I am available today until 3:00.\r\n\r\nThanks!\r\n\r\nAly\r\n\r\nAlyson M Ferko\r\nOrganizational Support Manager\r\n8601 McAlpine Park Dr|Suite 130|Charlotte, NC  28211\r\n704-206-1344 Direct\r\naferko@charlotteworks.com<mailto:aferko@charlotteworks.com> | www.charlotteworks.com<http://www.charlotteworks.com/>\r\n\r\n[cid:image001.jpg@01DCA70C.60F705C0]\r\n\r\nOur Mission: Leading the development of a skilled and in-demand workforce by engaging businesses, aligning community partners, empowering and connecting job seekers to meaningful employment, and fostering inclusive economic growth.",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-26T16:40:59.626Z",
+        "last_event_occurred_at": "2026-02-26T15:42:49.897Z",
+        "last_event_id": "autotask-poller:132795:ticket.created:2026-02-26T15:42:49.897Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T16:40:59.626Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0019",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0019",
+        "external_id": "132796",
+        "title": "Unable to log in to laptop due to Duo authentication issue",
+        "description": "Hello refresh,\r\n\r\nI am having trouble to log in to the laptop. The duo portion sees not working. Can you please help me. See attached picture of the error that I am seeing. Thanks\r\n\r\n\r\n\r\n\r\n\r\n\r\nGet Outlook for iOS<https://aka.ms/o0ukef>",
+        "status": "21",
+        "assigned_to": "30684582",
+        "queue_id": 29682833,
+        "comments": [],
+        "last_sync_at": "2026-02-26T16:40:59.638Z",
+        "last_event_occurred_at": "2026-02-26T16:34:59.383Z",
+        "last_event_id": "autotask-poller:132796:ticket.created:2026-02-26T16:34:59.383Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T16:40:59.638Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0020",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0020",
+        "external_id": "132797",
+        "title": "ITAD Summit 2026 (IT Asset Disposition) - Secure Your Hotel early at Las Vegas",
+        "description": "From marketing <marketing@HotelBookingHome.com>: Dear Exhibitors,\r\nWe are pleased to offer exclusive hotel booking options for ITAD Summit 2026 (IT Asset Disposition), taking place in August 4-5, 2026 - The Bellagio - Las Vegas.\r\nTo make your accommodation easier, we’ve selected top-rated hotels near the venue with exclusive rates:\r\n• The Bellagio – 0.0 miles | 5*| $259 per night instead of $289\r\nSpecial rate with limited availability\r\n(Booking link will be included below)\r\nBook Now<https://signnow.com/s/4z15BBck>\r\n • The Palazzo at The Venetian Resort – 0.9 miles | 5*| $229 per night\r\n(Booking link will be included below)\r\nBook Now<https://signnow.com/s/ZpICo6Vc>\r\n All bookings include:\r\n• Instant confirmation by email\r\n• Free changes (names, dates, rooms) up to 15 days before check-in\r\n• Transparent pricing – no hidden costs\r\n\r\nNote: 10% Discount for group reservation (more than 8 rooms)\r\nWe recommend booking early to secure the best rate and preferred location.\r\nBest regards,\r\nLinda Henry\r\nReservations Team\r\nEmail: marketing@ExhibitsBookingKey.com<mailto:marketing@ExhibitsBookingKey.com>",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-26T16:43:42.171Z",
+        "last_event_occurred_at": "2026-02-26T16:43:09.523Z",
+        "last_event_id": "autotask-poller:132797:ticket.created:2026-02-26T16:43:09.523Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T16:43:42.171Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0021",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0021",
+        "external_id": "132798",
+        "title": "ITAD Summit 2026 (IT Asset Disposition) - Secure Your Hotel early at Las Vegas",
+        "description": "From marketing <marketing@globalexpocapitals.com>: Dear Exhibitors,\r\n\r\nWe are pleased to offer exclusive hotel booking options for ITAD Summit 2026 (IT Asset Disposition),\r\ntaking place in August 4-5, 2026 - The\r\nBellagio - Las Vegas.\r\n\r\nTo make your accommodation easier, we’ve selected top-rated\r\nhotels near the venue with exclusive rates:\r\n\r\n• The Bellagio – 0.0 miles | 5*| $259 per night instead of\r\n$289\r\n\r\nSpecial\r\nrate with limited availability\r\n\r\n(Booking link will be included below)\r\n\r\nhttps://signnow.com/s/4z15BBck \r\n\r\n • The Palazzo at The\r\nVenetian Resort – 0.9 miles | 5*| $229 per night\r\n\r\n(Booking link will be included below)\r\n\r\nhttps://signnow.com/s/ZpICo6Vc \r\n\r\n All bookings include:\r\n\r\n• Instant confirmation by email\r\n\r\n• Free changes (names, dates, rooms) up to 15 days before\r\ncheck-in\r\n\r\n• Transparent pricing – no hidden costs\r\n\r\n \r\n\r\nNote: 10%\r\nDiscount for group reservation (more than 8 rooms)\r\n\r\nWe recommend booking early to secure the best rate and\r\npreferred location.\r\n\r\nBest regards,\r\n\r\nLinda Henry\r\n\r\nReservations Team\r\n\r\nEmail: mailto:marketing@ExhibitsBookingKey.com",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-26T16:53:11.157Z",
+        "last_event_occurred_at": "2026-02-26T16:50:15.897Z",
+        "last_event_id": "autotask-poller:132798:ticket.created:2026-02-26T16:50:15.897Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T16:53:11.157Z"
+      }
+    ]
+  ],
+  "reconciliationIssues": []
+}

@@ -1,3 +1,9 @@
+## Lesson: 2026-02-26 (rerun requests require fresh execution evidence)
+**Mistake**: Entreguei o framework da Fase 4 e o primeiro dry-run, mas o pedido seguinte exigia uma nova execução explícita (novo run) e não apenas reexplicar o que já existia.
+**Root cause**: Interpretação orientada a “status de entrega” em vez de “ação operacional” solicitada pelo usuário.
+**Rule**: Quando o usuário pedir “run again/new run”, gerar nova evidência executável (novo output/artefato) e registrar a rodada no plano.
+**Pattern**: Para harness/scripts operacionais, tratar pedidos de rerun como execução + prova de saída (timestamp/manifest), mesmo sem mudanças de código.
+
 ## Lesson: 2026-02-24 (gutter vs modular separation)
 **Mistake**: Interpretei o pedido de “gutter” abaixo da hora/toggle como apenas espaçamento interno, sem destacar a seção inteira como um módulo separado.
 **Root cause**: Foco excessivo no token visual (`gap`) e pouco na semântica estrutural do screenshot (seções destacadas por wrappers independentes, como colunas).
@@ -580,3 +586,8 @@
 **Root cause**: I relied too much on automated replacements and did not complete a strict residual-language verification pass before reporting.
 **Rule**: Never call a translated document "clean" until verified with residue scans (accented chars + common source-language keywords) and spot checks in high-density sections.
 **Pattern**: Large mixed-language docs require section-by-section manual QA after automation, especially matrices, NFRs, and appendix blocks.
+## Lesson: 2026-02-26 (rerun after multi-agent baseline moved)
+**Mistake**: Concluí a primeira passada do Agent F com evidência de typecheck vermelho sem reexecutar após a integração das mudanças do Agent D no mesmo branch.
+**Root cause**: Validação foi correta para aquele snapshot, mas eu não tratei a tarefa como "moving target" em branch compartilhada de múltiplos agentes.
+**Rule**: Em execuções de readiness em branch multi-agente, sempre fazer uma segunda checagem rápida de verificação crítica (typecheck/smoke) antes de considerar o pacote final estável.
+**Pattern**: Se a tarefa depende de outputs de outros agentes (D/E), rodar um "revalidation pass" e atualizar evidência/riscos.

@@ -1,0 +1,42 @@
+{
+  "tool": "p0-validation-evidence-capture",
+  "version": 1,
+  "captured_at": "2026-02-26T16:52:22.315Z",
+  "mode": "dry-run",
+  "base_url": "http://localhost:3001",
+  "files": [
+    {
+      "file": "health.json",
+      "source": "dry-run",
+      "status": 200
+    },
+    {
+      "file": "workflow-inbox.json",
+      "source": "dry-run",
+      "status": 200
+    },
+    {
+      "file": "workflow-reconciliation-issues.json",
+      "source": "dry-run",
+      "status": 200
+    },
+    {
+      "file": "manager-ops-ai-decisions.json",
+      "source": "dry-run",
+      "status": 200
+    },
+    {
+      "file": "manager-ops-audit.json",
+      "source": "dry-run",
+      "status": 200
+    },
+    {
+      "file": "manager-ops-visibility.json",
+      "source": "dry-run",
+      "status": 200
+    }
+  ],
+  "warnings": [
+    "Dry-run mode creates simulated snapshots only; no authenticated API calls were executed."
+  ]
+}

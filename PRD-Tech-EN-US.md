@@ -1023,9 +1023,29 @@ This plan translates the architecture into execution order. It is optimized for 
 - `Autotask` is the only P0 two-way integration; all other P0 integrations are read-only
 - Weekly planning cadence with milestone reviews every 2 weeks
 
+#### Execution Status (Current Progress — 2026-02-26)
+
+Status legend:
+- `[x]` Implemented and validated with targeted tests/typecheck
+- `[~]` Partially implemented / needs hardening or operational validation
+- `[ ]` Not started
+
+Batch 1 (first 3 parallel prompts) completion summary:
+- `[x]` Agent A (CP0): contract freeze + platform foundations + launch policy guardrail + platform tests
+- `[x]` Agent B (P0 workflow core): Autotask-only two-way command/sync path + inbox workflow core + tests
+- `[x]` Agent C (P0 trust layer): AI triage/assist + read-only enrichments + manager ops visibility + tests
+- `[x]` Targeted P0 test pack green (`platform + workflow core + trust layer`)
+- `[x]` `@playbook-brain/api` typecheck green after Agent C route strict-typing fix
+
+Known follow-ups already identified (not blockers for Batch 1 completion):
+- `[~]` Replace in-memory runtime stores/scaffolds (queue/audit/trust/workflow state) with durable backing for production-grade operation
+- `[~]` Consolidate Agent C additive trust-layer types to import CP0 shared contracts directly (`cp0-contracts.ts`)
+- `[~]` Wire existing Autotask polling runtime into the new workflow core sync ingestion path
+
 #### Workstreams (What)
 
 ##### WS-A. Platform Foundations
+**Status:** `[x] Completed (Batch 1)` — CP0 contracts, tenant/RBAC hooks, queue skeleton, observability, audit, guardrails
 - tenant model + RBAC
 - API/worker split + queue runtime
 - observability baseline (logs/metrics/traces)
@@ -1033,30 +1053,35 @@ This plan translates the architecture into execution order. It is optimized for 
 - integration credential management
 
 ##### WS-B. Autotask Two-Way Core
+**Status:** `[x] Completed (Batch 1)` — P0 command/sync/reconciliation backbone implemented and tested (runtime store currently in-memory)
 - command model (create/update/assign/status/time entries)
 - sync ingestion (webhook/polling)
 - reconciliation + idempotency
 - error handling + retry/DLQ
 
 ##### WS-C. Inbox & Workflow Core
+**Status:** `[x] Completed (Batch 1)` — unified inbox projection + ticket command routes/flows (P0 core path)
 - unified inbox (chat/email)
 - ticket command UX
 - internal/public comments
 - routing rules and assignment workflow
 
 ##### WS-D. AI Triage + Assist
+**Status:** `[x] Completed (Batch 1)` — suggestion-first triage + confidence/provenance + HITL + summary/handoff drafts
 - triage inference pipeline
 - confidence scores + rationale/provenance
 - policy gates + HITL
 - AI summary/handoff drafting
 
 ##### WS-E. Read-Only Context Enrichment
+**Status:** `[x] Completed (Batch 1)` — IT Glue, Ninja, SentinelOne, Check Point read-only normalization + explicit mutation rejection/audit
 - IT Glue context cards
 - Ninja alert/device enrichment
 - SentinelOne alert/incident/endpoint enrichment
 - Check Point perimeter/network/security enrichment
 
 ##### WS-F. Manager Visibility + Ops Readiness
+**Status:** `[~] Partially completed (Batch 1)` — manager visibility + AI/audit views and QA sampling implemented; operational runbooks and internal validation execution still pending
 - queue/SLA dashboard
 - automation/AI audit views
 - runbooks for degraded mode and reconciliation
@@ -1065,6 +1090,7 @@ This plan translates the architecture into execution order. It is optimized for 
 #### Sequence (When)
 
 ##### Phase 0 — Architecture & Foundations (Weeks 1-2)
+**Status:** `[x] Completed (Batch 1)`
 **Primary goal:** establish runtime contracts and delivery scaffolding
 
 - WS-A baseline implementation
@@ -1080,6 +1106,7 @@ This plan translates the architecture into execution order. It is optimized for 
 - integration mode policy testable end-to-end
 
 ##### Phase 1 — P0 Workflow Skeleton (Weeks 3-5)
+**Status:** `[x] Completed (Batch 1)`
 **Primary goal:** end-to-end ticket flow with Autotask two-way backbone
 
 - WS-B core Autotask command + sync paths
@@ -1092,6 +1119,7 @@ This plan translates the architecture into execution order. It is optimized for 
 - audit records created for commands and AI suggestions
 
 ##### Phase 2 — Context Enrichment & Handoff (Weeks 6-8)
+**Status:** `[x] Completed (Batch 1)`
 **Primary goal:** deliver Cerebro’s troubleshooting differentiation in P0
 
 - WS-E read-only enrichments (IT Glue, Ninja, SentinelOne, Check Point)
@@ -1104,6 +1132,7 @@ This plan translates the architecture into execution order. It is optimized for 
 - handoff summary uses enriched evidence/provenance
 
 ##### Phase 3 — Manager Visibility, Controls, and Hardening (Weeks 9-11)
+**Status:** `[~] Largely completed in Batch 1; hardening/runbooks/integration wiring follow-up remains`
 **Primary goal:** operational trust and internal validation readiness
 
 - WS-F dashboards/audit views
@@ -1116,6 +1145,7 @@ This plan translates the architecture into execution order. It is optimized for 
 - reconciliation jobs and degraded-mode runbooks tested
 
 ##### Phase 4 — Refresh Internal Validation (Weeks 12-14)
+**Status:** `[ ] Not started (recommended next 3-agent batch)`
 **Primary goal:** validate with real workflows and identify gaps before external launch
 
 - production-like usage with Refresh operators/technicians
@@ -1128,6 +1158,7 @@ This plan translates the architecture into execution order. It is optimized for 
 - launch/no-launch decision documented
 
 ##### Phase 5 — Controlled Design-Partner Launch (Weeks 15-18)
+**Status:** `[ ] Not started (recommended subsequent batch after validation)`
 **Primary goal:** limited external rollout with guardrails
 
 - per-tenant feature-flag rollout
@@ -1283,25 +1314,25 @@ Goal: translate strategy into an executable backlog by workflow and by integrati
 #### P0 (Must Ship, Commercial Launch)
 
 ##### Critical Workflows
-- **F0. Intake & Triage:** unified inbox (chat/email), ticket create/update, AI triage with confidence and human review
-- **F1. Dispatch & Routing:** assign/reassign, priority, internal comments, routing rules
-- **F2. Technician Context:** side panel with customer/ticket/device/docs/security context (Autotask + IT Glue + Ninja + SentinelOne + Check Point)
-- **F3. Handoff & Escalation:** AI summary, escalation tag, recent history and correlated alerts
-- **F4. Manager Visibility:** queue, SLA risk, audit of automations/AI suggestions
+- **F0. Intake & Triage:** unified inbox (chat/email), ticket create/update, AI triage with confidence and human review **[~ implemented in code; pending Refresh internal validation]**
+- **F1. Dispatch & Routing:** assign/reassign, priority, internal comments, routing rules **[~ implemented in code; pending Refresh internal validation]**
+- **F2. Technician Context:** side panel with customer/ticket/device/docs/security context (Autotask + IT Glue + Ninja + SentinelOne + Check Point) **[~ implemented in code; pending Refresh internal validation]**
+- **F3. Handoff & Escalation:** AI summary, escalation tag, recent history and correlated alerts **[~ implemented in code; pending Refresh internal validation]**
+- **F4. Manager Visibility:** queue, SLA risk, audit of automations/AI suggestions **[~ implemented in code; pending Refresh internal validation + runbooks]**
 
 ##### Integrations (Launch)
-- **Autotask (P0):** ticket CRUD/sync, contacts/companies, assisted time entries, basic reconciliation (**100% two-way / manageable via Cerebro**)
-- **IT Glue (P0):** contextual lookup by customer/site/device, suggested links/runbooks, cache and per-tenant permissions (**read-only**)
-- **Ninja (P0):** alert ingestion, correlation by device/customer, ticket enrichment, device status (**read-only**)
-- **SentinelOne (P0):** ingest/lookup alerts/incidents and endpoint/security context for triage/handoff (**read-only**)
-- **Check Point (P0):** lookup/ingest perimeter/network/security context for troubleshooting (**read-only**)
+- **Autotask (P0):** ticket CRUD/sync, contacts/companies, assisted time entries, basic reconciliation (**100% two-way / manageable via Cerebro**) **[~ core two-way workflow implemented; live E2E with real credentials pending]**
+- **IT Glue (P0):** contextual lookup by customer/site/device, suggested links/runbooks, cache and per-tenant permissions (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
+- **Ninja (P0):** alert ingestion, correlation by device/customer, ticket enrichment, device status (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
+- **SentinelOne (P0):** ingest/lookup alerts/incidents and endpoint/security context for triage/handoff (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
+- **Check Point (P0):** lookup/ingest perimeter/network/security context for troubleshooting (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
 
 ##### Platform / Operations (P0)
-- **Tenant isolation + RBAC**
-- **Observability (correlated logs/metrics/traces)**
-- **Retry/DLQ/idempotency for integrations**
-- **Per-tenant feature flags**
-- **Audit trail for AI and automation decisions**
+- **Tenant isolation + RBAC** **[x implemented baseline in CP0]**
+- **Observability (correlated logs/metrics/traces)** **[x baseline implemented in CP0]**
+- **Retry/DLQ/idempotency for integrations** **[x skeleton/baseline implemented; [~] durable backing pending]**
+- **Per-tenant feature flags** **[x scaffold implemented; [~] rollout hardening pending]**
+- **Audit trail for AI and automation decisions** **[x implemented baseline + P0 workflow/AI coverage]**
 
 #### P1 (Should Ship, Immediate Post-Launch Expansion)
 

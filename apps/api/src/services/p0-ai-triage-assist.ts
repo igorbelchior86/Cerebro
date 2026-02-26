@@ -1,15 +1,18 @@
 import { v4 as uuidv4 } from 'uuid';
 import type {
   AIAssistDrafts,
-  AIDecisionRecord,
-  CorrelationRefs,
   DiagnosisOutput,
+  CP0AiDecisionRecord,
   EvidencePack,
-  P0AuditRecord,
   ProvenanceRef,
   ValidationOutput,
 } from '@playbook-brain/types';
 import type { InMemoryP0TrustStore } from './p0-trust-store.js';
+import type {
+  TrustAIDecisionRecord,
+  TrustAuditRecord,
+  TrustCorrelationRefs,
+} from './p0-trust-contracts.js';
 
 export interface P0AiTriagePolicyConfig {
   hitlConfidenceThreshold: number;
@@ -22,14 +25,14 @@ export interface BuildAIDecisionInput {
   pack: EvidencePack;
   diagnosis: DiagnosisOutput;
   validation?: ValidationOutput;
-  correlation?: CorrelationRefs;
+  correlation?: TrustCorrelationRefs;
   promptVersion: string;
   modelVersion: string;
   actor?: { type: 'user' | 'system' | 'ai'; id?: string; name?: string };
 }
 
 export interface BuildAIDecisionOutput {
-  decision: AIDecisionRecord;
+  decision: TrustAIDecisionRecord;
   drafts: AIAssistDrafts;
 }
 
@@ -67,6 +70,7 @@ export class P0AiTriageAssistService {
     }
 
     const hitlRequired = policyReasons.length > 0;
+    const correlation = this.normalizeCorrelation(input.correlation, input.ticketId);
     const provenanceRefs = this.buildProvenanceRefs(input.pack, {
       promptVersion: input.promptVersion,
       modelVersion: input.modelVersion,
@@ -80,10 +84,10 @@ export class P0AiTriageAssistService {
       `Confidence: ${confidence.toFixed(2)}`,
       ...(top?.confidence_explanation || []),
       ...(input.validation?.blocking_reasons || []).map((r) => `Policy blocking reason: ${r}`),
-      `Sources consulted: ${this.collectSignalRefs(input.pack).length}`,
+      `Sources consulted: ${this.collectSignalsUsed(input.pack).length}`,
     ];
 
-    const decision: AIDecisionRecord = {
+    const decision: TrustAIDecisionRecord = {
       decision_id: uuidv4(),
       tenant_id: input.tenantId,
       ticket_id: input.ticketId,
@@ -98,16 +102,13 @@ export class P0AiTriageAssistService {
       },
       confidence,
       rationale: rationaleLines.join(' | '),
-      signals_used: this.collectSignalRefs(input.pack),
+      signals_used: this.collectSignalsUsed(input.pack),
       provenance_refs: provenanceRefs,
       hitl_status: hitlRequired ? 'pending' : 'not_required',
       prompt_version: input.promptVersion,
       model_version: input.modelVersion,
       timestamp: now,
-      correlation: {
-        ...input.correlation,
-        ticket_id: input.ticketId,
-      },
+      correlation,
       policy_gate: {
         outcome: hitlRequired ? 'hitl_required' : 'pass',
         reasons: policyReasons,
@@ -143,7 +144,7 @@ export class P0AiTriageAssistService {
     pack: EvidencePack,
     diagnosis: DiagnosisOutput,
     validation: ValidationOutput | undefined,
-    decision: AIDecisionRecord,
+    decision: TrustAIDecisionRecord,
   ): AIAssistDrafts {
     const top = diagnosis.top_hypotheses?.[0];
     const summaryMd = [
@@ -182,20 +183,29 @@ export class P0AiTriageAssistService {
       ...(validation?.required_questions || []).slice(0, 5).map((q) => `- ${q}`),
       '',
       `## Evidence references`,
-      ...decision.signals_used.slice(0, 10).map((s) => `- ${s}`),
+      ...decision.signals_used.slice(0, 10).map((s) => `- ${s.source}:${s.ref}`),
     ].join('\n');
 
     return { summary_md: summaryMd, handoff_md: handoffMd };
   }
 
-  private collectSignalRefs(pack: EvidencePack): string[] {
-    const refs = new Set<string>();
-    for (const s of pack.signals || []) refs.add(`signal:${s.source}:${s.id}`);
-    for (const d of pack.docs || []) refs.add(`doc:${d.source}:${d.id}`);
-    for (const f of pack.source_findings || []) {
-      refs.add(`source_finding:${f.source}:${f.facet || 'general'}:${f.matched ? 'matched' : 'miss'}`);
+  private collectSignalsUsed(pack: EvidencePack): CP0AiDecisionRecord['signals_used'] {
+    const refs = new Map<string, { source: string; ref: string }>();
+    for (const s of pack.signals || []) {
+      refs.set(`signal:${s.source}:${s.id}`, { source: String(s.source || 'signal'), ref: `signal:${s.id}` });
     }
-    return Array.from(refs).slice(0, 50);
+    for (const d of pack.docs || []) {
+      refs.set(`doc:${d.source}:${d.id}`, { source: String(d.source || 'doc'), ref: `doc:${d.id}` });
+    }
+    for (const f of pack.source_findings || []) {
+      const facet = String(f.facet || 'general');
+      const match = f.matched ? 'matched' : 'miss';
+      refs.set(`source_finding:${f.source}:${facet}:${match}`, {
+        source: String(f.source || 'source_finding'),
+        ref: `source_finding:${facet}:${match}`,
+      });
+    }
+    return Array.from(refs.values()).slice(0, 50);
   }
 
   private buildProvenanceRefs(
@@ -230,12 +240,12 @@ export class P0AiTriageAssistService {
     tenantId: string;
     actor?: { type: 'user' | 'system' | 'ai'; id?: string; name?: string };
     now: string;
-    decision: AIDecisionRecord;
-  }): P0AuditRecord {
+    decision: TrustAIDecisionRecord;
+  }): TrustAuditRecord {
     return {
       audit_id: uuidv4(),
       tenant_id: input.tenantId,
-      actor: input.actor || { type: 'ai', name: 'p0-ai-triage-assist' },
+      actor: this.normalizeActor(input.actor),
       action: 'ai.decision.create',
       target: {
         type: 'ai_decision_record',
@@ -252,6 +262,26 @@ export class P0AiTriageAssistService {
         prompt_version: input.decision.prompt_version,
         model_version: input.decision.model_version,
       },
+    };
+  }
+
+  private normalizeActor(actor?: { type: 'user' | 'system' | 'ai'; id?: string; name?: string }) {
+    const type = actor?.type || 'ai';
+    return {
+      type,
+      id: String(actor?.id || 'p0-ai-triage-assist'),
+      origin: type === 'user' ? 'api' : (type === 'system' ? 'scheduler' : 'ai'),
+      ...(actor?.name ? { role: actor.name } : {}),
+    } as const;
+  }
+
+  private normalizeCorrelation(correlation: TrustCorrelationRefs | undefined, ticketId: string) {
+    return {
+      trace_id: String(correlation?.trace_id || uuidv4()),
+      ...(correlation?.request_id ? { request_id: String(correlation.request_id) } : {}),
+      ...(correlation?.job_id ? { job_id: String(correlation.job_id) } : {}),
+      ...(correlation?.command_id ? { command_id: String(correlation.command_id) } : {}),
+      ticket_id: ticketId,
     };
   }
 }

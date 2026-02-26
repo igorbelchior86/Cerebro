@@ -5,6 +5,7 @@ import type {
   ManagerQueueSnapshotItem,
   ValidationOutput,
 } from '@playbook-brain/types';
+import type { TrustCorrelationRefs } from '../services/p0-trust-contracts.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { p0TrustStore } from '../services/p0-trust-store.js';
 import { P0AiTriageAssistService } from '../services/p0-ai-triage-assist.js';
@@ -13,6 +14,7 @@ import {
   ReadOnlyIntegrationMutationError,
 } from '../services/p0-readonly-enrichment.js';
 import { P0ManagerOpsVisibilityService } from '../services/p0-manager-ops-visibility.js';
+import { p0RolloutControlService } from '../services/p0-rollout-control.js';
 
 const router: ExpressRouter = Router();
 router.use(requireAdmin);
@@ -71,7 +73,7 @@ router.post('/p0/ai/triage-decision', (req, res, next) => {
       pack?: EvidencePack;
       diagnosis?: DiagnosisOutput;
       validation?: ValidationOutput;
-      correlation?: Record<string, unknown>;
+      correlation?: TrustCorrelationRefs;
       prompt_version?: string;
       model_version?: string;
     };
@@ -87,7 +89,7 @@ router.post('/p0/ai/triage-decision', (req, res, next) => {
       pack,
       diagnosis,
       ...(validation ? { validation } : {}),
-      correlation: (correlation || {}) as any,
+      correlation: correlation || {},
       promptVersion: String(prompt_version),
       modelVersion: String(model_version),
       actor: { type: 'user', ...(req.auth?.sub ? { id: req.auth.sub } : {}) },
@@ -99,6 +101,10 @@ router.post('/p0/ai/triage-decision', (req, res, next) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Unsupported rollout flag:')) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
     next(error);
   }
 });
@@ -113,7 +119,7 @@ router.post('/p0/enrichment/context', async (req, res, next) => {
     const { ticket_id, providers, correlation } = req.body as {
       ticket_id?: string;
       providers?: Record<string, { raw?: unknown; adapterVersion?: string }>;
-      correlation?: Record<string, unknown>;
+      correlation?: TrustCorrelationRefs;
     };
     if (!ticket_id || !providers || typeof providers !== 'object') {
       res.status(400).json({ error: 'ticket_id and providers are required' });
@@ -123,7 +129,7 @@ router.post('/p0/enrichment/context', async (req, res, next) => {
       tenantId,
       ticketId: ticket_id,
       providers: providers as any,
-      correlation: (correlation || {}) as any,
+      correlation: correlation || {},
       actor: { type: 'user', ...(req.auth?.sub ? { id: req.auth.sub } : {}) },
     });
     res.status(201).json({
@@ -132,6 +138,10 @@ router.post('/p0/enrichment/context', async (req, res, next) => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Unsupported rollout flag:')) {
+      res.status(400).json({ error: error.message });
+      return;
+    }
     next(error);
   }
 });
@@ -147,7 +157,7 @@ router.post('/p0/enrichment/mutate/:source', async (req, res, next) => {
       source: req.params.source as any,
       tenantId,
       ticketId: String(req.body?.ticket_id || ''),
-      correlation: (req.body?.correlation || {}) as any,
+      correlation: (req.body?.correlation || {}) as TrustCorrelationRefs,
       payload: req.body?.payload,
       actor: { type: 'user', ...(req.auth?.sub ? { id: req.auth.sub } : {}) },
     });
@@ -186,6 +196,108 @@ router.post('/p0/visibility', (req, res, next) => {
       data: snapshot,
       timestamp: new Date().toISOString(),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/p0/rollout/policy', (req, res) => {
+  const tenantId = req.auth?.tid;
+  if (!tenantId) {
+    res.status(401).json({ error: 'Tenant context required' });
+    return;
+  }
+  res.json({
+    success: true,
+    data: {
+      tenant_id: tenantId,
+      frozen: true,
+      launch_policy: p0RolloutControlService.getLaunchPolicySnapshot(),
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+router.get('/p0/rollout/flags', (req, res) => {
+  const tenantId = req.auth?.tid;
+  if (!tenantId) {
+    res.status(401).json({ error: 'Tenant context required' });
+    return;
+  }
+  res.json({
+    success: true,
+    data: {
+      supported_flags: p0RolloutControlService.getSupportedFlags(),
+      posture: p0RolloutControlService.getTenantPosture(tenantId),
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
+router.post('/p0/rollout/flags/:flagKey', (req, res, next) => {
+  try {
+    const tenantId = req.auth?.tid;
+    if (!tenantId) {
+      res.status(401).json({ error: 'Tenant context required' });
+      return;
+    }
+    if (typeof req.body?.enabled !== 'boolean') {
+      res.status(400).json({ error: 'enabled boolean is required' });
+      return;
+    }
+    const posture = p0RolloutControlService.setTenantFlag({
+      tenantId,
+      flagKey: String(req.params.flagKey || ''),
+      enabled: Boolean(req.body.enabled),
+      ...(req.auth?.sub ? { actorId: req.auth.sub } : {}),
+      ...(typeof req.body?.reason === 'string' && req.body.reason.trim()
+        ? { reason: String(req.body.reason).trim() }
+        : {}),
+    });
+    res.json({
+      success: true,
+      data: posture,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/p0/rollout/rollback', (req, res, next) => {
+  try {
+    const tenantId = req.auth?.tid;
+    if (!tenantId) {
+      res.status(401).json({ error: 'Tenant context required' });
+      return;
+    }
+    const mode = String(req.body?.mode || '').trim();
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+    if (mode === 'tenant_all_flags') {
+      const posture = p0RolloutControlService.rollbackTenantAllFlags({
+        tenantId,
+        ...(req.auth?.sub ? { actorId: req.auth.sub } : {}),
+        ...(reason ? { reason } : {}),
+      });
+      res.json({ success: true, data: posture, timestamp: new Date().toISOString() });
+      return;
+    }
+    if (mode === 'feature_flag') {
+      const flagKey = String(req.body?.flag_key || '').trim();
+      if (!flagKey) {
+        res.status(400).json({ error: 'flag_key is required for feature_flag rollback' });
+        return;
+      }
+      const posture = p0RolloutControlService.rollbackFeature({
+        tenantId,
+        flagKey,
+        ...(req.auth?.sub ? { actorId: req.auth.sub } : {}),
+        ...(reason ? { reason } : {}),
+      });
+      res.json({ success: true, data: posture, timestamp: new Date().toISOString() });
+      return;
+    }
+    res.status(400).json({ error: 'mode must be tenant_all_flags or feature_flag' });
   } catch (error) {
     next(error);
   }

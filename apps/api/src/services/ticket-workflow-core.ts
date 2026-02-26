@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { readJsonFileSafe, writeJsonFileAtomic } from './runtime-json-file.js';
 
 export type WorkflowTargetIntegration =
   | 'Autotask'
@@ -224,6 +225,12 @@ export class InMemoryTicketWorkflowRepository implements TicketWorkflowRepositor
   private processedSyncEvents = new Set<string>();
   private inbox = new Map<string, InboxTicketState>();
   private reconciliationIssues: ReconciliationIssue[] = [];
+  private readonly persistenceFilePath: string | undefined;
+
+  constructor(input?: { persistenceFilePath?: string }) {
+    this.persistenceFilePath = input?.persistenceFilePath;
+    this.loadPersistedState();
+  }
 
   private commandKey(tenantId: string, idempotencyKey: string): string {
     return `${tenantId}::${idempotencyKey}`;
@@ -231,6 +238,37 @@ export class InMemoryTicketWorkflowRepository implements TicketWorkflowRepositor
 
   private inboxKey(tenantId: string, ticketId: string): string {
     return `${tenantId}::${ticketId}`;
+  }
+
+  private loadPersistedState(): void {
+    if (!this.persistenceFilePath) return;
+    const snapshot = readJsonFileSafe<{
+      commandsById?: Array<[string, WorkflowCommandAttempt]>;
+      commandsByIdempotency?: Array<[string, string]>;
+      audits?: WorkflowAuditRecord[];
+      processedSyncEvents?: string[];
+      inbox?: Array<[string, InboxTicketState]>;
+      reconciliationIssues?: ReconciliationIssue[];
+    }>(this.persistenceFilePath);
+    if (!snapshot) return;
+    this.commandsById = new Map(snapshot.commandsById || []);
+    this.commandsByIdempotency = new Map(snapshot.commandsByIdempotency || []);
+    this.audits = Array.isArray(snapshot.audits) ? snapshot.audits : [];
+    this.processedSyncEvents = new Set(snapshot.processedSyncEvents || []);
+    this.inbox = new Map(snapshot.inbox || []);
+    this.reconciliationIssues = Array.isArray(snapshot.reconciliationIssues) ? snapshot.reconciliationIssues : [];
+  }
+
+  private persistState(): void {
+    if (!this.persistenceFilePath) return;
+    writeJsonFileAtomic(this.persistenceFilePath, {
+      commandsById: Array.from(this.commandsById.entries()),
+      commandsByIdempotency: Array.from(this.commandsByIdempotency.entries()),
+      audits: this.audits,
+      processedSyncEvents: Array.from(this.processedSyncEvents.values()),
+      inbox: Array.from(this.inbox.entries()),
+      reconciliationIssues: this.reconciliationIssues,
+    });
   }
 
   async getCommandByIdempotencyKey(tenantId: string, idempotencyKey: string): Promise<WorkflowCommandAttempt | null> {
@@ -245,6 +283,7 @@ export class InMemoryTicketWorkflowRepository implements TicketWorkflowRepositor
       this.commandKey(attempt.command.tenant_id, attempt.command.idempotency_key),
       attempt.command.command_id
     );
+    this.persistState();
   }
 
   async getCommandById(commandId: string): Promise<WorkflowCommandAttempt | null> {
@@ -266,6 +305,7 @@ export class InMemoryTicketWorkflowRepository implements TicketWorkflowRepositor
 
   async saveAudit(record: WorkflowAuditRecord): Promise<void> {
     this.audits.push(structuredClone(record));
+    this.persistState();
   }
 
   async listAuditByTicket(tenantId: string, ticketId: string): Promise<WorkflowAuditRecord[]> {
@@ -276,15 +316,18 @@ export class InMemoryTicketWorkflowRepository implements TicketWorkflowRepositor
     const key = `${tenantId}::${eventId}`;
     if (this.processedSyncEvents.has(key)) return false;
     this.processedSyncEvents.add(key);
+    this.persistState();
     return true;
   }
 
   async upsertInboxTicket(state: InboxTicketState): Promise<void> {
     this.inbox.set(this.inboxKey(state.tenant_id, state.ticket_id), structuredClone(state));
+    this.persistState();
   }
 
   async getInboxTicket(tenantId: string, ticketId: string): Promise<InboxTicketState | null> {
-    return this.inbox.get(this.inboxKey(tenantId, ticketId)) ?? null;
+    const row = this.inbox.get(this.inboxKey(tenantId, ticketId));
+    return row ? structuredClone(row) : null;
   }
 
   async listInboxTickets(tenantId: string): Promise<InboxTicketState[]> {
@@ -296,6 +339,7 @@ export class InMemoryTicketWorkflowRepository implements TicketWorkflowRepositor
 
   async addReconciliationIssue(issue: ReconciliationIssue): Promise<void> {
     this.reconciliationIssues.push(structuredClone(issue));
+    this.persistState();
   }
 
   async listReconciliationIssues(tenantId: string, ticketId?: string): Promise<ReconciliationIssue[]> {
@@ -676,6 +720,16 @@ export class TicketWorkflowCoreService {
   async reconcileTicket(tenantId: string, ticketId: string, correlation: WorkflowCorrelation): Promise<{ matched: boolean; issue?: ReconciliationIssue }> {
     const local = await this.repo.getInboxTicket(tenantId, ticketId);
     if (!this.gateway.fetchTicketSnapshot) {
+      await this.writeAudit({
+        tenant_id: tenantId,
+        actor: { kind: 'system', id: 'autotask-reconcile', origin: 'autotask_reconcile' },
+        action: 'workflow.reconciliation.skipped_fetch_unavailable',
+        target: auditTarget('Autotask', 'ticket', ticketId),
+        result: 'failure',
+        reason: 'gateway_fetch_snapshot_unavailable',
+        correlation,
+        metadata: { degraded_mode: true },
+      });
       return { matched: true };
     }
     const remote = await this.gateway.fetchTicketSnapshot(tenantId, ticketId);
@@ -693,6 +747,16 @@ export class TicketWorkflowCoreService {
         provenance: { source: 'autotask_reconcile', fetched_at: nowIso() },
       };
       await this.repo.addReconciliationIssue(issue);
+      await this.writeAudit({
+        tenant_id: tenantId,
+        actor: { kind: 'system', id: 'autotask-reconcile', origin: 'autotask_reconcile' },
+        action: 'workflow.reconciliation.snapshot_missing',
+        target: auditTarget('Autotask', 'ticket', ticketId),
+        result: 'failure',
+        reason: issue.reason,
+        correlation,
+        metadata: { issue_id: issue.id },
+      });
       return { matched: false, issue };
     }
 
@@ -714,9 +778,28 @@ export class TicketWorkflowCoreService {
         provenance: { source: 'autotask_reconcile', fetched_at: nowIso() },
       };
       await this.repo.addReconciliationIssue(issue);
+      await this.writeAudit({
+        tenant_id: tenantId,
+        actor: { kind: 'system', id: 'autotask-reconcile', origin: 'autotask_reconcile' },
+        action: 'workflow.reconciliation.mismatch',
+        target: auditTarget('Autotask', 'ticket', ticketId),
+        result: 'failure',
+        reason: issue.reason,
+        correlation,
+        metadata: { issue_id: issue.id, local_snapshot: issue.local_snapshot, remote_snapshot: issue.remote_snapshot },
+      });
       return { matched: false, issue };
     }
 
+    await this.writeAudit({
+      tenant_id: tenantId,
+      actor: { kind: 'system', id: 'autotask-reconcile', origin: 'autotask_reconcile' },
+      action: 'workflow.reconciliation.match',
+      target: auditTarget('Autotask', 'ticket', ticketId),
+      result: 'success',
+      correlation,
+      metadata: { local_present: Boolean(local), remote_present: true },
+    });
     return { matched: true };
   }
 

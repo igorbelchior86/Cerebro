@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
   InMemoryTicketWorkflowRepository,
   TicketWorkflowCoreService,
@@ -275,5 +278,73 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     const issues = await service.listReconciliationIssues(tenantId, '7001');
     expect(issues.length).toBeGreaterThan(0);
     expect(issues[0]?.reason).toBe('autotask_snapshot_mismatch');
+    const audit = await service.listAuditByTicket(tenantId, '7001');
+    expect(audit.some((r) => r.action === 'workflow.reconciliation.mismatch')).toBe(true);
+  });
+
+  it('persists workflow runtime state across repository reload when file backing is enabled', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cerebro-workflow-repo-'));
+    const filePath = join(dir, 'workflow-runtime.json');
+    try {
+      const gateway: TicketWorkflowGateway = {
+        executeCommand: jest.fn().mockResolvedValue({ kind: 'created', external_ticket_id: '8101' }),
+      };
+      const repo1 = new InMemoryTicketWorkflowRepository({ persistenceFilePath: filePath });
+      const service1 = new TicketWorkflowCoreService(repo1, gateway, { maxAttempts: 2 });
+
+      const cmd = createCommand({
+        idempotencyKey: 'persist-1',
+        correlation: { trace_id: 'trace-persist', ticket_id: '8101' },
+      });
+      await service1.submitCommand(cmd);
+      await service1.processPendingCommands();
+      await service1.processAutotaskSyncEvent({
+        event_id: 'evt-persist-1',
+        tenant_id: tenantId,
+        event_type: 'ticket.updated',
+        source: 'Autotask',
+        entity_type: 'ticket',
+        entity_id: '8101',
+        payload: { status: 'Assigned' },
+        occurred_at: '2026-02-26T13:00:00.000Z',
+        correlation: { trace_id: 'trace-persist', ticket_id: '8101' },
+        provenance: { source: 'autotask_poller', fetched_at: '2026-02-26T13:00:01.000Z' },
+      });
+
+      const repo2 = new InMemoryTicketWorkflowRepository({ persistenceFilePath: filePath });
+      const service2 = new TicketWorkflowCoreService(repo2, gateway, { maxAttempts: 2 });
+      const inbox = await service2.listInbox(tenantId);
+      const restoredCommand = await service2.getCommand(cmd.command_id);
+      const duplicate = await service2.processAutotaskSyncEvent({
+        event_id: 'evt-persist-1',
+        tenant_id: tenantId,
+        event_type: 'ticket.updated',
+        source: 'Autotask',
+        entity_type: 'ticket',
+        entity_id: '8101',
+        payload: { status: 'Assigned' },
+        occurred_at: '2026-02-26T13:00:00.000Z',
+        correlation: { trace_id: 'trace-persist', ticket_id: '8101' },
+        provenance: { source: 'autotask_poller', fetched_at: '2026-02-26T13:00:01.000Z' },
+      });
+
+      expect(restoredCommand?.status).toBe('completed');
+      expect(inbox[0]?.ticket_id).toBe('8101');
+      expect(duplicate).toMatchObject({ duplicate: true, applied: false });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('audits degraded reconciliation when gateway snapshot fetch is unavailable', async () => {
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn(),
+    };
+    const { service } = createService(gateway);
+
+    const result = await service.reconcileTicket(tenantId, '9999', { trace_id: 'trace-skip', ticket_id: '9999' });
+    expect(result.matched).toBe(true);
+    const audit = await service.listAuditByTicket(tenantId, '9999');
+    expect(audit.some((r) => r.action === 'workflow.reconciliation.skipped_fetch_unavailable')).toBe(true);
   });
 });

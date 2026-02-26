@@ -1,7 +1,8 @@
-import type { AIDecisionRecord, ManagerQueueSnapshotItem, P0AuditRecord } from '@playbook-brain/types';
+import type { ManagerQueueSnapshotItem } from '@playbook-brain/types';
 import { P0ManagerOpsVisibilityService } from '../../services/p0-manager-ops-visibility.js';
+import type { TrustAIDecisionRecord, TrustAuditRecord } from '../../services/p0-trust-contracts.js';
 
-function buildDecision(input: Partial<AIDecisionRecord> & { decision_id: string; ticket_id: string }): AIDecisionRecord {
+function buildDecision(input: Partial<TrustAIDecisionRecord> & { decision_id: string; ticket_id: string }): TrustAIDecisionRecord {
   return {
     decision_id: input.decision_id,
     tenant_id: input.tenant_id ?? 'tenant-1',
@@ -15,7 +16,7 @@ function buildDecision(input: Partial<AIDecisionRecord> & { decision_id: string;
     },
     confidence: input.confidence ?? 0.8,
     rationale: input.rationale ?? 'grounded rationale',
-    signals_used: input.signals_used ?? ['signal:ninja:s1'],
+    signals_used: input.signals_used ?? [{ source: 'ninja', ref: 'signal:s1' }],
     provenance_refs: input.provenance_refs ?? [{ source: 'ai_model', fetched_at: new Date().toISOString(), prompt_version: 'p1', model_version: 'm1' }],
     hitl_status: input.hitl_status ?? 'not_required',
     prompt_version: input.prompt_version ?? 'p1',
@@ -26,18 +27,18 @@ function buildDecision(input: Partial<AIDecisionRecord> & { decision_id: string;
   };
 }
 
-function buildAudit(input: Partial<P0AuditRecord> & { audit_id: string }): P0AuditRecord {
+function buildAudit(input: Partial<TrustAuditRecord> & { audit_id: string }): TrustAuditRecord {
   return {
     audit_id: input.audit_id,
     tenant_id: input.tenant_id ?? 'tenant-1',
-    actor: input.actor ?? { type: 'system', name: 'test' },
+    actor: input.actor ?? { type: 'system', id: 'test', origin: 'scheduler' },
     action: input.action ?? 'ai.decision.create',
     target: input.target ?? { type: 'ai_decision_record', id: 'd1' },
     result: input.result ?? 'success',
     ...(input.reason ? { reason: input.reason } : {}),
     timestamp: input.timestamp ?? new Date().toISOString(),
     correlation: input.correlation ?? { ticket_id: 'T-1', trace_id: 'trace-1' },
-    ...(input.metadata ? { metadata: input.metadata } : {}),
+    metadata: input.metadata ?? {},
   };
 }
 
@@ -90,7 +91,7 @@ describe('P0ManagerOpsVisibilityService', () => {
           model_version: '',
           rationale: '',
           signals_used: [],
-          correlation: { ticket_id: 'T-OTHER' },
+          correlation: { ticket_id: 'T-OTHER', trace_id: 'trace-bad' },
         }),
       ],
       auditRecords: [buildAudit({ audit_id: 'a-bad', tenant_id: 'tenant-2' })],

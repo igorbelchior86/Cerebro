@@ -1,0 +1,26 @@
+[
+  {
+    "ticket_id": "VAL-1001",
+    "queue": "Service Desk",
+    "priority": "High",
+    "sla_status": "at_risk",
+    "age_minutes": 47,
+    "ai_validation_state": "pending_review"
+  },
+  {
+    "ticket_id": "VAL-1002",
+    "queue": "Service Desk",
+    "priority": "Medium",
+    "sla_status": "healthy",
+    "age_minutes": 12,
+    "ai_validation_state": "validated"
+  },
+  {
+    "ticket_id": "VAL-2001",
+    "queue": "Escalations",
+    "priority": "Critical",
+    "sla_status": "breached",
+    "age_minutes": 133,
+    "ai_validation_state": "pending_review"
+  }
+]

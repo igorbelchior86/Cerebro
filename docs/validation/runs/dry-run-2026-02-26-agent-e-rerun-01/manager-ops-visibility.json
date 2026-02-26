@@ -1,0 +1,51 @@
+{
+  "success": true,
+  "data": {
+    "tenant_id": "dry-run-tenant",
+    "generated_at": "2026-02-26T16:52:22.315Z",
+    "queue_sla": {
+      "total_tickets": 2,
+      "by_queue": [
+        {
+          "queue": "Service Desk",
+          "total": 2,
+          "healthy": 1,
+          "at_risk": 1,
+          "breached": 0,
+          "unknown": 0
+        }
+      ]
+    },
+    "ai_audit": {
+      "total_decisions": 2,
+      "pending_hitl": 1,
+      "avg_confidence": 0.71,
+      "by_decision_type": {
+        "triage": 2
+      }
+    },
+    "automation_audit": {
+      "total_records": 1,
+      "rejected_actions": 1,
+      "read_only_rejections": 1,
+      "recent": []
+    },
+    "qa_sampling": {
+      "sample_size": 2,
+      "tickets": [
+        {
+          "ticket_id": "T-1",
+          "reason": "HITL pending",
+          "confidence": 0.61,
+          "hitl_status": "pending",
+          "sla_status": "at_risk"
+        }
+      ]
+    },
+    "integrity_checks": {
+      "ok": true,
+      "issues": []
+    }
+  },
+  "timestamp": "2026-02-26T16:52:22.315Z"
+}

@@ -1,15 +1,14 @@
 import type {
-  AIDecisionRecord,
   ManagerQueueSnapshotItem,
   ManagerVisibilitySnapshot,
-  P0AuditRecord,
 } from '@playbook-brain/types';
+import type { TrustAIDecisionRecord, TrustAuditRecord } from './p0-trust-contracts.js';
 
 export interface BuildManagerVisibilityInput {
   tenantId: string;
   queueItems: ManagerQueueSnapshotItem[];
-  aiDecisions: AIDecisionRecord[];
-  auditRecords: P0AuditRecord[];
+  aiDecisions: TrustAIDecisionRecord[];
+  auditRecords: TrustAuditRecord[];
   sampleSize?: number;
 }
 
@@ -87,7 +86,7 @@ export class P0ManagerOpsVisibilityService {
 
   private buildQASample(input: {
     queueItems: ManagerQueueSnapshotItem[];
-    aiDecisions: AIDecisionRecord[];
+    aiDecisions: TrustAIDecisionRecord[];
     sampleSize: number;
   }): ManagerVisibilitySnapshot['qa_sampling']['tickets'] {
     const queueByTicket = new Map(input.queueItems.map((q) => [q.ticket_id, q]));
@@ -127,8 +126,8 @@ export class P0ManagerOpsVisibilityService {
   validateIntegrity(input: {
     tenantId: string;
     queueItems: ManagerQueueSnapshotItem[];
-    aiDecisions: AIDecisionRecord[];
-    auditRecords: P0AuditRecord[];
+    aiDecisions: TrustAIDecisionRecord[];
+    auditRecords: TrustAuditRecord[];
   }): string[] {
     const issues: string[] = [];
     const queueTickets = new Set(input.queueItems.map((q) => q.ticket_id));

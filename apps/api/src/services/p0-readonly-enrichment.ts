@@ -2,12 +2,11 @@ import { v4 as uuidv4 } from 'uuid';
 import type {
   ContextCard,
   ContextEvidenceRecord,
-  CorrelationRefs,
-  P0AuditRecord,
   P0ReadonlyIntegrationSource,
   TicketContextEnvelopeP0,
 } from '@playbook-brain/types';
 import type { InMemoryP0TrustStore } from './p0-trust-store.js';
+import type { TrustActorRef, TrustAuditRecord, TrustCorrelationRefs } from './p0-trust-contracts.js';
 
 type ProviderPayload = {
   raw?: unknown;
@@ -18,7 +17,7 @@ type ProviderPayload = {
 export interface BuildReadonlyContextInput {
   tenantId: string;
   ticketId: string;
-  correlation?: CorrelationRefs;
+  correlation?: TrustCorrelationRefs;
   providers: Partial<Record<P0ReadonlyIntegrationSource, ProviderPayload>>;
   actor?: { type: 'user' | 'system' | 'ai'; id?: string; name?: string };
 }
@@ -44,6 +43,7 @@ export class P0ReadOnlyEnrichmentService {
 
   async buildContextEnvelope(input: BuildReadonlyContextInput): Promise<TicketContextEnvelopeP0> {
     const generatedAt = new Date().toISOString();
+    const baseCorrelation = this.normalizeCorrelation(input.correlation, input.ticketId);
     const cards: ContextCard[] = [];
     const evidence: ContextEvidenceRecord[] = [];
     const sourceProvenance: TicketContextEnvelopeP0['provenance']['sources'] = [];
@@ -67,7 +67,7 @@ export class P0ReadOnlyEnrichmentService {
           targetType: 'integration_context',
           targetId: input.ticketId,
           result: 'success',
-          correlation: { ...input.correlation, ticket_id: input.ticketId },
+          correlation: baseCorrelation,
           metadata: { evidence_count: normalized.evidence.length, card_status: normalized.card.status },
         }));
       } catch (error) {
@@ -91,7 +91,7 @@ export class P0ReadOnlyEnrichmentService {
           targetId: input.ticketId,
           result: 'failure',
           reason: 'partial_enrichment_failure',
-          correlation: { ...input.correlation, ticket_id: input.ticketId },
+          correlation: baseCorrelation,
           metadata: { error: message },
         }));
       }
@@ -112,8 +112,7 @@ export class P0ReadOnlyEnrichmentService {
         enforcement: 'explicit_reject_and_audit',
       },
       correlation: {
-        ...input.correlation,
-        ticket_id: input.ticketId,
+        ...baseCorrelation,
       },
       ...(partialFailures.length > 0
         ? {
@@ -130,7 +129,7 @@ export class P0ReadOnlyEnrichmentService {
     source: P0ReadonlyIntegrationSource;
     tenantId: string;
     ticketId?: string;
-    correlation?: CorrelationRefs;
+    correlation?: TrustCorrelationRefs;
     actor?: { type: 'user' | 'system' | 'ai'; id?: string; name?: string };
     payload?: unknown;
   }): Promise<never> {
@@ -142,10 +141,7 @@ export class P0ReadOnlyEnrichmentService {
       ...(input.ticketId ? { targetId: input.ticketId } : {}),
       result: 'rejected',
       reason: 'read_only_enforcement',
-      correlation: {
-        ...input.correlation,
-        ...(input.ticketId ? { ticket_id: input.ticketId } : {}),
-      },
+      correlation: this.normalizeCorrelation(input.correlation, input.ticketId),
       metadata: {
         source: input.source,
         launch_policy: 'READ_ONLY',
@@ -307,15 +303,15 @@ export class P0ReadOnlyEnrichmentService {
     action: string;
     targetType: string;
     targetId?: string;
-    result: P0AuditRecord['result'];
+    result: TrustAuditRecord['result'];
     reason?: string;
-    correlation?: CorrelationRefs;
+    correlation?: TrustCorrelationRefs;
     metadata?: Record<string, unknown>;
-  }): P0AuditRecord {
+  }): TrustAuditRecord {
     return {
       audit_id: uuidv4(),
       tenant_id: input.tenantId,
-      actor: input.actor || { type: 'system', name: 'p0-readonly-enrichment' },
+      actor: this.normalizeActor(input.actor),
       action: input.action,
       target: {
         type: input.targetType,
@@ -324,8 +320,27 @@ export class P0ReadOnlyEnrichmentService {
       result: input.result,
       ...(input.reason ? { reason: input.reason } : {}),
       timestamp: new Date().toISOString(),
-      correlation: input.correlation || {},
-      ...(input.metadata ? { metadata: input.metadata } : {}),
+      correlation: this.normalizeCorrelation(input.correlation, input.targetId),
+      metadata: input.metadata || {},
+    };
+  }
+
+  private normalizeActor(actor?: { type: 'user' | 'system' | 'ai'; id?: string; name?: string }): TrustActorRef {
+    const type = actor?.type || 'system';
+    return {
+      type,
+      id: String(actor?.id || 'p0-readonly-enrichment'),
+      origin: type === 'user' ? 'api' : 'integration',
+    };
+  }
+
+  private normalizeCorrelation(correlation?: TrustCorrelationRefs, ticketId?: string) {
+    return {
+      trace_id: String(correlation?.trace_id || uuidv4()),
+      ...(correlation?.request_id ? { request_id: String(correlation.request_id) } : {}),
+      ...(correlation?.job_id ? { job_id: String(correlation.job_id) } : {}),
+      ...(correlation?.command_id ? { command_id: String(correlation.command_id) } : {}),
+      ...(ticketId ? { ticket_id: ticketId } : {}),
     };
   }
 

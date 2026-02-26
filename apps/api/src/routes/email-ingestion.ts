@@ -1,10 +1,193 @@
 import { Router, Request, Response } from 'express';
+import { AutotaskClient } from '../clients/autotask.js';
+import { queryOne } from '../db/index.js';
 import { graphClient } from '../services/email/graph-client.js';
 import { emailParser } from '../services/email/email-parser.js';
 import { pgStore } from '../services/email/pg-store.js';
 import { triageOrchestrator } from '../services/triage-orchestrator.js';
 
 const router: Router = Router();
+
+interface AutotaskCreds {
+    apiIntegrationCode: string;
+    username: string;
+    secret: string;
+    zoneUrl?: string;
+}
+
+type SidebarQueueCacheEntry = {
+    queueId: number | null;
+    queueName: string;
+    expiresAt: number;
+};
+
+const SIDEBAR_QUEUE_CACHE_TTL_MS = 10 * 60 * 1000;
+// Hydrate the same window size returned by `/list` so Global queue filtering
+// reflects the rows currently visible in the sidebar.
+const SIDEBAR_QUEUE_ENRICH_LIMIT = 200;
+const SIDEBAR_QUEUE_ENRICH_CONCURRENCY = 6;
+const sidebarTicketQueueCache = new Map<string, SidebarQueueCacheEntry>();
+let autotaskQueueCatalogCache: { expiresAt: number; byId: Map<number, string> } | null = null;
+
+async function getAutotaskClientForSidebar(): Promise<AutotaskClient | null> {
+    try {
+        const row = await queryOne<{ credentials: AutotaskCreds }>(
+            `SELECT credentials
+             FROM integration_credentials
+             WHERE service = $1
+             ORDER BY updated_at DESC
+             LIMIT 1`,
+            ['autotask']
+        );
+        const creds = row?.credentials;
+        if (creds?.apiIntegrationCode && creds?.username && creds?.secret) {
+            return new AutotaskClient({
+                apiIntegrationCode: creds.apiIntegrationCode,
+                username: creds.username,
+                secret: creds.secret,
+                ...(creds.zoneUrl ? { zoneUrl: creds.zoneUrl } : {}),
+            });
+        }
+    } catch {
+        // Fallback to env vars below when DB credential lookup is unavailable.
+    }
+
+    const code = String(process.env.AUTOTASK_API_INTEGRATION_CODE || '').trim();
+    const username = String(process.env.AUTOTASK_USERNAME || '').trim();
+    const secret = String(process.env.AUTOTASK_SECRET || '').trim();
+    const zoneUrl = String(process.env.AUTOTASK_ZONE_URL || '').trim();
+    if (!code || !username || !secret) return null;
+    return new AutotaskClient({
+        apiIntegrationCode: code,
+        username,
+        secret,
+        ...(zoneUrl ? { zoneUrl } : {}),
+    });
+}
+
+async function getAutotaskQueueCatalogMap(client: AutotaskClient): Promise<Map<number, string>> {
+    const now = Date.now();
+    if (autotaskQueueCatalogCache && autotaskQueueCatalogCache.expiresAt > now) {
+        return autotaskQueueCatalogCache.byId;
+    }
+
+    const queues = await client.getTicketQueues();
+    const byId = new Map<number, string>();
+    for (const q of queues) {
+        if (!Number.isFinite(q.id)) continue;
+        const label = String(q.label || '').trim();
+        if (!label) continue;
+        byId.set(q.id, label);
+    }
+
+    autotaskQueueCatalogCache = {
+        expiresAt: now + SIDEBAR_QUEUE_CACHE_TTL_MS,
+        byId,
+    };
+    return byId;
+}
+
+function readSidebarQueueCache(ticketId: string): SidebarQueueCacheEntry | null {
+    const hit = sidebarTicketQueueCache.get(ticketId);
+    if (!hit) return null;
+    if (hit.expiresAt <= Date.now()) {
+        sidebarTicketQueueCache.delete(ticketId);
+        return null;
+    }
+    return hit;
+}
+
+function writeSidebarQueueCache(ticketId: string, queueId: number | null, queueName: string): void {
+    sidebarTicketQueueCache.set(ticketId, {
+        queueId,
+        queueName,
+        expiresAt: Date.now() + SIDEBAR_QUEUE_CACHE_TTL_MS,
+    });
+}
+
+async function hydrateAutotaskQueueMetadataForSidebar(items: Array<Record<string, any>>): Promise<void> {
+    const candidates = items
+        .filter((item) => {
+            const ticketId = String(item?.ticket_id || item?.id || '').trim();
+            if (!ticketId) return false;
+            const isNumericTicketId = /^\d+$/.test(ticketId);
+            const isAutotaskTicketNumber = /^T\d{8}\.\d+$/i.test(ticketId);
+            if (!(isNumericTicketId || isAutotaskTicketNumber)) return false;
+            const hasQueueId = Number.isFinite(Number(item?.queue_id));
+            const queueName = String(item?.queue_name || item?.queue || '').trim().toLowerCase();
+            const hasMeaningfulQueueName = !!queueName && !['unknown', 'queue', 'email ingestion'].includes(queueName);
+            return !(hasQueueId || hasMeaningfulQueueName);
+        })
+        .slice(0, SIDEBAR_QUEUE_ENRICH_LIMIT);
+
+    if (candidates.length === 0) return;
+
+    // Apply warm cache hits first (cheap path).
+    const remaining: Array<Record<string, any>> = [];
+    for (const item of candidates) {
+        const ticketId = String(item.ticket_id || item.id || '').trim();
+        const cached = readSidebarQueueCache(ticketId);
+        if (!cached) {
+            remaining.push(item);
+            continue;
+        }
+        if (Number.isFinite(Number(cached.queueId))) {
+            item.queue_id = Number(cached.queueId);
+        }
+        if (cached.queueName) {
+            item.queue = cached.queueName;
+            item.queue_name = cached.queueName;
+        }
+    }
+
+    if (remaining.length === 0) return;
+
+    const client = await getAutotaskClientForSidebar();
+    if (!client) return;
+
+    let queueCatalog = new Map<number, string>();
+    try {
+        queueCatalog = await getAutotaskQueueCatalogMap(client);
+    } catch {
+        queueCatalog = new Map<number, string>();
+    }
+
+    for (let i = 0; i < remaining.length; i += SIDEBAR_QUEUE_ENRICH_CONCURRENCY) {
+        const chunk = remaining.slice(i, i + SIDEBAR_QUEUE_ENRICH_CONCURRENCY);
+        await Promise.all(chunk.map(async (item) => {
+            const ticketId = String(item.ticket_id || item.id || '').trim();
+            try {
+                let ticket: any;
+                if (/^\d+$/.test(ticketId)) {
+                    try {
+                        ticket = await client.getTicket(Number(ticketId));
+                    } catch {
+                        // Some UI rows carry Autotask ticketNumber (not internal entity ID),
+                        // even when numeric-like values are present. Fall back to query lookup.
+                        ticket = await client.getTicketByTicketNumber(ticketId);
+                    }
+                } else {
+                    ticket = await client.getTicketByTicketNumber(ticketId);
+                }
+                const queueId = Number((ticket as any)?.queueID);
+                if (!Number.isFinite(queueId)) {
+                    writeSidebarQueueCache(ticketId, null, '');
+                    return;
+                }
+                const queueName = String(queueCatalog.get(queueId) || '').trim();
+                item.queue_id = queueId;
+                if (queueName) {
+                    item.queue = queueName;
+                    item.queue_name = queueName;
+                }
+                writeSidebarQueueCache(ticketId, queueId, queueName);
+            } catch {
+                // Cache miss/error softly to avoid retry storms every poll refresh.
+                writeSidebarQueueCache(ticketId, null, '');
+            }
+        }));
+    }
+}
 
 export async function ingestSupportMailboxOnce(mailbox?: string): Promise<{ processed: number }> {
     const mailboxAddress = mailbox || process.env.GRAPH_MAILBOX_ADDRESS || 'help@refreshtech.com';
@@ -403,6 +586,19 @@ router.get('/list', async (_req: Request, res: Response) => {
                 });
                 const manuallySuppressed = Boolean(row.manual_suppressed);
                 const effectiveSuppressed = manuallySuppressed || Boolean(suppression?.suppressed);
+                const queueNameCandidate = normalizeText(
+                    ssot?.autotask_authoritative?.queue_name || packTicket.queue || '',
+                    ''
+                );
+                const queueName = isMeaningful(queueNameCandidate, 'Unknown', 'queue', 'Email Ingestion')
+                    ? queueNameCandidate
+                    : '';
+                const queueIdRaw = ssot?.autotask_authoritative?.queue_id;
+                const queueId = Number(queueIdRaw);
+                const assignedResourceIdRaw = ssot?.autotask_authoritative?.assigned_resource_id;
+                const assignedResourceId = Number(assignedResourceIdRaw);
+                const assignedResourceName = normalizeText(ssot?.autotask_authoritative?.assigned_resource_name, '');
+                const assignedResourceEmail = normalizeText(ssot?.autotask_authoritative?.assigned_resource_email, '').toLowerCase();
 
                 return {
                     id: String(row.ticket_id),
@@ -415,6 +611,11 @@ router.get('/list', async (_req: Request, res: Response) => {
                     requester,
                     org: company,
                     site,
+                    ...(queueName ? { queue: queueName, queue_name: queueName } : {}),
+                    ...(Number.isFinite(queueId) ? { queue_id: queueId } : {}),
+                    ...(Number.isFinite(assignedResourceId) ? { assigned_resource_id: assignedResourceId } : {}),
+                    ...(assignedResourceName ? { assigned_resource_name: assignedResourceName } : {}),
+                    ...(assignedResourceEmail ? { assigned_resource_email: assignedResourceEmail } : {}),
                     created_at: ssot.created_at || row.ticket_created_at || row.first_session_created_at || row.session_created_at,
                     manual_suppressed: manuallySuppressed,
                     suppressed: effectiveSuppressed,
@@ -440,6 +641,15 @@ router.get('/list', async (_req: Request, res: Response) => {
                 return String(b.ticket_id || '').localeCompare(String(a.ticket_id || ''));
             })
             .slice(0, 200);
+
+        try {
+            await hydrateAutotaskQueueMetadataForSidebar(mapped as Array<Record<string, any>>);
+        } catch (hydrationError: any) {
+            console.warn(
+                '[EmailIngestion] Sidebar queue hydration failed:',
+                hydrationError?.message || hydrationError
+            );
+        }
 
         res.json({ success: true, data: mapped });
     } catch (error: any) {

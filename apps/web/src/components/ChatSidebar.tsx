@@ -43,6 +43,18 @@ interface ChatSidebarProps {
   isLoading?: boolean;
 }
 
+interface AutotaskQueueCatalogItem {
+  id: number;
+  label: string;
+  isActive?: boolean;
+}
+
+interface QueueOption {
+  id: string;
+  label: string;
+  queueId?: number;
+}
+
 const SIDEBAR_STATE_KEY = 'chatSidebarState.v1';
 const SIDEBAR_HIDE_SUPPRESSED_KEY = 'chatSidebarHideSuppressed.v1';
 
@@ -68,6 +80,7 @@ const FILTERS = [
 ];
 const FILTER_IDS = new Set(FILTERS.map((f) => f.id));
 const GLOBAL_QUEUE_FALLBACKS = ['Service Desk', 'Escalations', 'Projects'];
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 const STATUS_LABEL: Record<ActiveTicket['status'], string> = {
   completed: 'DONE',
@@ -164,6 +177,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   const [scope, setScope] = useState<'personal' | 'global'>('personal');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGlobalQueue, setSelectedGlobalQueue] = useState('all');
+  const [globalQueuesCatalog, setGlobalQueuesCatalog] = useState<AutotaskQueueCatalogItem[]>([]);
   const [hideSuppressed, setHideSuppressed] = useState(true);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [clock, setClock] = useState('');
@@ -214,6 +228,42 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchAutotaskQueues = async () => {
+      try {
+        const res = await fetch(`${API}/autotask/queues`, { credentials: 'include' });
+        if (!res.ok) return;
+        const payload = await res.json().catch(() => null) as { success?: boolean; data?: unknown[] } | null;
+        if (!payload?.success || !Array.isArray(payload.data) || cancelled) return;
+
+        const normalized = payload.data
+          .map((row) => {
+            const item = row as Partial<AutotaskQueueCatalogItem>;
+            const id = Number(item.id);
+            const label = String(item.label || '').trim();
+            if (!Number.isFinite(id) || !label) return null;
+            return {
+              id,
+              label,
+              ...(typeof item.isActive === 'boolean' ? { isActive: item.isActive } : {}),
+            };
+          })
+          .filter((item): item is AutotaskQueueCatalogItem => Boolean(item));
+
+        setGlobalQueuesCatalog(normalized);
+      } catch {
+        // Keep UI fallback queue labels when Autotask catalog is unavailable.
+      }
+    };
+
+    fetchAutotaskQueues();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (restoredRef.current || typeof window === 'undefined') return;
@@ -267,27 +317,54 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   const currentUserEmail = String(user?.email || '').trim().toLowerCase();
   const currentUserName = normalizeText(user?.name || '', '').toLowerCase();
 
-  const getTicketQueueLabel = (ticket: ActiveTicket) =>
-    normalizeText(ticket.queue_name ?? ticket.queue ?? '', '');
+  const getTicketQueueLabel = (ticket: ActiveTicket) => {
+    const normalized = normalizeText(ticket.queue_name ?? ticket.queue ?? '', '');
+    const lowered = normalized.toLowerCase();
+    if (!normalized) return '';
+    if (
+      lowered === 'unknown' ||
+      lowered === 'n/a' ||
+      lowered === 'none' ||
+      lowered === 'null' ||
+      lowered === 'email ingestion'
+    ) return '';
+    return normalized;
+  };
+  const getTicketQueueId = (ticket: ActiveTicket) => {
+    const value = Number(ticket.queue_id);
+    return Number.isFinite(value) ? value : null;
+  };
   const getTicketAssigneeEmail = (ticket: ActiveTicket) =>
     normalizeText(ticket.assigned_resource_email, '').toLowerCase();
   const getTicketAssigneeName = (ticket: ActiveTicket) =>
     normalizeText(ticket.assigned_resource_name, '').toLowerCase();
 
-  const queueLabels = Array.from(
+  const queueLabelsFromTickets = Array.from(
     new Set(
       ticketsBySuppression
         .map(getTicketQueueLabel)
         .filter((value) => value !== '')
     )
   ).sort((a, b) => a.localeCompare(b));
-  const hasQueueMetadata = queueLabels.length > 0;
-  const queueOptions = [
+  const queueLabelsFromCatalog = globalQueuesCatalog
+    .filter((q) => q.isActive !== false)
+    .map((q) => q.label)
+    .sort((a, b) => a.localeCompare(b));
+  const hasQueueCatalog = queueLabelsFromCatalog.length > 0;
+  const hasTicketQueueMetadata = ticketsBySuppression.some((ticket) =>
+    Boolean(getTicketQueueLabel(ticket)) || getTicketQueueId(ticket) !== null
+  );
+  const queueOptions: QueueOption[] = [
     { id: 'all', label: t('globalAllQueues') },
-    ...(hasQueueMetadata ? queueLabels : GLOBAL_QUEUE_FALLBACKS).map((label) => ({
-      id: label.toLowerCase(),
-      label,
-    })),
+    ...(hasQueueCatalog
+      ? globalQueuesCatalog
+          .filter((q) => q.isActive !== false)
+          .sort((a, b) => a.label.localeCompare(b.label))
+          .map((q) => ({ id: `queue:${q.id}`, label: q.label, queueId: q.id }))
+      : (queueLabelsFromTickets.length > 0 ? queueLabelsFromTickets : GLOBAL_QUEUE_FALLBACKS).map((label) => ({
+          id: label.toLowerCase(),
+          label,
+        }))),
   ];
   const queueOptionIds = queueOptions.map((option) => option.id).join('|');
   const hasAssignmentMetadata = ticketsBySuppression.some((ticket) =>
@@ -311,7 +388,18 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
       return false;
     }
 
-    if (!hasQueueMetadata || selectedGlobalQueue === 'all') return true;
+    if (selectedGlobalQueue === 'all') return true;
+    if (!hasTicketQueueMetadata) return true;
+
+    const selectedOption = queueOptions.find((option) => option.id === selectedGlobalQueue);
+    const ticketQueueId = getTicketQueueId(ticket);
+    if (selectedOption?.queueId !== undefined && ticketQueueId !== null) {
+      return ticketQueueId === selectedOption.queueId;
+    }
+    if (selectedOption?.queueId !== undefined) {
+      return getTicketQueueLabel(ticket).toLowerCase() === selectedOption.label.toLowerCase();
+    }
+
     return getTicketQueueLabel(ticket).toLowerCase() === selectedGlobalQueue;
   });
 

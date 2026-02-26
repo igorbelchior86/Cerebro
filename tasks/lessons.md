@@ -526,3 +526,45 @@
 **Root cause**: Eu tratei o requisito como equivalência funcional (“alterna entre 2 estados”) em vez de equivalência de componente visual.
 **Rule**: Em pedidos de UI com nome explícito de componente (slider, dropdown, sheet, etc.), implementar o componente visual pedido antes de propor variantes.
 **Pattern**: Requisitos de UI que descrevem forma/interação (ex.: slider vs toggle) não podem ser normalizados para controles semanticamente parecidos.
+
+## Lesson: 2026-02-25 (do not reintroduce removed ingestion paths during UI integration)
+**Mistake**: Ao planejar a integração de queues reais para o modo Global, considerei voltar a mexer em `/email-ingestion/list`, apesar do usuário já ter sinalizado que esse caminho não é mais a base correta.
+**Root cause**: Eu tentei otimizar o impacto visual imediato reutilizando um endpoint antigo, em vez de seguir estritamente o boundary atual da integração Autotask.
+**Rule**: Quando o usuário corrige que um fluxo foi descontinuado, não reintroduzir esse fluxo nem como atalho de UI; integrar diretamente no boundary atual.
+**Pattern**: Pedido de integração nova + endpoint legado “conveniente” => confirmar o boundary de verdade e evitar atalhos regressivos.
+
+## Lesson: 2026-02-25 (catalog metadata is not the same as row metadata)
+**Mistake**: Usei o catálogo real de queues para decidir se o filtro `Global` podia ser aplicado, mesmo quando os tickets da lista ainda não tinham `queue_id/queue_name` preenchidos.
+**Root cause**: Confundi “catálogo de opções do dropdown” com “metadata disponível nas linhas que serão filtradas”.
+**Rule**: Em filtros de UI, separar sempre disponibilidade de catálogo (options) da disponibilidade de metadata por item (rows); só aplicar filtro estrito se os rows tiverem dados para comparação.
+**Pattern**: Dropdown populado + lista vazia após seleção => verificar se a coluna usada no filtro existe nos itens renderizados, não apenas no catálogo.
+
+## Lesson: 2026-02-25 (never compare row labels to option IDs)
+**Mistake**: No filtro `Global`, usei `selectedGlobalQueue` (ID interno da option, ex. `queue:123`) como fallback de comparação com `queue_name` do ticket.
+**Root cause**: Misturei identificador técnico da option (`id`) com valor semântico de display (`label`) na mesma comparação.
+**Rule**: Em filtros por dropdown, comparar rows com `option.value/id` apenas se o row tiver o mesmo tipo de chave; caso contrário, usar o campo semântico correspondente (`label`) da option.
+**Pattern**: Seleção específica zera tudo enquanto `All` funciona => checar mismatch `option.id` vs `row.displayLabel`.
+
+## Lesson: 2026-02-25 (placeholder values can masquerade as metadata and break filters)
+**Mistake**: Tentei corrigir o filtro `Global` só no matching da UI antes de verificar se o backend estava promovendo placeholders (`Unknown`) como queue metadata real.
+**Root cause**: Não percorri o pipeline completo (API docs -> connector shape -> PrepareContext -> list payload -> UI filter) logo no início.
+**Rule**: Quando um filtro parece “não funcionar”, validar primeiro o shape/documentação da fonte e depois rastrear o valor até a UI para detectar placeholders/normalizações indevidas.
+**Pattern**: `All` funciona e filtros específicos zeram tudo => possível metadata fake (`Unknown`, `N/A`, etc.) tratada como valor real.
+
+## Lesson: 2026-02-25 (inspect payload before iterating UI filter fixes)
+**Mistake**: Eu iterei no filtro `Global` várias vezes antes de olhar o payload real da sidebar.
+**Root cause**: Assumi que o problema era apenas comparação de IDs/labels na UI, quando o payload nem tinha queue metadata real (só pseudo-queue `Email Ingestion`).
+**Rule**: Em bugs de filtro/lista, inspecionar o payload real recebido pela UI nas primeiras etapas, antes de múltiplos ajustes de comparação.
+**Pattern**: `All` funciona e filtros específicos falham repetidamente => dump do payload real imediatamente (`curl`/Network tab) para validar campos e valores.
+
+## Lesson: 2026-02-25 (defined helper != active behavior)
+**Mistake**: Eu conclui que a hidratação on-demand de queues estava em jogo porque a função existia no arquivo, sem confirmar se a rota `/email-ingestion/list` realmente a invocava.
+**Root cause**: Verifiquei presença de código auxiliar e assumi ligação funcional, em vez de rastrear o fluxo até o `res.json`.
+**Rule**: Ao depurar bugs de integração interna, sempre confirmar o wiring completo (definição -> chamada -> efeito no payload), não apenas a existência da função.
+**Pattern**: Função/helper sofisticado já presente mas comportamento inalterado => procurar ausência de chamada no caminho principal antes de alterar lógica.
+
+## Lesson: 2026-02-25 (Autotask ticket identifier in UI payload may be `ticketNumber`, not entity `id`)
+**Mistake**: A hidratação de queue assumia que `item.ticket_id` da sidebar era sempre o `id` interno do Autotask e chamava apenas `GET /tickets/{id}`.
+**Root cause**: No payload da sidebar, o identificador exibido/transportado pode ser o `ticketNumber` (ex.: `T20260225.0013`), que exige lookup por query (`ticketNumber`) e não por rota de entidade.
+**Rule**: Em integrações Autotask, tratar `id` (entity id) e `ticketNumber` como identificadores distintos; quando o payload UI usa `ticket_id` string, detectar formato e escolher o método de lookup apropriado.
+**Pattern**: `GET /tickets/{id}` retorna 404 para itens visíveis no Autotask, mas query por `ticketNumber` resolve => mismatch entre `id` interno e `ticketNumber` no pipeline/UI.

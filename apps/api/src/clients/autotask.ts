@@ -22,6 +22,12 @@ export interface AutotaskConfig {
   zoneUrl?: string;
 }
 
+export interface AutotaskQueueOption {
+  id: number;
+  label: string;
+  isActive?: boolean;
+}
+
 /** Discovery endpoint — acts as universal entry point for zone lookup */
 const DISCOVERY_BASE = 'https://webservices2.autotask.net/atservicesrest/v1.0';
 
@@ -226,5 +232,56 @@ export class AutotaskClient {
       `/tickets/${ticketId}/notes`
     );
     return this.extractCollection(response);
+  }
+
+  /**
+   * Read queue picklist options from Tickets entity metadata.
+   * This is more reliable than querying queue assignments because it returns the canonical queue labels.
+   */
+  async getTicketQueues(): Promise<AutotaskQueueOption[]> {
+    const response = await this.request<any>('/tickets/entityInformation/fields');
+    const fields = Array.isArray(response)
+      ? response
+      : Array.isArray(response?.fields)
+        ? response.fields
+        : Array.isArray(response?.items)
+          ? response.items
+          : [];
+
+    const queueField = fields.find((field: any) =>
+      String(field?.name || field?.fieldName || '').toLowerCase() === 'queueid'
+    );
+    const rawValues = Array.isArray(queueField?.picklistValues)
+      ? queueField.picklistValues
+      : Array.isArray(queueField?.pickListValues)
+        ? queueField.pickListValues
+        : [];
+
+    const queues = rawValues
+      .map((entry: any) => {
+        const rawId = entry?.value ?? entry?.id ?? entry?.code ?? entry?.picklistValue;
+        const id = Number(rawId);
+        const label =
+          String(
+            entry?.label ??
+            entry?.displayName ??
+            entry?.text ??
+            entry?.name ??
+            ''
+          ).trim();
+        const isActive =
+          typeof entry?.isActive === 'boolean'
+            ? entry.isActive
+            : (typeof entry?.isInactive === 'boolean' ? !entry.isInactive : undefined);
+        if (!Number.isFinite(id) || !label) return null;
+        return { id, label, ...(typeof isActive === 'boolean' ? { isActive } : {}) };
+      })
+      .filter((q: AutotaskQueueOption | null): q is AutotaskQueueOption => Boolean(q));
+
+    const deduped = new Map<number, AutotaskQueueOption>();
+    for (const q of queues) {
+      if (!deduped.has(q.id)) deduped.set(q.id, q);
+    }
+    return Array.from(deduped.values()).sort((a, b) => a.label.localeCompare(b.label));
   }
 }

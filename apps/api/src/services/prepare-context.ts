@@ -48,6 +48,7 @@ type TicketLike = {
   description?: string;
   companyID?: string | number;
   contactID?: string | number;
+  queueID?: string | number;
   assignedResourceID?: string | number | null;
   company?: string;
   requester?: string;
@@ -75,6 +76,8 @@ interface TicketSSOT {
     contact_id?: number;
     contact_name?: string;
     contact_email?: string;
+    queue_id?: number;
+    queue_name?: string;
     assigned_resource_id?: number;
     assigned_resource_name?: string;
     assigned_resource_email?: string;
@@ -714,9 +717,11 @@ export class PrepareContextService {
       const numericId = Number(raw.id);
       const companyId = Number(raw.companyID);
       const contactId = Number(raw.contactID);
+      const queueId = Number(raw.queueID);
       const assignedResourceId = Number(raw.assignedResourceID);
       const ticketNumber = String(raw.ticketNumber || '').trim();
       const companyName = String((ticket as any)?.company || '').trim();
+      const queueName = String((ticket as any)?.queueName || '').trim();
       const contactName = String(autotaskContactNameResolved || '').trim();
       const contactEmail = String(autotaskContactEmailResolved || '').trim().toLowerCase();
       const assignedResourceName = String(autotaskAssignedResourceNameResolved || '').trim();
@@ -729,6 +734,8 @@ export class PrepareContextService {
         Number.isFinite(contactId) ||
         !!contactName ||
         !!contactEmail ||
+        Number.isFinite(queueId) ||
+        !!queueName ||
         Number.isFinite(assignedResourceId);
       if (!hasAutotaskAuthority) return null;
       return {
@@ -742,6 +749,8 @@ export class PrepareContextService {
         ...(Number.isFinite(contactId) ? { contact_id: contactId } : {}),
         ...(contactName ? { contact_name: contactName } : {}),
         ...(contactEmail ? { contact_email: contactEmail } : {}),
+        ...(Number.isFinite(queueId) ? { queue_id: queueId } : {}),
+        ...(queueName ? { queue_name: queueName } : {}),
         ...(Number.isFinite(assignedResourceId) ? { assigned_resource_id: assignedResourceId } : {}),
         ...(assignedResourceName ? { assigned_resource_name: assignedResourceName } : {}),
         ...(assignedResourceEmail ? { assigned_resource_email: assignedResourceEmail } : {}),

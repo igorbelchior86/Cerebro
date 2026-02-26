@@ -4,8 +4,16 @@
 
 import { Router, type Router as ExpressRouter } from 'express';
 import { AutotaskClient } from '../clients/index.js';
+import { queryOne } from '../db/index.js';
 
 const router: ExpressRouter = Router();
+
+interface AutotaskCreds {
+  apiIntegrationCode: string;
+  username: string;
+  secret: string;
+  zoneUrl?: string;
+}
 
 // Lazy client — only created when a request arrives; avoids startup crash if env vars are absent.
 function getClient() {
@@ -19,6 +27,27 @@ function getClient() {
     secret,
     ...(process.env.AUTOTASK_ZONE_URL ? { zoneUrl: process.env.AUTOTASK_ZONE_URL } : {}),
   });
+}
+
+async function getTenantScopedClient(): Promise<AutotaskClient | null> {
+  try {
+    const row = await queryOne<{ credentials: AutotaskCreds }>(
+      'SELECT credentials FROM integration_credentials WHERE service = $1 LIMIT 1',
+      ['autotask']
+    );
+    const creds = row?.credentials;
+    if (creds?.apiIntegrationCode && creds?.username && creds?.secret) {
+      return new AutotaskClient({
+        apiIntegrationCode: creds.apiIntegrationCode,
+        username: creds.username,
+        secret: creds.secret,
+        ...(creds.zoneUrl ? { zoneUrl: creds.zoneUrl } : {}),
+      });
+    }
+  } catch {
+    // Fall back to env-based client below.
+  }
+  return getClient();
 }
 
 /**
@@ -121,6 +150,29 @@ router.get('/ticket/:id/notes', async (req, res, next) => {
       success: true,
       data: notes,
       count: notes.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /autotask/queues
+ * List real queue options from Autotask Tickets.queueID picklist
+ */
+router.get('/queues', async (_req, res, next) => {
+  try {
+    const client = await getTenantScopedClient();
+    if (!client) {
+      res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
+      return;
+    }
+    const queues = await client.getTicketQueues();
+    res.json({
+      success: true,
+      data: queues,
+      count: queues.length,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

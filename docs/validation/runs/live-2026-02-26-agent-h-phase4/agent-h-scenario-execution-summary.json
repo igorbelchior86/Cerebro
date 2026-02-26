@@ -1,0 +1,22 @@
+{
+  "session_id": "refresh-val-2026-02-26-agent-h",
+  "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+  "scenario_statuses": {
+    "S1": 201,
+    "S2_submit": 202,
+    "S2_duplicate": 202,
+    "S2_process": 200,
+    "S2_status": 200,
+    "S2_sync": 200,
+    "S2_reconcile": 500,
+    "S3_context": 201,
+    "S3_mutations": {
+      "itglue": 403,
+      "ninja": 403,
+      "sentinelone": 403,
+      "checkpoint": 403
+    },
+    "S5_visibility": 200
+  },
+  "command_id": "1b5f760a-7ff8-404d-927b-2e2275e51ece"
+}

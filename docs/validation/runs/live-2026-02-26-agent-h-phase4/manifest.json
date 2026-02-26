@@ -1,0 +1,40 @@
+{
+  "tool": "p0-validation-evidence-capture",
+  "version": 1,
+  "captured_at": "2026-02-26T18:39:55.177Z",
+  "mode": "live",
+  "base_url": "http://localhost:3001",
+  "files": [
+    {
+      "file": "health.json",
+      "source": "/health",
+      "status": 200
+    },
+    {
+      "file": "workflow-inbox.json",
+      "source": "/workflow/inbox",
+      "status": 200
+    },
+    {
+      "file": "workflow-reconciliation-issues.json",
+      "source": "/workflow/reconciliation-issues",
+      "status": 200
+    },
+    {
+      "file": "manager-ops-ai-decisions.json",
+      "source": "/manager-ops/p0/ai-decisions",
+      "status": 200
+    },
+    {
+      "file": "manager-ops-audit.json",
+      "source": "/manager-ops/p0/audit",
+      "status": 200
+    },
+    {
+      "file": "manager-ops-visibility.json",
+      "source": "/manager-ops/p0/visibility",
+      "status": 200
+    }
+  ],
+  "warnings": []
+}

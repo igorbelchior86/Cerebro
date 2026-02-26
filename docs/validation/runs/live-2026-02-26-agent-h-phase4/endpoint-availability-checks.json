@@ -1,0 +1,17 @@
+{
+  "/workflow/inbox": {
+    "status": 200
+  },
+  "/workflow/reconciliation-issues": {
+    "status": 200
+  },
+  "/manager-ops/p0/ai-decisions": {
+    "status": 200
+  },
+  "/manager-ops/p0/audit": {
+    "status": 200
+  },
+  "/manager-ops/p0/visibility": {
+    "status": 200
+  }
+}

@@ -1,0 +1,193 @@
+{
+  "success": true,
+  "data": {
+    "ticket_id": "VAL-H-S3-001",
+    "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+    "cards": [
+      {
+        "source": "IT Glue",
+        "kind": "context_card",
+        "title": "IT Glue context (Validation Org)",
+        "summary": "Read-only documentation and asset context for Validation Org",
+        "status": "ok",
+        "mode": "read_only",
+        "fields": {
+          "organization": "Validation Org",
+          "org_id": "org-1",
+          "configs_count": 1,
+          "assets_count": 0,
+          "docs_count": 1
+        },
+        "provenance": {
+          "source": "itglue",
+          "fetched_at": "2026-02-26T18:41:31.896Z",
+          "adapter_version": "itg-val-v1",
+          "record_ids": [
+            "d1"
+          ]
+        }
+      },
+      {
+        "source": "Ninja",
+        "kind": "context_card",
+        "title": "Ninja endpoint context (Validation Org)",
+        "summary": "Read-only endpoint and alert telemetry",
+        "status": "ok",
+        "mode": "read_only",
+        "fields": {
+          "organization": "Validation Org",
+          "org_id": "n-1",
+          "devices_count": 1,
+          "alerts_count": 1
+        },
+        "provenance": {
+          "source": "ninjaone",
+          "fetched_at": "2026-02-26T18:41:31.896Z",
+          "adapter_version": "ninja-val-v1"
+        }
+      },
+      {
+        "source": "SentinelOne",
+        "kind": "context_card",
+        "title": "SentinelOne security context",
+        "summary": "Read-only endpoint security detections and posture",
+        "status": "ok",
+        "mode": "read_only",
+        "fields": {
+          "alerts_count": 1,
+          "account": "Validation Org"
+        },
+        "provenance": {
+          "source": "sentinelone",
+          "fetched_at": "2026-02-26T18:41:31.896Z",
+          "adapter_version": "s1-val-v1"
+        }
+      },
+      {
+        "source": "Check Point",
+        "kind": "context_card",
+        "title": "Check Point security context",
+        "summary": "Read-only firewall/security incidents and event evidence",
+        "status": "ok",
+        "mode": "read_only",
+        "fields": {
+          "incidents_count": 1,
+          "gateway": "gw-1"
+        },
+        "provenance": {
+          "source": "check_point",
+          "fetched_at": "2026-02-26T18:41:31.896Z",
+          "adapter_version": "cp-val-v1"
+        }
+      }
+    ],
+    "evidence": [
+      {
+        "id": "itglue-doc-0-d1",
+        "source": "IT Glue",
+        "type": "document",
+        "summary": "VPN Runbook",
+        "observed_at": "2026-02-26T18:41:31.896Z",
+        "provenance": {
+          "source": "itglue",
+          "fetched_at": "2026-02-26T18:41:31.896Z",
+          "adapter_version": "itg-val-v1",
+          "record_ids": [
+            "d1"
+          ]
+        }
+      },
+      {
+        "id": "ninja-alert-0-a1",
+        "source": "Ninja",
+        "type": "alert",
+        "summary": "VPN fail",
+        "severity": "high",
+        "observed_at": "2026-02-26T18:41:31.896Z",
+        "provenance": {
+          "source": "ninjaone",
+          "fetched_at": "2026-02-26T18:41:31.896Z",
+          "adapter_version": "ninja-val-v1",
+          "record_ids": [
+            "a1"
+          ]
+        }
+      },
+      {
+        "id": "s1-0-s1a",
+        "source": "SentinelOne",
+        "type": "malware",
+        "summary": "Blocked malware",
+        "severity": "critical",
+        "observed_at": "2026-02-26T18:41:31.896Z",
+        "provenance": {
+          "source": "sentinelone",
+          "fetched_at": "2026-02-26T18:41:31.896Z",
+          "adapter_version": "s1-val-v1",
+          "record_ids": [
+            "s1a"
+          ]
+        }
+      },
+      {
+        "id": "cp-0-cp1",
+        "source": "Check Point",
+        "type": "firewall",
+        "summary": "Blocked outbound C2",
+        "severity": "high",
+        "observed_at": "2026-02-26T18:41:31.896Z",
+        "provenance": {
+          "source": "check_point",
+          "fetched_at": "2026-02-26T18:41:31.896Z",
+          "adapter_version": "cp-val-v1",
+          "record_ids": [
+            "cp1"
+          ]
+        }
+      }
+    ],
+    "provenance": {
+      "generated_at": "2026-02-26T18:41:31.896Z",
+      "sources": [
+        {
+          "source": "itglue",
+          "fetched_at": "2026-02-26T18:41:31.896Z",
+          "adapter_version": "itg-val-v1",
+          "record_ids": [
+            "d1"
+          ]
+        },
+        {
+          "source": "ninjaone",
+          "fetched_at": "2026-02-26T18:41:31.896Z",
+          "adapter_version": "ninja-val-v1"
+        },
+        {
+          "source": "sentinelone",
+          "fetched_at": "2026-02-26T18:41:31.896Z",
+          "adapter_version": "s1-val-v1"
+        },
+        {
+          "source": "check_point",
+          "fetched_at": "2026-02-26T18:41:31.896Z",
+          "adapter_version": "cp-val-v1"
+        }
+      ]
+    },
+    "policy": {
+      "mode": "read_only",
+      "enforced_sources": [
+        "itglue",
+        "ninjaone",
+        "sentinelone",
+        "check_point"
+      ],
+      "enforcement": "explicit_reject_and_audit"
+    },
+    "correlation": {
+      "trace_id": "agent-h-s3-trace",
+      "ticket_id": "VAL-H-S3-001"
+    }
+  },
+  "timestamp": "2026-02-26T18:41:31.902Z"
+}

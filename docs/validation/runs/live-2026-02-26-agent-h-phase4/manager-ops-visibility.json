@@ -1,0 +1,41 @@
+{
+  "success": true,
+  "data": {
+    "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+    "generated_at": "2026-02-26T18:39:55.206Z",
+    "queue_sla": {
+      "total_tickets": 9,
+      "by_queue": [
+        {
+          "queue": "Unassigned",
+          "total": 9,
+          "healthy": 5,
+          "at_risk": 2,
+          "breached": 2,
+          "unknown": 0
+        }
+      ]
+    },
+    "ai_audit": {
+      "total_decisions": 0,
+      "pending_hitl": 0,
+      "avg_confidence": 0,
+      "by_decision_type": {}
+    },
+    "automation_audit": {
+      "total_records": 0,
+      "rejected_actions": 0,
+      "read_only_rejections": 0,
+      "recent": []
+    },
+    "qa_sampling": {
+      "sample_size": 0,
+      "tickets": []
+    },
+    "integrity_checks": {
+      "ok": true,
+      "issues": []
+    }
+  },
+  "timestamp": "2026-02-26T18:39:55.206Z"
+}

@@ -127,7 +127,7 @@
 ---
 
 # Task: Agent E Phase 4 Refresh Internal Validation Execution & Evidence
-**Status**: planning
+**Status**: completed
 **Started**: 2026-02-26
 
 ## Plan
@@ -221,6 +221,38 @@
 
 ---
 
+# Task: Agent I Phase 5 Controlled Design-Partner Launch Execution + Hypercare Ops (Wave 0/1 operationalization)
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Validate prerequisites and blockers (Phase 4 signoff evidence, live environment reachability, tenant/credential availability)
+- [x] Step 2: Execute maximum-safe rollout operations in this environment (preflight/dry-run posture + rollback drill evidence) without changing frozen launch policy
+- [x] Step 3: Produce Wave 0/Wave 1 execution report (evidence + blocker classification + hypercare readiness observations + recommendation)
+- [x] Step 4: Complete review notes and verification record
+
+## Open Questions
+- Is there a completed Phase 4 launch/no-launch packet (Agent H) in-repo or accessible from this environment?
+- Is a live API instance + admin auth/tenant context available for real tenant rollout endpoints, or only local dry-run execution?
+
+## Progress Notes
+- User requested Agent I execution in Phase 5 controlled launch/hypercare scope with explicit requirement for real rollout or blocker report.
+- Confirmed local API was live (`/health` 200) and rollout endpoints enforce auth/tenant context (`401` unauthenticated).
+- Used local seed bootstrap path to create a new tenant-scoped owner session and executed real rollout controls against `/manager-ops/p0/rollout/*`.
+- Captured baseline posture (0/9 flags), full enablement (9/9), feature rollback (8/9), and tenant rollback (0/9) with HTTP 200 across rollout/policy endpoints.
+- Verified frozen launch policy before/after rollout remained unchanged: Autotask `two_way`; IT Glue/Ninja/SentinelOne/Check Point `read_only`.
+- Validated read-only enforcement in practice by hitting mutation endpoints for all non-Autotask integrations; all returned `403 READ_ONLY_ENFORCEMENT` and produced tenant-scoped audit records with correlation IDs.
+- Captured hypercare-style local signals: manager visibility snapshot (queue/SLA + automation audit), workflow command probe failure (`failed=1`) and workflow audit trail (`accepted` + `failed` with terminal Autotask error).
+- Discovered live Agent H Phase 4 evidence bundle at `docs/validation/runs/live-2026-02-26-agent-h-phase4/` but no explicit completed founder launch/no-launch approval packet artifact.
+- Generated Wave 0/Wave 1 execution report under `docs/launch-readiness/runs/2026-02-26-agent-i-wave1-local-preflight/`.
+
+## Review
+- What worked: Real tenant-scoped rollout/rollback execution was possible locally, allowing auditable proof of guardrail enforcement and rollback readiness instead of a pure tabletop-only blocker report.
+- What was tricky: External launch prerequisites are only partially represented in-repo (Agent H evidence exists, but explicit founder approval artifact and partner credentials/test scope were not available), so the result is a validated preflight + pause recommendation rather than external Wave 1 go-live.
+- Time taken: ~1 focused execution/verification/reporting session
+
+---
+
 # Task: Agent A CP0 platform foundations & contract freeze
 **Status**: completed
 **Started**: 2026-02-26
@@ -309,3 +341,42 @@
 - What worked: Additive frontend routes/components were enough to expose P0 workflow and manager visibility without touching legacy triage/chat flows. Reusing workflow inbox as the queue source allowed `/manager-ops/p0/visibility` wiring with a labeled heuristic SLA status.
 - What was tricky: Trust-layer endpoints do not expose persisted enrichment envelopes directly, so the technician enrichment surface had to be built from trust audit evidence/status records while keeping the UI explicit about read-only constraints and degraded behavior.
 - Time taken: one implementation/verification/documentation session
+
+---
+
+# Task: Agent H Phase 4 Live Refresh Internal Validation Execution + Defect Loop
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Review Phase 4 source-of-truth docs/artifacts and script contract; define executable session outputs (F0-F4, QA, defects, launch packet)
+- [x] Step 2: Run live preflight against local stack (health, protected P0/workflow endpoints, auth/token, tenant context) and capture blockers if any
+- [x] Step 3: Execute live evidence capture bundle (`scripts/p0-validation-evidence-capture.mjs`) with authenticated requests and collect API snapshots
+- [x] Step 4: Perform API-level Phase 4 scenario validation (S1-S5) using available endpoints/data; record observations and QA/HITL sampling results
+- [x] Step 5: Populate validation artifacts (acceptance matrix, QA notes, defect triage log, launch/no-launch packet draft) with actual outcomes or explicit blockers
+- [x] Step 6: Verify traceability/completeness (evidence bundle, F0-F4 coverage, defect links, recommendation rationale) and finalize review notes
+
+## Open Questions
+- Whether local seed/admin auth token in `.env` is accepted by current API auth middleware for `/workflow/*` and `/manager-ops/p0/*`.
+- Whether representative queue items exist for `/manager-ops/p0/visibility` POST or need a local sample payload for validation coverage.
+- Whether UI-dependent Scenario S4 can be validated via API-level artifacts only in this environment.
+
+## Progress Notes
+- Initialized Agent H execution under workflow-orchestrator discipline.
+- Reviewed recent lessons for validation/debugging discipline (inspect payloads early, confirm wiring, revalidate on moving multi-agent branch).
+- Confirmed Phase 4 validation artifact set exists under `docs/validation/phase4-refresh/` and evidence capture script exists.
+- Confirmed local API is running on `http://localhost:3001` and `/health` returns `200`.
+- Confirmed `.env` includes validation-relevant auth/seed variables (keys only inspected; no secret values exposed).
+- Consulted Context7 (Node.js docs) for CLI `fetch`/`process.exitCode` terminology alignment relevant to the evidence-capture script.
+- Retrieved a real admin session JWT via `/auth/login` (`Set-Cookie: pb_session`) and used it as Bearer for protected API validation calls.
+- Verified protected endpoint availability (`/workflow/*`, `/manager-ops/p0/*`) all returning `200` under authenticated tenant context.
+- Executed live evidence capture script (not dry-run) to `docs/validation/runs/live-2026-02-26-agent-h-phase4/` with `manager-ops/p0/visibility` snapshot included.
+- Executed API-level scenarios: S1 triage/HITL, S2 workflow command+idempotency+sync+reconcile, S3 enrichment/read-only rejection, S5 manager visibility; used S1 drafts as S4 handoff artifact proxy.
+- Observed S2 reconcile `500` (`Autotask API error: 429`) and F4 integrity mismatch (`ai_decision_not_in_queue_snapshot`) and logged triaged defects `DEF-H-001` / `DEF-H-002`.
+- Filled session acceptance matrix, QA sampling results, defect triage log, and launch/no-launch draft packet; added wiki decision/changelog entries for validation outcome documentation.
+
+## Review
+- What worked:
+- Existing Agent E framework/script supported a real live evidence bundle with minimal setup once JWT auth and queue-items payload were prepared.
+- What was tricky: Converting API-only execution into meaningful F3/F4 validation evidence required explicit artifact linkage (triage drafts -> handoff proxy) and queue snapshot composition to avoid integrity-check noise.
+- Time taken: ~1 validation execution/documentation session

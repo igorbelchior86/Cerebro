@@ -1,0 +1,1 @@
+{"error":"Mutation path rejected for ninjaone: integration is READ_ONLY in P0","code":"READ_ONLY_ENFORCEMENT","source":"ninjaone","audit_id":"46d0bba2-5587-4f8a-b481-5494ea7553b9"}

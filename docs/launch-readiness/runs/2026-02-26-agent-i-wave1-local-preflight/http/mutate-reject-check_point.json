@@ -1,0 +1,1 @@
+{"error":"Mutation path rejected for check_point: integration is READ_ONLY in P0","code":"READ_ONLY_ENFORCEMENT","source":"check_point","audit_id":"047484ea-cf38-4334-8f27-9525506c9bcb"}

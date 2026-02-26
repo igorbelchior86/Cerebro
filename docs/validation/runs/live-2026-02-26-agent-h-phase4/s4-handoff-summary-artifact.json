@@ -1,0 +1,110 @@
+{
+  "status": 201,
+  "decision": {
+    "decision_id": "11db79c3-8ab0-4a0f-845e-fc4bbd089ac2",
+    "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+    "ticket_id": "VAL-H-S1-001",
+    "decision_type": "triage",
+    "suggestion": {
+      "suggestion_only": true,
+      "summary": "Likely endpoint VPN profile drift; security event requires caution before changes.",
+      "top_hypothesis": "Endpoint VPN profile drift",
+      "recommended_actions": [
+        {
+          "action": "Validate VPN client profile on endpoint",
+          "risk": "low"
+        },
+        {
+          "action": "Review SentinelOne event details before remediation changes",
+          "risk": "medium"
+        }
+      ],
+      "do_not_do": [
+        "Do not disable security controls without approval"
+      ],
+      "handoff_notes": [
+        "HITL review required (needs_more_info)",
+        "Org: Validation Tenant Org",
+        "Queue: Service Desk"
+      ]
+    },
+    "confidence": 0.58,
+    "rationale": "Top hypothesis: Endpoint VPN profile drift | Confidence: 0.58 | mixed signals; security alert adds uncertainty | Policy blocking reason: named_entity_unresolved | Sources consulted: 6",
+    "signals_used": [
+      {
+        "source": "ninja",
+        "ref": "signal:sig-1"
+      },
+      {
+        "source": "sentinelone",
+        "ref": "signal:sig-2"
+      },
+      {
+        "source": "itglue",
+        "ref": "doc:doc-1"
+      },
+      {
+        "source": "ninjaone",
+        "ref": "source_finding:general:matched"
+      },
+      {
+        "source": "itglue",
+        "ref": "source_finding:general:matched"
+      },
+      {
+        "source": "sentinelone",
+        "ref": "source_finding:general:matched"
+      }
+    ],
+    "provenance_refs": [
+      {
+        "source": "ai_model",
+        "fetched_at": "2026-02-26T18:41:31.882Z",
+        "prompt_version": "phase4-val-agent-h-triage-v1",
+        "model_version": "validation-sim-model-v1"
+      },
+      {
+        "source": "ninjaone",
+        "fetched_at": "2026-02-26T18:01:00.000Z",
+        "meta": {
+          "source_findings_count": 1
+        }
+      },
+      {
+        "source": "itglue",
+        "fetched_at": "2026-02-26T18:01:00.000Z",
+        "meta": {
+          "source_findings_count": 1
+        }
+      },
+      {
+        "source": "sentinelone",
+        "fetched_at": "2026-02-26T18:01:00.000Z",
+        "meta": {
+          "source_findings_count": 1
+        }
+      }
+    ],
+    "hitl_status": "pending",
+    "prompt_version": "phase4-val-agent-h-triage-v1",
+    "model_version": "validation-sim-model-v1",
+    "timestamp": "2026-02-26T18:41:31.882Z",
+    "correlation": {
+      "trace_id": "agent-h-s1-trace",
+      "job_id": "agent-h-s1-job",
+      "ticket_id": "VAL-H-S1-001"
+    },
+    "policy_gate": {
+      "outcome": "hitl_required",
+      "reasons": [
+        "priority_high",
+        "confidence_below_0.7",
+        "validation_needs_more_info"
+      ]
+    }
+  },
+  "drafts": {
+    "summary_md": "# AI Triage Summary (Suggestion-First)\n- Ticket: VAL-H-S1-001\n- Queue: Service Desk\n- Priority: High\n- Decision confidence: 58%\n- HITL: pending\n- Top hypothesis: Endpoint VPN profile drift\n\n## Rationale\nTop hypothesis: Endpoint VPN profile drift | Confidence: 0.58 | mixed signals; security alert adds uncertainty | Policy blocking reason: named_entity_unresolved | Sources consulted: 6\n\n## Suggested actions\n- [low] Validate VPN client profile on endpoint\n- [medium] Review SentinelOne event details before remediation changes\n\n## Do not do\n- Do not disable security controls without approval\n\n## Provenance\n- ai_model @ 2026-02-26T18:41:31.882Z\n- ninjaone @ 2026-02-26T18:01:00.000Z\n- itglue @ 2026-02-26T18:01:00.000Z\n- sentinelone @ 2026-02-26T18:01:00.000Z",
+    "handoff_md": "# AI Handoff Draft\nTicket VAL-H-S1-001 (VPN unstable for executive user)\n\n## Suggested next step\nLikely endpoint VPN profile drift; security event requires caution before changes.\n\n## Operator validation checklist\n- Confirm hypothesis against live evidence\n- Confirm tenant/org scope before any action\n- Confirm SLA impact and priority handling\n- Confirm endpoint ownership and active incident status\n\n## Evidence references\n- ninja:signal:sig-1\n- sentinelone:signal:sig-2\n- itglue:doc:doc-1\n- ninjaone:source_finding:general:matched\n- itglue:source_finding:general:matched\n- sentinelone:source_finding:general:matched"
+  }
+}

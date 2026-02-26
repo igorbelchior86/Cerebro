@@ -1,0 +1,40 @@
+{
+  "success": true,
+  "data": {
+    "command": {
+      "command_id": "1b5f760a-7ff8-404d-927b-2e2275e51ece",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "target_integration": "Autotask",
+      "command_type": "update",
+      "payload": {
+        "ticket_id": "VAL-H-S2-001",
+        "status": "In Progress",
+        "comment_body": "Agent H validation probe (synthetic ticket expected to fail safely if external write attempted).",
+        "comment_visibility": "internal"
+      },
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "idempotency_key": "agent-h-s2-idem-001",
+      "audit_metadata": {
+        "validation_session": "refresh-val-2026-02-26-agent-h",
+        "scenario": "S2"
+      },
+      "correlation": {
+        "trace_id": "agent-h-s2-trace",
+        "ticket_id": "VAL-H-S2-001",
+        "job_id": "agent-h-s2-job",
+        "command_id": "1b5f760a-7ff8-404d-927b-2e2275e51ece"
+      },
+      "requested_at": "2026-02-26T18:41:31.948Z"
+    },
+    "status": "accepted",
+    "attempts": 0,
+    "max_attempts": 3,
+    "created_at": "2026-02-26T18:41:31.948Z",
+    "updated_at": "2026-02-26T18:41:31.948Z"
+  },
+  "timestamp": "2026-02-26T18:41:31.950Z"
+}

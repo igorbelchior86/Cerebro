@@ -1,0 +1,6 @@
+{
+  "error": "Mutation path rejected for ninja: integration is READ_ONLY in P0",
+  "code": "READ_ONLY_ENFORCEMENT",
+  "source": "ninja",
+  "audit_id": "49224535-ccdc-4408-b750-cbad2557936e"
+}

@@ -1,6 +1,90 @@
 {
-  "commandsById": [],
-  "commandsByIdempotency": [],
+  "commandsById": [
+    [
+      "141c3fba-887e-4b02-b7c8-17d27320f73d",
+      {
+        "command": {
+          "command_id": "141c3fba-887e-4b02-b7c8-17d27320f73d",
+          "tenant_id": "85e6e69a-7d82-4881-8a4c-7e591213e0d1",
+          "target_integration": "Autotask",
+          "command_type": "update",
+          "payload": {
+            "ticket_id": "AT-TEST-1001",
+            "comment_body": "Agent I Phase 5 local preflight command probe"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "853f2d50-3fef-4f19-a86f-94cf178527cf",
+            "origin": "api"
+          },
+          "idempotency_key": "agent-i-autotask-update-1",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "84a62564-a729-4eb1-b39a-7110666a8c4a",
+            "ticket_id": "AT-TEST-1001",
+            "command_id": "141c3fba-887e-4b02-b7c8-17d27320f73d"
+          },
+          "requested_at": "2026-02-26T18:40:48.647Z"
+        },
+        "status": "failed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-26T18:40:48.647Z",
+        "updated_at": "2026-02-26T18:40:50.566Z",
+        "last_error": "Autotask API error: 500 Internal Server Error"
+      }
+    ],
+    [
+      "1b5f760a-7ff8-404d-927b-2e2275e51ece",
+      {
+        "command": {
+          "command_id": "1b5f760a-7ff8-404d-927b-2e2275e51ece",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "update",
+          "payload": {
+            "ticket_id": "VAL-H-S2-001",
+            "status": "In Progress",
+            "comment_body": "Agent H validation probe (synthetic ticket expected to fail safely if external write attempted).",
+            "comment_visibility": "internal"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "agent-h-s2-idem-001",
+          "audit_metadata": {
+            "validation_session": "refresh-val-2026-02-26-agent-h",
+            "scenario": "S2"
+          },
+          "correlation": {
+            "trace_id": "agent-h-s2-trace",
+            "ticket_id": "VAL-H-S2-001",
+            "job_id": "agent-h-s2-job",
+            "command_id": "1b5f760a-7ff8-404d-927b-2e2275e51ece"
+          },
+          "requested_at": "2026-02-26T18:41:31.948Z"
+        },
+        "status": "failed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-26T18:41:31.948Z",
+        "updated_at": "2026-02-26T18:41:32.796Z",
+        "last_error": "Autotask API error: 404 Not Found"
+      }
+    ]
+  ],
+  "commandsByIdempotency": [
+    [
+      "85e6e69a-7d82-4881-8a4c-7e591213e0d1::agent-i-autotask-update-1",
+      "141c3fba-887e-4b02-b7c8-17d27320f73d"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::agent-h-s2-idem-001",
+      "1b5f760a-7ff8-404d-927b-2e2275e51ece"
+    ]
+  ],
   "audits": [
     {
       "audit_id": "bf2497a3-2559-4b59-9446-018bf761477d",
@@ -262,6 +346,211 @@
           "fetched_at": "2026-02-26T18:28:57.674Z"
         }
       }
+    },
+    {
+      "audit_id": "94801b68-2eb4-4f70-b68c-25b5e695f66e",
+      "timestamp": "2026-02-26T18:40:06.018Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0027"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132804",
+        "ticket_id": "T20260226.0027"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132804:ticket.created:2026-02-26T18:36:52.827Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T18:40:06.014Z"
+        }
+      }
+    },
+    {
+      "audit_id": "1d559fda-d247-48e5-833f-2061511d1946",
+      "timestamp": "2026-02-26T18:40:48.648Z",
+      "tenant_id": "85e6e69a-7d82-4881-8a4c-7e591213e0d1",
+      "actor": {
+        "kind": "user",
+        "id": "853f2d50-3fef-4f19-a86f-94cf178527cf",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "AT-TEST-1001"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "84a62564-a729-4eb1-b39a-7110666a8c4a",
+        "ticket_id": "AT-TEST-1001",
+        "command_id": "141c3fba-887e-4b02-b7c8-17d27320f73d"
+      },
+      "metadata": {
+        "command_type": "update",
+        "idempotency_key": "agent-i-autotask-update-1",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "58f82e38-db6a-40b7-99bc-02823e2af579",
+      "timestamp": "2026-02-26T18:40:50.568Z",
+      "tenant_id": "85e6e69a-7d82-4881-8a4c-7e591213e0d1",
+      "actor": {
+        "kind": "user",
+        "id": "853f2d50-3fef-4f19-a86f-94cf178527cf",
+        "origin": "api"
+      },
+      "action": "workflow.command.failed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "AT-TEST-1001"
+      },
+      "result": "failure",
+      "reason": "Autotask API error: 500 Internal Server Error",
+      "correlation": {
+        "trace_id": "84a62564-a729-4eb1-b39a-7110666a8c4a",
+        "ticket_id": "AT-TEST-1001",
+        "command_id": "141c3fba-887e-4b02-b7c8-17d27320f73d"
+      },
+      "metadata": {
+        "command_type": "update",
+        "failure_class": "terminal",
+        "attempts": 1,
+        "status": "failed"
+      }
+    },
+    {
+      "audit_id": "7f6af885-686b-4321-bf1a-c7ee1871045a",
+      "timestamp": "2026-02-26T18:41:31.949Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "VAL-H-S2-001"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "agent-h-s2-trace",
+        "ticket_id": "VAL-H-S2-001",
+        "job_id": "agent-h-s2-job",
+        "command_id": "1b5f760a-7ff8-404d-927b-2e2275e51ece"
+      },
+      "metadata": {
+        "command_type": "update",
+        "idempotency_key": "agent-h-s2-idem-001",
+        "audit_metadata": {
+          "validation_session": "refresh-val-2026-02-26-agent-h",
+          "scenario": "S2"
+        }
+      }
+    },
+    {
+      "audit_id": "96c55916-27b2-429f-843e-4c43b055f79d",
+      "timestamp": "2026-02-26T18:41:31.958Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.idempotent_replay",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "VAL-H-S2-001"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "agent-h-s2-trace",
+        "ticket_id": "VAL-H-S2-001",
+        "job_id": "agent-h-s2-job",
+        "command_id": "1b5f760a-7ff8-404d-927b-2e2275e51ece"
+      },
+      "metadata": {
+        "idempotency_key": "agent-h-s2-idem-001",
+        "existing_command_id": "1b5f760a-7ff8-404d-927b-2e2275e51ece",
+        "existing_status": "accepted"
+      }
+    },
+    {
+      "audit_id": "c948724e-8da6-4029-a4ce-ccb970979674",
+      "timestamp": "2026-02-26T18:41:32.798Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.failed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "VAL-H-S2-001"
+      },
+      "result": "failure",
+      "reason": "Autotask API error: 404 Not Found",
+      "correlation": {
+        "trace_id": "agent-h-s2-trace",
+        "ticket_id": "VAL-H-S2-001",
+        "job_id": "agent-h-s2-job",
+        "command_id": "1b5f760a-7ff8-404d-927b-2e2275e51ece"
+      },
+      "metadata": {
+        "command_type": "update",
+        "failure_class": "terminal",
+        "attempts": 1,
+        "status": "failed"
+      }
+    },
+    {
+      "audit_id": "0a9b5ec3-2ec7-46d3-9cf3-7ad83ca4ee05",
+      "timestamp": "2026-02-26T18:41:32.858Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "VAL-H-S2-001"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "agent-h-sync-trace",
+        "ticket_id": "VAL-H-S2-001",
+        "job_id": "agent-h-sync-job"
+      },
+      "metadata": {
+        "event_type": "ticket.updated",
+        "event_id": "agent-h-sync-evt-001",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-26T18:10:01.000Z",
+          "adapter_version": "agent-h-val"
+        }
+      }
     }
   ],
   "processedSyncEvents": [
@@ -273,7 +562,9 @@
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132800:ticket.created:2026-02-26T17:39:22.227Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132801:ticket.created:2026-02-26T17:40:36.297Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132802:ticket.created:2026-02-26T18:00:55.340Z",
-    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132803:ticket.created:2026-02-26T18:25:11.053Z"
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132803:ticket.created:2026-02-26T18:25:11.053Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132804:ticket.created:2026-02-26T18:36:52.827Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::agent-h-sync-evt-001"
   ],
   "inbox": [
     [
@@ -438,6 +729,40 @@
         "last_event_id": "autotask-poller:132803:ticket.created:2026-02-26T18:25:11.053Z",
         "source_of_truth": "Autotask",
         "updated_at": "2026-02-26T18:28:57.676Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260226.0027",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260226.0027",
+        "external_id": "132804",
+        "title": "Undelivered Mail Returned to Sender",
+        "description": "From MAILER-DAEMON@autotask.net (Mail Delivery System): This is the mail system at host phl-p-mail03.autotask.net.\r\n\r\nI'm sorry to have to inform you that your message could not\r\nbe delivered to one or more recipients. It's attached below.\r\n\r\nFor further assistance, please send mail to postmaster.\r\n\r\nIf you do so, please include this problem report. You can\r\ndelete your own text from the attached returned message.\r\n\r\n                   The mail system\r\n\r\n<do-not-reply@portal.checkpoint.com>: connect to\r\n    tls2-us.checkpoint.com[209.87.222.180]:25: Connection timed out",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-26T18:40:06.017Z",
+        "last_event_occurred_at": "2026-02-26T18:36:52.827Z",
+        "last_event_id": "autotask-poller:132804:ticket.created:2026-02-26T18:36:52.827Z",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T18:40:06.017Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::VAL-H-S2-001",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "VAL-H-S2-001",
+        "external_id": "VAL-H-S2-001",
+        "status": "Assigned",
+        "assigned_to": "42",
+        "comments": [],
+        "last_sync_at": "2026-02-26T18:41:32.857Z",
+        "last_event_occurred_at": "2026-02-26T18:10:00.000Z",
+        "last_event_id": "agent-h-sync-evt-001",
+        "source_of_truth": "Autotask",
+        "updated_at": "2026-02-26T18:41:32.857Z"
       }
     ]
   ],

@@ -1,0 +1,1 @@
+{"error":"Mutation path rejected for sentinelone: integration is READ_ONLY in P0","code":"READ_ONLY_ENFORCEMENT","source":"sentinelone","audit_id":"89073049-c788-409d-a76d-fc97ec328467"}

@@ -1,0 +1,1 @@
+{"error":"Mutation path rejected for itglue: integration is READ_ONLY in P0","code":"READ_ONLY_ENFORCEMENT","source":"itglue","audit_id":"1cb967f0-3711-48cf-a5ff-c70ff632043f"}

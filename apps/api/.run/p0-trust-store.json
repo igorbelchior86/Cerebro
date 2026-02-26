@@ -1,0 +1,458 @@
+{
+  "audits": [
+    {
+      "audit_id": "28439eac-a2f1-47fd-930b-bd3d6fb12dff",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "type": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "integration.mutate.checkpoint",
+      "target": {
+        "type": "integration_mutation",
+        "id": "VAL-H-S3-001"
+      },
+      "result": "rejected",
+      "reason": "read_only_enforcement",
+      "timestamp": "2026-02-26T18:41:31.939Z",
+      "correlation": {
+        "trace_id": "agent-h-s3-mutate-checkpoint",
+        "ticket_id": "VAL-H-S3-001"
+      },
+      "metadata": {
+        "source": "checkpoint",
+        "launch_policy": "READ_ONLY",
+        "payload_keys": [
+          "action"
+        ]
+      }
+    },
+    {
+      "audit_id": "0d92cded-4982-4649-bda2-452c6eccae27",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "type": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "integration.mutate.sentinelone",
+      "target": {
+        "type": "integration_mutation",
+        "id": "VAL-H-S3-001"
+      },
+      "result": "rejected",
+      "reason": "read_only_enforcement",
+      "timestamp": "2026-02-26T18:41:31.929Z",
+      "correlation": {
+        "trace_id": "agent-h-s3-mutate-sentinelone",
+        "ticket_id": "VAL-H-S3-001"
+      },
+      "metadata": {
+        "source": "sentinelone",
+        "launch_policy": "READ_ONLY",
+        "payload_keys": [
+          "action"
+        ]
+      }
+    },
+    {
+      "audit_id": "49224535-ccdc-4408-b750-cbad2557936e",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "type": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "integration.mutate.ninja",
+      "target": {
+        "type": "integration_mutation",
+        "id": "VAL-H-S3-001"
+      },
+      "result": "rejected",
+      "reason": "read_only_enforcement",
+      "timestamp": "2026-02-26T18:41:31.920Z",
+      "correlation": {
+        "trace_id": "agent-h-s3-mutate-ninja",
+        "ticket_id": "VAL-H-S3-001"
+      },
+      "metadata": {
+        "source": "ninja",
+        "launch_policy": "READ_ONLY",
+        "payload_keys": [
+          "action"
+        ]
+      }
+    },
+    {
+      "audit_id": "813158b3-1933-4fb0-b9e9-dc3230b6aad8",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "type": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "integration.mutate.itglue",
+      "target": {
+        "type": "integration_mutation",
+        "id": "VAL-H-S3-001"
+      },
+      "result": "rejected",
+      "reason": "read_only_enforcement",
+      "timestamp": "2026-02-26T18:41:31.910Z",
+      "correlation": {
+        "trace_id": "agent-h-s3-mutate-itglue",
+        "ticket_id": "VAL-H-S3-001"
+      },
+      "metadata": {
+        "source": "itglue",
+        "launch_policy": "READ_ONLY",
+        "payload_keys": [
+          "action"
+        ]
+      }
+    },
+    {
+      "audit_id": "8e26f784-47a8-4f4f-a521-c39c1b5e1b6b",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "type": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "enrichment.read.check_point",
+      "target": {
+        "type": "integration_context",
+        "id": "VAL-H-S3-001"
+      },
+      "result": "success",
+      "timestamp": "2026-02-26T18:41:31.901Z",
+      "correlation": {
+        "trace_id": "agent-h-s3-trace",
+        "ticket_id": "VAL-H-S3-001"
+      },
+      "metadata": {
+        "evidence_count": 1,
+        "card_status": "ok"
+      }
+    },
+    {
+      "audit_id": "1b8b2779-2323-4668-beb5-9452f0b96f99",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "type": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "enrichment.read.sentinelone",
+      "target": {
+        "type": "integration_context",
+        "id": "VAL-H-S3-001"
+      },
+      "result": "success",
+      "timestamp": "2026-02-26T18:41:31.900Z",
+      "correlation": {
+        "trace_id": "agent-h-s3-trace",
+        "ticket_id": "VAL-H-S3-001"
+      },
+      "metadata": {
+        "evidence_count": 1,
+        "card_status": "ok"
+      }
+    },
+    {
+      "audit_id": "cafdaf1c-4296-42dc-aa95-83da97462484",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "type": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "enrichment.read.ninjaone",
+      "target": {
+        "type": "integration_context",
+        "id": "VAL-H-S3-001"
+      },
+      "result": "success",
+      "timestamp": "2026-02-26T18:41:31.899Z",
+      "correlation": {
+        "trace_id": "agent-h-s3-trace",
+        "ticket_id": "VAL-H-S3-001"
+      },
+      "metadata": {
+        "evidence_count": 1,
+        "card_status": "ok"
+      }
+    },
+    {
+      "audit_id": "742819c9-318a-4e56-8eca-c6185cb8c0c5",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "type": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "enrichment.read.itglue",
+      "target": {
+        "type": "integration_context",
+        "id": "VAL-H-S3-001"
+      },
+      "result": "success",
+      "timestamp": "2026-02-26T18:41:31.897Z",
+      "correlation": {
+        "trace_id": "agent-h-s3-trace",
+        "ticket_id": "VAL-H-S3-001"
+      },
+      "metadata": {
+        "evidence_count": 1,
+        "card_status": "ok"
+      }
+    },
+    {
+      "audit_id": "8c3fb127-824b-4255-80af-2c51ff55e6b3",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "type": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "ai.decision.create",
+      "target": {
+        "type": "ai_decision_record",
+        "id": "11db79c3-8ab0-4a0f-845e-fc4bbd089ac2"
+      },
+      "result": "success",
+      "timestamp": "2026-02-26T18:41:31.882Z",
+      "correlation": {
+        "trace_id": "agent-h-s1-trace",
+        "job_id": "agent-h-s1-job",
+        "ticket_id": "VAL-H-S1-001"
+      },
+      "metadata": {
+        "ticket_id": "VAL-H-S1-001",
+        "decision_type": "triage",
+        "hitl_status": "pending",
+        "confidence": 0.58,
+        "prompt_version": "phase4-val-agent-h-triage-v1",
+        "model_version": "validation-sim-model-v1"
+      }
+    },
+    {
+      "audit_id": "047484ea-cf38-4334-8f27-9525506c9bcb",
+      "tenant_id": "85e6e69a-7d82-4881-8a4c-7e591213e0d1",
+      "actor": {
+        "type": "user",
+        "id": "853f2d50-3fef-4f19-a86f-94cf178527cf",
+        "origin": "api"
+      },
+      "action": "integration.mutate.check_point",
+      "target": {
+        "type": "integration_mutation",
+        "id": "AT-TEST-1001"
+      },
+      "result": "rejected",
+      "reason": "read_only_enforcement",
+      "timestamp": "2026-02-26T18:40:48.610Z",
+      "correlation": {
+        "trace_id": "278ee29f-98f2-4b29-9b5a-a207337e168e",
+        "ticket_id": "AT-TEST-1001"
+      },
+      "metadata": {
+        "source": "check_point",
+        "launch_policy": "READ_ONLY",
+        "payload_keys": [
+          "op"
+        ]
+      }
+    },
+    {
+      "audit_id": "89073049-c788-409d-a76d-fc97ec328467",
+      "tenant_id": "85e6e69a-7d82-4881-8a4c-7e591213e0d1",
+      "actor": {
+        "type": "user",
+        "id": "853f2d50-3fef-4f19-a86f-94cf178527cf",
+        "origin": "api"
+      },
+      "action": "integration.mutate.sentinelone",
+      "target": {
+        "type": "integration_mutation",
+        "id": "AT-TEST-1001"
+      },
+      "result": "rejected",
+      "reason": "read_only_enforcement",
+      "timestamp": "2026-02-26T18:40:48.600Z",
+      "correlation": {
+        "trace_id": "9f05ad73-175a-4128-b18a-d7fb0b1fcf7d",
+        "ticket_id": "AT-TEST-1001"
+      },
+      "metadata": {
+        "source": "sentinelone",
+        "launch_policy": "READ_ONLY",
+        "payload_keys": [
+          "op"
+        ]
+      }
+    },
+    {
+      "audit_id": "46d0bba2-5587-4f8a-b481-5494ea7553b9",
+      "tenant_id": "85e6e69a-7d82-4881-8a4c-7e591213e0d1",
+      "actor": {
+        "type": "user",
+        "id": "853f2d50-3fef-4f19-a86f-94cf178527cf",
+        "origin": "api"
+      },
+      "action": "integration.mutate.ninjaone",
+      "target": {
+        "type": "integration_mutation",
+        "id": "AT-TEST-1001"
+      },
+      "result": "rejected",
+      "reason": "read_only_enforcement",
+      "timestamp": "2026-02-26T18:40:48.590Z",
+      "correlation": {
+        "trace_id": "92a60792-1b56-4627-aec4-e6972c6e4e60",
+        "ticket_id": "AT-TEST-1001"
+      },
+      "metadata": {
+        "source": "ninjaone",
+        "launch_policy": "READ_ONLY",
+        "payload_keys": [
+          "op"
+        ]
+      }
+    },
+    {
+      "audit_id": "1cb967f0-3711-48cf-a5ff-c70ff632043f",
+      "tenant_id": "85e6e69a-7d82-4881-8a4c-7e591213e0d1",
+      "actor": {
+        "type": "user",
+        "id": "853f2d50-3fef-4f19-a86f-94cf178527cf",
+        "origin": "api"
+      },
+      "action": "integration.mutate.itglue",
+      "target": {
+        "type": "integration_mutation",
+        "id": "AT-TEST-1001"
+      },
+      "result": "rejected",
+      "reason": "read_only_enforcement",
+      "timestamp": "2026-02-26T18:40:48.578Z",
+      "correlation": {
+        "trace_id": "6d524acc-e45e-4d6d-ade7-7195b35c3181",
+        "ticket_id": "AT-TEST-1001"
+      },
+      "metadata": {
+        "source": "itglue",
+        "launch_policy": "READ_ONLY",
+        "payload_keys": [
+          "op"
+        ]
+      }
+    }
+  ],
+  "ai_decisions": [
+    {
+      "decision_id": "11db79c3-8ab0-4a0f-845e-fc4bbd089ac2",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "ticket_id": "VAL-H-S1-001",
+      "decision_type": "triage",
+      "suggestion": {
+        "suggestion_only": true,
+        "summary": "Likely endpoint VPN profile drift; security event requires caution before changes.",
+        "top_hypothesis": "Endpoint VPN profile drift",
+        "recommended_actions": [
+          {
+            "action": "Validate VPN client profile on endpoint",
+            "risk": "low"
+          },
+          {
+            "action": "Review SentinelOne event details before remediation changes",
+            "risk": "medium"
+          }
+        ],
+        "do_not_do": [
+          "Do not disable security controls without approval"
+        ],
+        "handoff_notes": [
+          "HITL review required (needs_more_info)",
+          "Org: Validation Tenant Org",
+          "Queue: Service Desk"
+        ]
+      },
+      "confidence": 0.58,
+      "rationale": "Top hypothesis: Endpoint VPN profile drift | Confidence: 0.58 | mixed signals; security alert adds uncertainty | Policy blocking reason: named_entity_unresolved | Sources consulted: 6",
+      "signals_used": [
+        {
+          "source": "ninja",
+          "ref": "signal:sig-1"
+        },
+        {
+          "source": "sentinelone",
+          "ref": "signal:sig-2"
+        },
+        {
+          "source": "itglue",
+          "ref": "doc:doc-1"
+        },
+        {
+          "source": "ninjaone",
+          "ref": "source_finding:general:matched"
+        },
+        {
+          "source": "itglue",
+          "ref": "source_finding:general:matched"
+        },
+        {
+          "source": "sentinelone",
+          "ref": "source_finding:general:matched"
+        }
+      ],
+      "provenance_refs": [
+        {
+          "source": "ai_model",
+          "fetched_at": "2026-02-26T18:41:31.882Z",
+          "prompt_version": "phase4-val-agent-h-triage-v1",
+          "model_version": "validation-sim-model-v1"
+        },
+        {
+          "source": "ninjaone",
+          "fetched_at": "2026-02-26T18:01:00.000Z",
+          "meta": {
+            "source_findings_count": 1
+          }
+        },
+        {
+          "source": "itglue",
+          "fetched_at": "2026-02-26T18:01:00.000Z",
+          "meta": {
+            "source_findings_count": 1
+          }
+        },
+        {
+          "source": "sentinelone",
+          "fetched_at": "2026-02-26T18:01:00.000Z",
+          "meta": {
+            "source_findings_count": 1
+          }
+        }
+      ],
+      "hitl_status": "pending",
+      "prompt_version": "phase4-val-agent-h-triage-v1",
+      "model_version": "validation-sim-model-v1",
+      "timestamp": "2026-02-26T18:41:31.882Z",
+      "correlation": {
+        "trace_id": "agent-h-s1-trace",
+        "job_id": "agent-h-s1-job",
+        "ticket_id": "VAL-H-S1-001"
+      },
+      "policy_gate": {
+        "outcome": "hitl_required",
+        "reasons": [
+          "priority_high",
+          "confidence_below_0.7",
+          "validation_needs_more_info"
+        ]
+      }
+    }
+  ]
+}

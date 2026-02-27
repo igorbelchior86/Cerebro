@@ -1,3 +1,38 @@
+# Task: UX hardening da coluna central (canal AI/PSA mais limpo e legível)
+**Status**: completed
+**Started**: 2026-02-27T18:42:00-03:00
+
+## Plan
+- [x] Step 1: Reduzir ruído visual dos balões (remover badge flutuante e padronizar metadata de canal).
+- [x] Step 2: Melhorar feedback de entrega externa com chips semânticos (`sending/sent/failed/retrying`) e erro legível.
+- [x] Step 3: Refinar hierarquia do composer (Destination segmentado + hints menos agressivos quando toggle ativo).
+- [x] Step 4: Melhorar filtro de canal para connected group com contagem por canal.
+- [x] Step 5: Validar typecheck web e documentar wiki/lessons.
+
+## Open Questions
+- Sem bloqueios técnicos.
+
+## Progress Notes
+- `ChatMessage`:
+  - badge de canal saiu de overlay dentro do balão e foi para linha de metadata.
+  - estado de entrega virou chip visual semântico e com contraste melhor.
+  - balões externos ganharam acento lateral sutil (evita “mancha” de fundo forte).
+- `ChatInput`:
+  - linha de destino reestruturada com hierarquia melhor.
+  - hints em modo toggle ativo passaram para pills discretas.
+- `triage/[id]`:
+  - filtro de canal virou grupo segmentado conectado com contagem (`All`, `AI`, `PSA/User`).
+- Contrato funcional preservado (sem mudança de fluxo interno/externo).
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-02-27-middle-column-channel-ux-hardening.md`
+- Lessons atualizadas com correção de feedback visual do usuário.
+
+---
+
 # Task: Coluna central com feed único + alternância AI vs PSA/User
 **Status**: completed
 **Started**: 2026-02-27T18:20:00-03:00

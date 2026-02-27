@@ -1,3 +1,9 @@
+## Lesson: 2026-02-27 (channel UX must prioritize clarity over density)
+**Mistake**: Introduzi badges de canal flutuando dentro dos balões e controles segmentados sem hierarquia suficiente no composer, gerando ruído visual no fluxo principal.
+**Root cause**: Foquei em “expor estado” rapidamente, mas não em reduzir competição visual entre conteúdo, metadados e controles.
+**Rule**: Em timelines operacionais, manter metadados de canal/entrega na linha de meta (não sobre o conteúdo) e usar chips semânticos curtos com contraste controlado.
+**Pattern**: Quando feedback do usuário aponta “UI ruim/poluída”, revisar primeiro hierarquia (conteúdo > metadados > controles), depois microestilo.
+
 ## Lesson: 2026-02-27 (PSA compatibility must be validated before UI formatting behavior)
 **Mistake**: Implementei toolbar com inserção de Markdown assumindo compatibilidade de renderização no Autotask.
 **Root cause**: Não validei primeiro o contrato real de write/render do provider para campos de note/time entry.

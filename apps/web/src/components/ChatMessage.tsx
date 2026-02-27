@@ -503,11 +503,34 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
   const channel = message.channel ?? 'internal_ai';
   const channelBadge = channel === 'external_psa_user' ? 'PSA/User' : 'AI';
   const isExternal = channel === 'external_psa_user';
+  const channelBadgeStyle: CSSProperties = {
+    fontSize: '9px',
+    fontWeight: 700,
+    borderRadius: '999px',
+    padding: '1px 7px',
+    letterSpacing: '0.03em',
+    border: `1px solid ${isExternal ? 'rgba(16,185,129,0.32)' : 'rgba(91,127,255,0.25)'}`,
+    background: isExternal ? 'rgba(16,185,129,0.12)' : 'rgba(91,127,255,0.10)',
+    color: isExternal ? '#0f766e' : 'var(--accent)',
+  };
+  const deliveryStatusLabelMap: Record<NonNullable<Message['delivery']>['status'], string> = {
+    sending: 'Sending',
+    sent: 'Sent',
+    failed: 'Failed',
+    retrying: 'Retrying',
+  };
+  const deliveryStatusToneMap: Record<NonNullable<Message['delivery']>['status'], { color: string; border: string; background: string }> = {
+    sending: { color: '#9A6700', border: '1px solid rgba(234,179,8,0.28)', background: 'rgba(234,179,8,0.10)' },
+    sent: { color: '#0f766e', border: '1px solid rgba(16,185,129,0.28)', background: 'rgba(16,185,129,0.10)' },
+    failed: { color: '#b91c1c', border: '1px solid rgba(239,68,68,0.28)', background: 'rgba(239,68,68,0.10)' },
+    retrying: { color: '#9A6700', border: '1px solid rgba(234,179,8,0.28)', background: 'rgba(234,179,8,0.10)' },
+  };
   const assistantBubbleByChannel: CSSProperties = isExternal
     ? {
       ...assistantBubbleStyle,
       border: '1px solid rgba(16,185,129,0.24)',
       background: 'rgba(16,185,129,0.05)',
+      boxShadow: 'inset 3px 0 0 rgba(16,185,129,0.22), var(--shadow-card)',
     }
     : assistantBubbleStyle;
   const userBubbleByChannel: CSSProperties = isExternal
@@ -515,6 +538,7 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
       ...userBubbleStyle,
       border: '1px solid rgba(16,185,129,0.30)',
       background: 'rgba(16,185,129,0.12)',
+      boxShadow: 'inset -3px 0 0 rgba(16,185,129,0.22), var(--shadow-card)',
     }
     : userBubbleStyle;
 
@@ -536,18 +560,23 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '4px', flexDirection: 'row-reverse' }}>
             <span style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>You</span>
-            <span style={{ fontSize: '9px', fontWeight: 700, color: isExternal ? '#047857' : 'var(--accent)', border: `1px solid ${isExternal ? 'rgba(16,185,129,0.3)' : 'rgba(91,127,255,0.25)'}`, background: isExternal ? 'rgba(16,185,129,0.10)' : 'rgba(91,127,255,0.10)', borderRadius: '999px', padding: '1px 6px', letterSpacing: '0.03em' }}>{channelBadge}</span>
+            <span style={channelBadgeStyle}>{channelBadge}</span>
             {message.timestamp && <span suppressHydrationWarning style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)' }}>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
           </div>
           <p style={userBubbleByChannel}>
             {message.content}
           </p>
           {message.delivery ? (
-            <div style={{ marginTop: '5px', fontSize: '10px', color: message.delivery.status === 'failed' ? '#b91c1c' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '7px', justifyContent: 'flex-end' }}>
-              <span>
-                External delivery: {message.delivery.status}
-                {message.delivery.error ? ` (${message.delivery.error})` : ''}
-              </span>
+            <div style={{ marginTop: '5px', fontSize: '10px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                <span style={{ ...deliveryStatusToneMap[message.delivery.status], borderRadius: '999px', padding: '1px 7px', fontSize: '9px', fontWeight: 700 }}>
+                  {deliveryStatusLabelMap[message.delivery.status]}
+                </span>
+                <span>PSA delivery</span>
+              </div>
+              {message.delivery.error ? (
+                <span style={{ color: '#b91c1c', maxWidth: '360px', textAlign: 'right' }}>{message.delivery.error}</span>
+              ) : null}
               {message.delivery.status === 'failed' && onRetryExternalMessage ? (
                 <button
                   type="button"
@@ -672,9 +701,6 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={assistantBubbleByChannel}>
-            <div style={{ position: 'absolute', top: '6px', right: '8px', fontSize: '9px', fontWeight: 700, color: isExternal ? '#047857' : 'var(--accent)', border: `1px solid ${isExternal ? 'rgba(16,185,129,0.3)' : 'rgba(91,127,255,0.25)'}`, background: isExternal ? 'rgba(16,185,129,0.10)' : 'rgba(91,127,255,0.10)', borderRadius: '999px', padding: '1px 6px', letterSpacing: '0.03em' }}>
-              {channelBadge}
-            </div>
             {canToggleTicketText && ticketTextMode === 'clean' && hasCleanTicketText ? (
               <RichCleanTicketText
                 text={message.ticketTextVariant!.clean!}
@@ -695,8 +721,16 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
             ))}
             {children && <div style={{ marginTop: '8px' }}>{children}</div>}
             {message.delivery ? (
-              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '10px', color: message.delivery.status === 'failed' ? '#b91c1c' : 'var(--text-muted)' }}>
-                <span>External delivery: {message.delivery.status}</span>
+              <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start', fontSize: '10px', color: 'var(--text-muted)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ ...deliveryStatusToneMap[message.delivery.status], borderRadius: '999px', padding: '1px 7px', fontSize: '9px', fontWeight: 700 }}>
+                    {deliveryStatusLabelMap[message.delivery.status]}
+                  </span>
+                  <span>PSA delivery</span>
+                </div>
+                {message.delivery.error ? (
+                  <span style={{ color: '#b91c1c' }}>{message.delivery.error}</span>
+                ) : null}
                 {message.delivery.status === 'failed' && onRetryExternalMessage ? (
                   <button
                     type="button"
@@ -778,6 +812,7 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
         </div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', marginTop: '6px', marginLeft: '36px', paddingRight: '2px' }}>
+        <span style={channelBadgeStyle}>{channelBadge}</span>
         {message.timestamp && (
           <span
             suppressHydrationWarning

@@ -188,20 +188,23 @@ export default function ChatInput({
     <div style={{ padding: '12px', border: '1px solid var(--bento-outline)', borderRadius: '14px', background: 'var(--bg-card)', flexShrink: 0 }}>
       <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={onFilesSelected} />
       {showChannelToggle ? (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-          <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>Destination</div>
-          <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid var(--bento-outline)', borderRadius: '10px', padding: '2px', background: 'var(--bg-panel)', gap: '2px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', padding: '6px 8px', border: '1px solid var(--bento-outline)', borderRadius: '10px', background: 'var(--bg-panel)' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: targetChannel === 'external_psa_user' ? '#10b981' : 'var(--accent)' }} />
+            Destination
+          </div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid var(--bento-outline)', borderRadius: '999px', padding: '2px', background: 'var(--bg-card)', gap: '2px' }}>
             <button
               type="button"
               onClick={() => onTargetChannelChange?.('internal_ai')}
               style={{
                 border: 'none',
-                borderRadius: '8px',
-                padding: '4px 8px',
+                borderRadius: '999px',
+                padding: '4px 9px',
                 fontSize: '10px',
                 fontWeight: 700,
                 color: targetChannel === 'internal_ai' ? 'var(--accent)' : 'var(--text-muted)',
-                background: targetChannel === 'internal_ai' ? 'rgba(91,127,255,0.12)' : 'transparent',
+                background: targetChannel === 'internal_ai' ? 'rgba(91,127,255,0.14)' : 'transparent',
                 cursor: 'pointer',
               }}
             >
@@ -212,8 +215,8 @@ export default function ChatInput({
               onClick={() => onTargetChannelChange?.('external_psa_user')}
               style={{
                 border: 'none',
-                borderRadius: '8px',
-                padding: '4px 8px',
+                borderRadius: '999px',
+                padding: '4px 9px',
                 fontSize: '10px',
                 fontWeight: 700,
                 color: targetChannel === 'external_psa_user' ? '#047857' : 'var(--text-muted)',
@@ -227,20 +230,20 @@ export default function ChatInput({
         </div>
       ) : null}
       {activeHints.length > 0 ? (
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '-19px', marginBottom: '10px', padding: '0 8px' }}>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: showChannelToggle ? '0' : '-19px', marginBottom: '10px', padding: showChannelToggle ? '0' : '0 8px' }}>
           {activeHints.map((h) => (
             <button
               key={h}
               type="button"
               onClick={() => setInput(h)}
               style={{
-                padding: '4px 10px 5px',
-                borderRadius: '10px 10px 0 0',
+                padding: showChannelToggle ? '4px 10px' : '4px 10px 5px',
+                borderRadius: showChannelToggle ? '999px' : '10px 10px 0 0',
                 fontSize: '10.5px',
                 color: 'var(--text-muted)',
-                background: 'var(--bg-card)',
+                background: showChannelToggle ? 'var(--bg-panel)' : 'var(--bg-card)',
                 border: '1px solid var(--bento-outline)',
-                borderBottom: 'none',
+                borderBottom: showChannelToggle ? '1px solid var(--bento-outline)' : 'none',
                 cursor: 'pointer',
                 fontFamily: 'var(--font-geist-sans, var(--font-dm-sans, sans-serif))',
                 transition: 'var(--transition)',

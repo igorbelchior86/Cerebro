@@ -1519,6 +1519,11 @@ export default function SessionDetail({
   const visibleMessages = channelFilter === 'all'
     ? messages
     : messages.filter((msg) => (msg.channel ?? 'internal_ai') === channelFilter);
+  const channelCounts = {
+    all: messages.length,
+    internal_ai: messages.filter((msg) => (msg.channel ?? 'internal_ai') === 'internal_ai').length,
+    external_psa_user: messages.filter((msg) => msg.channel === 'external_psa_user').length,
+  };
 
   return (
     <ResizableLayout
@@ -1716,30 +1721,33 @@ export default function SessionDetail({
               minHeight: 0,
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-              {[
-                { key: 'all', label: 'All' },
-                { key: 'internal_ai', label: 'AI' },
-                { key: 'external_psa_user', label: 'PSA/User' },
-              ].map((opt) => (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => setChannelFilter(opt.key as 'all' | 'internal_ai' | 'external_psa_user')}
-                  style={{
-                    borderRadius: '999px',
-                    border: '1px solid var(--bento-outline)',
-                    background: channelFilter === opt.key ? 'rgba(91,127,255,0.10)' : 'var(--bg-panel)',
-                    color: channelFilter === opt.key ? 'var(--accent)' : 'var(--text-muted)',
-                    padding: '3px 8px',
-                    fontSize: '10px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
+              <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>View</span>
+              <div style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', border: '1px solid var(--bento-outline)', background: 'var(--bg-panel)', padding: '2px', gap: '2px' }}>
+                {[
+                  { key: 'all', label: 'All' },
+                  { key: 'internal_ai', label: 'AI' },
+                  { key: 'external_psa_user', label: 'PSA/User' },
+                ].map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setChannelFilter(opt.key as 'all' | 'internal_ai' | 'external_psa_user')}
+                    style={{
+                      borderRadius: '999px',
+                      border: 'none',
+                      background: channelFilter === opt.key ? 'rgba(91,127,255,0.12)' : 'transparent',
+                      color: channelFilter === opt.key ? 'var(--accent)' : 'var(--text-muted)',
+                      padding: '4px 9px',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {opt.label} {channelCounts[opt.key as 'all' | 'internal_ai' | 'external_psa_user']}
+                  </button>
+                ))}
+              </div>
             </div>
             {error && (
               <div

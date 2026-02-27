@@ -46,7 +46,7 @@ const SOURCE_CONFIG: Record<string, { icon: string; label: string }> = {
 
 function MsgTag({ children, color, bg }: { children: ReactNode; color?: string; bg?: string }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '1px 6px', borderRadius: '4px', fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', fontWeight: 500, background: bg ?? 'rgba(255,255,255,0.05)', color: color ?? 'var(--accent)', border: '1px solid var(--border)', margin: '0 2px', verticalAlign: 'middle' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '1px 6px', borderRadius: '4px', fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', fontWeight: 500, background: bg ?? 'var(--bg-badge)', color: color ?? 'var(--accent)', border: '1px solid var(--border)', margin: '0 2px', verticalAlign: 'middle' }}>
       {children}
     </span>
   );
@@ -476,7 +476,7 @@ const assistantBubbleStyle: CSSProperties = {
   borderRadius: '12px 12px 12px 3px',
   border: '1px solid var(--bento-outline)',
   background: 'var(--bg-card)',
-  boxShadow: 'var(--shadow-card)',
+  boxShadow: 'inset 3px 0 0 var(--accent), var(--shadow-card)',
   padding: '10px 12px 24px 12px',
   position: 'relative',
 };
@@ -485,8 +485,8 @@ const userBubbleStyle: CSSProperties = {
   width: '100%',
   margin: 0,
   borderRadius: '12px 12px 3px 12px',
-  border: '1px solid rgba(91,127,255,0.15)',
-  background: 'rgba(91,127,255,0.10)',
+  border: '1px solid var(--border-accent)',
+  background: 'var(--bg-card-active)',
   boxShadow: 'var(--shadow-card)',
   padding: '10px 12px',
   fontSize: '12.5px',
@@ -516,58 +516,58 @@ const BUBBLE_TONES: Record<BubbleCategory, BubbleTone> = {
   system_status: {
     bubbleBg: 'var(--bg-card)',
     bubbleBorder: 'var(--border)',
-    bubbleAccent: 'rgba(148,163,184,0.22)',
-    badgeBg: 'rgba(148,163,184,0.12)',
-    badgeBorder: 'rgba(148,163,184,0.30)',
+    bubbleAccent: 'var(--text-muted)',
+    badgeBg: 'var(--bg-badge)',
+    badgeBorder: 'var(--border)',
     badgeText: 'var(--text-muted)',
   },
   ai: {
-    bubbleBg: 'rgba(110,134,201,0.08)',
-    bubbleBorder: 'rgba(110,134,201,0.22)',
-    bubbleAccent: 'rgba(110,134,201,0.24)',
-    badgeBg: 'rgba(110,134,201,0.12)',
-    badgeBorder: 'rgba(110,134,201,0.28)',
+    bubbleBg: 'var(--accent-muted)',
+    bubbleBorder: 'var(--border-accent)',
+    bubbleAccent: 'var(--accent)',
+    badgeBg: 'var(--accent-muted)',
+    badgeBorder: 'var(--border-accent)',
     badgeText: 'var(--accent)',
   },
   note: {
     bubbleBg: 'rgba(211,166,61,0.10)',
     bubbleBorder: 'rgba(211,166,61,0.24)',
-    bubbleAccent: 'rgba(211,166,61,0.26)',
+    bubbleAccent: 'var(--yellow)',
     badgeBg: 'rgba(211,166,61,0.14)',
     badgeBorder: 'rgba(211,166,61,0.30)',
-    badgeText: '#9A6700',
+    badgeText: 'var(--yellow)',
   },
   tech_to_ai: {
-    bubbleBg: 'rgba(56,165,140,0.11)',
-    bubbleBorder: 'rgba(56,165,140,0.26)',
-    bubbleAccent: 'rgba(56,165,140,0.28)',
-    badgeBg: 'rgba(56,165,140,0.14)',
-    badgeBorder: 'rgba(56,165,140,0.30)',
-    badgeText: '#0f766e',
+    bubbleBg: 'var(--green-muted)',
+    bubbleBorder: 'var(--green-border)',
+    bubbleAccent: 'var(--green)',
+    badgeBg: 'var(--green-muted)',
+    badgeBorder: 'var(--green-border)',
+    badgeText: 'var(--green)',
   },
   tech_to_user: {
     bubbleBg: 'rgba(214,124,124,0.11)',
     bubbleBorder: 'rgba(214,124,124,0.28)',
-    bubbleAccent: 'rgba(214,124,124,0.30)',
+    bubbleAccent: 'var(--red)',
     badgeBg: 'rgba(214,124,124,0.14)',
     badgeBorder: 'rgba(214,124,124,0.32)',
-    badgeText: '#b45353',
+    badgeText: 'var(--red)',
   },
   ai_exchange: {
-    bubbleBg: 'rgba(110,134,201,0.07)',
-    bubbleBorder: 'rgba(110,134,201,0.20)',
-    bubbleAccent: 'rgba(56,165,140,0.24)',
-    badgeBg: 'rgba(56,165,140,0.12)',
-    badgeBorder: 'rgba(56,165,140,0.30)',
-    badgeText: '#0f766e',
+    bubbleBg: 'var(--accent-muted)',
+    bubbleBorder: 'var(--border-accent)',
+    bubbleAccent: 'var(--green)',
+    badgeBg: 'var(--green-muted)',
+    badgeBorder: 'var(--green-border)',
+    badgeText: 'var(--green)',
   },
   ai_validation: {
-    bubbleBg: 'rgba(56,165,140,0.09)',
-    bubbleBorder: 'rgba(56,165,140,0.24)',
-    bubbleAccent: 'rgba(211,166,61,0.24)',
-    badgeBg: 'rgba(56,165,140,0.14)',
-    badgeBorder: 'rgba(56,165,140,0.30)',
-    badgeText: '#0f766e',
+    bubbleBg: 'var(--green-muted)',
+    bubbleBorder: 'var(--green-border)',
+    bubbleAccent: 'var(--yellow)',
+    badgeBg: 'var(--green-muted)',
+    badgeBorder: 'var(--green-border)',
+    badgeText: 'var(--green)',
   },
 };
 
@@ -619,7 +619,6 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
     ...assistantBubbleStyle,
     border: `1px solid ${tone.bubbleBorder}`,
     background: tone.bubbleBg,
-    boxShadow: `inset 3px 0 0 ${tone.bubbleAccent}, var(--shadow-card)`,
   };
   const userBubbleByChannel: CSSProperties = {
     ...userBubbleStyle,

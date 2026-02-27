@@ -134,50 +134,54 @@ export default function HomePage() {
             style={{
               padding: '12px 16px',
               border: '1px solid var(--bento-outline)',
-              borderRadius: '14px',
+              borderRadius: '16px',
               background: 'var(--bg-card)',
               display: 'flex',
               alignItems: 'center',
-              gap: '10px',
+              gap: '12px',
               flexShrink: 0,
+              boxShadow: 'var(--shadow-card)',
+              backdropFilter: 'blur(8px)',
             }}
           >
             <div
               style={{
-                width: '28px', height: '28px', borderRadius: '8px',
-                background: 'linear-gradient(135deg, rgba(110,134,201,0.95) 0%, rgba(56,165,140,0.82) 100%)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px',
+                width: '32px', height: '32px', borderRadius: '10px',
+                background: 'linear-gradient(135deg, var(--accent) 0%, var(--green) 100%)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px',
+                boxShadow: '0 2px 8px var(--accent-glow)',
               }}
             >
               ⚡
             </div>
-            <div>
-              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
                 Playbook Brain
               </span>
-              <span style={{ marginLeft: '8px', fontSize: '10px', color: 'var(--text-muted)' }}>
-                {t('assistant')}
+              <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                {t('assistant')} • {t('online')}
               </span>
             </div>
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div
                 style={{
                   fontSize: '9px',
-                  color: 'var(--text-muted)',
+                  fontWeight: 600,
+                  color: 'var(--text-secondary)',
                   border: '1px solid var(--bento-outline)',
-                  borderRadius: '999px',
-                  padding: '2px 6px',
+                  borderRadius: '6px',
+                  padding: '3px 8px',
                   background: 'var(--bg-panel)',
+                  fontFamily: 'var(--font-jetbrains-mono)',
                 }}
                 title="P0 launch policy in-context"
               >
                 AT 2W · Others RO
-              </span>
+              </div>
               <span
-                style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-2)', display: 'inline-block' }}
+                style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent-2)', display: 'inline-block', boxShadow: '0 0 10px var(--accent-2)' }}
                 className="animate-pulse"
               />
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{t('online')}</span>
             </div>
           </div>
 

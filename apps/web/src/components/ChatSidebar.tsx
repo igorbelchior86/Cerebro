@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import SettingsModal from './SettingsModal';
 import UserProfileDropdown from './UserProfileDropdown';
 import ProfileModal from './ProfileModal';
@@ -63,14 +63,14 @@ const PRIORITY_COLOR: Record<string, string> = {
   P1: '#F97316',
   P2: '#EAB308',
   P3: '#5B7FFF',
-  P4: 'rgba(228,234,248,0.14)',
+  P4: 'var(--bento-outline)',
 };
 
 const STATUS_CONFIG = {
-  completed: { color: '#1DB98A', bg: 'rgba(29,185,138,0.09)', border: 'rgba(29,185,138,0.2)', dot: '#1DB98A', localeKey: 'statusDone', pulse: false },
-  processing: { color: '#5B7FFF', bg: 'rgba(91,127,255,0.10)', border: 'rgba(91,127,255,0.22)', dot: '#5B7FFF', localeKey: 'statusProcessing', pulse: true },
-  pending: { color: '#EAB308', bg: 'rgba(234,179,8,0.10)', border: 'rgba(234,179,8,0.22)', dot: '#EAB308', localeKey: 'statusPending', pulse: true },
-  failed: { color: '#F87171', bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.18)', dot: '#F87171', localeKey: 'statusFailed', pulse: false },
+  completed: { color: 'var(--green)', bg: 'var(--green-muted)', border: 'var(--green-border)', dot: 'var(--green)', localeKey: 'statusDone', pulse: false },
+  processing: { color: 'var(--accent)', bg: 'var(--accent-muted)', border: 'var(--border-accent)', dot: 'var(--accent)', localeKey: 'statusProcessing', pulse: true },
+  pending: { color: 'var(--yellow)', bg: 'rgba(234,179,8,0.10)', border: 'rgba(234,179,8,0.22)', dot: 'var(--yellow)', localeKey: 'statusPending', pulse: true },
+  failed: { color: 'var(--red)', bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.18)', dot: 'var(--red)', localeKey: 'statusFailed', pulse: false },
 };
 
 const FILTERS = [
@@ -94,7 +94,7 @@ function MetaIcon({ type }: { type: 'clock' | 'company' | 'user' }) {
   const common = { width: '11', height: '11', viewBox: '0 0 16 16', fill: 'none' } as const;
   if (type === 'clock') {
     return (
-      <svg {...common} aria-hidden="true">
+      <svg {...common} aria-hidden="true" role="img" aria-label="Time Icon">
         <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.4" />
         <path d="M8 4.8V8.1L10.5 9.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
@@ -102,13 +102,13 @@ function MetaIcon({ type }: { type: 'clock' | 'company' | 'user' }) {
   }
   if (type === 'company') {
     return (
-      <svg {...common} aria-hidden="true">
+      <svg {...common} aria-hidden="true" role="img" aria-label="Company Icon">
         <path d="M2.5 13.5h11M4.2 13.5V3.2h7.6v10.3M6.3 5.2h.01M9.7 5.2h.01M6.3 7.7h.01M9.7 7.7h.01M6.3 10.2h.01M9.7 10.2h.01" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
       </svg>
     );
   }
   return (
-    <svg {...common} aria-hidden="true">
+    <svg {...common} aria-hidden="true" role="img" aria-label="User Icon">
       <circle cx="8" cy="5.8" r="2.3" stroke="currentColor" strokeWidth="1.4" />
       <path d="M3.6 13.5c.6-2.1 2.3-3.2 4.4-3.2s3.8 1.1 4.4 3.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
@@ -117,18 +117,18 @@ function MetaIcon({ type }: { type: 'clock' | 'company' | 'user' }) {
 
 function CerebroBrandMark() {
   return (
-    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true" style={{ display: 'block' }}>
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true" role="img" aria-label="Cerebro Logo" style={{ display: 'block' }}>
       <defs>
         <linearGradient id="cerebro-mark-gradient" x1="3" y1="3" x2="19" y2="19" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#8AA2FF" />
+          <stop stopColor="var(--accent)" />
           <stop offset="1" stopColor="#5E79D8" />
         </linearGradient>
       </defs>
-      <rect x="1.5" y="1.5" width="19" height="19" rx="7" fill="rgba(110,134,201,0.12)" stroke="rgba(110,134,201,0.28)" />
+      <rect x="1.5" y="1.5" width="19" height="19" rx="7" fill="var(--accent-muted)" stroke="var(--border-accent)" />
       <path d="M14.8 7.1a4.9 4.9 0 1 0 0 7.8" stroke="url(#cerebro-mark-gradient)" strokeWidth="1.8" strokeLinecap="round" />
       <path d="M13.1 9a2.8 2.8 0 1 0 0 4" stroke="url(#cerebro-mark-gradient)" strokeWidth="1.7" strokeLinecap="round" />
-      <circle cx="14.9" cy="11" r="1.15" fill="#9CB1FF" />
-      <path d="M6.2 11h4" stroke="rgba(156,177,255,0.72)" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="14.9" cy="11" r="1.15" fill="var(--accent)" />
+      <path d="M6.2 11h4" stroke="var(--border-accent)" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }
@@ -348,13 +348,13 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   const getTicketAssigneeName = (ticket: ActiveTicket) =>
     normalizeText(ticket.assigned_resource_name, '').toLowerCase();
 
-  const queueLabelsFromTickets = Array.from(
+  const queueLabelsFromTickets = useMemo(() => Array.from(
     new Set(
       ticketsBySuppression
         .map(getTicketQueueLabel)
         .filter((value) => value !== '')
     )
-  ).sort((a, b) => a.localeCompare(b));
+  ).sort((a, b) => a.localeCompare(b)), [ticketsBySuppression]);
   const queueLabelsFromCatalog = globalQueuesCatalog
     .filter((q) => q.isActive !== false)
     .map((q) => q.label)
@@ -367,13 +367,13 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
     { id: 'all', label: t('globalAllQueues') },
     ...(hasQueueCatalog
       ? globalQueuesCatalog
-          .filter((q) => q.isActive !== false)
-          .sort((a, b) => a.label.localeCompare(b.label))
-          .map((q) => ({ id: `queue:${q.id}`, label: q.label, queueId: q.id }))
+        .filter((q) => q.isActive !== false)
+        .sort((a, b) => a.label.localeCompare(b.label))
+        .map((q) => ({ id: `queue:${q.id}`, label: q.label, queueId: q.id }))
       : (queueLabelsFromTickets.length > 0 ? queueLabelsFromTickets : GLOBAL_QUEUE_FALLBACKS).map((label) => ({
-          id: label.toLowerCase(),
-          label,
-        }))),
+        id: label.toLowerCase(),
+        label,
+      }))),
   ];
   const queueOptionIds = queueOptions.map((option) => option.id).join('|');
   const hasAssignmentMetadata = ticketsBySuppression.some((ticket) =>
@@ -484,7 +484,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
     return getTicketQueueLabel(ticket).toLowerCase() === selectedGlobalQueue;
   });
 
-  const visible = scopedTickets.filter((t) => {
+  const visible = useMemo(() => scopedTickets.filter((t) => {
     const statusMatch = scope === 'global'
       ? true
       : filter === 'all'
@@ -515,7 +515,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
       .toLowerCase();
 
     return haystack.includes(normalizedSearch);
-  });
+  }), [scopedTickets, scope, filter, normalizedSearch]);
 
   return (
     <>

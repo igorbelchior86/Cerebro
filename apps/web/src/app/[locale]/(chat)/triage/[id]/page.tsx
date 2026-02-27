@@ -60,6 +60,9 @@ interface SessionData {
     assigned_resource_name?: string;
     assigned_resource_email?: string;
     assigned_resource_id?: number;
+    secondary_resource_name?: string;
+    secondary_resource_email?: string;
+    secondary_resource_id?: number;
     created_at?: string;
     priority?: string;
     normalization_audit?: {
@@ -146,9 +149,98 @@ interface ContextOverrideState {
   org?: { id?: number; name: string };
   user?: { id?: number; name: string; companyId?: number };
   tech?: { id?: number; name: string };
+  secondary_tech?: { id?: number; name: string };
 }
 
 type ContextEditorOption = { id: number; label: string; sublabel?: string };
+
+function TechPill({ label, name, type, onEdit, onRemove }: { label: string; name: string; type: 'primary' | 'secondary'; onEdit: () => void; onRemove: () => void }) {
+  const isPrimary = type === 'primary';
+  const bgColor = isPrimary ? 'var(--accent-muted)' : 'rgba(255, 255, 255, 0.04)';
+  const hoverBgColor = isPrimary ? 'rgba(110, 134, 201, 0.12)' : 'rgba(255, 255, 255, 0.08)';
+  const borderColor = isPrimary ? 'var(--border-accent)' : 'var(--bento-outline)';
+  const hoverBorderColor = isPrimary ? 'var(--accent)' : 'var(--border-strong)';
+  const textColor = isPrimary ? 'var(--accent)' : 'var(--text-secondary)';
+
+  return (
+    <div
+      className="group flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full border transition-all duration-200 cursor-default"
+      style={{
+        background: bgColor,
+        borderColor: borderColor,
+        color: textColor,
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = hoverBgColor;
+        e.currentTarget.style.borderColor = hoverBorderColor;
+        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.12)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = bgColor;
+        e.currentTarget.style.borderColor = borderColor;
+        e.currentTarget.style.boxShadow = 'none';
+      }}
+    >
+      <span style={{ fontSize: '8.5px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.5 }}>{label}</span>
+      <span style={{ fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap' }}>{name}</span>
+
+      {/* Container that always takes space to prevent layout shift, but fades in on hover */}
+      <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+        <div style={{ width: '1px', height: '10px', background: 'var(--border)', margin: '0 4px', opacity: 0.5 }} />
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            padding: '4px',
+            margin: '-2px 0',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'inherit',
+            transition: 'color 0.2s ease, transform 0.1s ease',
+            opacity: 0.7
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#fff'; e.currentTarget.style.transform = 'scale(1.1)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.color = 'inherit'; e.currentTarget.style.transform = 'scale(1)'; }}
+          title={`Edit ${label}`}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20h9" />
+            <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+          </svg>
+        </button>
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onRemove(); }}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            padding: '4px',
+            margin: '-2px 0',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'inherit',
+            transition: 'color 0.2s ease, transform 0.1s ease',
+            opacity: 0.7
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.color = '#D67C7C'; e.currentTarget.style.transform = 'scale(1.1)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.opacity = '0.7'; e.currentTarget.style.color = 'inherit'; e.currentTarget.style.transform = 'scale(1)'; }}
+          title={`Remove ${label}`}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 6L6 18" />
+            <path d="M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export default function SessionDetail({
   params,
@@ -211,6 +303,20 @@ export default function SessionDetail({
   const [contextEditorError, setContextEditorError] = useState('');
   const [contextEditorOptions, setContextEditorOptions] = useState<ContextEditorOption[]>([]);
   const [resolvedOrgIdFallback, setResolvedOrgIdFallback] = useState<number | null>(null);
+  const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
+  const headerMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(event.target as Node)) {
+        setIsHeaderMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   const p0LookupTicketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
   const workflowInboxState = usePollingResource(listWorkflowInbox, {
@@ -869,19 +975,19 @@ export default function SessionDetail({
         const notesFromAutotaskTimeline: Message[] = apiTicketNotes
           .filter((note: Record<string, unknown>) => !isWorkflowRuleAutotaskNote(note))
           .map((note: Record<string, unknown>, index: number) => {
-          const noteText = buildAutotaskNoteContent(note);
-          const rawCreatedAt = String(note.createDateTime || note.createDate || note.created_at || '').trim();
-          const createdAt = rawCreatedAt || new Date().toISOString();
-          const noteId = String(note.id || '').trim() || `${createdAt}-${index}`;
-          return {
-            id: `autotask-note-${selectedTicketId}-${noteId}`,
-            role: 'assistant',
-            type: 'note',
-            timestamp: parseDate(createdAt),
-            content: noteText,
-            channel: visibilityFromAutotaskNote(note) === 'public' ? 'external_psa_user' : 'internal_ai',
-          };
-        });
+            const noteText = buildAutotaskNoteContent(note);
+            const rawCreatedAt = String(note.createDateTime || note.createDate || note.created_at || '').trim();
+            const createdAt = rawCreatedAt || new Date().toISOString();
+            const noteId = String(note.id || '').trim() || `${createdAt}-${index}`;
+            return {
+              id: `autotask-note-${selectedTicketId}-${noteId}`,
+              role: 'assistant',
+              type: 'note',
+              timestamp: parseDate(createdAt),
+              content: noteText,
+              channel: visibilityFromAutotaskNote(note) === 'public' ? 'external_psa_user' : 'internal_ai',
+            };
+          });
         const dedupeKey = (m: Message) => {
           const iso = m.timestamp instanceof Date ? m.timestamp.toISOString() : '';
           return `${m.channel ?? 'internal_ai'}::${normalizePlainText(m.content, '').toLowerCase()}::${iso}`;
@@ -1243,10 +1349,10 @@ export default function SessionDetail({
   const ticketTitle = cleanTitle(data?.ssot?.title || data?.ticket?.title || selectedTicketView?.title) || 'Untitled ticket';
   const ticketNumber = data?.session.ticket_id || selectedTicketView?.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`;
   const ticketLabel = `${ticketNumber} — ${ticketTitle}`;
-  const ticketMetaLabel = [
-    canonicalCompanyUi,
-    canonicalRequesterUi,
-  ].filter(Boolean).join(' · ') || getTicketContextMeta(selectedTicketView);
+  const primaryTech = contextOverrides.tech?.name || data?.ticket?.assigned_resource_name || selectedTicketView?.assigned_resource_name || 'Unassigned';
+  const secondaryTech = contextOverrides.secondary_tech?.name || data?.ticket?.secondary_resource_name?.trim() || 'Unassigned';
+
+  const ticketMetaLabel = `Primary: ${primaryTech} · Secondary: ${secondaryTech}`;
 
   const workflowTicket = (workflowInboxState.data || []).find(
     (row) => row.ticket_id === ticketNumber || row.ticket_id === canonicalTicketId
@@ -1437,6 +1543,20 @@ export default function SessionDetail({
       return;
     }
     closeContextEditor();
+  };
+
+  const handleTechUpdate = (role: 'primary' | 'secondary', resource?: { id: number; name: string }) => {
+    setContextOverrides((prev) => {
+      const next = { ...prev };
+      if (role === 'primary') {
+        if (resource) next.tech = resource;
+        else delete next.tech;
+      } else {
+        if (resource) next.secondary_tech = resource;
+        else delete next.secondary_tech;
+      }
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -1665,7 +1785,7 @@ export default function SessionDetail({
       }
       mainContent={
         <div className="flex-1 flex flex-col" style={{ background: 'transparent', minWidth: 0, height: '100%', minHeight: 0, padding: '12px', gap: '8px' }}>
-          <div style={{ border: '1px solid var(--bento-outline)', borderRadius: '14px', background: 'var(--bg-card)', overflow: 'hidden', flexShrink: 0 }}>
+          <div style={{ border: '1px solid var(--bento-outline)', borderRadius: '14px', background: 'var(--bg-card)', flexShrink: 0 }}>
             {/* Header */}
             <div
               className="px-4 py-3 flex items-center gap-3 flex-shrink-0"
@@ -1681,145 +1801,169 @@ export default function SessionDetail({
               <p style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {ticketLabel}
               </p>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4.5px',
-                padding: '3px 8px',
-                borderRadius: '8px',
-                fontSize: '10.5px',
-                fontWeight: 600,
-                color: 'var(--green)',
-                background: 'rgba(29,185,138,0.08)',
-                border: '1px solid rgba(29,185,138,0.2)',
-                visibility: playbookReady ? 'visible' : 'hidden',
-                transition: 'all 0.2s ease',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
-              }}>
-                <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
-                  <path d="M10 3L4.5 8.5L2 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                {t('statusPlaybookReady')}
-              </span>
-              <button
-                onClick={handleToggleManualSuppression}
-                aria-pressed={isManualSuppressed}
-                disabled={isManualSuppressionSaving}
-                title={isManualSuppressed ? 'Remove manual suppression' : 'Add ticket to suppressed'}
-                aria-label={isManualSuppressed ? 'Remove manual suppression' : 'Add ticket to suppressed'}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '30px',
-                  height: '30px',
-                  borderRadius: '10px',
-                  color: isManualSuppressed ? '#F59E0B' : 'var(--text-muted)',
-                  background: isManualSuppressed
-                    ? 'rgba(245,158,11,0.08)'
-                    : 'var(--bg-card)',
-                  border: isManualSuppressed ? '1px solid rgba(245,158,11,0.30)' : '1px solid var(--bento-outline)',
-                  boxShadow: isManualSuppressed ? '0 2px 8px rgba(245,158,11,0.1)' : 'none',
-                  cursor: isManualSuppressionSaving ? 'not-allowed' : 'pointer',
-                  opacity: isManualSuppressionSaving ? 0.7 : 1,
-                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                }}
-                onMouseEnter={(e) => {
-                  if (isManualSuppressionSaving) return;
-                  const el = e.currentTarget as HTMLButtonElement;
-                  el.style.transform = 'translateY(-1px)';
-                  if (!isManualSuppressed) {
-                    el.style.borderColor = 'var(--accent)';
-                    el.style.color = 'var(--accent)';
-                    el.style.background = 'rgba(91,127,255,0.04)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (isManualSuppressionSaving) return;
-                  const el = e.currentTarget as HTMLButtonElement;
-                  el.style.transform = 'translateY(0)';
-                  if (!isManualSuppressed) {
-                    el.style.borderColor = 'var(--bento-outline)';
-                    el.style.color = 'var(--text-muted)';
-                    el.style.background = 'var(--bg-card)';
-                  }
-                }}
-              >
-                <svg width="15" height="15" viewBox="0 0 20 20" fill="none">
-                  <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
-                  <path d="M7 13L13 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                </svg>
-              </button>
-              <button
-                onClick={handleReconcileWorkflowTicket}
-                disabled={isWorkflowReconcileRunning || !ticketNumber}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '30px',
-                  height: '30px',
-                  borderRadius: '10px',
-                  color: isWorkflowReconcileRunning ? '#EAB308' : '#5B7FFF',
-                  background: isWorkflowReconcileRunning ? 'rgba(234,179,8,0.10)' : 'rgba(91,127,255,0.05)',
-                  border: isWorkflowReconcileRunning ? '1px solid rgba(234,179,8,0.25)' : '1px solid rgba(91,127,255,0.20)',
-                  cursor: isWorkflowReconcileRunning ? 'not-allowed' : 'pointer',
-                  opacity: isWorkflowReconcileRunning ? 0.8 : 1,
-                  transition: 'all 0.2s ease',
-                }}
-                title="Reconcile workflow ticket (Autotask snapshot vs workflow projection)"
-                aria-label="Reconcile workflow ticket"
-              >
-                <svg width="15" height="15" viewBox="0 0 20 20" fill="none">
-                  <path d="M4 10a6 6 0 0 1 10.2-4.2L16 7.7M16 10a6 6 0 0 1-10.2 4.2L4 12.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  <path d="M16 4.5v3.2h-3.2M4 15.5v-3.2h3.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-              <button
-                onClick={handleRefreshPipeline}
-                disabled={loading}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '30px',
-                  height: '30px',
-                  borderRadius: '10px',
-                  color: loading ? 'var(--text-muted)' : 'var(--accent)',
-                  background: loading ? 'var(--bg-card)' : 'rgba(91,127,255,0.07)',
-                  border: loading ? '1px solid var(--bento-outline)' : '1px solid rgba(91,127,255,0.20)',
-                  cursor: loading ? 'not-allowed' : 'pointer',
-                  opacity: loading ? 0.7 : 1,
-                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                }}
-                onMouseEnter={(e) => {
-                  if (loading) return;
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(91,127,255,0.12)';
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(91,127,255,0.30)';
-                  (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)';
-                }}
-                onMouseLeave={(e) => {
-                  if (loading) return;
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(91,127,255,0.07)';
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(91,127,255,0.20)';
-                  (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
-                }}
-                title="Hard refresh pipeline"
-                aria-label="Hard refresh pipeline"
-              >
-                <svg width="15" height="15" viewBox="0 0 20 20" fill="none">
-                  <path d="M15.5 10C15.5 13.0376 13.0376 15.5 10 15.5C6.96243 15.5 4.5 13.0376 4.5 10C4.5 6.96243 6.96243 4.5 10 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                  <path d="M9.5 7L12 4.5L9.5 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
+              <div ref={headerMenuRef} style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setIsHeaderMenuOpen(!isHeaderMenuOpen)}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '30px',
+                    height: '30px',
+                    borderRadius: '10px',
+                    color: isHeaderMenuOpen ? 'var(--accent)' : 'var(--text-muted)',
+                    background: isHeaderMenuOpen ? 'rgba(91,127,255,0.08)' : 'var(--bg-card)',
+                    border: isHeaderMenuOpen ? '1px solid rgba(91,127,255,0.30)' : '1px solid var(--bento-outline)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  }}
+                  title="Actions"
+                >
+                  <svg width="15" height="15" viewBox="0 0 20 20" fill="none">
+                    <circle cx="10" cy="5" r="1.5" fill="currentColor" />
+                    <circle cx="10" cy="10" r="1.5" fill="currentColor" />
+                    <circle cx="10" cy="15" r="1.5" fill="currentColor" />
+                  </svg>
+                </button>
+                {isHeaderMenuOpen && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 4px)',
+                      right: 0,
+                      zIndex: 9999,
+                      minWidth: '220px',
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--bento-outline)',
+                      borderRadius: '12px',
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.1)',
+                      padding: '8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '12px'
+                    }}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <h4 style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600, padding: '0 8px', margin: '4px 0' }}>Triage</h4>
+                      <button
+                        onClick={() => {
+                          setIsHeaderMenuOpen(false);
+                          handleToggleManualSuppression();
+                        }}
+                        disabled={isManualSuppressionSaving}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          width: '100%',
+                          padding: '6px 8px',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          color: isManualSuppressed ? '#F59E0B' : 'var(--text-primary)',
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: isManualSuppressionSaving ? 'not-allowed' : 'pointer',
+                          textAlign: 'left',
+                          opacity: isManualSuppressionSaving ? 0.7 : 1,
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bento-outline)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                          <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
+                          <path d="M7 13L13 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                        </svg>
+                        {isManualSuppressed ? 'Remove Suppression' : 'Suppress Ticket'}
+                      </button>
+                    </div>
+
+                    <div style={{ height: '1px', background: 'var(--bento-outline)', margin: '0 4px', flexShrink: 0 }}></div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <h4 style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600, padding: '0 8px', margin: '4px 0' }}>Sync</h4>
+                      <button
+                        onClick={() => {
+                          setIsHeaderMenuOpen(false);
+                          handleReconcileWorkflowTicket();
+                        }}
+                        disabled={isWorkflowReconcileRunning || !ticketNumber}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          width: '100%',
+                          padding: '6px 8px',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          color: 'var(--text-primary)',
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: (isWorkflowReconcileRunning || !ticketNumber) ? 'not-allowed' : 'pointer',
+                          textAlign: 'left',
+                          opacity: (isWorkflowReconcileRunning || !ticketNumber) ? 0.5 : 1,
+                        }}
+                        onMouseEnter={(e) => { if (!isWorkflowReconcileRunning && ticketNumber) e.currentTarget.style.background = 'var(--bento-outline)'; }}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                          <path d="M4 10a6 6 0 0 1 10.2-4.2L16 7.7M16 10a6 6 0 0 1-10.2 4.2L4 12.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                          <path d="M16 4.5v3.2h-3.2M4 15.5v-3.2h3.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        Reconcile Data
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsHeaderMenuOpen(false);
+                          handleRefreshPipeline();
+                        }}
+                        disabled={loading}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          width: '100%',
+                          padding: '6px 8px',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          color: 'var(--text-primary)',
+                          background: 'transparent',
+                          border: 'none',
+                          cursor: loading ? 'not-allowed' : 'pointer',
+                          textAlign: 'left',
+                          opacity: loading ? 0.5 : 1,
+                        }}
+                        onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = 'var(--bento-outline)'; }}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                          <path d="M15.5 10C15.5 13.0376 13.0376 15.5 10 15.5C6.96243 15.5 4.5 13.0376 4.5 10C4.5 6.96243 6.96243 4.5 10 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                          <path d="M9.5 7L12 4.5L9.5 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        Hard Refresh
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
               <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-jetbrains-mono)', marginLeft: playbookReady ? '0' : 'auto' }}>
                 {playbookReady ? '' : loading ? t('statusInitializing') : t('statusProcessing')}
               </span>
             </div>
-            <div className="px-4 py-2" style={{ background: 'transparent' }}>
-              <p style={{ fontFamily: 'var(--font-jetbrains-mono)', fontSize: '10px', color: 'var(--text-muted)', letterSpacing: '0.03em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {ticketMetaLabel}
-              </p>
+            <div className="px-4 py-3 flex flex-wrap items-center gap-2.5" style={{ background: 'transparent' }}>
+              <TechPill
+                label="Primary"
+                name={primaryTech}
+                type="primary"
+                onEdit={() => openContextEditor('Tech')}
+                onRemove={() => handleTechUpdate('primary')}
+              />
+              <TechPill
+                label="Secondary"
+                name={secondaryTech}
+                type="secondary"
+                onEdit={() => openContextEditor('Tech')}
+                onRemove={() => handleTechUpdate('secondary')}
+              />
             </div>
           </div>
 

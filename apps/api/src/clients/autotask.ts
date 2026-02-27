@@ -561,6 +561,14 @@ export class AutotaskClient {
     return this.extractCollection(response);
   }
 
+  async searchResources(filter: string, pageSize: number = 25): Promise<Record<string, unknown>[]> {
+    const response = await this.request<{ records?: Record<string, unknown>[]; items?: Record<string, unknown>[]; item?: Record<string, unknown> }>(
+      '/resources/query',
+      { search: this.buildSearchParam(filter, pageSize) }
+    );
+    return this.extractCollection(response);
+  }
+
   async createCompany(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.requestJson<Record<string, unknown>>('POST', '/companies', { body: payload });
   }

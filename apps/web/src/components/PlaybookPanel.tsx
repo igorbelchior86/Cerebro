@@ -25,6 +25,7 @@ interface ContextItem {
   key: string;
   val: string;
   highlight?: string;
+  editable?: boolean;
 }
 
 interface PlaybookData {
@@ -42,6 +43,7 @@ interface PlaybookPanelProps {
   data?: PlaybookData;
   sessionStatus?: 'pending' | 'processing' | 'approved' | 'failed' | 'needs_more_info' | 'blocked' | undefined;
   children?: ReactNode;
+  onEditContextItem?: (key: string) => void;
 }
 
 function ShimmerBlock({ width = '100%', height = 10, radius = 6 }: { width?: string; height?: number; radius?: number }) {
@@ -214,7 +216,7 @@ function cleanTitle(text: string): string {
     .trim();
 }
 
-export default function PlaybookPanel({ content, status = 'ready', data, sessionStatus, children }: PlaybookPanelProps) {
+export default function PlaybookPanel({ content, status = 'ready', data, sessionStatus, children, onEditContextItem }: PlaybookPanelProps) {
   const [isContextOpen, setIsContextOpen] = useState(true);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [openEvidenceFor, setOpenEvidenceFor] = useState<number | null>(null);
@@ -262,7 +264,38 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
             {isContextOpen && (
               <div className="animate-in fade-in slide-in-from-top-1 duration-300" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                 {ctx.map((c) => (
-                  <div key={c.key} style={{ padding: '8px 10px', borderRadius: '7px', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                  <div key={c.key} style={{ padding: '8px 10px', borderRadius: '7px', background: 'var(--bg-card)', border: '1px solid var(--border)', position: 'relative' }}>
+                    {c.editable && onEditContextItem ? (
+                      <button
+                        type="button"
+                        aria-label={`Edit ${c.key}`}
+                        title={`Edit ${c.key}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditContextItem(c.key);
+                        }}
+                        style={{
+                          position: 'absolute',
+                          top: '5px',
+                          right: '5px',
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '5px',
+                          border: '1px solid var(--bento-outline)',
+                          background: 'var(--bg-card)',
+                          color: 'var(--accent)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                        </svg>
+                      </button>
+                    ) : null}
                     <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8.5px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '3px' }}>{c.key}</div>
                     <div style={{ fontSize: '11.5px', fontWeight: 500, color: c.highlight ?? 'var(--text-primary)' }}>{c.val}</div>
                   </div>

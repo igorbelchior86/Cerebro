@@ -693,6 +693,19 @@ The most severe instance of data loss occurs when retrieving an entity with a Ri
 2. **Exclude Rich Text Fields**: If you are not explicitly trying to change the content of a Rich Text field (like `description`), **remove it completely from your JSON payload**.
 3. **HTML Wrapper Validation**: If you *must* update a Rich Text field, build a pre-flight validator that ensures the payload is strictly wrapped in HTML tags (e.g., checking for `<html><body>...</body></html>`).
 
+**Example cURL: Updating a Ticket Note with Rich Text (The Safe Way):**
+```bash
+curl -X PATCH "https://webservices1.autotask.net/atservicesrest/v1.0/TicketNotes" \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Basic [Base64-Credentials]" \
+     -H "ApiIntegrationcode: [Your-Tracking-ID]" \
+     -d '{
+           "id": 12345,
+           "noteBody": "<html><body><strong>Urgent:</strong> Infrastructure update required. <br/>Check the <a href=\"#\">Logs</a>.</body></html>",
+           "publish": 1
+         }'
+```
+
 **Example: Defensive Python Payload Construction**
 ```python
 def create_safe_update_payload(entity_data, fields_to_update):

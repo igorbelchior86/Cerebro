@@ -4627,6 +4627,150 @@
         "issue_id": "d745e59a-cfae-4824-a349-18f2352151d8",
         "event_id": "phase2-agent-c-sync-20260227T160218Z"
       }
+    },
+    {
+      "audit_id": "71d432c2-6b7e-4430-ae76-9667e4c251c8",
+      "timestamp": "2026-02-27T16:39:19.613Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260227.0005"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132818",
+        "ticket_id": "T20260227.0005"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132818:ticket.created:2026-02-27T16:38:44.793Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-27T16:39:19.604Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
+    },
+    {
+      "audit_id": "ac32ba2a-c8c8-43a1-9561-6fc7ba8c1877",
+      "timestamp": "2026-02-27T16:40:51.394Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260227.0006"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132819",
+        "ticket_id": "T20260227.0006"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132819:ticket.created:2026-02-27T16:38:58.333Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-27T16:40:51.375Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
+    },
+    {
+      "audit_id": "17716a71-c73b-41b5-af8b-590b9e1ab338",
+      "timestamp": "2026-02-27T17:17:21.005Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260227.0007"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132820",
+        "ticket_id": "T20260227.0007"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132820:ticket.created:2026-02-27T17:16:58.097Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-27T17:17:20.988Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
+    },
+    {
+      "audit_id": "90960480-ffbc-45e3-a65a-a2e3c37ed4d1",
+      "timestamp": "2026-02-27T17:19:50.583Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260227.0008"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132821",
+        "ticket_id": "T20260227.0008"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132821:ticket.created:2026-02-27T17:19:05.790Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-27T17:19:50.575Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
     }
   ],
   "processedSyncEvents": [
@@ -4663,7 +4807,11 @@
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132817:ticket.created:2026-02-27T14:26:40.843Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::phase1-agent-d-sync-20260227T150343Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::phase2-agent-c-sync-20260227T155457Z",
-    "5b5f7e25-2396-4bec-a584-41352be7e876::phase2-agent-c-sync-20260227T160218Z"
+    "5b5f7e25-2396-4bec-a584-41352be7e876::phase2-agent-c-sync-20260227T160218Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132818:ticket.created:2026-02-27T16:38:44.793Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132819:ticket.created:2026-02-27T16:38:58.333Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132820:ticket.created:2026-02-27T17:16:58.097Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132821:ticket.created:2026-02-27T17:19:05.790Z"
   ],
   "inbox": [
     [
@@ -5118,6 +5266,142 @@
           "correlates.ticket_note_metadata": {}
         },
         "updated_at": "2026-02-27T14:26:47.300Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260227.0005",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260227.0005",
+        "external_id": "132818",
+        "title": "Security event detected",
+        "description": "From do-not-reply@portal.checkpoint.com: Hello,\r\nPlease look at the details of the following anomaly event.\r\nDetails:\r\n\r\nigor@refreshtech.com performed geo-suspicious events: logged in from United States (192.145.117.183) and after 3 hours, 31 minutes logged in from Portugal (89.214.144.132)\r\n\r\n\tDate\t2026-02-27 16:28:09 UTC\r\n\r\n\tSeverity\tMedium\r\nThis email was sent to refreshtechnologies1",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-27T16:39:19.609Z",
+        "last_event_occurred_at": "2026-02-27T16:38:44.793Z",
+        "last_event_id": "autotask-poller:132818:ticket.created:2026-02-27T16:38:44.793Z",
+        "source_of_truth": "Autotask",
+        "domain_snapshots": {
+          "tickets": {
+            "external_id": "132818",
+            "ticket_number": "T20260227.0005",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "ticket_notes": {},
+          "correlates.resources": {},
+          "correlates.ticket_metadata": {
+            "ticket_number": "T20260227.0005",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "correlates.ticket_note_metadata": {}
+        },
+        "updated_at": "2026-02-27T16:39:19.609Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260227.0006",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260227.0006",
+        "external_id": "132819",
+        "title": "Resignation Process - Demetria Sims",
+        "description": "As of today, our employee Demetria Sims has resigned her position as Property Manager for The Charthouse, in Charleston SC.\r\n\r\nCan you please stop her accesses to all of our systems, such as:\r\n\r\n- Real Page\r\n- Amazon\r\n- Appfolio\r\n- Email\r\n- Dropbox\r\n- Goto\r\n- Grace Hill\r\n\r\nI already removed her from the WhatsApp groups\r\n\r\nBest\r\n\r\nFabio Nogueira | Stintino Management\r\nw: (704) 445-4446 m: (929) 990-3499\r\nfabio@stintinomanagement.com\r\n?",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-27T16:40:51.393Z",
+        "last_event_occurred_at": "2026-02-27T16:38:58.333Z",
+        "last_event_id": "autotask-poller:132819:ticket.created:2026-02-27T16:38:58.333Z",
+        "source_of_truth": "Autotask",
+        "domain_snapshots": {
+          "tickets": {
+            "external_id": "132819",
+            "ticket_number": "T20260227.0006",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "ticket_notes": {},
+          "correlates.resources": {},
+          "correlates.ticket_metadata": {
+            "ticket_number": "T20260227.0006",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "correlates.ticket_note_metadata": {}
+        },
+        "updated_at": "2026-02-27T16:40:51.393Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260227.0007",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260227.0007",
+        "external_id": "132820",
+        "title": "Corporate Apple ID and Microsoft Excel",
+        "description": "Hi\r\n\r\nI have employees saying they cannot open their Excel files using the Mac\r\ncomputers. Is there anything we need to do? Do we still need to set up\r\ncorporate apple ID?\r\n\r\nBrittany\r\nTieraney\r\n\r\n\r\nBest Regards,\r\n\r\n*Jeanie Wong*\r\n\r\nController\r\n\r\nStintino Management\r\n\r\nD: (704) 275-5030  | M: (704) 445-4446\r\n\r\n*Stintino* <https://www.stintinomanagement.com/> | *LinkedIn*\r\n<https://www.linkedin.com/company/stintinomanagement/posts/?feedView=all> |\r\n*Schedule* <https://calendar.app.google/zsoqKzmtwYr1URnR9>\r\n\r\n\r\n\r\n\r\n\r\n\r\n3540 Toringdon Way, Suite 200 · Charlotte, NC 28277\r\n\r\nThis email and any attachments may contain confidential or privileged\r\ninformation intended only for the recipient.",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-27T17:17:20.996Z",
+        "last_event_occurred_at": "2026-02-27T17:16:58.097Z",
+        "last_event_id": "autotask-poller:132820:ticket.created:2026-02-27T17:16:58.097Z",
+        "source_of_truth": "Autotask",
+        "domain_snapshots": {
+          "tickets": {
+            "external_id": "132820",
+            "ticket_number": "T20260227.0007",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "ticket_notes": {},
+          "correlates.resources": {},
+          "correlates.ticket_metadata": {
+            "ticket_number": "T20260227.0007",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "correlates.ticket_note_metadata": {}
+        },
+        "updated_at": "2026-02-27T17:17:20.996Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260227.0008",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260227.0008",
+        "external_id": "132821",
+        "title": "Access Issues with Dropbox and Request for Excel Account Setup",
+        "description": "Good Afternoon,\r\n\r\nI was instructed by Fabio and Jeanie to put in a ticket to gain access to\r\nmy dropbox using this email address. When I attempt to log in and reset the\r\npassword it says the account has been suspended. Are you able to assist me?\r\nAlso, in order for me to complete the pre-close and end of month\r\nreports today I will need access to Excel, can you also help me set up an\r\naccount so I am able to use Excell?\r\n\r\nThank you in advance for your help!\r\n-- \r\n\r\nTieraney Dixon\r\nProperty Manager\r\nKensington Square Townhomes / 300 Optimist Park\r\n\r\n1004 Kensington Sq\r\nRock Hill, SC 29732\r\n\r\n300 Parkwood Ave\r\nCharlotte, NC 28206\r\n\r\n?? 803-560-8650",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-27T17:19:50.579Z",
+        "last_event_occurred_at": "2026-02-27T17:19:05.790Z",
+        "last_event_id": "autotask-poller:132821:ticket.created:2026-02-27T17:19:05.790Z",
+        "source_of_truth": "Autotask",
+        "domain_snapshots": {
+          "tickets": {
+            "external_id": "132821",
+            "ticket_number": "T20260227.0008",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "ticket_notes": {},
+          "correlates.resources": {},
+          "correlates.ticket_metadata": {
+            "ticket_number": "T20260227.0008",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "correlates.ticket_note_metadata": {}
+        },
+        "updated_at": "2026-02-27T17:19:50.579Z"
       }
     ]
   ],

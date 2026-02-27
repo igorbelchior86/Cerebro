@@ -11,6 +11,9 @@ import ResizableLayout from '@/components/ResizableLayout';
 import { usePathname } from 'next/navigation';
 import { usePollingResource } from '@/hooks/usePollingResource';
 import {
+  type AutotaskCompanyOption,
+  type AutotaskContactOption,
+  type AutotaskResourceOption,
   getWorkflowCommandStatus,
   isRetryableCommandStatus,
   listManagerOpsAiDecisions,
@@ -22,7 +25,11 @@ import {
   mapHttpErrorToFrontendState,
   processWorkflowCommands,
   reconcileWorkflowTicket,
+  searchAutotaskCompanies,
+  searchAutotaskContacts,
+  searchAutotaskResources,
   submitWorkflowCommand,
+  updateAutotaskTicketContext,
   type ManagerOpsAIDecision,
   type WorkflowActionUxState,
   type WorkflowAuditRecord,
@@ -46,8 +53,11 @@ interface SessionData {
     affected_user_normalized?: string;
     affected_user_email_normalized?: string;
     company?: string;
+    company_id?: number;
+    contact_id?: number;
     assigned_resource_name?: string;
     assigned_resource_email?: string;
+    assigned_resource_id?: number;
     created_at?: string;
     priority?: string;
     normalization_audit?: {
@@ -127,6 +137,16 @@ interface WorkflowActionFeedback {
   updatedAt: string;
 }
 
+type EditableContextKey = 'Org' | 'User' | 'Tech';
+
+interface ContextOverrideState {
+  org?: { id?: number; name: string };
+  user?: { id?: number; name: string; companyId?: number };
+  tech?: { id?: number; name: string };
+}
+
+type ContextEditorOption = { id: number; label: string; sublabel?: string };
+
 export default function SessionDetail({
   params,
 }: {
@@ -176,6 +196,13 @@ export default function SessionDetail({
   const [workflowActionFeedback, setWorkflowActionFeedback] = useState<WorkflowActionFeedback | null>(null);
   const [workflowWritePolicyDisabled, setWorkflowWritePolicyDisabled] = useState(false);
   const [isDevPanelOpen, setIsDevPanelOpen] = useState(false);
+  const [contextOverrides, setContextOverrides] = useState<ContextOverrideState>({});
+  const [activeContextEditor, setActiveContextEditor] = useState<EditableContextKey | null>(null);
+  const [contextEditorQuery, setContextEditorQuery] = useState('');
+  const [contextEditorLoading, setContextEditorLoading] = useState(false);
+  const [contextEditorSaving, setContextEditorSaving] = useState(false);
+  const [contextEditorError, setContextEditorError] = useState('');
+  const [contextEditorOptions, setContextEditorOptions] = useState<ContextEditorOption[]>([]);
 
   const p0LookupTicketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
   const workflowInboxState = usePollingResource(listWorkflowInbox, {
@@ -410,9 +437,9 @@ export default function SessionDetail({
     }
   };
 
-  const handleSubmitTechAssignment = async () => {
+  const submitTechAssignmentById = async (resourceIdRaw: string, techName?: string) => {
     const ticketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
-    const assigneeResourceId = String(techAssignmentDraft || '').trim();
+    const assigneeResourceId = String(resourceIdRaw || '').trim();
     if (!ticketId || !assigneeResourceId || isSubmittingTechAssignment) return;
 
     setIsSubmittingTechAssignment(true);
@@ -444,6 +471,15 @@ export default function SessionDetail({
       });
       setWorkflowWritePolicyDisabled(false);
       await refreshWorkflowCommandFeedback(commandId);
+      if (techName) {
+        setContextOverrides((prev) => ({
+          ...prev,
+          tech: {
+            id: Number(assigneeResourceId),
+            name: techName,
+          },
+        }));
+      }
     } catch (err) {
       const mapped = mapHttpErrorToFrontendState(err, 'Unable to submit assignment command');
       setWorkflowActionError(`${mapped.summary}: ${mapped.detail}`);
@@ -463,6 +499,10 @@ export default function SessionDetail({
     } finally {
       setIsSubmittingTechAssignment(false);
     }
+  };
+
+  const handleSubmitTechAssignment = async () => {
+    await submitTechAssignmentById(techAssignmentDraft);
   };
 
   const handleManualWorkflowRetry = async () => {
@@ -975,6 +1015,150 @@ export default function SessionDetail({
     if (fallback) setTechAssignmentDraft(fallback);
   }, [workflowTicket?.assigned_to, data?.ticket?.assigned_resource_name, techAssignmentDraft]);
 
+  const activeOrgId = (() => {
+    if (typeof contextOverrides.org?.id === 'number' && Number.isFinite(contextOverrides.org.id)) {
+      return contextOverrides.org.id;
+    }
+    const baseCompanyId = Number(data?.ticket?.company_id);
+    return Number.isFinite(baseCompanyId) ? baseCompanyId : null;
+  })();
+
+  const openContextEditor = (key: string) => {
+    if (key !== 'Org' && key !== 'User' && key !== 'Tech') return;
+    setActiveContextEditor(key);
+    setContextEditorQuery('');
+    setContextEditorError('');
+    setContextEditorOptions([]);
+  };
+
+  const closeContextEditor = () => {
+    setActiveContextEditor(null);
+    setContextEditorQuery('');
+    setContextEditorError('');
+    setContextEditorOptions([]);
+    setContextEditorLoading(false);
+    setContextEditorSaving(false);
+  };
+
+  const handleSelectContextOption = async (option: ContextEditorOption) => {
+    if (!activeContextEditor) return;
+    const ticketRef = String(data?.session?.ticket_id || selectedTicketId || '').trim();
+    if (!ticketRef) {
+      setContextEditorError('Ticket reference unavailable for update.');
+      return;
+    }
+    if (activeContextEditor === 'Org') {
+      setContextEditorSaving(true);
+      setContextEditorError('');
+      try {
+        const updated = await updateAutotaskTicketContext(ticketRef, { companyId: option.id });
+        setContextOverrides((prev) => ({
+          ...(() => {
+            const { user: _omitUser, ...rest } = prev;
+            return rest;
+          })(),
+          org: { id: updated.companyId ?? option.id, name: updated.companyName || option.label },
+        }));
+        closeContextEditor();
+      } catch (err: any) {
+        setContextEditorError(String(err?.message || 'Unable to update Org in Autotask'));
+        setContextEditorSaving(false);
+      }
+      return;
+    }
+    if (activeContextEditor === 'User') {
+      if (!activeOrgId) {
+        setContextEditorError('Select an Org first to set User.');
+        return;
+      }
+      setContextEditorSaving(true);
+      setContextEditorError('');
+      try {
+        const updated = await updateAutotaskTicketContext(ticketRef, { companyId: activeOrgId, contactId: option.id });
+        setContextOverrides((prev) => ({
+          ...prev,
+          user: {
+            id: updated.contactId ?? option.id,
+            name: updated.contactName || option.label,
+            companyId: updated.companyId ?? activeOrgId,
+          },
+          ...(updated.companyId && updated.companyName
+            ? { org: { id: updated.companyId, name: updated.companyName } }
+            : {}),
+        }));
+        closeContextEditor();
+      } catch (err: any) {
+        setContextEditorError(String(err?.message || 'Unable to update User in Autotask'));
+        setContextEditorSaving(false);
+      }
+      return;
+    }
+    setTechAssignmentDraft(String(option.id));
+    await submitTechAssignmentById(String(option.id), option.label);
+    closeContextEditor();
+  };
+
+  useEffect(() => {
+    if (!activeContextEditor) return;
+    if (activeContextEditor === 'User' && !activeOrgId) {
+      setContextEditorOptions([]);
+      setContextEditorError('Select an Org first to list User options.');
+      return;
+    }
+
+    let ignore = false;
+    setContextEditorLoading(true);
+    setContextEditorError('');
+
+    const run = async () => {
+      try {
+        if (activeContextEditor === 'Org') {
+          const rows = await searchAutotaskCompanies(contextEditorQuery, 30);
+          if (!ignore) {
+            setContextEditorOptions(rows.map((row: AutotaskCompanyOption) => ({
+              id: row.id,
+              label: row.name,
+            })));
+          }
+          return;
+        }
+        if (activeContextEditor === 'User' && activeOrgId) {
+          const rows = await searchAutotaskContacts(contextEditorQuery, activeOrgId, 30);
+          if (!ignore) {
+            setContextEditorOptions(rows.map((row: AutotaskContactOption) => ({
+              id: row.id,
+              label: row.name,
+              ...(row.email ? { sublabel: row.email } : {}),
+            })));
+          }
+          return;
+        }
+        const rows = await searchAutotaskResources(contextEditorQuery, 30);
+        if (!ignore) {
+          setContextEditorOptions(rows.map((row: AutotaskResourceOption) => ({
+            id: row.id,
+            label: row.name,
+            ...(row.email ? { sublabel: row.email } : {}),
+          })));
+        }
+      } catch (err: any) {
+        if (!ignore) {
+          setContextEditorOptions([]);
+          setContextEditorError(String(err?.message || 'Unable to load Autotask options'));
+        }
+      } finally {
+        if (!ignore) {
+          setContextEditorLoading(false);
+        }
+      }
+    };
+
+    void run();
+    return () => {
+      ignore = true;
+    };
+  }, [activeContextEditor, activeOrgId, contextEditorQuery]);
+
   const digestFacts = Array.isArray(data?.evidence_pack?.evidence_digest?.facts_confirmed)
     ? data?.evidence_pack?.evidence_digest?.facts_confirmed
     : [];
@@ -988,10 +1172,14 @@ export default function SessionDetail({
     ? {
       ticketId: ticketNumber,
       context: [
-        { key: 'Org', val: data?.ssot?.company || selectedTicketView?.company || selectedTicketView?.org || 'Unknown org' },
+        {
+          key: 'Org',
+          val: contextOverrides.org?.name || data?.ssot?.company || selectedTicketView?.company || selectedTicketView?.org || 'Unknown org',
+          editable: true,
+        },
         {
           key: 'User',
-          val: normalizePlainText(
+          val: contextOverrides.user?.name || normalizePlainText(
             selectUiUserFromSsot({
               affected: data?.ssot?.affected_user_name,
               requester: data?.ssot?.requester_name,
@@ -999,10 +1187,12 @@ export default function SessionDetail({
             }),
             'Unknown user'
           ),
+          editable: true,
         },
         {
           key: 'Tech',
-          val: normalizePlainText(data?.ticket?.assigned_resource_name, 'Unknown'),
+          val: contextOverrides.tech?.name || normalizePlainText(data?.ticket?.assigned_resource_name, 'Unknown'),
+          editable: true,
         },
         {
           key: 'ISP',
@@ -1081,6 +1271,7 @@ export default function SessionDetail({
           content={data?.playbook?.content_md || null}
           status={playbookStatus}
           sessionStatus={data?.session?.status}
+          onEditContextItem={openContextEditor}
           {...(playbookPanelData ? { data: playbookPanelData } : {})}
         />
       }
@@ -1300,6 +1491,129 @@ export default function SessionDetail({
               'Escalate to L3',
             ]}
           />
+
+          {activeContextEditor ? (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Edit ${activeContextEditor}`}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 70,
+                background: 'rgba(9,12,20,0.35)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '16px',
+              }}
+              onClick={closeContextEditor}
+            >
+              <div
+                style={{
+                  width: 'min(560px, 100%)',
+                  maxHeight: 'min(80vh, 760px)',
+                  overflowY: 'auto',
+                  borderRadius: '14px',
+                  border: '1px solid var(--bento-outline)',
+                  background: 'var(--bg-card)',
+                  boxShadow: '0 22px 48px rgba(10,18,35,0.28)',
+                  padding: '14px',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>Edit {activeContextEditor}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      {activeContextEditor === 'User'
+                        ? activeOrgId
+                          ? `Listing users only from selected Org (ID ${activeOrgId}).`
+                          : 'Select an Org first to list users.'
+                        : 'Source: Autotask read-only search.'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeContextEditor}
+                    disabled={contextEditorSaving}
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '8px',
+                      border: '1px solid var(--bento-outline)',
+                      background: 'var(--bg-panel)',
+                      color: 'var(--text-secondary)',
+                      cursor: contextEditorSaving ? 'not-allowed' : 'pointer',
+                      opacity: contextEditorSaving ? 0.6 : 1,
+                    }}
+                    aria-label="Close editor"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <input
+                  type="text"
+                  value={contextEditorQuery}
+                  onChange={(e) => setContextEditorQuery(e.target.value)}
+                  disabled={contextEditorSaving}
+                  placeholder={`Search ${activeContextEditor.toLowerCase()} in Autotask`}
+                  style={{
+                    width: '100%',
+                    borderRadius: '10px',
+                    border: '1px solid var(--bento-outline)',
+                    background: 'var(--bg-panel)',
+                    color: 'var(--text-primary)',
+                    fontSize: '12px',
+                    padding: '9px 10px',
+                    marginBottom: '10px',
+                  }}
+                />
+
+                {contextEditorError ? (
+                  <div style={{ fontSize: '11.5px', color: '#ef4444', marginBottom: '8px' }}>
+                    {contextEditorError}
+                  </div>
+                ) : null}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {contextEditorSaving ? (
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>Saving update...</div>
+                  ) : contextEditorLoading ? (
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>Loading options...</div>
+                  ) : contextEditorOptions.length === 0 ? (
+                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>No options found.</div>
+                  ) : (
+                    contextEditorOptions.map((option) => (
+                      <button
+                        key={`${activeContextEditor}-${option.id}`}
+                        type="button"
+                        onClick={() => { void handleSelectContextOption(option); }}
+                        disabled={contextEditorSaving}
+                        style={{
+                          width: '100%',
+                          textAlign: 'left',
+                          borderRadius: '10px',
+                          border: '1px solid var(--bento-outline)',
+                          background: 'var(--bg-panel)',
+                          color: 'var(--text-primary)',
+                          padding: '9px 10px',
+                          cursor: contextEditorSaving ? 'not-allowed' : 'pointer',
+                          opacity: contextEditorSaving ? 0.65 : 1,
+                        }}
+                      >
+                        <div style={{ fontSize: '12px', fontWeight: 600 }}>{option.label}</div>
+                        {option.sublabel ? (
+                          <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>{option.sublabel}</div>
+                        ) : null}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <button
             type="button"

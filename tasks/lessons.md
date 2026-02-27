@@ -615,3 +615,33 @@
 **Root cause**: I applied the prior gate framing instead of enforcing the stricter explicit acceptance the user required for integrated closure.
 **Rule**: For gate closure tasks, map acceptance criteria 1:1 into machine-checked checklist assertions; if any required zero-threshold metric is non-zero, force `NOT MET`.
 **Pattern**: If user states hard numeric gate conditions (`X=0`), never infer equivalence from compensating evidence in other dimensions.
+
+## Lesson: 2026-02-27 (Autotask query routes must use structured filters, never raw DSL strings)
+**Mistake**: Implementei `/autotask/*/search` enviando filtros textuais (`"isActive eq true ..."`) para o client, assumindo que seriam parseados corretamente.
+**Root cause**: O `AutotaskClient.buildSearchParam` faz fallback para `title contains <raw_string>` quando recebe string não-JSON; isso quebrou `companies` com erro 500 (`title` inexistente) e degradou `resources/contacts`.
+**Rule**: Em chamadas `*/query` do Autotask via client compartilhado, sempre enviar `search` estruturado JSON (`{ MaxRecords, filter: [...] }`) para evitar fallback implícito.
+**Pattern**: Erro do tipo `Unable to find title in the <Entity> Entity` após adicionar rota de busca indica fallback indevido para `title contains`.
+
+## Lesson: 2026-02-27 (when user expects integration-side effect, local UI override is insufficient)
+**Mistake**: Entreguei edição de `Org/User` apenas como override local no frontend, sem write no Autotask nem persistência server-side.
+**Root cause**: Assumi um modo "safe/read-only" para reduzir risco sem validar explicitamente a expectativa funcional de efeito persistente na fonte externa.
+**Rule**: Para ações de edição em campos de entidade integrada (ex.: ticket org/user), confirmar o comportamento esperado de persistência e implementar write+persistence quando a expectativa for efeito real.
+**Pattern**: Sintoma "muda na UI mas volta após refresh" indica override local sem persistência na origem/SSOT.
+
+## Lesson: 2026-02-27 (company switch in Autotask ticket must clear dependent location/contact links)
+**Mistake**: Ao atualizar `companyID` do ticket, eu não limpei vínculos dependentes já existentes (`companyLocationID` e contato legado), causando erro 500 de validação da entidade.
+**Root cause**: O ticket mantinha `companyLocationID` da empresa anterior; Autotask valida consistência de associação e rejeita a troca de org.
+**Rule**: Em mudança de company no ticket Autotask, enviar atualização atômica que neutralize `companyLocationID` e limpe `contactID` quando contato novo não for fornecido.
+**Pattern**: Erro `companyLocationID cannot be associated with the Ticket` após trocar empresa indica dependências legadas não saneadas no patch.
+
+## Lesson: 2026-02-27 (Org-scoped user listing must not depend on optional active flags in Contacts)
+**Mistake**: Na listagem de usuários por org, usei filtro `isActive eq true` junto com `companyID`, o que pode zerar resultados em tenants onde Contacts não expõe/normaliza esse campo da mesma forma.
+**Root cause**: Assumi simetria de campos entre entidades Autotask (Company/Resource/Contact), mas Contacts tem variância de schema/semântica por ambiente.
+**Rule**: Para listagem user-by-org, usar `companyID` como filtro canônico e aplicar refinamento textual no backend; evitar depender de flags opcionais da entidade Contacts para gate principal.
+**Pattern**: Org selecionada corretamente + User vazio sem erro => revisar filtros opcionais de entidade antes de concluir que não há dados.
+
+## Lesson: 2026-02-27 (active-only org policies may need explicit owner-tenant exception)
+**Mistake**: Tratei a política de Org ativa como rígida para todos os casos e não contemplei o cenário de org proprietária do MSP que precisa permanecer selecionável.
+**Root cause**: Regra técnica foi aplicada sem camada de exceção de negócio explicitada pelo usuário.
+**Rule**: Em políticas de catálogo (`active-only`), manter regra base mas prever exceções explícitas de negócio (ex.: org proprietária) quando requerido.
+**Pattern**: Usuário pede “manter dependência/política, mas exceção X” => implementar filtro composto (`base_policy OR business_exception`).

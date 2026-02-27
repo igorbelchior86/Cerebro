@@ -97,6 +97,33 @@ export interface ManagerOpsAIDecision {
   policy_gate: { outcome: 'pass' | 'hitl_required'; reasons: string[] };
 }
 
+export interface AutotaskCompanyOption {
+  id: number;
+  name: string;
+}
+
+export interface AutotaskContactOption {
+  id: number;
+  name: string;
+  companyId?: number;
+  email?: string;
+}
+
+export interface AutotaskResourceOption {
+  id: number;
+  name: string;
+  email?: string;
+}
+
+export interface AutotaskTicketContextUpdateResult {
+  ticketId: string;
+  companyId: number | null;
+  companyName: string | null;
+  contactId: number | null;
+  contactName: string | null;
+  contactEmail: string | null;
+}
+
 export class HttpError extends Error {
   status: number;
   body: unknown;
@@ -276,6 +303,44 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function listWorkflowInbox() {
   return request<WorkflowInboxTicket[]>('/workflow/inbox');
+}
+
+export function searchAutotaskCompanies(query: string, limit = 25) {
+  const search = new URLSearchParams({
+    q: query,
+    limit: String(limit),
+  });
+  return request<AutotaskCompanyOption[]>(`/autotask/companies/search?${search.toString()}`);
+}
+
+export function searchAutotaskContacts(query: string, companyId: number, limit = 25) {
+  const search = new URLSearchParams({
+    q: query,
+    companyId: String(companyId),
+    limit: String(limit),
+  });
+  return request<AutotaskContactOption[]>(`/autotask/contacts/search?${search.toString()}`);
+}
+
+export function searchAutotaskResources(query: string, limit = 25) {
+  const search = new URLSearchParams({
+    q: query,
+    limit: String(limit),
+  });
+  return request<AutotaskResourceOption[]>(`/autotask/resources/search?${search.toString()}`);
+}
+
+export function updateAutotaskTicketContext(
+  ticketId: string,
+  input: { companyId?: number; contactId?: number }
+) {
+  return request<AutotaskTicketContextUpdateResult>(`/autotask/ticket/${encodeURIComponent(ticketId)}/context`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      ...(typeof input.companyId === 'number' ? { companyId: input.companyId } : {}),
+      ...(typeof input.contactId === 'number' ? { contactId: input.contactId } : {}),
+    }),
+  });
 }
 
 export function listWorkflowAudit(ticketId: string) {

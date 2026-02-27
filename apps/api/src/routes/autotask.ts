@@ -77,6 +77,17 @@ function parseIntParam(value: unknown, fallback: number, { min, max }: { min: nu
   return Math.min(max, Math.max(min, parsed));
 }
 
+function sanitizeSearchTerm(value: unknown): string {
+  return String(value ?? '').trim().replace(/'/g, "''");
+}
+
+function stringifyStructuredSearch(filter: Array<Record<string, unknown>>, maxRecords: number): string {
+  return JSON.stringify({
+    MaxRecords: maxRecords,
+    filter,
+  });
+}
+
 function mapAutotaskStatusToSidebar(statusValue: unknown): SidebarTicketRow['status'] {
   const normalized = String(statusValue ?? '').trim().toLowerCase();
   if (!normalized) return 'pending';
@@ -310,6 +321,159 @@ router.get('/queues', async (_req, res, next) => {
 });
 
 /**
+ * GET /autotask/companies/search
+ * Read-only company search for UI selectors.
+ */
+router.get('/companies/search', async (req, res, next) => {
+  try {
+    const client = await getTenantScopedClient();
+    if (!client) {
+      res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
+      return;
+    }
+
+    const q = sanitizeSearchTerm(req.query.q);
+    const limit = parseIntParam(req.query.limit, 25, { min: 1, max: 100 });
+    const filter: Array<Record<string, unknown>> = [];
+    if (q) filter.push({ op: 'contains', field: 'companyName', value: q });
+    const rows = await client.searchCompanies(stringifyStructuredSearch(filter, limit), limit);
+    const data = rows
+      .map((row) => {
+        const id = Number((row as any)?.id);
+        const name = String((row as any)?.companyName || '').trim();
+        const isActiveRaw = (row as any)?.isActive;
+        const isInactiveRaw = (row as any)?.isInactive;
+        const isActive = typeof isActiveRaw === 'boolean'
+          ? isActiveRaw
+          : typeof isInactiveRaw === 'boolean'
+            ? !isInactiveRaw
+            : false;
+        if (!Number.isFinite(id) || !name) return null;
+        return { id, name, isActive };
+      })
+      .filter((item) => {
+        if (!item) return false;
+        const isRefreshException = item.name.toLowerCase().includes('refresh');
+        return item.isActive || isRefreshException;
+      })
+      .map((item) => item ? ({ id: item.id, name: item.name }) : null)
+      .filter((item): item is { id: number; name: string } => Boolean(item));
+
+    res.json({
+      success: true,
+      data,
+      count: data.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /autotask/contacts/search
+ * Read-only contact search for UI selectors.
+ */
+router.get('/contacts/search', async (req, res, next) => {
+  try {
+    const client = await getTenantScopedClient();
+    if (!client) {
+      res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
+      return;
+    }
+
+    const q = sanitizeSearchTerm(req.query.q);
+    const limit = parseIntParam(req.query.limit, 25, { min: 1, max: 100 });
+    const maybeCompanyId = Number.parseInt(String(req.query.companyId ?? ''), 10);
+    const companyId = Number.isFinite(maybeCompanyId) ? maybeCompanyId : null;
+    const filter: Array<Record<string, unknown>> = [];
+    if (companyId !== null) filter.push({ op: 'eq', field: 'companyID', value: companyId });
+    const rows = await client.searchContacts(stringifyStructuredSearch(filter, limit), limit);
+    const data = rows
+      .map((row) => {
+        const id = Number((row as any)?.id);
+        const firstName = String((row as any)?.firstName || '').trim();
+        const lastName = String((row as any)?.lastName || '').trim();
+        const fullName = `${firstName} ${lastName}`.trim();
+        const name = fullName || String((row as any)?.displayName || '').trim();
+        const rowCompanyId = Number((row as any)?.companyID);
+        if (!Number.isFinite(id) || !name) return null;
+        return {
+          id,
+          name,
+          ...(Number.isFinite(rowCompanyId) ? { companyId: rowCompanyId } : {}),
+          ...(typeof (row as any)?.emailAddress === 'string' ? { email: String((row as any).emailAddress).trim() } : {}),
+        };
+      })
+      .filter((item) => {
+        if (!item) return false;
+        if (!q) return true;
+        const needle = q.toLowerCase();
+        return item.name.toLowerCase().includes(needle) || String(item.email || '').toLowerCase().includes(needle);
+      })
+      .filter((item): item is { id: number; name: string; companyId?: number; email?: string } => Boolean(item));
+
+    res.json({
+      success: true,
+      data,
+      count: data.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /autotask/resources/search
+ * Read-only technician/resource search for assignment UX.
+ */
+router.get('/resources/search', async (req, res, next) => {
+  try {
+    const client = await getTenantScopedClient();
+    if (!client) {
+      res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
+      return;
+    }
+
+    const q = sanitizeSearchTerm(req.query.q);
+    const limit = parseIntParam(req.query.limit, 25, { min: 1, max: 100 });
+    const filter: Array<Record<string, unknown>> = [{ op: 'eq', field: 'isActive', value: true }];
+    const rows = await client.searchResources(stringifyStructuredSearch(filter, limit), limit);
+    const data = rows
+      .map((row) => {
+        const id = Number((row as any)?.id);
+        const firstName = String((row as any)?.firstName || '').trim();
+        const lastName = String((row as any)?.lastName || '').trim();
+        const fullName = `${firstName} ${lastName}`.trim();
+        const name = fullName || String((row as any)?.userName || '').trim();
+        if (!Number.isFinite(id) || !name) return null;
+        return {
+          id,
+          name,
+          ...(typeof (row as any)?.email === 'string' ? { email: String((row as any).email).trim() } : {}),
+        };
+      })
+      .filter((item) => {
+        if (!item) return false;
+        if (!q) return true;
+        const needle = q.toLowerCase();
+        return item.name.toLowerCase().includes(needle) || String(item.email || '').toLowerCase().includes(needle);
+      })
+      .filter((item): item is { id: number; name: string; email?: string } => Boolean(item));
+
+    res.json({
+      success: true,
+      data,
+      count: data.length,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * GET /autotask/sidebar-tickets
  * Direct queue-backed ticket list for Global sidebar mode (bypasses Cerebro pipeline coverage limits).
  */
@@ -458,6 +622,116 @@ router.post('/backfill-recent', async (req, res, next) => {
           title: (ticket as any)?.title ?? null,
         })),
         ...(pipelineErrors.length > 0 ? { pipelineErrors: pipelineErrors.slice(0, 10) } : {}),
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * PATCH /autotask/ticket/:ticketId/context
+ * Write-safe ticket context update (company/contact) + local SSOT persistence.
+ */
+router.patch('/ticket/:ticketId/context', async (req, res, next) => {
+  try {
+    const client = await getTenantScopedClient();
+    if (!client) {
+      res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
+      return;
+    }
+
+    const ticketId = String(req.params.ticketId || '').trim();
+    if (!ticketId) {
+      res.status(400).json({ error: 'ticketId is required' });
+      return;
+    }
+
+    const maybeCompanyId = Number.parseInt(String(req.body?.companyId ?? req.body?.companyID ?? ''), 10);
+    const maybeContactId = Number.parseInt(String(req.body?.contactId ?? req.body?.contactID ?? ''), 10);
+    const companyId = Number.isFinite(maybeCompanyId) ? maybeCompanyId : null;
+    const contactId = Number.isFinite(maybeContactId) ? maybeContactId : null;
+    if (companyId === null && contactId === null) {
+      res.status(400).json({ error: 'companyId or contactId is required' });
+      return;
+    }
+
+    const patch: Record<string, unknown> = {};
+    if (companyId !== null) {
+      patch.companyID = companyId;
+      // Company change can invalidate legacy companyLocation/contact links on the ticket.
+      patch.companyLocationID = null;
+      if (contactId === null) {
+        patch.contactID = null;
+      }
+    }
+    if (contactId !== null) patch.contactID = contactId;
+    await client.updateTicket(ticketId, patch);
+
+    const ticket = /^\d+$/.test(ticketId)
+      ? await client.getTicket(Number(ticketId))
+      : await client.getTicketByTicketNumber(ticketId);
+
+    const authoritativeCompanyId = Number((ticket as any)?.companyID);
+    const authoritativeContactId = Number((ticket as any)?.contactID);
+    const company = Number.isFinite(authoritativeCompanyId)
+      ? await client.getCompany(authoritativeCompanyId).catch(() => null)
+      : null;
+    const contact = Number.isFinite(authoritativeContactId)
+      ? await client.getContact(authoritativeContactId).catch(() => null)
+      : null;
+
+    const ticketKey = String((ticket as any)?.ticketNumber || ticketId).trim();
+    const existingSsot = await queryOne<{ payload: any }>(
+      `SELECT payload FROM ticket_ssot WHERE ticket_id = $1 ORDER BY updated_at DESC LIMIT 1`,
+      [ticketKey]
+    );
+    const latestSession = await queryOne<{ id: string }>(
+      `SELECT id FROM triage_sessions WHERE ticket_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [ticketKey]
+    );
+
+    const nextPayload = {
+      ...(existingSsot?.payload || {}),
+      ...(company && String((company as any)?.companyName || '').trim()
+        ? { company: String((company as any)?.companyName || '').trim() }
+        : {}),
+      ...(contact && `${String((contact as any)?.firstName || '').trim()} ${String((contact as any)?.lastName || '').trim()}`.trim()
+        ? { requester_name: `${String((contact as any)?.firstName || '').trim()} ${String((contact as any)?.lastName || '').trim()}`.trim() }
+        : {}),
+      autotask_authoritative: {
+        ...((existingSsot?.payload?.autotask_authoritative || {}) as Record<string, unknown>),
+        ticket_number: String((ticket as any)?.ticketNumber || ticketKey),
+        ticket_id_numeric: Number.isFinite(Number((ticket as any)?.id)) ? Number((ticket as any)?.id) : null,
+        company_id: Number.isFinite(authoritativeCompanyId) ? authoritativeCompanyId : null,
+        company_name: String((company as any)?.companyName || '').trim() || null,
+        contact_id: Number.isFinite(authoritativeContactId) ? authoritativeContactId : null,
+        contact_name: `${String((contact as any)?.firstName || '').trim()} ${String((contact as any)?.lastName || '').trim()}`.trim() || null,
+        contact_email: String((contact as any)?.emailAddress || '').trim() || null,
+      },
+    };
+
+    await query(
+      `INSERT INTO ticket_ssot (ticket_id, session_id, payload, created_at, updated_at)
+       VALUES ($1, $2, $3::jsonb, NOW(), NOW())
+       ON CONFLICT (ticket_id)
+       DO UPDATE SET
+         session_id = EXCLUDED.session_id,
+         payload = EXCLUDED.payload,
+         updated_at = NOW()`,
+      [ticketKey, latestSession?.id ?? null, JSON.stringify(nextPayload)]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ticketId: ticketKey,
+        companyId: Number.isFinite(authoritativeCompanyId) ? authoritativeCompanyId : null,
+        companyName: String((company as any)?.companyName || '').trim() || null,
+        contactId: Number.isFinite(authoritativeContactId) ? authoritativeContactId : null,
+        contactName: `${String((contact as any)?.firstName || '').trim()} ${String((contact as any)?.lastName || '').trim()}`.trim() || null,
+        contactEmail: String((contact as any)?.emailAddress || '').trim() || null,
       },
       timestamp: new Date().toISOString(),
     });

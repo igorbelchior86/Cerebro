@@ -493,6 +493,94 @@ const userBubbleStyle: CSSProperties = {
   lineHeight: 1.55,
 };
 
+type BubbleCategory =
+  | 'system_status'
+  | 'ai'
+  | 'note'
+  | 'tech_to_ai'
+  | 'tech_to_user'
+  | 'ai_exchange'
+  | 'ai_validation';
+
+type BubbleTone = {
+  bubbleBg: string;
+  bubbleBorder: string;
+  bubbleAccent: string;
+  badgeBg: string;
+  badgeBorder: string;
+  badgeText: string;
+};
+
+const BUBBLE_TONES: Record<BubbleCategory, BubbleTone> = {
+  system_status: {
+    bubbleBg: 'var(--bg-card)',
+    bubbleBorder: 'var(--border)',
+    bubbleAccent: 'rgba(148,163,184,0.22)',
+    badgeBg: 'rgba(148,163,184,0.12)',
+    badgeBorder: 'rgba(148,163,184,0.30)',
+    badgeText: 'var(--text-muted)',
+  },
+  ai: {
+    bubbleBg: 'rgba(110,134,201,0.08)',
+    bubbleBorder: 'rgba(110,134,201,0.22)',
+    bubbleAccent: 'rgba(110,134,201,0.24)',
+    badgeBg: 'rgba(110,134,201,0.12)',
+    badgeBorder: 'rgba(110,134,201,0.28)',
+    badgeText: 'var(--accent)',
+  },
+  note: {
+    bubbleBg: 'rgba(211,166,61,0.10)',
+    bubbleBorder: 'rgba(211,166,61,0.24)',
+    bubbleAccent: 'rgba(211,166,61,0.26)',
+    badgeBg: 'rgba(211,166,61,0.14)',
+    badgeBorder: 'rgba(211,166,61,0.30)',
+    badgeText: '#9A6700',
+  },
+  tech_to_ai: {
+    bubbleBg: 'rgba(56,165,140,0.11)',
+    bubbleBorder: 'rgba(56,165,140,0.26)',
+    bubbleAccent: 'rgba(56,165,140,0.28)',
+    badgeBg: 'rgba(56,165,140,0.14)',
+    badgeBorder: 'rgba(56,165,140,0.30)',
+    badgeText: '#0f766e',
+  },
+  tech_to_user: {
+    bubbleBg: 'rgba(214,124,124,0.11)',
+    bubbleBorder: 'rgba(214,124,124,0.28)',
+    bubbleAccent: 'rgba(214,124,124,0.30)',
+    badgeBg: 'rgba(214,124,124,0.14)',
+    badgeBorder: 'rgba(214,124,124,0.32)',
+    badgeText: '#b45353',
+  },
+  ai_exchange: {
+    bubbleBg: 'rgba(110,134,201,0.07)',
+    bubbleBorder: 'rgba(110,134,201,0.20)',
+    bubbleAccent: 'rgba(56,165,140,0.24)',
+    badgeBg: 'rgba(56,165,140,0.12)',
+    badgeBorder: 'rgba(56,165,140,0.30)',
+    badgeText: '#0f766e',
+  },
+  ai_validation: {
+    bubbleBg: 'rgba(56,165,140,0.09)',
+    bubbleBorder: 'rgba(56,165,140,0.24)',
+    bubbleAccent: 'rgba(211,166,61,0.24)',
+    badgeBg: 'rgba(56,165,140,0.14)',
+    badgeBorder: 'rgba(56,165,140,0.30)',
+    badgeText: '#0f766e',
+  },
+};
+
+function resolveBubbleCategory(message: Message): BubbleCategory {
+  if (message.role === 'system' || message.type === 'status') return 'system_status';
+  if (message.role === 'user') {
+    return message.channel === 'external_psa_user' ? 'tech_to_user' : 'tech_to_ai';
+  }
+  if (message.type === 'autotask') return 'note';
+  if (message.type === 'validation') return 'ai_validation';
+  if (message.type === 'text' && message.channel === 'internal_ai') return 'ai_exchange';
+  return 'ai';
+}
+
 export default function ChatMessage({ message, children, onRetryExternalMessage }: ChatMessageProps) {
   const [ticketTextMode, setTicketTextMode] = useState<'clean' | 'original'>(
     message.ticketTextVariant?.clean?.trim()
@@ -501,17 +589,18 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
   );
   const isSystem = message.role === 'system' || message.type === 'status';
   const channel = message.channel ?? 'internal_ai';
+  const category = resolveBubbleCategory(message);
+  const tone = BUBBLE_TONES[category];
   const channelBadge = channel === 'external_psa_user' ? 'PSA/User' : 'AI';
-  const isExternal = channel === 'external_psa_user';
   const channelBadgeStyle: CSSProperties = {
     fontSize: '9px',
     fontWeight: 700,
     borderRadius: '999px',
     padding: '1px 7px',
     letterSpacing: '0.03em',
-    border: `1px solid ${isExternal ? 'rgba(16,185,129,0.32)' : 'rgba(91,127,255,0.25)'}`,
-    background: isExternal ? 'rgba(16,185,129,0.12)' : 'rgba(91,127,255,0.10)',
-    color: isExternal ? '#0f766e' : 'var(--accent)',
+    border: `1px solid ${tone.badgeBorder}`,
+    background: tone.badgeBg,
+    color: tone.badgeText,
   };
   const deliveryStatusLabelMap: Record<NonNullable<Message['delivery']>['status'], string> = {
     sending: 'Sending',
@@ -525,22 +614,18 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
     failed: { color: '#b91c1c', border: '1px solid rgba(239,68,68,0.28)', background: 'rgba(239,68,68,0.10)' },
     retrying: { color: '#9A6700', border: '1px solid rgba(234,179,8,0.28)', background: 'rgba(234,179,8,0.10)' },
   };
-  const assistantBubbleByChannel: CSSProperties = isExternal
-    ? {
-      ...assistantBubbleStyle,
-      border: '1px solid rgba(16,185,129,0.24)',
-      background: 'rgba(16,185,129,0.05)',
-      boxShadow: 'inset 3px 0 0 rgba(16,185,129,0.22), var(--shadow-card)',
-    }
-    : assistantBubbleStyle;
-  const userBubbleByChannel: CSSProperties = isExternal
-    ? {
-      ...userBubbleStyle,
-      border: '1px solid rgba(16,185,129,0.30)',
-      background: 'rgba(16,185,129,0.12)',
-      boxShadow: 'inset -3px 0 0 rgba(16,185,129,0.22), var(--shadow-card)',
-    }
-    : userBubbleStyle;
+  const assistantBubbleByChannel: CSSProperties = {
+    ...assistantBubbleStyle,
+    border: `1px solid ${tone.bubbleBorder}`,
+    background: tone.bubbleBg,
+    boxShadow: `inset 3px 0 0 ${tone.bubbleAccent}, var(--shadow-card)`,
+  };
+  const userBubbleByChannel: CSSProperties = {
+    ...userBubbleStyle,
+    border: `1px solid ${tone.bubbleBorder}`,
+    background: tone.bubbleBg,
+    boxShadow: `inset -3px 0 0 ${tone.bubbleAccent}, var(--shadow-card)`,
+  };
 
   if (isSystem) {
     return (

@@ -1,3 +1,9 @@
+## Lesson: 2026-02-27 (category-color design needs explicit real-category mapping)
+**Mistake**: Risco de colorir só por `channel` e ignorar subcategorias operacionais (note, validation, system/status).
+**Root cause**: Modelo inicial de estilo simplificado demais para a densidade semântica do feed.
+**Rule**: Em timeline operacional, definir categorias de cor com base no triplet `role + channel + type`, cobrindo também estados técnicos (`status`, `validation`, `autotask`).
+**Pattern**: Pedido de “cores por categoria” exige matriz explícita de categorias reais do runtime antes de estilizar.
+
 ## Lesson: 2026-02-27 (dense timeline readability depends on post-metadata breathing space)
 **Mistake**: Mantive espaçamento insuficiente abaixo da linha de metadata dos balões em feeds densos.
 **Root cause**: Ajustei conteúdo e controles, mas não tratei o espaçamento entre blocos como componente de legibilidade.

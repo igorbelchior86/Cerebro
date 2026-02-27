@@ -1,3 +1,30 @@
+# Task: Colorização de balões por categoria de mensagem
+**Status**: completed
+**Started**: 2026-02-27T19:39:00-03:00
+
+## Plan
+- [x] Step 1: Mapear categorias reais de mensagens no `ChatMessage` (role + channel + type).
+- [x] Step 2: Definir paleta harmônica por categoria usando variações no círculo cromático da paleta atual.
+- [x] Step 3: Aplicar backgrounds/borders por categoria mantendo legibilidade.
+- [x] Step 4: Verificar categorias faltantes e cobrir mensagens `system/status`.
+- [x] Step 5: Validar typecheck web e documentar wiki/lessons.
+
+## Open Questions
+- Sem bloqueios técnicos; a cobertura incluirá categorias extras necessárias além das citadas (system/status e estágios de pipeline).
+
+## Progress Notes
+- Mapeamento inicial concluído: categorias efetivas derivam de `role`, `channel` e `type`.
+- Categoria resolver implementado: `resolveBubbleCategory(message)`.
+- Tabela harmônica aplicada: `BUBBLE_TONES` com tons para `ai`, `note`, `tech_to_ai`, `tech_to_user`, `ai_exchange`, `ai_validation`, `system_status`.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-02-27-chatmessage-category-color-palette.md`
+
+---
+
 # Task: Aumentar respiro abaixo da linha de metadata do balão
 **Update**: 2026-02-27T19:29:00-03:00
 - [x] Incremento adicional de padding conforme feedback do usuário.

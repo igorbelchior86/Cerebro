@@ -443,10 +443,10 @@ export default function SessionDetail({
     }
   };
 
-  const submitTechAssignmentById = async (resourceIdRaw: string, techName?: string) => {
+  const submitTechAssignmentById = async (resourceIdRaw: string, techName?: string): Promise<{ ok: boolean; error?: string }> => {
     const ticketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
     const assigneeResourceId = String(resourceIdRaw || '').trim();
-    if (!ticketId || !assigneeResourceId || isSubmittingTechAssignment) return;
+    if (!ticketId || !assigneeResourceId || isSubmittingTechAssignment) return { ok: false, error: 'Ticket or resource unavailable' };
 
     setIsSubmittingTechAssignment(true);
     setWorkflowActionError('');
@@ -462,7 +462,11 @@ export default function SessionDetail({
         idempotency_key: idempotencyKey,
         auto_process: true,
       });
-      const commandId = String(command.command_id || '').trim();
+      const commandId = String(
+        (command as any)?.command_id ||
+        (command as any)?.command?.command_id ||
+        ''
+      ).trim();
       if (!commandId) throw new Error('Workflow command id missing');
 
       setWorkflowActionFeedback({
@@ -486,6 +490,7 @@ export default function SessionDetail({
           },
         }));
       }
+      return { ok: true };
     } catch (err) {
       const mapped = mapHttpErrorToFrontendState(err, 'Unable to submit assignment command');
       setWorkflowActionError(`${mapped.summary}: ${mapped.detail}`);
@@ -502,6 +507,7 @@ export default function SessionDetail({
       if (mapped.code === 'forbidden' || mapped.code === 'auth') {
         setWorkflowWritePolicyDisabled(true);
       }
+      return { ok: false, error: mapped.detail };
     } finally {
       setIsSubmittingTechAssignment(false);
     }
@@ -1116,7 +1122,11 @@ export default function SessionDetail({
       return;
     }
     setTechAssignmentDraft(String(option.id));
-    await submitTechAssignmentById(String(option.id), option.label);
+    const assignment = await submitTechAssignmentById(String(option.id), option.label);
+    if (!assignment.ok) {
+      setContextEditorError(assignment.error || 'Unable to assign selected technician');
+      return;
+    }
     closeContextEditor();
   };
 

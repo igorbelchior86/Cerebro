@@ -1,3 +1,74 @@
+# Task: Bugfix - Edit Tech não permite todos os recursos (restrição AssignedRole + UX de erro)
+**Status**: completed
+**Started**: 2026-02-27T17:18:00-03:00
+
+## Plan
+- [x] Step 1: Investigar evidência de falha nos comandos `update_assign`.
+- [x] Step 2: Confirmar causa raiz de negócio no payload Autotask (resource-role mismatch).
+- [x] Step 3: Corrigir UX para não fechar modal em falha e filtrar recursos não atribuíveis.
+- [x] Step 4: Verificar typecheck e atualizar wiki/lessons.
+
+## Open Questions
+- Sem bloqueios técnicos. Recursos sem `defaultServiceDeskRoleID` continuam não atribuíveis até configuração no Autotask.
+
+## Progress Notes
+- Skill aplicada: `workflow-orchestrator`.
+- Evidência de runtime (`apps/api/.run/p0-workflow-runtime.json`):
+  - erro recorrente: `Data violation: The specified assignedResourceID and AssignedRoleID combination is not currently defined`.
+- Probe de recursos:
+  - recurso que falha (`29683515`) possui `defaultServiceDeskRoleID = null`.
+  - recursos que funcionam possuem `defaultServiceDeskRoleID` preenchido.
+- Correções:
+  - Frontend `Edit Tech`: não fecha modal quando assign falha; erro fica visível no modal.
+  - API `/autotask/resources/search`: retorna apenas recursos ativos com `defaultServiceDeskRoleID` válido (evita opções sabidamente inválidas no assign).
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+
+## Review
+- What worked:
+- Combinação de evidência operacional + filtro preventivo remove tentativa inválida na UI.
+- What was tricky:
+- O problema era parcialmente funcional (alguns recursos funcionavam) e parecia intermitente sem ler o erro bruto do provider.
+- Time taken:
+- Um ciclo de RCA com ajuste de UX e contrato de listagem.
+
+---
+
+# Task: Bugfix - Edit Tech não aplica seleção (command_id parsing)
+**Status**: completed
+**Started**: 2026-02-27T17:05:00-03:00
+
+## Plan
+- [x] Step 1: Reproduzir caminho de seleção de Tech e mapear fluxo de submit do comando.
+- [x] Step 2: Confirmar contrato real da resposta `/workflow/commands` e causa raiz no parsing do frontend.
+- [x] Step 3: Corrigir extração de `command_id` no frontend com compatibilidade de formatos.
+- [x] Step 4: Verificar typecheck e atualizar wiki/lessons.
+
+## Open Questions
+- Sem bloqueios: causa raiz confirmada por leitura de contrato rota + consumidor.
+
+## Progress Notes
+- Skill aplicada: `workflow-orchestrator`.
+- Root cause:
+  - Frontend lia apenas `response.command_id`.
+  - Backend retorna attempt com `response.command.command_id`.
+  - Resultado: erro `Workflow command id missing`, sem update de Tech e modal fechando após await.
+- Correção:
+  - Extração de `command_id` agora aceita ambos formatos (`command_id` e `command.command_id`).
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+
+## Review
+- What worked:
+- Fix mínimo e direto no ponto de quebra do contrato de resposta.
+- What was tricky:
+- Divergência de shape entre tipagem frontend e envelope real da API.
+- Time taken:
+- Um ciclo curto de RCA + patch + validação.
+
+---
+
 # Task: Bugfix - Refresh Technologies sem listagem de users (investigação payload + docs)
 **Status**: completed
 **Started**: 2026-02-27T16:40:00-03:00

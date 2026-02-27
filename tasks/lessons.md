@@ -1,3 +1,15 @@
+## Lesson: 2026-02-27 (resource list must reflect assignability constraints)
+**Mistake**: Listei todos os recursos ativos no `Edit Tech`, inclusive recursos sem role padrão válida para assignment.
+**Root cause**: Filtro de busca considerava apenas `isActive` e ignorava requisito de combinação `assignedResourceID + AssignedRoleID`.
+**Rule**: Em seletores que disparam write em integração, listar apenas opções que satisfazem pré-condições de negócio do provider.
+**Pattern**: Se parte das opções “aparece mas não aplica”, validar constraints de write do provider e alinhar a lista ao conjunto atribuível.
+
+## Lesson: 2026-02-27 (frontend must parse real command envelope shapes)
+**Mistake**: Assumi que `/workflow/commands` retornava `command_id` no topo e não tratei o formato real `attempt.command.command_id`.
+**Root cause**: Divergência entre tipagem do client e contrato efetivo da rota.
+**Rule**: Em integrações frontend/backend, parsear envelopes de comando de forma compatível com versões/formatos (`flat` e `nested`) quando já há variação em produção.
+**Pattern**: Ação aceita no backend mas UI não reflete e fecha modal sem efeito costuma indicar falha no parsing do retorno, não na execução do comando.
+
 ## Lesson: 2026-02-27 (Autotask IDs can be zero)
 **Mistake**: Tratei IDs Autotask no frontend como estritamente positivos (`> 0`), o que bloqueou a org `Refresh Technologies` no fluxo `Org -> User`.
 **Root cause**: Assunção implícita de que todo ID válido seria truthy/positivo; faltou validação com payload real de tenant.

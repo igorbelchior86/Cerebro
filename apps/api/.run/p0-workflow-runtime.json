@@ -1082,6 +1082,246 @@
           "completed_at": "2026-02-27T17:56:37.030Z"
         }
       }
+    ],
+    [
+      "7672ba4b-ed0c-4b2f-9197-128de76135a0",
+      {
+        "command": {
+          "command_id": "7672ba4b-ed0c-4b2f-9197-128de76135a0",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "update_assign",
+          "payload": {
+            "assignee_resource_id": "29683515",
+            "assigned_to": "29683515",
+            "ticket_id": "T20260226.0033"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "ui-tech-T20260226.0033-29683515-1772215367926",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "532d1797-f17d-4a59-a115-bf4365660f45",
+            "ticket_id": "T20260226.0033",
+            "command_id": "7672ba4b-ed0c-4b2f-9197-128de76135a0"
+          },
+          "requested_at": "2026-02-27T18:02:47.929Z"
+        },
+        "status": "failed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-27T18:02:47.929Z",
+        "updated_at": "2026-02-27T18:02:50.742Z",
+        "last_error": "Autotask API error: 500 Internal Server Error - {\"errors\":[\"Data violation: The specified assignedResourceID and AssignedRoleID combination is not currently defined..\",\"Error updating entity for record number [1].\"]}"
+      }
+    ],
+    [
+      "e9b6b947-8657-429a-9ff3-6908803fc857",
+      {
+        "command": {
+          "command_id": "e9b6b947-8657-429a-9ff3-6908803fc857",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "update_assign",
+          "payload": {
+            "assignee_resource_id": "30684582",
+            "assigned_to": "30684582",
+            "ticket_id": "T20260226.0033"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "ui-tech-T20260226.0033-30684582-1772215399546",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "1bdbe636-b0d4-4132-9a8b-013008780bcd",
+            "ticket_id": "T20260226.0033",
+            "command_id": "e9b6b947-8657-429a-9ff3-6908803fc857"
+          },
+          "requested_at": "2026-02-27T18:03:19.548Z"
+        },
+        "status": "completed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-27T18:03:19.548Z",
+        "updated_at": "2026-02-27T18:03:25.458Z",
+        "result": {
+          "kind": "assigned",
+          "assigned_to": "30684582",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 30684582,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          },
+          "completed_at": "2026-02-27T18:03:25.458Z"
+        }
+      }
+    ],
+    [
+      "a4597881-f6f2-4c52-ba36-0a91ef58ef8f",
+      {
+        "command": {
+          "command_id": "a4597881-f6f2-4c52-ba36-0a91ef58ef8f",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "update_assign",
+          "payload": {
+            "assignee_resource_id": "29683515",
+            "assigned_to": "29683515",
+            "ticket_id": "T20260226.0033"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "ui-tech-T20260226.0033-29683515-1772215459442",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "e23008dd-30e2-4a2b-9452-7185a1307501",
+            "ticket_id": "T20260226.0033",
+            "command_id": "a4597881-f6f2-4c52-ba36-0a91ef58ef8f"
+          },
+          "requested_at": "2026-02-27T18:04:19.448Z"
+        },
+        "status": "failed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-27T18:04:19.449Z",
+        "updated_at": "2026-02-27T18:04:21.647Z",
+        "last_error": "Autotask API error: 500 Internal Server Error - {\"errors\":[\"Data violation: The specified assignedResourceID and AssignedRoleID combination is not currently defined..\",\"Error updating entity for record number [1].\"]}"
+      }
+    ],
+    [
+      "eb01946c-3c12-4494-915c-11e9ede0d240",
+      {
+        "command": {
+          "command_id": "eb01946c-3c12-4494-915c-11e9ede0d240",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "update_assign",
+          "payload": {
+            "assignee_resource_id": "29683572",
+            "assigned_to": "29683572",
+            "ticket_id": "T20260226.0033"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "ui-tech-T20260226.0033-29683572-1772215495624",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "6d7f042b-9a71-46dc-84df-d83e7e50deff",
+            "ticket_id": "T20260226.0033",
+            "command_id": "eb01946c-3c12-4494-915c-11e9ede0d240"
+          },
+          "requested_at": "2026-02-27T18:04:55.632Z"
+        },
+        "status": "completed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-27T18:04:55.632Z",
+        "updated_at": "2026-02-27T18:05:02.744Z",
+        "result": {
+          "kind": "assigned",
+          "assigned_to": "29683572",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 29683572,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          },
+          "completed_at": "2026-02-27T18:05:02.744Z"
+        }
+      }
+    ],
+    [
+      "dd97184b-d09e-44ec-a29e-cf07dd9b5d76",
+      {
+        "command": {
+          "command_id": "dd97184b-d09e-44ec-a29e-cf07dd9b5d76",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "update_assign",
+          "payload": {
+            "assignee_resource_id": "29683515",
+            "assigned_to": "29683515",
+            "ticket_id": "T20260226.0033"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "ui-tech-T20260226.0033-29683515-1772215521740",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "076cd258-1d0b-47e6-86ae-bc6d51203de8",
+            "ticket_id": "T20260226.0033",
+            "command_id": "dd97184b-d09e-44ec-a29e-cf07dd9b5d76"
+          },
+          "requested_at": "2026-02-27T18:05:21.745Z"
+        },
+        "status": "failed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-27T18:05:21.745Z",
+        "updated_at": "2026-02-27T18:05:25.680Z",
+        "last_error": "Autotask API error: 500 Internal Server Error - {\"errors\":[\"Data violation: The specified assignedResourceID and AssignedRoleID combination is not currently defined..\",\"Error updating entity for record number [1].\"]}"
+      }
+    ],
+    [
+      "939db626-69e5-4ffd-b7be-f8225fbc9624",
+      {
+        "command": {
+          "command_id": "939db626-69e5-4ffd-b7be-f8225fbc9624",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "update_assign",
+          "payload": {
+            "assignee_resource_id": "29683515",
+            "assigned_to": "29683515",
+            "ticket_id": "T20260226.0033"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "ui-tech-T20260226.0033-29683515-1772215815722",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "411e1b6a-a19a-4ccb-a05c-2f9fb427a7b7",
+            "ticket_id": "T20260226.0033",
+            "command_id": "939db626-69e5-4ffd-b7be-f8225fbc9624"
+          },
+          "requested_at": "2026-02-27T18:10:15.734Z"
+        },
+        "status": "failed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-27T18:10:15.734Z",
+        "updated_at": "2026-02-27T18:10:19.265Z",
+        "last_error": "Autotask API error: 500 Internal Server Error - {\"errors\":[\"Data violation: The specified assignedResourceID and AssignedRoleID combination is not currently defined..\",\"Error updating entity for record number [1].\"]}"
+      }
     ]
   ],
   "commandsByIdempotency": [
@@ -1180,6 +1420,30 @@
     [
       "5b5f7e25-2396-4bec-a584-41352be7e876::ui-tech-T20260226.0033-30684567-1772214990743",
       "f39b3d99-e6ac-44ac-bc0f-33aa8b04f722"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::ui-tech-T20260226.0033-29683515-1772215367926",
+      "7672ba4b-ed0c-4b2f-9197-128de76135a0"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::ui-tech-T20260226.0033-30684582-1772215399546",
+      "e9b6b947-8657-429a-9ff3-6908803fc857"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::ui-tech-T20260226.0033-29683515-1772215459442",
+      "a4597881-f6f2-4c52-ba36-0a91ef58ef8f"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::ui-tech-T20260226.0033-29683572-1772215495624",
+      "eb01946c-3c12-4494-915c-11e9ede0d240"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::ui-tech-T20260226.0033-29683515-1772215521740",
+      "dd97184b-d09e-44ec-a29e-cf07dd9b5d76"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::ui-tech-T20260226.0033-29683515-1772215815722",
+      "939db626-69e5-4ffd-b7be-f8225fbc9624"
     ]
   ],
   "audits": [
@@ -5137,6 +5401,402 @@
           }
         }
       }
+    },
+    {
+      "audit_id": "25ebf605-646c-4984-9cc6-41a3a2179f8e",
+      "timestamp": "2026-02-27T18:02:47.932Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "532d1797-f17d-4a59-a115-bf4365660f45",
+        "ticket_id": "T20260226.0033",
+        "command_id": "7672ba4b-ed0c-4b2f-9197-128de76135a0"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "idempotency_key": "ui-tech-T20260226.0033-29683515-1772215367926",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "315e6107-de3f-4c19-8f1f-09e54f98266a",
+      "timestamp": "2026-02-27T18:02:50.744Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.failed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "failure",
+      "reason": "Autotask API error: 500 Internal Server Error - {\"errors\":[\"Data violation: The specified assignedResourceID and AssignedRoleID combination is not currently defined..\",\"Error updating entity for record number [1].\"]}",
+      "correlation": {
+        "trace_id": "532d1797-f17d-4a59-a115-bf4365660f45",
+        "ticket_id": "T20260226.0033",
+        "command_id": "7672ba4b-ed0c-4b2f-9197-128de76135a0"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "failure_class": "terminal",
+        "attempts": 1,
+        "status": "failed"
+      }
+    },
+    {
+      "audit_id": "520f0b93-2c6a-46e4-b23b-9f4ad717bee7",
+      "timestamp": "2026-02-27T18:03:19.550Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "1bdbe636-b0d4-4132-9a8b-013008780bcd",
+        "ticket_id": "T20260226.0033",
+        "command_id": "e9b6b947-8657-429a-9ff3-6908803fc857"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "idempotency_key": "ui-tech-T20260226.0033-30684582-1772215399546",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "1ba6af5b-1b9c-4606-9c8b-3a9be72634da",
+      "timestamp": "2026-02-27T18:03:25.463Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.completed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "1bdbe636-b0d4-4132-9a8b-013008780bcd",
+        "ticket_id": "T20260226.0033",
+        "command_id": "e9b6b947-8657-429a-9ff3-6908803fc857"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "attempts": 1,
+        "result": {
+          "kind": "assigned",
+          "assigned_to": "30684582",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 30684582,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          }
+        }
+      }
+    },
+    {
+      "audit_id": "c86fc6f2-c6ce-4a11-b708-f37ecdf40915",
+      "timestamp": "2026-02-27T18:04:19.457Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "e23008dd-30e2-4a2b-9452-7185a1307501",
+        "ticket_id": "T20260226.0033",
+        "command_id": "a4597881-f6f2-4c52-ba36-0a91ef58ef8f"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "idempotency_key": "ui-tech-T20260226.0033-29683515-1772215459442",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "3f3a052e-492c-4893-a9ac-453a4be16948",
+      "timestamp": "2026-02-27T18:04:21.649Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.failed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "failure",
+      "reason": "Autotask API error: 500 Internal Server Error - {\"errors\":[\"Data violation: The specified assignedResourceID and AssignedRoleID combination is not currently defined..\",\"Error updating entity for record number [1].\"]}",
+      "correlation": {
+        "trace_id": "e23008dd-30e2-4a2b-9452-7185a1307501",
+        "ticket_id": "T20260226.0033",
+        "command_id": "a4597881-f6f2-4c52-ba36-0a91ef58ef8f"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "failure_class": "terminal",
+        "attempts": 1,
+        "status": "failed"
+      }
+    },
+    {
+      "audit_id": "082dc7ee-9692-4821-b36a-51564ca530a7",
+      "timestamp": "2026-02-27T18:04:55.634Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "6d7f042b-9a71-46dc-84df-d83e7e50deff",
+        "ticket_id": "T20260226.0033",
+        "command_id": "eb01946c-3c12-4494-915c-11e9ede0d240"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "idempotency_key": "ui-tech-T20260226.0033-29683572-1772215495624",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "a040d3fc-b087-4ed1-a9e5-696288c9fc9c",
+      "timestamp": "2026-02-27T18:05:02.752Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.completed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "6d7f042b-9a71-46dc-84df-d83e7e50deff",
+        "ticket_id": "T20260226.0033",
+        "command_id": "eb01946c-3c12-4494-915c-11e9ede0d240"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "attempts": 1,
+        "result": {
+          "kind": "assigned",
+          "assigned_to": "29683572",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 29683572,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          }
+        }
+      }
+    },
+    {
+      "audit_id": "b4b55209-0f2f-455a-91d5-b52b8fa50ec7",
+      "timestamp": "2026-02-27T18:05:21.750Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "076cd258-1d0b-47e6-86ae-bc6d51203de8",
+        "ticket_id": "T20260226.0033",
+        "command_id": "dd97184b-d09e-44ec-a29e-cf07dd9b5d76"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "idempotency_key": "ui-tech-T20260226.0033-29683515-1772215521740",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "c0205c77-281f-404e-a86b-c25e9e1691eb",
+      "timestamp": "2026-02-27T18:05:25.682Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.failed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "failure",
+      "reason": "Autotask API error: 500 Internal Server Error - {\"errors\":[\"Data violation: The specified assignedResourceID and AssignedRoleID combination is not currently defined..\",\"Error updating entity for record number [1].\"]}",
+      "correlation": {
+        "trace_id": "076cd258-1d0b-47e6-86ae-bc6d51203de8",
+        "ticket_id": "T20260226.0033",
+        "command_id": "dd97184b-d09e-44ec-a29e-cf07dd9b5d76"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "failure_class": "terminal",
+        "attempts": 1,
+        "status": "failed"
+      }
+    },
+    {
+      "audit_id": "6723a40f-2f18-4e95-b42e-9d7aedaa5028",
+      "timestamp": "2026-02-27T18:10:15.738Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "411e1b6a-a19a-4ccb-a05c-2f9fb427a7b7",
+        "ticket_id": "T20260226.0033",
+        "command_id": "939db626-69e5-4ffd-b7be-f8225fbc9624"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "idempotency_key": "ui-tech-T20260226.0033-29683515-1772215815722",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "df5debff-8685-44ed-9f45-d912963c0a27",
+      "timestamp": "2026-02-27T18:10:19.268Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.failed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "failure",
+      "reason": "Autotask API error: 500 Internal Server Error - {\"errors\":[\"Data violation: The specified assignedResourceID and AssignedRoleID combination is not currently defined..\",\"Error updating entity for record number [1].\"]}",
+      "correlation": {
+        "trace_id": "411e1b6a-a19a-4ccb-a05c-2f9fb427a7b7",
+        "ticket_id": "T20260226.0033",
+        "command_id": "939db626-69e5-4ffd-b7be-f8225fbc9624"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "failure_class": "terminal",
+        "attempts": 1,
+        "status": "failed"
+      }
     }
   ],
   "processedSyncEvents": [
@@ -5476,7 +6136,7 @@
         "external_id": "132810",
         "title": "Test",
         "status": "8",
-        "assigned_to": "30684567",
+        "assigned_to": "29683572",
         "comments": [
           {
             "visibility": "internal",
@@ -5512,24 +6172,24 @@
         "last_sync_at": "2026-02-27T16:02:37.500Z",
         "last_event_occurred_at": "2026-02-27T16:02:37.498Z",
         "last_event_id": "phase2-agent-c-sync-20260227T160218Z",
-        "last_command_id": "f39b3d99-e6ac-44ac-bc0f-33aa8b04f722",
+        "last_command_id": "eb01946c-3c12-4494-915c-11e9ede0d240",
         "source_of_truth": "Autotask",
         "domain_snapshots": {
           "tickets": {
             "external_id": "132810",
-            "status": "In Progress",
-            "assigned_to": "30684567"
+            "status": "8",
+            "assigned_to": "29683572"
           },
           "correlates.resources": {
-            "assigned_to": "30684567"
+            "assigned_to": "29683572"
           },
           "correlates.ticket_metadata": {
-            "status": "In Progress"
+            "status": "8"
           },
           "ticket_notes": {},
           "correlates.ticket_note_metadata": {}
         },
-        "updated_at": "2026-02-27T17:56:37.032Z"
+        "updated_at": "2026-02-27T18:05:02.748Z"
       }
     ],
     [

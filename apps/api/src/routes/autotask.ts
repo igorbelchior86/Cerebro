@@ -465,11 +465,13 @@ router.get('/resources/search', async (req, res, next) => {
     const data = rows
       .map((row) => {
         const id = Number((row as any)?.id);
+        const defaultRoleId = Number((row as any)?.defaultServiceDeskRoleID);
         const firstName = String((row as any)?.firstName || '').trim();
         const lastName = String((row as any)?.lastName || '').trim();
         const fullName = `${firstName} ${lastName}`.trim();
         const name = fullName || String((row as any)?.userName || '').trim();
-        if (!Number.isFinite(id) || !name) return null;
+        // Assignment flow requires a valid default service desk role for the resource.
+        if (!Number.isFinite(id) || !name || !Number.isFinite(defaultRoleId)) return null;
         return {
           id,
           name,

@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, KeyboardEvent, type ChangeEvent, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent, type ChangeEvent, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 
@@ -48,8 +48,10 @@ export default function ChatInput({
   const [input, setInput] = useState('');
   const [focused, setFocused] = useState(false);
   const [attachments, setAttachments] = useState<ChatInputAttachmentDraft[]>([]);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const INPUT_LINE_HEIGHT_PX = 18;
+  const INPUT_MAX_LINES = 5;
 
   const activeHints = hints || [
     t('hintReanalyze'),
@@ -73,8 +75,18 @@ export default function ChatInput({
     await onSubmit(payload);
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
+  useLayoutEffect(() => {
+    const field = inputRef.current;
+    if (!field) return;
+    field.style.height = 'auto';
+    const maxHeight = INPUT_LINE_HEIGHT_PX * INPUT_MAX_LINES;
+    const nextHeight = Math.min(field.scrollHeight, maxHeight);
+    field.style.height = `${nextHeight}px`;
+    field.style.overflowY = field.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }, [input, INPUT_LINE_HEIGHT_PX, INPUT_MAX_LINES]);
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e as unknown as FormEvent);
     }
@@ -167,11 +179,43 @@ export default function ChatInput({
   return (
     <div style={{ padding: '12px', border: '1px solid var(--bento-outline)', borderRadius: '14px', background: 'var(--bg-card)', flexShrink: 0 }}>
       <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={onFilesSelected} />
+      {activeHints.length > 0 ? (
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '-19px', marginBottom: '10px', padding: '0 8px' }}>
+          {activeHints.map((h) => (
+            <button
+              key={h}
+              type="button"
+              onClick={() => setInput(h)}
+              style={{
+                padding: '4px 10px 5px',
+                borderRadius: '10px 10px 0 0',
+                fontSize: '10.5px',
+                color: 'var(--text-muted)',
+                background: 'var(--bg-card)',
+                border: '1px solid var(--bento-outline)',
+                borderBottom: 'none',
+                cursor: 'pointer',
+                fontFamily: 'var(--font-geist-sans, var(--font-dm-sans, sans-serif))',
+                transition: 'var(--transition)',
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)';
+                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-accent)';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)';
+                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--bento-outline)';
+              }}
+            >
+              {h}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <form onSubmit={handleSubmit}>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', background: 'var(--bg-panel)', border: `1px solid ${focused ? 'var(--border-accent)' : 'var(--bento-outline)'}`, borderRadius: '11px', padding: '8px 10px 8px 12px', transition: 'var(--transition)' }}>
-          <input
+          <textarea
             ref={inputRef}
-            type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -179,7 +223,8 @@ export default function ChatInput({
             onBlur={() => setFocused(false)}
             placeholder={disabled ? t('processing') : placeholder}
             disabled={disabled || isLoading}
-            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontFamily: 'var(--font-dm-sans, sans-serif)', fontSize: '12.5px', color: 'var(--text-primary)', letterSpacing: '-0.01em' }}
+            rows={1}
+            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontFamily: 'var(--font-dm-sans, sans-serif)', fontSize: '12.5px', color: 'var(--text-primary)', letterSpacing: '-0.01em', lineHeight: `${INPUT_LINE_HEIGHT_PX}px`, resize: 'none' }}
           />
           <button type="submit" disabled={(!input.trim() && attachments.length === 0) || disabled || isLoading}
             style={{ width: '28px', height: '28px', borderRadius: '8px', background: (input.trim() || attachments.length > 0) && !disabled ? 'var(--accent-muted)' : 'var(--bg-card)', border: `1px solid ${(input.trim() || attachments.length > 0) && !disabled ? 'var(--border-accent)' : 'var(--bento-outline)'}`, cursor: (input.trim() || attachments.length > 0) && !disabled ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: (!input.trim() && attachments.length === 0) || disabled ? 0.6 : 1, transition: 'var(--transition)', color: (input.trim() || attachments.length > 0) && !disabled ? 'var(--accent)' : 'var(--text-muted)' }}
@@ -313,15 +358,6 @@ export default function ChatInput({
             </svg>
           </button>
         </div>
-        {activeHints.length > 0 ? activeHints.map((h) => (
-          <button key={h} type="button" onClick={() => setInput(h)}
-            style={{ padding: '4px 9px', borderRadius: '8px', fontSize: '10.5px', color: 'var(--text-muted)', background: 'var(--bg-panel)', border: '1px solid var(--bento-outline)', cursor: 'pointer', fontFamily: 'var(--font-geist-sans, var(--font-dm-sans, sans-serif))', transition: 'var(--transition)' }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-accent)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--bento-outline)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)'; }}
-          >
-            {h}
-          </button>
-        )) : null}
       </div>
     </div>
   );

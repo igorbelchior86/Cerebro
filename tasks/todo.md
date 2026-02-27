@@ -1,3 +1,67 @@
+# Task: Campo de texto dinâmico (auto-grow até 5 linhas)
+**Status**: completed
+**Started**: 2026-02-27T16:14:00-03:00
+
+## Plan
+- [x] Step 1: Migrar `ChatInput` de `input` para `textarea`.
+- [x] Step 2: Implementar auto-resize conforme digitação com limite de 5 linhas.
+- [x] Step 3: Preservar UX de submit (Enter) com quebra de linha em `Shift+Enter`.
+- [x] Step 4: Validar typecheck web e atualizar wiki.
+
+## Open Questions
+- Sem bloqueios; mudança restrita ao componente compartilhado de input.
+
+## Progress Notes
+- Skill aplicada: `workflow-orchestrator`.
+- Escopo explícito do usuário: campo dinâmico em altura até 5 linhas.
+- `ChatInput` agora usa `textarea` (`rows=1`) com auto-resize por `scrollHeight`.
+- Limite de altura aplicado em 5 linhas; quando excede, ativa `overflowY: auto`.
+- UX de teclado:
+  - `Enter` envia;
+  - `Shift+Enter` quebra linha.
+- Verificação:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+
+## Review
+- What worked:
+- Mudança isolada no componente compartilhado, refletindo automaticamente em home e sessão.
+- What was tricky:
+- Controlar altura dinâmica com limite fixo sem quebrar estilo existente do composer.
+- Time taken:
+- Um ciclo curto (implementação + typecheck + wiki).
+
+---
+
+# Task: Reposicionar sugestões acima do campo como tabs (popping out)
+**Status**: completed
+**Started**: 2026-02-27T16:02:00-03:00
+
+## Plan
+- [x] Step 1: Mover sugestões de baixo da toolbar para faixa superior do composer.
+- [x] Step 2: Aplicar estilo de tab “popping out” mantendo click behavior para preencher input.
+- [x] Step 3: Validar typecheck web e atualizar wiki.
+
+## Open Questions
+- Sem bloqueios para esta etapa visual.
+
+## Progress Notes
+- Skill aplicada: `workflow-orchestrator`.
+- Componente alterado: `apps/web/src/components/ChatInput.tsx`.
+- Sugestões passaram a renderizar acima do campo de texto, com estilo de tabs (`border-bottom: none`, raio superior) e offset negativo para efeito de “saindo do container”.
+- Comportamento preservado: click em sugestão ainda preenche o input; toolbar e anexos mantidos.
+- Verificação:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+
+## Review
+- What worked:
+- Mudança localizada apenas no `ChatInput`, com efeito imediato nas duas telas que usam o componente.
+- What was tricky:
+- Ajustar offset/raio para efeito “tab” sem quebrar espaçamento interno do composer.
+- Time taken:
+- Um ciclo curto (ajuste visual + validação + wiki).
+
+---
+
 # Task: Attachment flow (Cerebro inline preview + Autotask regular attachment)
 **Status**: completed
 **Started**: 2026-02-27T15:38:00-03:00

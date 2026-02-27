@@ -164,8 +164,11 @@ export default function SessionDetail({
       content: t('startingAnalysis'),
       timestamp: new Date(),
       type: 'text',
+      channel: 'internal_ai',
     },
   ]);
+  const [targetChannel, setTargetChannel] = useState<'internal_ai' | 'external_psa_user'>('internal_ai');
+  const [channelFilter, setChannelFilter] = useState<'all' | 'internal_ai' | 'external_psa_user'>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [playbookReady, setPlaybookReady] = useState(false);
@@ -252,6 +255,13 @@ export default function SessionDetail({
     const d = new Date(value);
     return Number.isNaN(d.getTime()) ? new Date() : d;
   };
+
+  const trackChatEvent = (event: string, payload: Record<string, unknown> = {}) => {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent('cerebro:chat-telemetry', { detail: { event, ...payload } }));
+  };
+
+  const channelStorageKey = (ticketId: string) => `cerebro:chat-target-channel:${ticketId}`;
 
   const isMeaningfulText = (value?: string) => {
     const normalized = normalizePlainText(value, '').toLowerCase();
@@ -695,6 +705,7 @@ export default function SessionDetail({
             type: 'autotask',
             timestamp: ts(0),
             content: autoTaskPrimaryText,
+            channel: 'internal_ai',
             ...(ticketTextArtifact?.text_original
               ? {
                 ticketTextVariant: {
@@ -743,6 +754,7 @@ export default function SessionDetail({
             ? `Running iterative cross-source correlation (intake → IT Glue → Ninja → history → refine)${appendixFusionApplied > 0 ? ` · fusion ${appendixFusionApplied} field${appendixFusionApplied === 1 ? '' : 's'}` : ''}${appendixHistoryMatches > 0 ? ` · ${appendixHistoryMatches} historical match${appendixHistoryMatches === 1 ? '' : 'es'}` : ''}${appendixFinalFieldsUpdated > 0 ? ` · final refinement ${appendixFinalFieldsUpdated} field${appendixFinalFieldsUpdated === 1 ? '' : 's'} updated` : ''}.`
             : 'Pulling data from 3 sources simultaneously.',
           steps: prepareSteps,
+          channel: 'internal_ai',
         });
 
         if (newData.diagnosis) {
@@ -752,6 +764,7 @@ export default function SessionDetail({
             type: 'diagnosis',
             timestamp: ts(3),
             content: 'Evidence pack processed. Ranked hypotheses generated with supporting citations.',
+            channel: 'internal_ai',
           });
         }
 
@@ -762,6 +775,7 @@ export default function SessionDetail({
             type: 'validation',
             timestamp: ts(4),
             content: 'Validation completed with evidence checks and safety gates.',
+            channel: 'internal_ai',
           });
         }
 
@@ -772,6 +786,7 @@ export default function SessionDetail({
             type: 'text',
             timestamp: ts(5),
             content: 'Playbook generated. Review and refine using the right panel.',
+            channel: 'internal_ai',
           });
         }
         const signature = JSON.stringify(
@@ -833,9 +848,25 @@ export default function SessionDetail({
         content: t('startingAnalysis'),
         timestamp: new Date(),
         type: 'status',
+        channel: 'internal_ai',
       },
     ]);
   }, [selectedTicketId, t]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem(channelStorageKey(selectedTicketId));
+    if (saved === 'external_psa_user' || saved === 'internal_ai') {
+      setTargetChannel(saved);
+      return;
+    }
+    setTargetChannel('internal_ai');
+  }, [selectedTicketId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(channelStorageKey(selectedTicketId), targetChannel);
+  }, [selectedTicketId, targetChannel]);
 
   // Fetch canonical tri-pane sidebar tickets from workflow inbox only (P0 source of truth)
   useEffect(() => {
@@ -871,7 +902,9 @@ export default function SessionDetail({
     reader.readAsDataURL(file);
   });
 
-  const handleSendMessage = async ({ message, attachments }: ChatInputSubmitPayload) => {
+  const handleSendMessage = async ({ message, attachments, targetChannel }: ChatInputSubmitPayload) => {
+    const userMessageId = `msg-user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const createdMessageContent = message || (attachments.length > 0 ? 'Attachment(s) added.' : '');
     const attachmentViews = attachments.map((attachment) => ({
       id: attachment.id,
       name: attachment.name,
@@ -883,14 +916,22 @@ export default function SessionDetail({
     setMessages((prev) => [
       ...prev,
       {
-        id: `msg-user-${Date.now()}`,
+        id: userMessageId,
         role: 'user',
-        content: message || (attachmentViews.length > 0 ? 'Attachment(s) added.' : ''),
+        content: createdMessageContent,
         timestamp: new Date(),
         type: 'text',
+        channel: targetChannel,
+        ...(targetChannel === 'external_psa_user' ? { delivery: { status: 'sending' as const } } : {}),
         ...(attachmentViews.length > 0 ? { attachments: attachmentViews } : {}),
       },
     ]);
+    trackChatEvent(
+      targetChannel === 'external_psa_user'
+        ? 'chat_message_sent_external'
+        : 'chat_message_sent_internal',
+      { ticket_id: selectedTicketId }
+    );
 
     let attachmentUploadError = '';
     const ticketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
@@ -916,6 +957,37 @@ export default function SessionDetail({
       }
     }
 
+    if (targetChannel === 'external_psa_user') {
+      try {
+        const ticketIdRef = String(data?.session?.ticket_id || selectedTicketId || '').trim();
+        if (!ticketIdRef) throw new Error('Ticket reference unavailable');
+        await submitWorkflowCommand({
+          command_type: 'create_comment_note',
+          ticket_id: ticketIdRef,
+          idempotency_key: `external-note-${ticketIdRef}-${Date.now()}`,
+          payload: {
+            comment_body: createdMessageContent,
+            comment_visibility: 'public',
+          },
+          auto_process: true,
+        });
+        setMessages((prev) => prev.map((m) => (
+          m.id === userMessageId
+            ? { ...m, delivery: { status: 'sent' } }
+            : m
+        )));
+      } catch (err) {
+        const errorText = (err as Error)?.message || 'Failed to send message to PSA/User';
+        trackChatEvent('chat_message_external_failed', { ticket_id: selectedTicketId, error: errorText });
+        setMessages((prev) => prev.map((m) => (
+          m.id === userMessageId
+            ? { ...m, delivery: { status: 'failed', error: errorText } }
+            : m
+        )));
+      }
+      return;
+    }
+
     setTimeout(() => {
       setMessages((prev) => [
         ...prev,
@@ -927,6 +999,7 @@ export default function SessionDetail({
             : t('processingRequest'),
           timestamp: new Date(),
           type: 'text',
+          channel: 'internal_ai',
         },
       ]);
     }, 500);
@@ -950,6 +1023,7 @@ export default function SessionDetail({
         content: 'Refreshing pipeline for this ticket...',
         timestamp: new Date(),
         type: 'status',
+        channel: 'internal_ai',
       },
     ]);
 
@@ -966,6 +1040,36 @@ export default function SessionDetail({
     } finally {
       flowRequestSeqRef.current += 1; // drop any stale response that completed during refresh call
       hardRefreshInProgressRef.current = false;
+    }
+  };
+
+  const handleRetryExternalMessage = async (message: Message) => {
+    const ticketIdRef = String(data?.session?.ticket_id || selectedTicketId || '').trim();
+    if (!ticketIdRef) return;
+    trackChatEvent('chat_message_external_retry', { ticket_id: selectedTicketId });
+    setMessages((prev) => prev.map((m) => (
+      m.id === message.id ? { ...m, delivery: { status: 'retrying' } } : m
+    )));
+    try {
+      await submitWorkflowCommand({
+        command_type: 'create_comment_note',
+        ticket_id: ticketIdRef,
+        idempotency_key: `external-note-retry-${ticketIdRef}-${Date.now()}`,
+        payload: {
+          comment_body: message.content,
+          comment_visibility: 'public',
+        },
+        auto_process: true,
+      });
+      setMessages((prev) => prev.map((m) => (
+        m.id === message.id ? { ...m, delivery: { status: 'sent' } } : m
+      )));
+    } catch (err) {
+      const errorText = (err as Error)?.message || 'Retry failed';
+      setMessages((prev) => prev.map((m) => (
+        m.id === message.id ? { ...m, delivery: { status: 'failed', error: errorText } } : m
+      )));
+      trackChatEvent('chat_message_external_failed', { ticket_id: selectedTicketId, error: errorText });
     }
   };
 
@@ -1412,6 +1516,9 @@ export default function SessionDetail({
       escalate: parsedPlaybookEscalation,
     }
     : undefined;
+  const visibleMessages = channelFilter === 'all'
+    ? messages
+    : messages.filter((msg) => (msg.channel ?? 'internal_ai') === channelFilter);
 
   return (
     <ResizableLayout
@@ -1609,6 +1716,31 @@ export default function SessionDetail({
               minHeight: 0,
             }}
           >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+              {[
+                { key: 'all', label: 'All' },
+                { key: 'internal_ai', label: 'AI' },
+                { key: 'external_psa_user', label: 'PSA/User' },
+              ].map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setChannelFilter(opt.key as 'all' | 'internal_ai' | 'external_psa_user')}
+                  style={{
+                    borderRadius: '999px',
+                    border: '1px solid var(--bento-outline)',
+                    background: channelFilter === opt.key ? 'rgba(91,127,255,0.10)' : 'var(--bg-panel)',
+                    color: channelFilter === opt.key ? 'var(--accent)' : 'var(--text-muted)',
+                    padding: '3px 8px',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
             {error && (
               <div
                 className="rounded-xl p-4 mb-4 text-sm"
@@ -1623,8 +1755,8 @@ export default function SessionDetail({
               </div>
             )}
 
-            {messages.map((msg) => (
-              <ChatMessage key={msg.id} message={msg} />
+            {visibleMessages.map((msg) => (
+              <ChatMessage key={msg.id} message={msg} onRetryExternalMessage={handleRetryExternalMessage} />
             ))}
 
             {loading && messages.length === 1 && (
@@ -1636,6 +1768,7 @@ export default function SessionDetail({
                   content: t('initializingSession'),
                   timestamp: new Date(),
                   type: 'status',
+                  channel: 'internal_ai',
                 }}
               />
             )}
@@ -1648,6 +1781,12 @@ export default function SessionDetail({
             disabled={loading}
             isLoading={false}
             attachmentsEnabled={true}
+            targetChannel={targetChannel}
+            onTargetChannelChange={(channel) => {
+              setTargetChannel(channel);
+              trackChatEvent('chat_channel_selected', { ticket_id: selectedTicketId, channel });
+            }}
+            showChannelToggle={true}
             hints={[
               'Reanalyze with new info',
               'Generate user questions',

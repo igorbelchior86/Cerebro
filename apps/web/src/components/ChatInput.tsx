@@ -18,6 +18,7 @@ export interface ChatInputAttachmentDraft {
 export interface ChatInputSubmitPayload {
   message: string;
   attachments: ChatInputAttachmentDraft[];
+  targetChannel: 'internal_ai' | 'external_psa_user';
 }
 
 interface ChatInputProps {
@@ -27,6 +28,9 @@ interface ChatInputProps {
   isLoading?: boolean;
   hints?: string[];
   attachmentsEnabled?: boolean;
+  targetChannel?: 'internal_ai' | 'external_psa_user';
+  onTargetChannelChange?: (channel: 'internal_ai' | 'external_psa_user') => void;
+  showChannelToggle?: boolean;
 }
 
 function inferExtension(name: string, mimeType: string): string {
@@ -43,6 +47,9 @@ export default function ChatInput({
   isLoading = false,
   hints,
   attachmentsEnabled = false,
+  targetChannel = 'internal_ai',
+  onTargetChannelChange,
+  showChannelToggle = true,
 }: ChatInputProps) {
   const t = useTranslations('ChatInput');
   const [input, setInput] = useState('');
@@ -68,6 +75,7 @@ export default function ChatInput({
     const payload: ChatInputSubmitPayload = {
       message,
       attachments,
+      targetChannel,
     };
 
     setInput('');
@@ -179,6 +187,45 @@ export default function ChatInput({
   return (
     <div style={{ padding: '12px', border: '1px solid var(--bento-outline)', borderRadius: '14px', background: 'var(--bg-card)', flexShrink: 0 }}>
       <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={onFilesSelected} />
+      {showChannelToggle ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+          <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600 }}>Destination</div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid var(--bento-outline)', borderRadius: '10px', padding: '2px', background: 'var(--bg-panel)', gap: '2px' }}>
+            <button
+              type="button"
+              onClick={() => onTargetChannelChange?.('internal_ai')}
+              style={{
+                border: 'none',
+                borderRadius: '8px',
+                padding: '4px 8px',
+                fontSize: '10px',
+                fontWeight: 700,
+                color: targetChannel === 'internal_ai' ? 'var(--accent)' : 'var(--text-muted)',
+                background: targetChannel === 'internal_ai' ? 'rgba(91,127,255,0.12)' : 'transparent',
+                cursor: 'pointer',
+              }}
+            >
+              AI
+            </button>
+            <button
+              type="button"
+              onClick={() => onTargetChannelChange?.('external_psa_user')}
+              style={{
+                border: 'none',
+                borderRadius: '8px',
+                padding: '4px 8px',
+                fontSize: '10px',
+                fontWeight: 700,
+                color: targetChannel === 'external_psa_user' ? '#047857' : 'var(--text-muted)',
+                background: targetChannel === 'external_psa_user' ? 'rgba(16,185,129,0.14)' : 'transparent',
+                cursor: 'pointer',
+              }}
+            >
+              PSA/User
+            </button>
+          </div>
+        </div>
+      ) : null}
       {activeHints.length > 0 ? (
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '-19px', marginBottom: '10px', padding: '0 8px' }}>
           {activeHints.map((h) => (
@@ -227,16 +274,21 @@ export default function ChatInput({
             style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontFamily: 'var(--font-dm-sans, sans-serif)', fontSize: '12.5px', color: 'var(--text-primary)', letterSpacing: '-0.01em', lineHeight: `${INPUT_LINE_HEIGHT_PX}px`, resize: 'none' }}
           />
           <button type="submit" disabled={(!input.trim() && attachments.length === 0) || disabled || isLoading}
-            style={{ width: '28px', height: '28px', borderRadius: '8px', background: (input.trim() || attachments.length > 0) && !disabled ? 'var(--accent-muted)' : 'var(--bg-card)', border: `1px solid ${(input.trim() || attachments.length > 0) && !disabled ? 'var(--border-accent)' : 'var(--bento-outline)'}`, cursor: (input.trim() || attachments.length > 0) && !disabled ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: (!input.trim() && attachments.length === 0) || disabled ? 0.6 : 1, transition: 'var(--transition)', color: (input.trim() || attachments.length > 0) && !disabled ? 'var(--accent)' : 'var(--text-muted)' }}
+            style={{ width: '52px', height: '28px', borderRadius: '8px', background: (input.trim() || attachments.length > 0) && !disabled ? 'var(--accent-muted)' : 'var(--bg-card)', border: `1px solid ${(input.trim() || attachments.length > 0) && !disabled ? 'var(--border-accent)' : 'var(--bento-outline)'}`, cursor: (input.trim() || attachments.length > 0) && !disabled ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', flexShrink: 0, opacity: (!input.trim() && attachments.length === 0) || disabled ? 0.6 : 1, transition: 'var(--transition)', color: (input.trim() || attachments.length > 0) && !disabled ? 'var(--accent)' : 'var(--text-muted)' }}
             onMouseEnter={(e) => { if ((input.trim() || attachments.length > 0) && !disabled) (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
             onMouseLeave={(e) => { if ((input.trim() || attachments.length > 0) && !disabled) (e.currentTarget as HTMLButtonElement).style.opacity = '0.85'; }}
+            title="Send (Enter)"
+            aria-label="Send (Enter)"
           >
             {isLoading ? (
               <span style={{ width: '10px', height: '10px', borderRadius: '50%', border: '1.5px solid rgba(255,255,255,0.3)', borderTopColor: 'white', display: 'inline-block' }} />
             ) : (
-              <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                <path d="M2 10L10 6 2 2v3.5l5 .5-5 .5V10z" fill="currentColor" />
-              </svg>
+              <>
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                  <path d="M2 10L10 6 2 2v3.5l5 .5-5 .5V10z" fill="currentColor" />
+                </svg>
+                <span style={{ fontSize: '9px', fontFamily: 'var(--font-jetbrains-mono, monospace)', opacity: 0.9 }}>↵</span>
+              </>
             )}
           </button>
         </div>

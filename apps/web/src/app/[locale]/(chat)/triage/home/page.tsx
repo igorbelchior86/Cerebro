@@ -22,6 +22,7 @@ export default function HomePage() {
     content: t('welcome'),
     timestamp: new Date(),
     type: 'text',
+    channel: 'internal_ai',
   };
 
   const HINTS = [
@@ -69,6 +70,7 @@ export default function HomePage() {
       content: text,
       timestamp: new Date(),
       type: 'text',
+      channel: 'internal_ai',
     };
     setMessages((prev) => [...prev, userMsg]);
     setIsLoading(true);
@@ -101,6 +103,7 @@ export default function HomePage() {
           content: data.reply,
           timestamp: new Date(),
           type: 'text',
+          channel: 'internal_ai',
         },
       ]);
     } catch (err) {
@@ -112,6 +115,7 @@ export default function HomePage() {
           content: `Erro: ${(err as Error).message}`,
           timestamp: new Date(),
           type: 'text',
+          channel: 'internal_ai',
         },
       ]);
     } finally {
@@ -209,7 +213,7 @@ export default function HomePage() {
             ))}
             {isLoading && (
               <ChatMessage
-                message={{ id: 'typing', role: 'system', content: t('processing'), type: 'status' }}
+                message={{ id: 'typing', role: 'system', content: t('processing'), type: 'status', channel: 'internal_ai' }}
               />
             )}
             <div ref={messagesEndRef} />
@@ -223,6 +227,8 @@ export default function HomePage() {
             placeholder={t('placeholder')}
             hints={HINTS}
             attachmentsEnabled={false}
+            targetChannel="internal_ai"
+            showChannelToggle={false}
           />
         </div>
       }

@@ -5,8 +5,13 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  channel?: 'internal_ai' | 'external_psa_user';
   timestamp?: Date;
   type?: 'text' | 'status' | 'autotask' | 'evidence' | 'diagnosis' | 'validation';
+  delivery?: {
+    status: 'sending' | 'sent' | 'failed' | 'retrying';
+    error?: string;
+  };
   steps?: { label: string; status: 'done' | 'running' | 'idle' }[];
   ticketTextVariant?: {
     primary: 'clean' | 'original';
@@ -27,6 +32,7 @@ export interface Message {
 interface ChatMessageProps {
   message: Message;
   children?: ReactNode;
+  onRetryExternalMessage?: (message: Message) => void;
 }
 
 const SOURCE_CONFIG: Record<string, { icon: string; label: string }> = {
@@ -487,13 +493,30 @@ const userBubbleStyle: CSSProperties = {
   lineHeight: 1.55,
 };
 
-export default function ChatMessage({ message, children }: ChatMessageProps) {
+export default function ChatMessage({ message, children, onRetryExternalMessage }: ChatMessageProps) {
   const [ticketTextMode, setTicketTextMode] = useState<'clean' | 'original'>(
     message.ticketTextVariant?.clean?.trim()
       ? 'clean'
       : 'original'
   );
   const isSystem = message.role === 'system' || message.type === 'status';
+  const channel = message.channel ?? 'internal_ai';
+  const channelBadge = channel === 'external_psa_user' ? 'PSA/User' : 'AI';
+  const isExternal = channel === 'external_psa_user';
+  const assistantBubbleByChannel: CSSProperties = isExternal
+    ? {
+      ...assistantBubbleStyle,
+      border: '1px solid rgba(16,185,129,0.24)',
+      background: 'rgba(16,185,129,0.05)',
+    }
+    : assistantBubbleStyle;
+  const userBubbleByChannel: CSSProperties = isExternal
+    ? {
+      ...userBubbleStyle,
+      border: '1px solid rgba(16,185,129,0.30)',
+      background: 'rgba(16,185,129,0.12)',
+    }
+    : userBubbleStyle;
 
   if (isSystem) {
     return (
@@ -513,11 +536,38 @@ export default function ChatMessage({ message, children }: ChatMessageProps) {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '4px', flexDirection: 'row-reverse' }}>
             <span style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>You</span>
+            <span style={{ fontSize: '9px', fontWeight: 700, color: isExternal ? '#047857' : 'var(--accent)', border: `1px solid ${isExternal ? 'rgba(16,185,129,0.3)' : 'rgba(91,127,255,0.25)'}`, background: isExternal ? 'rgba(16,185,129,0.10)' : 'rgba(91,127,255,0.10)', borderRadius: '999px', padding: '1px 6px', letterSpacing: '0.03em' }}>{channelBadge}</span>
             {message.timestamp && <span suppressHydrationWarning style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)' }}>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
           </div>
-          <p style={userBubbleStyle}>
+          <p style={userBubbleByChannel}>
             {message.content}
           </p>
+          {message.delivery ? (
+            <div style={{ marginTop: '5px', fontSize: '10px', color: message.delivery.status === 'failed' ? '#b91c1c' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '7px', justifyContent: 'flex-end' }}>
+              <span>
+                External delivery: {message.delivery.status}
+                {message.delivery.error ? ` (${message.delivery.error})` : ''}
+              </span>
+              {message.delivery.status === 'failed' && onRetryExternalMessage ? (
+                <button
+                  type="button"
+                  onClick={() => onRetryExternalMessage(message)}
+                  style={{
+                    borderRadius: '999px',
+                    border: '1px solid rgba(185,28,28,0.25)',
+                    background: 'rgba(185,28,28,0.08)',
+                    color: '#b91c1c',
+                    fontSize: '9px',
+                    fontWeight: 700,
+                    padding: '2px 7px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Retry
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           {message.attachments && message.attachments.length > 0 ? (
             <div style={{ marginTop: '6px', width: '100%', display: 'grid', gap: '6px' }}>
               {message.attachments.map((attachment) => (
@@ -621,7 +671,10 @@ export default function ChatMessage({ message, children }: ChatMessageProps) {
           {src.icon}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={assistantBubbleStyle}>
+          <div style={assistantBubbleByChannel}>
+            <div style={{ position: 'absolute', top: '6px', right: '8px', fontSize: '9px', fontWeight: 700, color: isExternal ? '#047857' : 'var(--accent)', border: `1px solid ${isExternal ? 'rgba(16,185,129,0.3)' : 'rgba(91,127,255,0.25)'}`, background: isExternal ? 'rgba(16,185,129,0.10)' : 'rgba(91,127,255,0.10)', borderRadius: '999px', padding: '1px 6px', letterSpacing: '0.03em' }}>
+              {channelBadge}
+            </div>
             {canToggleTicketText && ticketTextMode === 'clean' && hasCleanTicketText ? (
               <RichCleanTicketText
                 text={message.ticketTextVariant!.clean!}
@@ -641,6 +694,29 @@ export default function ChatMessage({ message, children }: ChatMessageProps) {
               stepsList
             ))}
             {children && <div style={{ marginTop: '8px' }}>{children}</div>}
+            {message.delivery ? (
+              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '10px', color: message.delivery.status === 'failed' ? '#b91c1c' : 'var(--text-muted)' }}>
+                <span>External delivery: {message.delivery.status}</span>
+                {message.delivery.status === 'failed' && onRetryExternalMessage ? (
+                  <button
+                    type="button"
+                    onClick={() => onRetryExternalMessage(message)}
+                    style={{
+                      borderRadius: '999px',
+                      border: '1px solid rgba(185,28,28,0.25)',
+                      background: 'rgba(185,28,28,0.08)',
+                      color: '#b91c1c',
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      padding: '2px 7px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Retry
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
 
             {canToggleTicketText && (
               <div style={{

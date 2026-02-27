@@ -1,3 +1,64 @@
+# Task: Coluna central com feed único + alternância AI vs PSA/User
+**Status**: completed
+**Started**: 2026-02-27T18:20:00-03:00
+
+## Plan
+- [x] Step 1: Expandir contrato de mensagens/composer com `channel` e `targetChannel`.
+- [x] Step 2: Implementar diferenciação visual por canal (badge + borda/fundo) em `ChatMessage`.
+- [x] Step 3: Integrar envio externo PSA/User via workflow command com estado de entrega (`sending/sent/failed/retrying`) e retry.
+- [x] Step 4: Adicionar filtro rápido (`All/AI/PSA-User`) no feed da coluna central.
+- [x] Step 5: Persistir canal selecionado por ticket (default AI) e emitir telemetria frontend solicitada.
+- [x] Step 6: Validar typecheck/lint web e documentar wiki.
+
+## Open Questions
+- Sem bloqueios técnicos no escopo atual.
+
+## Progress Notes
+- Implementação aplicada em `ChatInput`, `ChatMessage`, `triage/[id]/page.tsx` e `triage/home/page.tsx`.
+- Fluxo externo usa `submitWorkflowCommand(create_comment_note)` com `comment_visibility=public`.
+- Retry externo implementado diretamente no balão em estado `failed`.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/web lint` ⚠️ script atual falha por pattern (`No files matching the pattern "src" were found`)
+- Documentação obrigatória criada em `wiki/features/2026-02-27-middle-column-feed-channel-toggle-ai-psa-user.md`.
+
+---
+
+# Task: Botão de envio com atalho de teclado visível
+**Status**: completed
+**Started**: 2026-02-27T16:22:00-03:00
+
+## Plan
+- [x] Step 1: Atualizar UI do botão de envio para exibir atalho de teclado visível.
+- [x] Step 2: Manter comportamento atual de teclado (`Enter` envia, `Shift+Enter` quebra linha).
+- [x] Step 3: Validar typecheck web e atualizar wiki.
+
+## Open Questions
+- Sem bloqueios; mudança é visual no `ChatInput`.
+
+## Progress Notes
+- Skill aplicada: `workflow-orchestrator`.
+- Escopo explícito do usuário: mostrar atalho de teclado no botão de envio.
+- Botão de envio atualizado para mostrar indicador visual do atalho (`↵`) ao lado do ícone.
+- Tooltip/aria adicionados: `Send (Enter)`.
+- Comportamento de teclado mantido:
+  - `Enter` envia;
+  - `Shift+Enter` quebra linha.
+- Verificação:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+
+## Review
+- What worked:
+- Mudança visual pequena e direta no `ChatInput`, sem alterar o contrato de submit.
+- What was tricky:
+- Equilibrar largura do botão para exibir o atalho sem quebrar o layout compacto.
+- Time taken:
+- Um ciclo curto (UI + validação + wiki).
+
+---
+
 # Task: Campo de texto dinâmico (auto-grow até 5 linhas)
 **Status**: completed
 **Started**: 2026-02-27T16:14:00-03:00

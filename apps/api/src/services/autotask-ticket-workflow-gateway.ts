@@ -139,7 +139,61 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
       return { kind: 'updated', ...(snapshot ? { snapshot } : {}) };
     }
 
-    if (operation.operation.handler === 'time_entry') {
+    if (operation.operation.handler === 'update_ticket_note') {
+      const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
+      const noteId = Number(payload.note_id ?? payload.id);
+      await client.updateTicketNote(ticketId, noteId, {
+        ...(payload.description !== undefined ? { description: payload.description } : {}),
+        ...(payload.noteText !== undefined ? { noteText: payload.noteText } : {}),
+        ...(payload.body !== undefined ? { description: payload.body } : {}),
+        ...(payload.title !== undefined ? { title: payload.title } : {}),
+        ...(payload.publish !== undefined ? { publish: payload.publish } : {}),
+        ...(payload.note_type !== undefined ? { noteType: payload.note_type } : {}),
+        ...(payload.noteType !== undefined ? { noteType: payload.noteType } : {}),
+      });
+      const snapshot = await this.safeFetchTicketSnapshot(client, ticketId);
+      return { kind: 'updated', ...(snapshot ? { snapshot } : {}) };
+    }
+
+    if (operation.operation.handler === 'checklist_list') {
+      const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
+      const items = await client.getTicketChecklistItems(ticketId);
+      return { kind: 'updated', snapshot: { checklist_items: items } };
+    }
+
+    if (operation.operation.handler === 'checklist_create') {
+      const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
+      await client.createTicketChecklistItem(ticketId, {
+        title: payload.title ?? payload.name,
+        ...(payload.is_completed !== undefined ? { isCompleted: payload.is_completed } : {}),
+        ...(payload.isComplete !== undefined ? { isCompleted: payload.isComplete } : {}),
+      });
+      const snapshot = await this.safeFetchTicketSnapshot(client, ticketId);
+      return { kind: 'updated', ...(snapshot ? { snapshot } : {}) };
+    }
+
+    if (operation.operation.handler === 'checklist_update') {
+      const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
+      await client.updateTicketChecklistItem(ticketId, {
+        checklistItemID: payload.checklist_item_id ?? payload.checklistItemID,
+        ...(payload.title !== undefined ? { title: payload.title } : {}),
+        ...(payload.name !== undefined ? { title: payload.name } : {}),
+        ...(payload.is_completed !== undefined ? { isCompleted: payload.is_completed } : {}),
+        ...(payload.isComplete !== undefined ? { isCompleted: payload.isComplete } : {}),
+      });
+      const snapshot = await this.safeFetchTicketSnapshot(client, ticketId);
+      return { kind: 'updated', ...(snapshot ? { snapshot } : {}) };
+    }
+
+    if (operation.operation.handler === 'checklist_delete') {
+      const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
+      const checklistItemId = Number(payload.checklist_item_id ?? payload.checklistItemId ?? payload.checklistItemID);
+      await client.deleteTicketChecklistItem(ticketId, checklistItemId);
+      const snapshot = await this.safeFetchTicketSnapshot(client, ticketId);
+      return { kind: 'updated', ...(snapshot ? { snapshot } : {}) };
+    }
+
+    if (operation.operation.handler === 'time_entry_create') {
       const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
       const entry = await client.createTimeEntry({
         ticketID: ticketId,
@@ -151,6 +205,105 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
         kind: 'time_entry',
         entry_id: (entry as any)?.id ?? undefined,
       };
+    }
+
+    if (operation.operation.handler === 'time_entry_update') {
+      const entry = await client.updateTimeEntry(
+        Number(payload.time_entry_id ?? payload.id),
+        {
+          ...(payload.hours_worked !== undefined ? { hoursWorked: payload.hours_worked } : {}),
+          ...(payload.hoursWorked !== undefined ? { hoursWorked: payload.hoursWorked } : {}),
+          ...(payload.summary_notes !== undefined ? { summaryNotes: payload.summary_notes } : {}),
+          ...(payload.summaryNotes !== undefined ? { summaryNotes: payload.summaryNotes } : {}),
+        }
+      );
+      return { kind: 'time_entry', entry_id: (entry as any)?.id ?? Number(payload.time_entry_id ?? payload.id) };
+    }
+
+    if (operation.operation.handler === 'time_entry_delete') {
+      await client.deleteTimeEntry(Number(payload.time_entry_id ?? payload.id));
+      return { kind: 'updated' };
+    }
+
+    if (operation.operation.handler === 'update_priority') {
+      const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
+      await client.updateTicketPriority(ticketId, Number(payload.priority ?? payload.priorityID));
+      const snapshot = await this.safeFetchTicketSnapshot(client, ticketId);
+      return { kind: 'updated', ...(snapshot ? { snapshot } : {}) };
+    }
+
+    if (operation.operation.handler === 'delete_ticket') {
+      const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
+      await client.deleteTicket(ticketId);
+      return { kind: 'updated' };
+    }
+
+    if (operation.operation.handler === 'contacts_query') {
+      const rows = await client.searchContacts(
+        JSON.stringify(payload.search ?? payload.filter),
+        Number(payload.page_size ?? payload.pageSize ?? payload.MaxRecords ?? 25)
+      );
+      return { kind: 'updated', snapshot: { contacts: rows } };
+    }
+
+    if (operation.operation.handler === 'contact_create') {
+      const created = await client.createContact({
+        companyID: payload.company_id ?? payload.companyID,
+        firstName: payload.first_name ?? payload.firstName,
+        lastName: payload.last_name ?? payload.lastName,
+        ...(payload.email_address !== undefined ? { emailAddress: payload.email_address } : {}),
+        ...(payload.emailAddress !== undefined ? { emailAddress: payload.emailAddress } : {}),
+      });
+      return { kind: 'updated', snapshot: { contact: created } };
+    }
+
+    if (operation.operation.handler === 'contact_update') {
+      const updated = await client.updateContact(
+        Number(payload.contact_id ?? payload.id),
+        {
+          ...(payload.first_name !== undefined ? { firstName: payload.first_name } : {}),
+          ...(payload.firstName !== undefined ? { firstName: payload.firstName } : {}),
+          ...(payload.last_name !== undefined ? { lastName: payload.last_name } : {}),
+          ...(payload.lastName !== undefined ? { lastName: payload.lastName } : {}),
+          ...(payload.email_address !== undefined ? { emailAddress: payload.email_address } : {}),
+          ...(payload.emailAddress !== undefined ? { emailAddress: payload.emailAddress } : {}),
+        }
+      );
+      return { kind: 'updated', snapshot: { contact: updated } };
+    }
+
+    if (operation.operation.handler === 'companies_query') {
+      const rows = await client.searchCompanies(
+        JSON.stringify(payload.search ?? payload.filter),
+        Number(payload.page_size ?? payload.pageSize ?? payload.MaxRecords ?? 25)
+      );
+      return { kind: 'updated', snapshot: { companies: rows } };
+    }
+
+    if (operation.operation.handler === 'company_create') {
+      const created = await client.createCompany({
+        companyName: payload.company_name ?? payload.companyName,
+        ...(payload.is_active !== undefined ? { isActive: payload.is_active } : {}),
+        ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
+        ...(payload.web_address !== undefined ? { webAddress: payload.web_address } : {}),
+        ...(payload.webAddress !== undefined ? { webAddress: payload.webAddress } : {}),
+      });
+      return { kind: 'updated', snapshot: { company: created } };
+    }
+
+    if (operation.operation.handler === 'company_update') {
+      const updated = await client.updateCompany(
+        Number(payload.company_id ?? payload.id),
+        {
+          ...(payload.company_name !== undefined ? { companyName: payload.company_name } : {}),
+          ...(payload.companyName !== undefined ? { companyName: payload.companyName } : {}),
+          ...(payload.is_active !== undefined ? { isActive: payload.is_active } : {}),
+          ...(payload.isActive !== undefined ? { isActive: payload.isActive } : {}),
+          ...(payload.web_address !== undefined ? { webAddress: payload.web_address } : {}),
+          ...(payload.webAddress !== undefined ? { webAddress: payload.webAddress } : {}),
+        }
+      );
+      return { kind: 'updated', snapshot: { company: updated } };
     }
 
     throw new Error(`Unsupported Autotask command_type: ${command.command_type}`);

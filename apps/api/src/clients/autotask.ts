@@ -79,7 +79,7 @@ export class AutotaskClient {
   }
 
   private async requestJson<T>(
-    method: 'GET' | 'POST' | 'PATCH' | 'PUT',
+    method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
     endpoint: string,
     options?: { params?: Record<string, string | number>; body?: unknown }
   ) {
@@ -104,7 +104,23 @@ export class AutotaskClient {
       throw new Error(`Autotask API error: ${response.status} ${response.statusText}${suffix}`);
     }
 
-    return response.json() as Promise<T>;
+    if (response.status === 204) {
+      return {} as T;
+    }
+    const contentType = String((response as any)?.headers?.get?.('content-type') || '').toLowerCase();
+    const canReadJson = typeof (response as any)?.json === 'function';
+    if (canReadJson && (contentType.includes('application/json') || !contentType)) {
+      return response.json() as Promise<T>;
+    }
+    const textBody = typeof (response as any).text === 'function'
+      ? await (response as any).text().catch(() => '')
+      : '';
+    if (!textBody) return {} as T;
+    try {
+      return JSON.parse(textBody) as T;
+    } catch {
+      return { raw: textBody } as T;
+    }
   }
 
   private buildSearchParam(filterOrSearch: string, maxRecords: number): string {
@@ -393,6 +409,15 @@ export class AutotaskClient {
     });
   }
 
+  async updateTicketPriority(ticketId: number | string, priority: number): Promise<Record<string, unknown>> {
+    return this.updateTicket(ticketId, { priority });
+  }
+
+  async deleteTicket(ticketId: number | string): Promise<Record<string, unknown>> {
+    const resolvedTicketId = await this.resolveTicketEntityId(ticketId);
+    return this.requestJson<Record<string, unknown>>('DELETE', `/tickets/${encodeURIComponent(String(resolvedTicketId))}`);
+  }
+
   async createTicketNote(ticketId: number | string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
     const resolvedTicketId = await this.resolveTicketEntityId(ticketId);
     const body: Record<string, unknown> = { ...payload };
@@ -438,7 +463,111 @@ export class AutotaskClient {
     );
   }
 
+  async updateTicketNote(
+    ticketId: number | string,
+    noteId: number,
+    payload: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const resolvedTicketId = await this.resolveTicketEntityId(ticketId);
+    return this.requestJson<Record<string, unknown>>(
+      'PATCH',
+      `/tickets/${encodeURIComponent(String(resolvedTicketId))}/notes`,
+      {
+        body: {
+          id: noteId,
+          ...payload,
+        },
+      }
+    );
+  }
+
+  async getTicketChecklistItems(ticketId: number | string): Promise<Record<string, unknown>[]> {
+    const resolvedTicketId = await this.resolveTicketEntityId(ticketId);
+    const response = await this.request<{ records?: Record<string, unknown>[]; items?: Record<string, unknown>[]; item?: Record<string, unknown> }>(
+      `/tickets/${encodeURIComponent(String(resolvedTicketId))}/checklistItems`
+    );
+    return this.extractCollection(response);
+  }
+
+  async createTicketChecklistItem(
+    ticketId: number | string,
+    payload: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const resolvedTicketId = await this.resolveTicketEntityId(ticketId);
+    return this.requestJson<Record<string, unknown>>(
+      'POST',
+      `/tickets/${encodeURIComponent(String(resolvedTicketId))}/checklistItems`,
+      { body: payload }
+    );
+  }
+
+  async updateTicketChecklistItem(
+    ticketId: number | string,
+    payload: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const resolvedTicketId = await this.resolveTicketEntityId(ticketId);
+    return this.requestJson<Record<string, unknown>>(
+      'PATCH',
+      `/tickets/${encodeURIComponent(String(resolvedTicketId))}/checklistItems`,
+      { body: payload }
+    );
+  }
+
+  async deleteTicketChecklistItem(ticketId: number | string, checklistItemId: number): Promise<Record<string, unknown>> {
+    const resolvedTicketId = await this.resolveTicketEntityId(ticketId);
+    return this.requestJson<Record<string, unknown>>(
+      'DELETE',
+      `/tickets/${encodeURIComponent(String(resolvedTicketId))}/checklistItems/${encodeURIComponent(String(checklistItemId))}`
+    );
+  }
+
   async createTimeEntry(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.requestJson<Record<string, unknown>>('POST', '/timeEntries', { body: payload });
+  }
+
+  async updateTimeEntry(timeEntryId: number, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.requestJson<Record<string, unknown>>('PATCH', '/timeEntries', {
+      body: { id: timeEntryId, ...payload },
+    });
+  }
+
+  async deleteTimeEntry(timeEntryId: number): Promise<Record<string, unknown>> {
+    return this.requestJson<Record<string, unknown>>('DELETE', `/timeEntries/${encodeURIComponent(String(timeEntryId))}`);
+  }
+
+  async searchContacts(filter: string, pageSize: number = 25): Promise<Record<string, unknown>[]> {
+    const response = await this.request<{ records?: Record<string, unknown>[]; items?: Record<string, unknown>[]; item?: Record<string, unknown> }>(
+      '/contacts/query',
+      { search: this.buildSearchParam(filter, pageSize) }
+    );
+    return this.extractCollection(response);
+  }
+
+  async createContact(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.requestJson<Record<string, unknown>>('POST', '/contacts', { body: payload });
+  }
+
+  async updateContact(contactId: number, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.requestJson<Record<string, unknown>>('PATCH', '/contacts', {
+      body: { id: contactId, ...payload },
+    });
+  }
+
+  async searchCompanies(filter: string, pageSize: number = 25): Promise<Record<string, unknown>[]> {
+    const response = await this.request<{ records?: Record<string, unknown>[]; items?: Record<string, unknown>[]; item?: Record<string, unknown> }>(
+      '/companies/query',
+      { search: this.buildSearchParam(filter, pageSize) }
+    );
+    return this.extractCollection(response);
+  }
+
+  async createCompany(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.requestJson<Record<string, unknown>>('POST', '/companies', { body: payload });
+  }
+
+  async updateCompany(companyId: number, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.requestJson<Record<string, unknown>>('PATCH', '/companies', {
+      body: { id: companyId, ...payload },
+    });
   }
 }

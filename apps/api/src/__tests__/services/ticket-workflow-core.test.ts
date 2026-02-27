@@ -67,21 +67,21 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     expect(second.command.idempotency_key).toBe('idem-dupe');
   });
 
-  it('rejects operations excluded by frozen matrix and audits policy rejection', async () => {
+  it('rejects destructive operations without approval token and audits rejection', async () => {
     const gateway: TicketWorkflowGateway = {
       executeCommand: jest.fn(),
     };
     const { service } = createService(gateway);
     const cmd = createCommand({
-      commandType: 'update',
-      payload: { ticket_id: '5001', priority: 1 },
-      idempotencyKey: 'idem-blocked-priority',
-      correlation: { trace_id: 'trace-blocked-priority', ticket_id: '5001' },
+      commandType: 'delete',
+      payload: { ticket_id: '5001' },
+      idempotencyKey: 'idem-delete-without-token',
+      correlation: { trace_id: 'trace-delete-without-token', ticket_id: '5001' },
     });
 
     await expect(service.submitCommand(cmd)).rejects.toBeInstanceOf(WorkflowPolicyError);
     const audit = await service.listAuditByTicket(tenantId, '5001');
-    expect(audit.some((r) => r.action === 'workflow.command.rejected' && r.reason === 'operation_excluded_by_permission')).toBe(true);
+    expect(audit.some((r) => r.action === 'workflow.command.rejected' && r.reason === 'missing_destructive_approval_token')).toBe(true);
     expect(gateway.executeCommand).not.toHaveBeenCalled();
   });
 
@@ -301,6 +301,72 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     const audit = await service.listAuditByTicket(tenantId, 'AT-TERM-1');
     const failed = audit.find((record) => record.action === 'workflow.command.failed');
     expect(failed?.metadata).toMatchObject({
+      failure_class: 'terminal',
+      status: 'failed',
+    });
+  });
+
+  it('captures operation metadata for new alias commands in retryable and terminal paths', async () => {
+    let statusUpdateAttempts = 0;
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn().mockImplementation(async (command) => {
+        if (command.command_type === 'status_update') {
+          statusUpdateAttempts += 1;
+          throw new WorkflowTransientError(`Autotask timeout #${statusUpdateAttempts}`);
+        }
+        throw new Error('Autotask validation failed: invalid status');
+      }),
+    };
+    const { service, repo } = createService(gateway, 2);
+    const retryableCmd = buildCommandEnvelope({
+      tenantId,
+      targetIntegration: 'Autotask',
+      commandType: 'status_update',
+      payload: { ticket_id: 'AT-ALIAS-1', status: 'In Progress' },
+      actor,
+      idempotencyKey: 'alias-retryable',
+      correlation: { trace_id: 'trace-alias-retryable', ticket_id: 'AT-ALIAS-1' },
+    });
+    await service.submitCommand(retryableCmd);
+    await service.processPendingCommands();
+    const retryableState = await service.getCommand(retryableCmd.command_id);
+    expect(retryableState?.status).toBe('retry_pending');
+    if (retryableState) {
+      retryableState.next_retry_at = new Date(Date.now() - 1_000).toISOString();
+      await repo.upsertCommandAttempt(retryableState);
+    }
+    await service.processPendingCommands();
+    const retryableFinal = await service.getCommand(retryableCmd.command_id);
+    expect(retryableFinal?.status).toBe('dlq');
+
+    const terminalCmd = buildCommandEnvelope({
+      tenantId,
+      targetIntegration: 'Autotask',
+      commandType: 'create_comment_note',
+      payload: { ticket_id: 'AT-ALIAS-2', comment_body: 'hello' },
+      actor,
+      idempotencyKey: 'alias-terminal',
+      correlation: { trace_id: 'trace-alias-terminal', ticket_id: 'AT-ALIAS-2' },
+    });
+    await service.submitCommand(terminalCmd);
+    await service.processPendingCommands();
+    const terminalState = await service.getCommand(terminalCmd.command_id);
+    expect(terminalState?.status).toBe('failed');
+
+    const retryableAudit = await service.listAuditByTicket(tenantId, 'AT-ALIAS-1');
+    const retryableFailure = retryableAudit.find((record) => record.action === 'workflow.command.failed');
+    expect(retryableFailure?.metadata).toMatchObject({
+      command_type: 'status_update',
+      autotask_operation: 'tickets.update_status',
+      autotask_handler: 'status',
+    });
+
+    const terminalAudit = await service.listAuditByTicket(tenantId, 'AT-ALIAS-2');
+    const terminalFailure = terminalAudit.find((record) => record.action === 'workflow.command.failed');
+    expect(terminalFailure?.metadata).toMatchObject({
+      command_type: 'create_comment_note',
+      autotask_operation: 'ticket_notes.create_comment_note',
+      autotask_handler: 'comment_note',
       failure_class: 'terminal',
       status: 'failed',
     });

@@ -127,9 +127,27 @@ export interface AutotaskAuditWriteRecord {
 }
 
 export const AUTOTASK_PHASE1_SAFE_WRITE_SCOPE = {
-  allowed_commands: ['assign', 'status_update', 'comment_note'],
-  blocked_commands: ['create', 'delete', 'time_entry', 'queue_reparent', 'priority_change', 'contact_change'],
-  policy: 'Autotask is the only two-way integration in Phase 1; all others remain read_only',
+  allowed_commands: [
+    'create',
+    'assign',
+    'status_update',
+    'comment_note',
+    'update_priority',
+    'delete',
+    'update_note',
+    'checklist_create',
+    'checklist_update',
+    'checklist_delete',
+    'time_entry',
+    'time_entry_update',
+    'time_entry_delete',
+    'contact_create',
+    'contact_update',
+    'company_create',
+    'company_update',
+  ],
+  blocked_commands: ['queue_reparent'],
+  policy: 'Autotask remains the only two-way integration in Phase 1; all others remain read_only',
 } as const;
 
 export type AutotaskPhase1CapabilityStatus =
@@ -238,26 +256,24 @@ export const AUTOTASK_PHASE1_FULL_API_CAPABILITY_MATRIX: ReadonlyArray<AutotaskP
   {
     domain: 'tickets',
     operation: 'update_priority',
-    status: 'excluded_by_permission',
+    status: 'implemented',
     requirement: {
-      idempotency: 'stable idempotency_key_required_if_enabled',
+      idempotency: 'stable idempotency_key + payload hash guard per logical priority mutation',
       retry_class: 'write_retryable',
-      audit_events: ['autotask.command.policy_rejected'],
-      sync_reconcile_expectation: 'outside current reconcile target set',
+      audit_events: ['autotask.command.submitted', 'autotask.command.result'],
+      sync_reconcile_expectation: 'priority mutation must be auditable and replay-safe',
     },
-    notes: 'Out of Phase 1 safe-write scope',
   },
   {
     domain: 'tickets',
     operation: 'delete',
-    status: 'excluded_by_permission',
+    status: 'implemented',
     requirement: {
-      idempotency: 'hard_idempotency_token_required_if_enabled',
+      idempotency: 'hard_idempotency_token_required',
       retry_class: 'non_retryable_terminal',
-      audit_events: ['autotask.command.policy_rejected'],
-      sync_reconcile_expectation: 'no fail-open deletion allowed',
+      audit_events: ['autotask.command.submitted', 'autotask.command.result'],
+      sync_reconcile_expectation: 'deletion requires explicit approval token and terminal audit outcome',
     },
-    notes: 'Explicitly blocked in Phase 1',
   },
   {
     domain: 'ticket_notes',
@@ -284,57 +300,56 @@ export const AUTOTASK_PHASE1_FULL_API_CAPABILITY_MATRIX: ReadonlyArray<AutotaskP
   {
     domain: 'ticket_notes',
     operation: 'update',
-    status: 'excluded_by_api_limitation',
+    status: 'implemented',
     requirement: {
-      idempotency: 'versioned_note_token_required_if_supported',
+      idempotency: 'stable idempotency_key + note_id + payload hash guard',
       retry_class: 'write_retryable',
-      audit_events: ['autotask.command.policy_rejected'],
-      sync_reconcile_expectation: 'no frozen update contract in current model',
+      audit_events: ['autotask.command.submitted', 'autotask.command.result'],
+      sync_reconcile_expectation: 'updated note content must stay reconcile-auditable',
     },
-    notes: 'No stable in-repo endpoint/contract usage for note update',
   },
   {
     domain: 'ticket_checklist_items',
     operation: 'list_by_ticket',
-    status: 'excluded_by_api_limitation',
+    status: 'implemented',
     requirement: {
       idempotency: 'not_applicable_read',
       retry_class: 'read_retryable',
-      audit_events: ['autotask.read.checklist_items.skipped'],
-      sync_reconcile_expectation: 'not represented in reconcile model',
+      audit_events: ['autotask.read.checklist_items'],
+      sync_reconcile_expectation: 'checklist snapshot can be queried for context/reconcile extensions',
     },
   },
   {
     domain: 'ticket_checklist_items',
     operation: 'create',
-    status: 'excluded_by_api_limitation',
+    status: 'implemented',
     requirement: {
-      idempotency: 'checklist_item_idempotency_key_required_if_supported',
+      idempotency: 'checklist_item_idempotency_key_required',
       retry_class: 'write_retryable',
-      audit_events: ['autotask.command.policy_rejected'],
-      sync_reconcile_expectation: 'not represented in reconcile model',
+      audit_events: ['autotask.command.submitted', 'autotask.command.result'],
+      sync_reconcile_expectation: 'checklist create must be auditable and replay-safe',
     },
   },
   {
     domain: 'ticket_checklist_items',
     operation: 'update',
-    status: 'excluded_by_api_limitation',
+    status: 'implemented',
     requirement: {
-      idempotency: 'checklist_item_idempotency_key_required_if_supported',
+      idempotency: 'checklist_item_idempotency_key_required',
       retry_class: 'write_retryable',
-      audit_events: ['autotask.command.policy_rejected'],
-      sync_reconcile_expectation: 'not represented in reconcile model',
+      audit_events: ['autotask.command.submitted', 'autotask.command.result'],
+      sync_reconcile_expectation: 'checklist update must be auditable and replay-safe',
     },
   },
   {
     domain: 'ticket_checklist_items',
     operation: 'delete',
-    status: 'excluded_by_api_limitation',
+    status: 'implemented',
     requirement: {
-      idempotency: 'hard_idempotency_token_required_if_supported',
+      idempotency: 'hard_idempotency_token_required',
       retry_class: 'non_retryable_terminal',
-      audit_events: ['autotask.command.policy_rejected'],
-      sync_reconcile_expectation: 'not represented in reconcile model',
+      audit_events: ['autotask.command.submitted', 'autotask.command.result'],
+      sync_reconcile_expectation: 'checklist delete requires explicit approval token and audit trail',
     },
   },
   {
@@ -351,23 +366,23 @@ export const AUTOTASK_PHASE1_FULL_API_CAPABILITY_MATRIX: ReadonlyArray<AutotaskP
   {
     domain: 'time_entries',
     operation: 'update',
-    status: 'excluded_by_permission',
+    status: 'implemented',
     requirement: {
-      idempotency: 'stable idempotency_key_required_if_enabled',
+      idempotency: 'stable idempotency_key + payload hash guard per time-entry update',
       retry_class: 'write_retryable',
-      audit_events: ['autotask.command.policy_rejected'],
-      sync_reconcile_expectation: 'not represented in current reconcile model',
+      audit_events: ['autotask.command.submitted', 'autotask.command.result'],
+      sync_reconcile_expectation: 'time-entry update must be auditable and replay-safe',
     },
   },
   {
     domain: 'time_entries',
     operation: 'delete',
-    status: 'excluded_by_permission',
+    status: 'implemented',
     requirement: {
-      idempotency: 'hard_idempotency_token_required_if_enabled',
+      idempotency: 'hard_idempotency_token_required',
       retry_class: 'non_retryable_terminal',
-      audit_events: ['autotask.command.policy_rejected'],
-      sync_reconcile_expectation: 'not represented in current reconcile model',
+      audit_events: ['autotask.command.submitted', 'autotask.command.result'],
+      sync_reconcile_expectation: 'time-entry delete requires explicit approval token and audit trail',
     },
   },
   {
@@ -384,34 +399,34 @@ export const AUTOTASK_PHASE1_FULL_API_CAPABILITY_MATRIX: ReadonlyArray<AutotaskP
   {
     domain: 'contacts',
     operation: 'query_search',
-    status: 'excluded_by_api_limitation',
+    status: 'implemented',
     requirement: {
       idempotency: 'not_applicable_read',
       retry_class: 'read_retryable',
-      audit_events: ['autotask.read.contact_query.skipped'],
-      sync_reconcile_expectation: 'not required by current reconcile scope',
+      audit_events: ['autotask.read.contact_query'],
+      sync_reconcile_expectation: 'query supports contact search workflows',
     },
   },
   {
     domain: 'contacts',
     operation: 'create',
-    status: 'excluded_by_permission',
+    status: 'implemented',
     requirement: {
-      idempotency: 'stable idempotency_key_required_if_enabled',
+      idempotency: 'stable idempotency_key + payload hash guard per contact create',
       retry_class: 'write_retryable',
-      audit_events: ['autotask.command.policy_rejected'],
-      sync_reconcile_expectation: 'contact writes excluded in current phase',
+      audit_events: ['autotask.command.submitted', 'autotask.command.result'],
+      sync_reconcile_expectation: 'contact creation must be auditable and replay-safe',
     },
   },
   {
     domain: 'contacts',
     operation: 'update',
-    status: 'excluded_by_permission',
+    status: 'implemented',
     requirement: {
-      idempotency: 'stable idempotency_key_required_if_enabled',
+      idempotency: 'stable idempotency_key + payload hash guard per contact update',
       retry_class: 'write_retryable',
-      audit_events: ['autotask.command.policy_rejected'],
-      sync_reconcile_expectation: 'contact writes excluded in current phase',
+      audit_events: ['autotask.command.submitted', 'autotask.command.result'],
+      sync_reconcile_expectation: 'contact update must be auditable and replay-safe',
     },
   },
   {
@@ -428,34 +443,34 @@ export const AUTOTASK_PHASE1_FULL_API_CAPABILITY_MATRIX: ReadonlyArray<AutotaskP
   {
     domain: 'companies',
     operation: 'query_search',
-    status: 'excluded_by_api_limitation',
+    status: 'implemented',
     requirement: {
       idempotency: 'not_applicable_read',
       retry_class: 'read_retryable',
-      audit_events: ['autotask.read.company_query.skipped'],
-      sync_reconcile_expectation: 'not required by current reconcile scope',
+      audit_events: ['autotask.read.company_query'],
+      sync_reconcile_expectation: 'query supports company search workflows',
     },
   },
   {
     domain: 'companies',
     operation: 'create',
-    status: 'excluded_by_permission',
+    status: 'implemented',
     requirement: {
-      idempotency: 'stable idempotency_key_required_if_enabled',
+      idempotency: 'stable idempotency_key + payload hash guard per company create',
       retry_class: 'write_retryable',
-      audit_events: ['autotask.command.policy_rejected'],
-      sync_reconcile_expectation: 'company writes excluded in current phase',
+      audit_events: ['autotask.command.submitted', 'autotask.command.result'],
+      sync_reconcile_expectation: 'company creation must be auditable and replay-safe',
     },
   },
   {
     domain: 'companies',
     operation: 'update',
-    status: 'excluded_by_permission',
+    status: 'implemented',
     requirement: {
-      idempotency: 'stable idempotency_key_required_if_enabled',
+      idempotency: 'stable idempotency_key + payload hash guard per company update',
       retry_class: 'write_retryable',
-      audit_events: ['autotask.command.policy_rejected'],
-      sync_reconcile_expectation: 'company writes excluded in current phase',
+      audit_events: ['autotask.command.submitted', 'autotask.command.result'],
+      sync_reconcile_expectation: 'company update must be auditable and replay-safe',
     },
   },
   {
@@ -510,3 +525,271 @@ export const AUTOTASK_PHASE1_EXCLUSION_NOTES = {
   excluded_by_api_limitation:
     'Operation has no frozen endpoint/contract in this repository at this time.',
 } as const;
+
+export type AutotaskPhase1ExpansionActionKind = 'command' | 'query';
+
+export interface AutotaskPhase1SchemaField {
+  name: string;
+  type: 'string' | 'number' | 'boolean' | 'object' | 'array';
+  required: boolean;
+  aliases?: string[];
+}
+
+export interface AutotaskPhase1EndpointSpec {
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  path: string;
+}
+
+export interface AutotaskPhase1ImplementationContract {
+  key: string;
+  domain: AutotaskPhase1Domain;
+  operation: string;
+  source_status: Extract<AutotaskPhase1CapabilityStatus, 'excluded_by_permission' | 'excluded_by_api_limitation'>;
+  action_kind: AutotaskPhase1ExpansionActionKind;
+  endpoints: ReadonlyArray<AutotaskPhase1EndpointSpec>;
+  payload_schema: ReadonlyArray<AutotaskPhase1SchemaField>;
+  validation_rules: ReadonlyArray<string>;
+  target_modules: ReadonlyArray<string>;
+  test_required: string;
+}
+
+export const AUTOTASK_PHASE1_EXCLUSION_IMPLEMENTATION_CONTRACTS: ReadonlyArray<AutotaskPhase1ImplementationContract> = [
+  {
+    key: 'tickets:update_priority',
+    domain: 'tickets',
+    operation: 'update_priority',
+    source_status: 'excluded_by_permission',
+    action_kind: 'command',
+    endpoints: [{ method: 'PATCH', path: '/tickets' }],
+    payload_schema: [
+      { name: 'ticket_id', type: 'string', required: true, aliases: ['id'] },
+      { name: 'priority', type: 'number', required: true, aliases: ['priorityID'] },
+    ],
+    validation_rules: ['ticket_id must resolve to numeric Autotask entity id', 'priority must be a valid ticket picklist option'],
+    target_modules: ['apps/api/src/services/ticket-workflow-core.ts', 'apps/api/src/clients/autotask.ts'],
+    test_required: 'workflow priority command schema + payload mapping test',
+  },
+  {
+    key: 'tickets:delete',
+    domain: 'tickets',
+    operation: 'delete',
+    source_status: 'excluded_by_permission',
+    action_kind: 'command',
+    endpoints: [{ method: 'DELETE', path: '/tickets/{id}' }],
+    payload_schema: [
+      { name: 'ticket_id', type: 'string', required: true, aliases: ['id'] },
+      { name: 'destructive_approval_token', type: 'string', required: true },
+    ],
+    validation_rules: ['destructive operation requires explicit approval token', 'command must be blocked when launch policy denies destructive writes'],
+    target_modules: ['apps/api/src/services/ticket-workflow-core.ts', 'apps/api/src/routes/workflow.ts'],
+    test_required: 'policy gate + destructive audit event coverage',
+  },
+  {
+    key: 'ticket_notes:update',
+    domain: 'ticket_notes',
+    operation: 'update',
+    source_status: 'excluded_by_api_limitation',
+    action_kind: 'command',
+    endpoints: [{ method: 'PATCH', path: '/tickets/{id}/notes' }],
+    payload_schema: [
+      { name: 'ticket_id', type: 'string', required: true, aliases: ['id'] },
+      { name: 'note_id', type: 'number', required: true },
+      { name: 'description', type: 'string', required: false, aliases: ['noteText', 'body'] },
+      { name: 'title', type: 'string', required: false },
+      { name: 'publish', type: 'number', required: false },
+      { name: 'note_type', type: 'number', required: false, aliases: ['noteType'] },
+    ],
+    validation_rules: ['at least one mutable note field must be provided', 'note_id must be a positive integer'],
+    target_modules: ['apps/api/src/services/ticket-workflow-core.ts', 'apps/api/src/clients/autotask.ts'],
+    test_required: 'note update schema + idempotency replay test',
+  },
+  {
+    key: 'ticket_checklist_items:list_by_ticket',
+    domain: 'ticket_checklist_items',
+    operation: 'list_by_ticket',
+    source_status: 'excluded_by_api_limitation',
+    action_kind: 'query',
+    endpoints: [{ method: 'GET', path: '/tickets/{id}/checklistItems' }],
+    payload_schema: [{ name: 'ticket_id', type: 'string', required: true, aliases: ['id'] }],
+    validation_rules: ['ticket_id must resolve to numeric Autotask entity id'],
+    target_modules: ['apps/api/src/clients/autotask.ts', 'apps/api/src/services/prepare-context.ts'],
+    test_required: 'checklist list query request/response contract test',
+  },
+  {
+    key: 'ticket_checklist_items:create',
+    domain: 'ticket_checklist_items',
+    operation: 'create',
+    source_status: 'excluded_by_api_limitation',
+    action_kind: 'command',
+    endpoints: [{ method: 'POST', path: '/tickets/{id}/checklistItems' }],
+    payload_schema: [
+      { name: 'ticket_id', type: 'string', required: true, aliases: ['id'] },
+      { name: 'title', type: 'string', required: true, aliases: ['name'] },
+      { name: 'is_completed', type: 'boolean', required: false, aliases: ['isComplete'] },
+    ],
+    validation_rules: ['title must be non-empty', 'idempotency key is required at command envelope boundary'],
+    target_modules: ['apps/api/src/services/ticket-workflow-core.ts', 'apps/api/src/clients/autotask.ts'],
+    test_required: 'checklist create command schema test',
+  },
+  {
+    key: 'ticket_checklist_items:update',
+    domain: 'ticket_checklist_items',
+    operation: 'update',
+    source_status: 'excluded_by_api_limitation',
+    action_kind: 'command',
+    endpoints: [{ method: 'PATCH', path: '/tickets/{id}/checklistItems' }],
+    payload_schema: [
+      { name: 'ticket_id', type: 'string', required: true, aliases: ['id'] },
+      { name: 'checklist_item_id', type: 'number', required: true, aliases: ['checklistItemID'] },
+      { name: 'title', type: 'string', required: false, aliases: ['name'] },
+      { name: 'is_completed', type: 'boolean', required: false, aliases: ['isComplete'] },
+    ],
+    validation_rules: ['checklist_item_id must be positive', 'at least one mutable checklist field must be provided'],
+    target_modules: ['apps/api/src/services/ticket-workflow-core.ts', 'apps/api/src/clients/autotask.ts'],
+    test_required: 'checklist update command schema test',
+  },
+  {
+    key: 'ticket_checklist_items:delete',
+    domain: 'ticket_checklist_items',
+    operation: 'delete',
+    source_status: 'excluded_by_api_limitation',
+    action_kind: 'command',
+    endpoints: [{ method: 'DELETE', path: '/tickets/{id}/checklistItems/{checklistItemId}' }],
+    payload_schema: [
+      { name: 'ticket_id', type: 'string', required: true, aliases: ['id'] },
+      { name: 'checklist_item_id', type: 'number', required: true, aliases: ['checklistItemId'] },
+      { name: 'destructive_approval_token', type: 'string', required: true },
+    ],
+    validation_rules: ['destructive operation requires explicit approval token'],
+    target_modules: ['apps/api/src/services/ticket-workflow-core.ts', 'apps/api/src/routes/workflow.ts'],
+    test_required: 'checklist delete policy and audit coverage test',
+  },
+  {
+    key: 'time_entries:update',
+    domain: 'time_entries',
+    operation: 'update',
+    source_status: 'excluded_by_permission',
+    action_kind: 'command',
+    endpoints: [{ method: 'PATCH', path: '/timeEntries' }],
+    payload_schema: [
+      { name: 'time_entry_id', type: 'number', required: true, aliases: ['id'] },
+      { name: 'hours_worked', type: 'number', required: false, aliases: ['hoursWorked'] },
+      { name: 'summary_notes', type: 'string', required: false, aliases: ['summaryNotes'] },
+    ],
+    validation_rules: ['time_entry_id must be positive', 'hours_worked must be >= 0 when provided'],
+    target_modules: ['apps/api/src/services/ticket-workflow-core.ts', 'apps/api/src/clients/autotask.ts'],
+    test_required: 'time entry update command schema test',
+  },
+  {
+    key: 'time_entries:delete',
+    domain: 'time_entries',
+    operation: 'delete',
+    source_status: 'excluded_by_permission',
+    action_kind: 'command',
+    endpoints: [{ method: 'DELETE', path: '/timeEntries/{id}' }],
+    payload_schema: [
+      { name: 'time_entry_id', type: 'number', required: true, aliases: ['id'] },
+      { name: 'destructive_approval_token', type: 'string', required: true },
+    ],
+    validation_rules: ['destructive operation requires explicit approval token'],
+    target_modules: ['apps/api/src/services/ticket-workflow-core.ts', 'apps/api/src/routes/workflow.ts'],
+    test_required: 'time entry delete policy and audit coverage test',
+  },
+  {
+    key: 'contacts:query_search',
+    domain: 'contacts',
+    operation: 'query_search',
+    source_status: 'excluded_by_api_limitation',
+    action_kind: 'query',
+    endpoints: [{ method: 'GET', path: '/contacts/query' }],
+    payload_schema: [
+      { name: 'search', type: 'object', required: true, aliases: ['filter'] },
+      { name: 'page_size', type: 'number', required: false, aliases: ['MaxRecords'] },
+    ],
+    validation_rules: ['search must include allowed op/field/value clauses', 'page_size must stay within adapter limit'],
+    target_modules: ['apps/api/src/clients/autotask.ts', 'apps/api/src/services/prepare-context.ts'],
+    test_required: 'contact query request/response schema test',
+  },
+  {
+    key: 'contacts:create',
+    domain: 'contacts',
+    operation: 'create',
+    source_status: 'excluded_by_permission',
+    action_kind: 'command',
+    endpoints: [{ method: 'POST', path: '/contacts' }],
+    payload_schema: [
+      { name: 'company_id', type: 'number', required: true, aliases: ['companyID'] },
+      { name: 'first_name', type: 'string', required: true, aliases: ['firstName'] },
+      { name: 'last_name', type: 'string', required: true, aliases: ['lastName'] },
+      { name: 'email_address', type: 'string', required: false, aliases: ['emailAddress'] },
+    ],
+    validation_rules: ['company_id must be positive', 'at least one contact method should be present'],
+    target_modules: ['apps/api/src/services/ticket-workflow-core.ts', 'apps/api/src/clients/autotask.ts'],
+    test_required: 'contact create command schema test',
+  },
+  {
+    key: 'contacts:update',
+    domain: 'contacts',
+    operation: 'update',
+    source_status: 'excluded_by_permission',
+    action_kind: 'command',
+    endpoints: [{ method: 'PATCH', path: '/contacts' }],
+    payload_schema: [
+      { name: 'contact_id', type: 'number', required: true, aliases: ['id'] },
+      { name: 'first_name', type: 'string', required: false, aliases: ['firstName'] },
+      { name: 'last_name', type: 'string', required: false, aliases: ['lastName'] },
+      { name: 'email_address', type: 'string', required: false, aliases: ['emailAddress'] },
+    ],
+    validation_rules: ['contact_id must be positive', 'at least one mutable field must be provided'],
+    target_modules: ['apps/api/src/services/ticket-workflow-core.ts', 'apps/api/src/clients/autotask.ts'],
+    test_required: 'contact update command schema test',
+  },
+  {
+    key: 'companies:query_search',
+    domain: 'companies',
+    operation: 'query_search',
+    source_status: 'excluded_by_api_limitation',
+    action_kind: 'query',
+    endpoints: [{ method: 'GET', path: '/companies/query' }],
+    payload_schema: [
+      { name: 'search', type: 'object', required: true, aliases: ['filter'] },
+      { name: 'page_size', type: 'number', required: false, aliases: ['MaxRecords'] },
+    ],
+    validation_rules: ['search must include allowed op/field/value clauses', 'page_size must stay within adapter limit'],
+    target_modules: ['apps/api/src/clients/autotask.ts', 'apps/api/src/services/prepare-context.ts'],
+    test_required: 'company query request/response schema test',
+  },
+  {
+    key: 'companies:create',
+    domain: 'companies',
+    operation: 'create',
+    source_status: 'excluded_by_permission',
+    action_kind: 'command',
+    endpoints: [{ method: 'POST', path: '/companies' }],
+    payload_schema: [
+      { name: 'company_name', type: 'string', required: true, aliases: ['companyName'] },
+      { name: 'is_active', type: 'boolean', required: false, aliases: ['isActive'] },
+      { name: 'web_address', type: 'string', required: false, aliases: ['webAddress'] },
+    ],
+    validation_rules: ['company_name must be non-empty'],
+    target_modules: ['apps/api/src/services/ticket-workflow-core.ts', 'apps/api/src/clients/autotask.ts'],
+    test_required: 'company create command schema test',
+  },
+  {
+    key: 'companies:update',
+    domain: 'companies',
+    operation: 'update',
+    source_status: 'excluded_by_permission',
+    action_kind: 'command',
+    endpoints: [{ method: 'PATCH', path: '/companies' }],
+    payload_schema: [
+      { name: 'company_id', type: 'number', required: true, aliases: ['id'] },
+      { name: 'company_name', type: 'string', required: false, aliases: ['companyName'] },
+      { name: 'is_active', type: 'boolean', required: false, aliases: ['isActive'] },
+      { name: 'web_address', type: 'string', required: false, aliases: ['webAddress'] },
+    ],
+    validation_rules: ['company_id must be positive', 'at least one mutable field must be provided'],
+    target_modules: ['apps/api/src/services/ticket-workflow-core.ts', 'apps/api/src/clients/autotask.ts'],
+    test_required: 'company update command schema test',
+  },
+] as const;

@@ -13,6 +13,9 @@ export type WorkflowTargetIntegration =
 export type WorkflowCommandType =
   | 'create'
   | 'update'
+  | 'update_priority'
+  | 'delete'
+  | 'ticket_delete'
   | 'assign'
   | 'update_assign'
   | 'status'
@@ -22,7 +25,20 @@ export type WorkflowCommandType =
   | 'note'
   | 'comment_note'
   | 'create_comment_note'
-  | 'time_entry';
+  | 'update_note'
+  | 'checklist_list_by_ticket'
+  | 'checklist_create'
+  | 'checklist_update'
+  | 'checklist_delete'
+  | 'time_entry'
+  | 'time_entry_update'
+  | 'time_entry_delete'
+  | 'contacts_query_search'
+  | 'contact_create'
+  | 'contact_update'
+  | 'companies_query_search'
+  | 'company_create'
+  | 'company_update';
 
 export type WorkflowActorKind = 'user' | 'system' | 'ai';
 

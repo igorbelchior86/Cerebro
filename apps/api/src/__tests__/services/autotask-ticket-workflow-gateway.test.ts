@@ -106,12 +106,12 @@ describe('AutotaskTicketWorkflowGateway', () => {
 
     const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
     await expect(gateway.executeCommand(buildCommand({
-      command_type: 'update',
+      command_type: 'ticket_delete',
       payload: {
         ticket_id: 'T20260226.0111',
-        priority: 1,
+        destructive_approval_token: '',
       },
-    }))).rejects.toThrow('frozen matrix');
+    }))).rejects.toThrow('missing_destructive_approval_token');
   });
 
   it('executes time entry create operation from approved matrix scope', async () => {
@@ -135,5 +135,36 @@ describe('AutotaskTicketWorkflowGateway', () => {
       expect.objectContaining({ ticketID: 333, resourceID: 42, hoursWorked: 1.5, summaryNotes: 'Remote troubleshooting' })
     );
     expect(result).toMatchObject({ kind: 'time_entry', entry_id: 2222 });
+  });
+
+  it('executes update_priority operation from previously excluded scope', async () => {
+    const mockClient = {
+      getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 333, ticketNumber: 'T20260226.0033' }),
+      updateTicketPriority: jest.fn().mockResolvedValue({}),
+      getTicket: jest.fn().mockResolvedValue({ id: 333, ticketNumber: 'T20260226.0033', status: 5 }),
+    } as any;
+
+    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    await gateway.executeCommand(buildCommand({
+      command_type: 'update_priority',
+      payload: { ticket_id: 'T20260226.0033', priority: 3 },
+    }));
+
+    expect(mockClient.updateTicketPriority).toHaveBeenCalledWith(333, 3);
+  });
+
+  it('requires destructive approval token for ticket delete', async () => {
+    const mockClient = {
+      getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 444, ticketNumber: 'T20260226.0444' }),
+      deleteTicket: jest.fn().mockResolvedValue({}),
+    } as any;
+
+    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    await gateway.executeCommand(buildCommand({
+      command_type: 'ticket_delete',
+      payload: { ticket_id: 'T20260226.0444', destructive_approval_token: 'allow-1' },
+    }));
+
+    expect(mockClient.deleteTicket).toHaveBeenCalledWith(444);
   });
 });

@@ -603,3 +603,9 @@
 **Root cause**: No primeiro passe, o scan de "latest evidence" não tratou diretórios `docs/validation/runs/followup-*` não rastreados como candidatos de mesma prioridade.
 **Rule**: Em tarefas de signoff/readiness com múltiplos agentes, sempre reescanear `docs/validation/runs/` (incluindo bundles `followup-*` não rastreados) imediatamente antes de consolidar a decisão final.
 **Pattern**: Pacote final cita "remediation not found" enquanto existem novos arquivos `followup-*` no `git status` => rerun obrigatório do consolidation pass.
+
+## Lesson: 2026-02-27 (Prompt B scope must cover full Prompt A exclusion set, not only safe-write subset)
+**Mistake**: Eu havia convergido para cobertura apenas do subset safe-write/legacy do gateway, sem tratar toda a superfície de operações previamente excluídas definida no Prompt A.
+**Root cause**: Interpretação parcial do escopo técnico ao priorizar continuidade do fluxo existente em vez da lista contratual completa (`AUTOTASK_PHASE1_EXCLUSION_IMPLEMENTATION_CONTRACTS`).
+**Rule**: Em prompts encadeados A->B, usar o artefato de saída de A como checklist fechado e implementar 100% das operações listadas antes de considerar B completo.
+**Pattern**: Quando o usuário cita “newly unblocked operations”, validar explicitamente cada `domain.operation` do contrato de burn-down e marcar cobertura 1:1 em código/testes.

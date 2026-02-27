@@ -195,5 +195,41 @@ describe('AutotaskClient', () => {
       expect(postInit.method).toBe('POST');
       expect(JSON.parse(String(postInit.body))).toMatchObject({ noteText: 'hello', description: 'hello', noteType: 7, title: 'hello' });
     });
+
+    it('should DELETE /tickets/{id} for ticket delete operations', async () => {
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ items: [{ id: 777, ticketNumber: 'T20260227.0777' }] })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 204,
+          headers: { get: () => null },
+          text: async () => ''
+        });
+
+      await client.deleteTicket('T20260227.0777');
+
+      const deleteUrl = new URL((global.fetch as jest.Mock).mock.calls[1][0] as string);
+      const deleteInit = (global.fetch as jest.Mock).mock.calls[1][1];
+      expect(deleteUrl.pathname.toLowerCase()).toContain('/tickets/777');
+      expect(deleteInit.method).toBe('DELETE');
+    });
+
+    it('should PATCH /timeEntries with body id for time entry update', async () => {
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ item: { id: 991 } })
+      });
+
+      await client.updateTimeEntry(991, { hoursWorked: 2 });
+
+      const patchUrl = new URL((global.fetch as jest.Mock).mock.calls[0][0] as string);
+      const patchInit = (global.fetch as jest.Mock).mock.calls[0][1];
+      expect(patchUrl.pathname.toLowerCase()).toContain('/timeentries');
+      expect(patchInit.method).toBe('PATCH');
+      expect(JSON.parse(String(patchInit.body))).toMatchObject({ id: 991, hoursWorked: 2 });
+    });
   });
 });

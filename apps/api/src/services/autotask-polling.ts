@@ -3,6 +3,7 @@ import { queryOne, withTryAdvisoryLock } from '../db/index.js';
 import type { WorkflowEventEnvelope } from './ticket-workflow-core.js';
 import { triageOrchestrator } from './triage-orchestrator.js';
 import { workflowService } from './workflow-runtime.js';
+import { classifyQueueError } from '../platform/errors.js';
 
 interface AutotaskCreds {
   apiIntegrationCode: string;
@@ -17,6 +18,16 @@ type AutotaskPollContext = {
 };
 
 type PollLockResult = { acquired: boolean };
+type SyncRetryDisposition = 'retry_pending' | 'dlq';
+type SyncRetryEntry = {
+  event: WorkflowEventEnvelope;
+  attempts: number;
+  maxAttempts: number;
+  nextRetryAt?: number;
+  disposition: SyncRetryDisposition;
+  lastError: string;
+  errorCode: string;
+};
 
 export class AutotaskPollingService {
   private intervalId: NodeJS.Timeout | null = null;
@@ -28,6 +39,11 @@ export class AutotaskPollingService {
   private readonly workflowSyncFn: (event: WorkflowEventEnvelope) => Promise<unknown>;
   private readonly triageRunFn: (ticketId: string) => Promise<void>;
   private readonly runWithLockFn: (fn: () => Promise<void>) => Promise<PollLockResult>;
+  private readonly nowFn: () => number;
+  private readonly retryBackoffMsFn: (attempt: number) => number;
+  private readonly syncRetryMaxAttempts: number;
+  private readonly syncRetryQueue = new Map<string, SyncRetryEntry>();
+  private readonly syncDlq = new Map<string, SyncRetryEntry>();
 
   constructor(input?: {
     pollIntervalMs?: number;
@@ -35,6 +51,9 @@ export class AutotaskPollingService {
     workflowSync?: (event: WorkflowEventEnvelope) => Promise<unknown>;
     triageRun?: (ticketId: string) => Promise<void>;
     runWithLock?: (fn: () => Promise<void>) => Promise<PollLockResult>;
+    now?: () => number;
+    retryBackoffMs?: (attempt: number) => number;
+    syncRetryMaxAttempts?: number;
   }) {
     if (Number.isFinite(Number(input?.pollIntervalMs))) {
       this.pollIntervalMs = Math.max(5_000, Number(input?.pollIntervalMs));
@@ -46,6 +65,13 @@ export class AutotaskPollingService {
       withTryAdvisoryLock(this.advisoryLockNamespace, this.advisoryLockKey, async () => {
         await fn();
       }));
+    this.nowFn = input?.now || (() => Date.now());
+    this.retryBackoffMsFn = input?.retryBackoffMs || ((attempt) => {
+      const base = 1_000;
+      const exponent = Math.min(Math.max(attempt - 1, 0), 6);
+      return Math.min(base * Math.pow(2, exponent), 60_000);
+    });
+    this.syncRetryMaxAttempts = Math.max(1, Number(input?.syncRetryMaxAttempts ?? 5));
   }
 
   private async getAutotaskCredentials(): Promise<{ tenantId?: string; credentials: AutotaskCreds } | null> {
@@ -133,6 +159,7 @@ export class AutotaskPollingService {
     this.isPolling = true;
     try {
       const lock = await this.runWithLockFn(async () => {
+        await this.processPendingSyncRetries();
         const context = await this.buildPollContextFn();
         if (!context) {
           console.warn('[AutotaskPolling] Missing Autotask credentials (DB/UI and env fallback). Skipping poll.');
@@ -206,10 +233,64 @@ export class AutotaskPollingService {
       },
     };
 
+    await this.dispatchSyncEvent(event, 'autotask.poller');
+  }
+
+  private async processPendingSyncRetries(): Promise<void> {
+    if (this.syncRetryQueue.size === 0) return;
+    const now = this.nowFn();
+    const due = Array.from(this.syncRetryQueue.values()).filter((entry) => (entry.nextRetryAt ?? 0) <= now);
+    for (const entry of due) {
+      await this.dispatchSyncEvent(entry.event, 'autotask.retry');
+    }
+  }
+
+  private async dispatchSyncEvent(event: WorkflowEventEnvelope, source: 'autotask.poller' | 'autotask.retry'): Promise<void> {
+    const key = `${event.tenant_id}::${event.event_id}`;
     try {
       await this.workflowSyncFn(event);
+      this.syncRetryQueue.delete(key);
     } catch (error) {
-      console.error(`[AutotaskPolling] Workflow sync ingestion failed for ticket ${ticketRef}:`, error);
+      const classified = classifyQueueError(error);
+      const retryable = classified.disposition === 'retry';
+      const previous = this.syncRetryQueue.get(key);
+      const attempts = (previous?.attempts ?? 0) + 1;
+      const ticketId = String(event.correlation.ticket_id || event.entity_id || '').trim();
+      const operation: SyncRetryEntry = {
+        event,
+        attempts,
+        maxAttempts: this.syncRetryMaxAttempts,
+        disposition: (!retryable || attempts >= this.syncRetryMaxAttempts) ? 'dlq' : 'retry_pending',
+        ...(retryable && attempts < this.syncRetryMaxAttempts
+          ? { nextRetryAt: this.nowFn() + this.retryBackoffMsFn(attempts) }
+          : {}),
+        lastError: String((error as any)?.message || error || 'unknown sync error'),
+        errorCode: classified.code,
+      };
+      if (operation.disposition === 'retry_pending') {
+        this.syncRetryQueue.set(key, operation);
+      } else {
+        this.syncRetryQueue.delete(key);
+        this.syncDlq.set(key, operation);
+      }
+
+      console.error(
+        '[AutotaskPolling] Workflow sync ingestion failed',
+        JSON.stringify({
+          source,
+          tenant_id: event.tenant_id,
+          ticket_id: ticketId,
+          trace_id: event.correlation.trace_id,
+          classification: classified,
+          degraded_mode: true,
+          operation: {
+            attempts: operation.attempts,
+            max_attempts: operation.maxAttempts,
+            disposition: operation.disposition,
+            ...(operation.nextRetryAt ? { next_retry_at: new Date(operation.nextRetryAt).toISOString() } : {}),
+          },
+        }),
+      );
     }
   }
 }

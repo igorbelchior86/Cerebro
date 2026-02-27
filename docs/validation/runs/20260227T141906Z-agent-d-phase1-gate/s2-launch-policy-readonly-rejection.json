@@ -1,0 +1,43 @@
+{
+  "captured_at": "2026-02-27T14:23:49Z",
+  "request": {
+    "method": "POST",
+    "path": "/workflow/commands",
+    "correlation_id": "phase1-agent-d-20260227T141906Z-readonly-submit",
+    "job_id": "phase1-agent-d-job-20260227T141906Z",
+    "body": {
+      "command_type": "update",
+      "target_integration": "ITGlue",
+      "auto_process": false,
+      "idempotency_key": "phase1-agent-d-readonly-idem-20260227T141906Z",
+      "payload": {
+        "ticket_id": "T20260226.0033",
+        "status": "In Progress"
+      },
+      "audit_metadata": {
+        "validation_session": "phase1-agent-d-gate-20260227T141906Z",
+        "scenario": "S2",
+        "gate": "phase1",
+        "launch_policy_probe": "readonly_integration_write_rejection"
+      },
+      "correlation": {
+        "trace_id": "phase1-agent-d-20260227T141906Z-readonly-submit",
+        "ticket_id": "T20260226.0033",
+        "job_id": "phase1-agent-d-job-20260227T141906Z"
+      }
+    }
+  },
+  "response": {
+    "status_code": 403,
+    "headers": {
+      "x_request_id": "phase1-agent-d-20260227T141906Z-readonly-submit",
+      "x_trace_id": "phase1-agent-d-20260227T141906Z-readonly-submit",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "error": "P0 command writes are allowed only for Autotask (received: ITGlue)"
+    },
+    "body_text": "{\"error\":\"P0 command writes are allowed only for Autotask (received: ITGlue)\"}"
+  }
+}

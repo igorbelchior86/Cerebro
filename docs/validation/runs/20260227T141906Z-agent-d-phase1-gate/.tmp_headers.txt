@@ -1,0 +1,14 @@
+HTTP/1.1 200 OK
+X-Powered-By: Express
+x-request-id: phase1-agent-d-20260227T141906Z-audit
+x-trace-id: phase1-agent-d-20260227T141906Z-audit
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Authorization, x-bootstrap-token, x-request-id, x-trace-id, x-ticket-id, x-job-id, x-command-id
+Content-Type: application/json; charset=utf-8
+Content-Length: 38552
+ETag: W/"9698-BbXZwZy8ktpYuoavb2RLw5gqF4Y"
+Date: Fri, 27 Feb 2026 14:23:52 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+

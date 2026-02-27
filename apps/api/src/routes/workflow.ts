@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type Router as ExpressRouter } fro
 import { classifyQueueError } from '../platform/errors.js';
 import {
   WorkflowPolicyError,
+  WorkflowReconcileFetchError,
   buildCommandEnvelope,
   type WorkflowEventEnvelope,
 } from '../services/ticket-workflow-core.js';
@@ -177,6 +178,23 @@ router.post('/reconcile/:ticketId', async (req, res, next) => {
     });
     res.json({ success: true, data: result, timestamp: new Date().toISOString() });
   } catch (error) {
+    if (error instanceof WorkflowReconcileFetchError) {
+      res.status(error.info.statusCode).json({
+        error: error.info.classification.code === 'RATE_LIMIT'
+          ? 'RATE_LIMITED'
+          : error.info.classification.code === 'TIMEOUT'
+            ? 'GATEWAY_TIMEOUT'
+            : 'RECONCILE_FETCH_FAILED',
+        code: `WORKFLOW_RECONCILE_${error.info.classification.code}`,
+        message: error.message,
+        statusCode: error.info.statusCode,
+        retryable: error.info.retryable,
+        classification: error.info.classification,
+        operation: error.info.operation,
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
     const classified = classifyQueueError(error);
     if (classified.code === 'RATE_LIMIT' || classified.code === 'TIMEOUT') {
       const statusCode = classified.code === 'RATE_LIMIT' ? 429 : 504;

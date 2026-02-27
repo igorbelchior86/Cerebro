@@ -14,6 +14,7 @@ Context7 was queried first for an Autotask library ID and returned no matching A
 ## 1) Minimum two-way command contract (frozen)
 Typed contract is frozen in:
 - `packages/types/src/autotask-two-way-contract.ts`
+- `docs/contracts/autotask-phase1-full-api-capability-matrix.md`
 
 Allowed minimum commands:
 - `assign`

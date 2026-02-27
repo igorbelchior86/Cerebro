@@ -19,7 +19,7 @@ Status legend:
 - `[ ]` Not started
 
 Scope update:
-- Phase 1 is aligned to **Execution PRD P0** (Autotask two-way happy path for the minimum safe command set + sync/reconcile/audit). Full API breadth is tracked as post-P0 expansion.
+- Phase 1 is aligned to **Execution PRD strict 100% Autotask API coverage** in engine. Phase 1 remains open until capability matrix has `excluded_* = 0`.
 
 Batch 1 (first 3 parallel prompts) completion summary:
 - `[x]` Agent A (CP0): contract freeze + platform foundations + launch policy guardrail + platform tests
@@ -141,7 +141,7 @@ Reminder for future reviews: do not use "no visible UI change" as a signal that 
 - integration mode policy testable end-to-end
 
 ##### Phase 1 — P0 Workflow Skeleton (Weeks 3-5)
-**Status:** `[~] Reopened due to scope expansion (full Autotask API coverage target)`
+**Status:** `[~] Reopened (strict closure rule: 100% implemented in engine, zero exclusions)`
 **Primary goal:** end-to-end ticket flow with Autotask two-way backbone
 
 - WS-B core Autotask command + sync paths
@@ -149,9 +149,9 @@ Reminder for future reviews: do not use "no visible UI change" as a signal that 
 - WS-D basic AI triage pipeline (suggestion-first)
 
 **Exit criteria**
-- create/update/assign in Autotask works through Cerebro
-- inbox reflects Autotask state changes reliably
-- audit records created for commands and AI suggestions
+- full Phase 1 Autotask capability matrix implemented in engine (`excluded_* = 0`)
+- representative live E2E proofs across operation classes pass (submit/process/sync/reconcile/audit)
+- idempotency + retry/DLQ + reconciliation + audit evidence complete
 
 ##### Phase 2 — Context Enrichment & Handoff (Weeks 6-8)
 **Status:** `[x] Completed (Batch 1)`

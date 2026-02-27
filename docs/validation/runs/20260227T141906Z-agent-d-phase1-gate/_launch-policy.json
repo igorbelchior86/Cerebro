@@ -1,0 +1,24 @@
+{
+  "captured_at": "2026-02-27T14:23:48Z",
+  "request": {
+    "method": "GET",
+    "path": "/manager-ops/p0/launch-policy",
+    "correlation_id": "phase1-agent-d-20260227T141906Z-launch-policy",
+    "job_id": "phase1-agent-d-job-20260227T141906Z",
+    "body": null
+  },
+  "response": {
+    "status_code": 404,
+    "headers": {
+      "x_request_id": "phase1-agent-d-20260227T141906Z-launch-policy",
+      "x_trace_id": "phase1-agent-d-20260227T141906Z-launch-policy",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "error": "Not Found",
+      "path": "/manager-ops/p0/launch-policy"
+    },
+    "body_text": "{\"error\":\"Not Found\",\"path\":\"/manager-ops/p0/launch-policy\"}"
+  }
+}

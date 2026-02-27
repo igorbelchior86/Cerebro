@@ -1,0 +1,24 @@
+{
+  "captured_at": "2026-02-27T14:23:48Z",
+  "request": {
+    "method": "GET",
+    "path": "/health",
+    "correlation_id": "phase1-agent-d-20260227T141906Z-health",
+    "job_id": "phase1-agent-d-job-20260227T141906Z",
+    "body": null
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "phase1-agent-d-20260227T141906Z-health",
+      "x_trace_id": "phase1-agent-d-20260227T141906Z-health",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "status": "ok",
+      "timestamp": "2026-02-27T14:23:48.397Z"
+    },
+    "body_text": "{\"status\":\"ok\",\"timestamp\":\"2026-02-27T14:23:48.397Z\"}"
+  }
+}

@@ -5,6 +5,7 @@ import {
   InMemoryTicketWorkflowRepository,
   TicketWorkflowCoreService,
   WorkflowPolicyError,
+  WorkflowReconcileFetchError,
   WorkflowTransientError,
   buildCommandEnvelope,
   type TicketWorkflowGateway,
@@ -66,6 +67,24 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     expect(second.command.idempotency_key).toBe('idem-dupe');
   });
 
+  it('rejects operations excluded by frozen matrix and audits policy rejection', async () => {
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn(),
+    };
+    const { service } = createService(gateway);
+    const cmd = createCommand({
+      commandType: 'update',
+      payload: { ticket_id: '5001', priority: 1 },
+      idempotencyKey: 'idem-blocked-priority',
+      correlation: { trace_id: 'trace-blocked-priority', ticket_id: '5001' },
+    });
+
+    await expect(service.submitCommand(cmd)).rejects.toBeInstanceOf(WorkflowPolicyError);
+    const audit = await service.listAuditByTicket(tenantId, '5001');
+    expect(audit.some((r) => r.action === 'workflow.command.rejected' && r.reason === 'operation_excluded_by_permission')).toBe(true);
+    expect(gateway.executeCommand).not.toHaveBeenCalled();
+  });
+
   it('executes happy path create -> assign -> status -> comment and projects inbox state', async () => {
     const gateway: TicketWorkflowGateway = {
       executeCommand: jest
@@ -103,7 +122,7 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     const assignCmd = buildCommandEnvelope({
       tenantId,
       targetIntegration: 'Autotask',
-      commandType: 'assign',
+      commandType: 'update_assign',
       payload: { ticket_id: '5001', assignee_resource_id: '42', queue_id: 7, queue_name: 'Service Desk' },
       actor,
       idempotencyKey: 'e2e-assign',
@@ -115,7 +134,7 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     const statusCmd = buildCommandEnvelope({
       tenantId,
       targetIntegration: 'Autotask',
-      commandType: 'status',
+      commandType: 'status_update',
       payload: {
         ticket_id: '5001',
         status: 'In Progress',
@@ -130,11 +149,9 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     const commentCmd = buildCommandEnvelope({
       tenantId,
       targetIntegration: 'Autotask',
-      commandType: 'comment',
+      commandType: 'create_comment_note',
       payload: {
         ticket_id: '5001',
-        title: 'Printer down (urgent)',
-        description: 'Queue stuck - floor 3',
         comment_body: 'User called again. Escalating.',
         comment_visibility: 'internal',
       },
@@ -320,6 +337,8 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
 
     const result = await service.reconcileTicket(tenantId, '7001', { trace_id: 'trace-rec', ticket_id: '7001' });
     expect(result.matched).toBe(false);
+    expect(result.classification).toBe('mismatch');
+    expect(result.domains.some((domain) => domain.classification === 'mismatch')).toBe(true);
 
     const issues = await service.listReconciliationIssues(tenantId, '7001');
     expect(issues.length).toBeGreaterThan(0);
@@ -347,6 +366,50 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
 
     const result = await service.reconcileTicket(tenantId, '7002', { trace_id: 'trace-rec-equivalent', ticket_id: '7002' });
     expect(result.matched).toBe(true);
+    expect(result.classification).toBe('match');
+  });
+
+  it('classifies missing_snapshot when local note fingerprint exists but remote note snapshot is absent', async () => {
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest
+        .fn()
+        .mockResolvedValueOnce({
+          kind: 'created',
+          external_ticket_id: '7110',
+          snapshot: { status: 'In Progress', assigned_to: '10' },
+        })
+        .mockResolvedValueOnce({
+          kind: 'updated',
+          snapshot: { status: 'In Progress', assigned_to: '10' },
+        }),
+      fetchTicketSnapshot: jest.fn().mockResolvedValue({ status: 'In Progress', assigned_to: '10' }),
+    };
+    const { service } = createService(gateway);
+    const createCmd = createCommand({
+      idempotencyKey: 'reconcile-missing-note-create',
+      correlation: { trace_id: 'trace-rec-missing', ticket_id: '7110' },
+    });
+    await service.submitCommand(createCmd);
+    await service.processPendingCommands();
+    const commentCmd = buildCommandEnvelope({
+      tenantId,
+      targetIntegration: 'Autotask',
+      commandType: 'comment',
+      payload: {
+        ticket_id: '7110',
+        comment_body: 'Added domain note',
+        comment_visibility: 'internal',
+      },
+      actor,
+      idempotencyKey: 'reconcile-missing-note-comment',
+      correlation: { trace_id: 'trace-rec-missing', ticket_id: '7110' },
+    });
+    await service.submitCommand(commentCmd);
+    await service.processPendingCommands();
+
+    const result = await service.reconcileTicket(tenantId, '7110', { trace_id: 'trace-rec-missing', ticket_id: '7110' });
+    expect(result.matched).toBe(false);
+    expect(result.classification).toBe('missing_snapshot');
   });
 
   it('persists workflow runtime state across repository reload when file backing is enabled', async () => {
@@ -411,6 +474,7 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
 
     const result = await service.reconcileTicket(tenantId, '9999', { trace_id: 'trace-skip', ticket_id: '9999' });
     expect(result.matched).toBe(true);
+    expect(result.classification).toBe('skipped');
     const audit = await service.listAuditByTicket(tenantId, '9999');
     expect(audit.some((r) => r.action === 'workflow.reconciliation.skipped_fetch_unavailable')).toBe(true);
   });
@@ -422,9 +486,17 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     };
     const { service } = createService(gateway);
 
-    await expect(
-      service.reconcileTicket(tenantId, 'VAL-H-S2-001', { trace_id: 'trace-rate-limit', ticket_id: 'VAL-H-S2-001' }),
-    ).rejects.toThrow('429');
+    const attempts: Array<'retry_pending' | 'dlq'> = [];
+    for (let i = 0; i < 3; i += 1) {
+      try {
+        await service.reconcileTicket(tenantId, 'VAL-H-S2-001', { trace_id: 'trace-rate-limit', ticket_id: 'VAL-H-S2-001' });
+      } catch (error) {
+        expect(error).toBeInstanceOf(WorkflowReconcileFetchError);
+        attempts.push((error as WorkflowReconcileFetchError).info.operation.disposition);
+      }
+    }
+    expect(attempts[0]).toBe('retry_pending');
+    expect(attempts[2]).toBe('dlq');
 
     const audit = await service.listAuditByTicket(tenantId, 'VAL-H-S2-001');
     const fetchFailed = audit.find((r) => r.action === 'workflow.reconciliation.fetch_failed');

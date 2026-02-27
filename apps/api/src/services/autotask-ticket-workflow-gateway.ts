@@ -4,6 +4,7 @@ import type {
   WorkflowCommandEnvelope,
   WorkflowExecutionResult,
 } from './ticket-workflow-core.js';
+import { resolveAutotaskOperation } from './autotask-operation-registry.js';
 
 export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
   constructor(private readonly clientFactory: (tenantId: string) => Promise<AutotaskClient | null>) {}
@@ -41,7 +42,12 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
     }
 
     const payload = command.payload as any;
-    if (command.command_type === 'create') {
+    const operation = resolveAutotaskOperation(command.command_type, payload || {});
+    if (operation.rejected) {
+      throw new Error(`Unsupported Autotask command_type by frozen matrix: ${command.command_type} (${operation.reason})`);
+    }
+
+    if (operation.operation.handler === 'create') {
       const created = await client.createTicket({
         title: payload.title,
         description: payload.description,
@@ -59,7 +65,7 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
       };
     }
 
-    if (command.command_type === 'assign') {
+    if (operation.operation.handler === 'assign') {
       const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
       await client.updateTicket(ticketId, {
         assignedResourceID: payload.assignee_resource_id ?? payload.assignedResourceID,
@@ -73,7 +79,7 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
       };
     }
 
-    if (command.command_type === 'status') {
+    if (operation.operation.handler === 'status') {
       const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
       await client.updateTicket(ticketId, {
         status: await this.normalizeStatusForWrite(client, payload.status),
@@ -86,12 +92,12 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
       };
     }
 
-    if (command.command_type === 'update') {
+    if (operation.operation.handler === 'legacy_update') {
       const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
       const patch: Record<string, unknown> = {};
-      if (payload.title !== undefined) patch.title = payload.title;
-      if (payload.description !== undefined) patch.description = payload.description;
-      if (payload.priority !== undefined) patch.priority = payload.priority;
+      if (payload.assignee_resource_id !== undefined || payload.assignedResourceID !== undefined) {
+        patch.assignedResourceID = payload.assignee_resource_id ?? payload.assignedResourceID;
+      }
       if (payload.queue_id !== undefined || payload.queueID !== undefined) patch.queueID = payload.queue_id ?? payload.queueID;
       if (payload.status !== undefined) patch.status = await this.normalizeStatusForWrite(client, payload.status);
 
@@ -115,7 +121,7 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
       return { kind: 'updated', ...(snapshot ? { snapshot } : {}) };
     }
 
-    if (command.command_type === 'comment' || command.command_type === 'note') {
+    if (operation.operation.handler === 'comment_note') {
       const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
       const commentBody = String(payload.comment_body ?? payload.note_body ?? payload.noteText ?? '').trim();
       if (!commentBody) {
@@ -133,7 +139,7 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
       return { kind: 'updated', ...(snapshot ? { snapshot } : {}) };
     }
 
-    if (command.command_type === 'time_entry') {
+    if (operation.operation.handler === 'time_entry') {
       const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
       const entry = await client.createTimeEntry({
         ticketID: ticketId,
@@ -209,7 +215,38 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
     const labels = await this.getStatusLabelMap(client);
     const label = labels.get(status);
     if (label) snapshot.status_label = label;
+    const ticketId = Number(ticket?.id);
+    if (Number.isFinite(ticketId)) {
+      try {
+        const notes = await client.getTicketNotes(ticketId);
+        const latest = Array.isArray(notes) && notes.length > 0 ? notes[notes.length - 1] : null;
+        const latestText = String((latest as any)?.noteText || '').trim();
+        if (latestText) {
+          snapshot.latest_note_text = latestText;
+          snapshot.latest_note_fingerprint = this.fingerprintText(latestText);
+        }
+        const createdAt = String((latest as any)?.createDate || '').trim();
+        if (createdAt) snapshot.latest_note_created_at = createdAt;
+      } catch {
+        // Notes enrichment is best-effort only.
+      }
+    }
     return snapshot;
+  }
+
+  private fingerprintText(input: unknown): string {
+    const normalized = String(input ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .slice(0, 2_000);
+    if (!normalized) return '';
+    let hash = 2166136261;
+    for (let i = 0; i < normalized.length; i += 1) {
+      hash ^= normalized.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `fnv1a32:${(hash >>> 0).toString(16)}`;
   }
 
   private mapTicketSnapshot(ticket: any): Record<string, unknown> {

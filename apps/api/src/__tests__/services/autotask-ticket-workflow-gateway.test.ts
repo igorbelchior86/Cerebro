@@ -6,7 +6,7 @@ function buildCommand(overrides: Partial<WorkflowCommandEnvelope> = {}): Workflo
     command_id: 'cmd-1',
     tenant_id: 'tenant-1',
     target_integration: 'Autotask',
-    command_type: 'update',
+    command_type: 'update_status',
     payload: {
       ticket_id: 'T20260226.0033',
       status: 'In Progress',
@@ -23,6 +23,25 @@ function buildCommand(overrides: Partial<WorkflowCommandEnvelope> = {}): Workflo
 }
 
 describe('AutotaskTicketWorkflowGateway', () => {
+  it('executes create ticket operation from frozen matrix command type', async () => {
+    const mockClient = {
+      createTicket: jest.fn().mockResolvedValue({ id: 1200, ticketNumber: 'T20260227.1200', title: 'Printer down' }),
+    } as any;
+
+    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    const result = await gateway.executeCommand(buildCommand({
+      command_type: 'create',
+      payload: {
+        title: 'Printer down',
+        description: 'Queue stuck',
+        company_id: 10,
+      },
+    }));
+
+    expect(mockClient.createTicket).toHaveBeenCalledWith(expect.objectContaining({ title: 'Printer down', companyID: 10 }));
+    expect(result).toMatchObject({ kind: 'created', external_ticket_id: '1200', external_ticket_number: 'T20260227.1200' });
+  });
+
   it('resolves ticket number to numeric id and maps status label before update', async () => {
     const mockClient = {
       getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 333, ticketNumber: 'T20260226.0033' }),
@@ -36,10 +55,7 @@ describe('AutotaskTicketWorkflowGateway', () => {
     await gateway.executeCommand(buildCommand());
 
     expect(mockClient.updateTicket).toHaveBeenCalledWith(333, expect.objectContaining({ status: 5 }));
-    expect(mockClient.createTicketNote).toHaveBeenCalledWith(
-      333,
-      expect.objectContaining({ noteType: 3, publish: 2, noteText: 'note' })
-    );
+    expect(mockClient.createTicketNote).not.toHaveBeenCalled();
   });
 
   it('handles explicit comment command using note payload aliases', async () => {
@@ -52,7 +68,7 @@ describe('AutotaskTicketWorkflowGateway', () => {
 
     const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
     await gateway.executeCommand(buildCommand({
-      command_type: 'comment',
+      command_type: 'create_comment_note',
       payload: {
         ticket_id: 'T20260226.0099',
         note_body: 'Public update',
@@ -75,8 +91,49 @@ describe('AutotaskTicketWorkflowGateway', () => {
 
     const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
     await expect(gateway.executeCommand(buildCommand({
-      command_type: 'note',
+      command_type: 'comment_note',
       payload: { ticket_id: 'T20260226.0100' },
     }))).rejects.toThrow('requires comment_body');
+  });
+
+  it('rejects legacy update payload that includes out-of-scope fields', async () => {
+    const mockClient = {
+      getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 999, ticketNumber: 'T20260226.0111' }),
+      updateTicket: jest.fn().mockResolvedValue({}),
+      createTicketNote: jest.fn().mockResolvedValue({}),
+      getTicket: jest.fn().mockResolvedValue({ id: 999, ticketNumber: 'T20260226.0111', status: 1 }),
+    } as any;
+
+    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    await expect(gateway.executeCommand(buildCommand({
+      command_type: 'update',
+      payload: {
+        ticket_id: 'T20260226.0111',
+        priority: 1,
+      },
+    }))).rejects.toThrow('frozen matrix');
+  });
+
+  it('executes time entry create operation from approved matrix scope', async () => {
+    const mockClient = {
+      getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 333, ticketNumber: 'T20260226.0033' }),
+      createTimeEntry: jest.fn().mockResolvedValue({ id: 2222 }),
+    } as any;
+
+    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    const result = await gateway.executeCommand(buildCommand({
+      command_type: 'time_entry',
+      payload: {
+        ticket_id: 'T20260226.0033',
+        resource_id: 42,
+        hours_worked: 1.5,
+        summary_notes: 'Remote troubleshooting',
+      },
+    }));
+
+    expect(mockClient.createTimeEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ ticketID: 333, resourceID: 42, hoursWorked: 1.5, summaryNotes: 'Remote troubleshooting' })
+    );
+    expect(result).toMatchObject({ kind: 'time_entry', entry_id: 2222 });
   });
 });

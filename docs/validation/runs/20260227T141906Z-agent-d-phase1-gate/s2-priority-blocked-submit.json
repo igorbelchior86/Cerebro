@@ -1,0 +1,43 @@
+{
+  "captured_at": "2026-02-27T14:23:49Z",
+  "request": {
+    "method": "POST",
+    "path": "/workflow/commands",
+    "correlation_id": "phase1-agent-d-20260227T141906Z-blocked-submit",
+    "job_id": "phase1-agent-d-job-20260227T141906Z",
+    "body": {
+      "command_type": "update",
+      "target_integration": "Autotask",
+      "auto_process": false,
+      "idempotency_key": "phase1-agent-d-blocked-idem-20260227T141906Z",
+      "payload": {
+        "ticket_id": "T20260226.0033",
+        "priority": 1
+      },
+      "audit_metadata": {
+        "validation_session": "phase1-agent-d-gate-20260227T141906Z",
+        "scenario": "S2",
+        "gate": "phase1",
+        "operation_class": "tickets.update_priority"
+      },
+      "correlation": {
+        "trace_id": "phase1-agent-d-20260227T141906Z-blocked-submit",
+        "ticket_id": "T20260226.0033",
+        "job_id": "phase1-agent-d-job-20260227T141906Z"
+      }
+    }
+  },
+  "response": {
+    "status_code": 403,
+    "headers": {
+      "x_request_id": "phase1-agent-d-20260227T141906Z-blocked-submit",
+      "x_trace_id": "phase1-agent-d-20260227T141906Z-blocked-submit",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "error": "Command type is outside approved Autotask Phase 1 matrix: update"
+    },
+    "body_text": "{\"error\":\"Command type is outside approved Autotask Phase 1 matrix: update\"}"
+  }
+}

@@ -181,59 +181,59 @@ Integrated in the same SSOT as backlog priorities.
 
 ---
 
-##### Phase 1: Autotask Two-way Happy Path (E2E)
+##### Phase 1: Autotask 100% API Coverage (E2E)
 ###### Objective
-Deliver the **P0 Autotask two-way happy path** in Cerebro (assign, status update, comment/note + sync + reconcile), with idempotent, auditable, and replay-safe behavior.
+Deliver **100% Autotask REST API-manageable coverage** in Cerebro (within tenant permissions), with idempotent, auditable, replay-safe execution and reconciliation.
 
 ###### Scope
 **In**
-- Ticket command flow for P0-safe operations: `assign`, `status_update`, `comment_note`
-- Inbound sync ingestion for ticket updates used by the inbox workflow
-- Idempotency keys + retry/DLQ + error taxonomy for P0 command paths
-- Reconciliation and drift detection for the P0 ticket domain
-- End-to-end auditability for command submission, execution, sync, and reconcile
+- Full Autotask entity capability matrix (CRUD/query/actions) for all API-manageable domains used by Refresh
+- Typed command/query contracts per entity family (tickets, notes, checklist items, time entries, contacts/companies, related supported entities)
+- Inbound sync ingestion normalization for managed entity domains (polling/webhook where supported)
+- Idempotency keys + retry/DLQ + error taxonomy across all write-capable Autotask operations
+- Reconciliation and drift detection per managed entity domain
+- End-to-end auditability for command/query execution, sync, and reconcile
 
 **Out**
 - Two-way writes to any other system
-- Full Autotask REST entity coverage (moved to P1 expansion track)
 - P1/P2 non-Autotask feature expansion
 
 ###### Prerequisites
 - ~~Phase 0 done~~
-- Autotask Phase 1A contract freeze completed (minimum scope delivered and documented)
+- Autotask contract freeze completed with capability matrix and zero tolerated exclusions for Phase 1 closure
 
 ###### Steps (in order)
-1) Implement/verify command handlers for `assign`, `status_update`, and `comment_note`  
-2) Enforce idempotency + replay-safe processing for submitted commands  
-3) Verify sync ingestion path for Autotask ticket updates (poll/webhook -> workflow core)  
-4) Verify reconciliation path and divergence classification/remediation signals  
-5) Harden retry/backoff + DLQ behavior for retryable command failures  
-6) Ensure audit coverage for accept/process/sync/reconcile outcomes with correlation IDs  
-7) Execute live P0 E2E proof (submit -> process -> sync -> reconcile -> audit)  
+1) Freeze full Autotask capability matrix (entity + operation + constraints)  
+2) Implement/verify handlers and query paths for all approved API-manageable operations  
+3) Enforce idempotency + replay-safe processing for all write-capable paths  
+4) Verify sync ingestion normalization for managed entity domains  
+5) Verify reconciliation path and divergence classification/remediation per entity domain  
+6) Harden retry/backoff + DLQ behavior for retryable failures across operation classes  
+7) Ensure audit coverage for process/sync/reconcile outcomes with correlation IDs  
+8) Execute live E2E proof set covering critical operation classes beyond ticket-only flow  
 
 ###### Phase 1 contract freeze artifacts
 - `packages/types/src/autotask-two-way-contract.ts`
 - `docs/contracts/autotask-phase1-two-way-freeze.md`
+- `docs/contracts/autotask-phase1-full-api-capability-matrix.md`
 
 ###### Gate (exit criteria)
-- P0 command set (`assign`, `status_update`, `comment_note`) is operational end-to-end
-- Command writes are idempotent/replay-safe and policy-enforced
-- Sync ingestion and reconciliation are operational for the P0 ticket domain
-- Audit trail covers full command lifecycle with correlation metadata
+- 100% of Autotask API-manageable scope in the approved capability matrix is implemented in engine (`excluded_* = 0`)
+- Write-capable operations are idempotent/replay-safe and policy-enforced
+- Sync ingestion and reconciliation are operational for managed entity domains
+- Audit trail covers execution lifecycle with correlation metadata
 
 ###### Evidence to capture
-- Live E2E logs for submit/process/sync/reconcile on an approved safe test ticket
-- Idempotency replay proof (same command envelope -> no duplicate external mutation)
-- Reconciliation sample with match/mismatch handling evidence
+- Full capability matrix with implementation status (`implemented` only for Phase 1 closure)
+- Live E2E logs for representative operation classes (not only ticket status flow)
+- Idempotency replay proof across multiple write operation classes
+- Reconciliation sample set per entity domain with match/mismatch handling evidence
 - Audit coverage proof for lifecycle events and correlation IDs
 
 ###### Rollback / degraded mode
-- If Autotask is down/rate-limited, commands queue and surface actionable pending/degraded state for P0 command paths
+- If Autotask is down/rate-limited, commands queue and surface actionable pending/degraded state for managed operation paths
 - Per-tenant “disable writes” flag forces read-only mode immediately for all Autotask write paths
-- Use P0 operation-level guardrails to disable specific command types if needed without full Autotask shutdown
-
-###### Expansion note (post-P0)
-Full Autotask REST API coverage remains in backlog as a post-P0 expansion item and must be planned under the Execution PRD priority (P1/P2), not in this Phase 1 gate.
+- Use operation-level guardrails to disable specific action classes if needed without full Autotask shutdown
 
 ---
 

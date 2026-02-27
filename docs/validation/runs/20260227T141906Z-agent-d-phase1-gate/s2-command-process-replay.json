@@ -1,0 +1,33 @@
+{
+  "captured_at": "2026-02-27T14:23:49Z",
+  "request": {
+    "method": "POST",
+    "path": "/workflow/commands/process",
+    "correlation_id": "phase1-agent-d-20260227T141906Z-process-replay",
+    "job_id": "phase1-agent-d-job-20260227T141906Z",
+    "body": {
+      "limit": 20
+    }
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "phase1-agent-d-20260227T141906Z-process-replay",
+      "x_trace_id": "phase1-agent-d-20260227T141906Z-process-replay",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "success": true,
+      "data": {
+        "processed": 0,
+        "completed": 0,
+        "retried": 0,
+        "dlq": 0,
+        "failed": 0
+      },
+      "timestamp": "2026-02-27T14:23:49.105Z"
+    },
+    "body_text": "{\"success\":true,\"data\":{\"processed\":0,\"completed\":0,\"retried\":0,\"dlq\":0,\"failed\":0},\"timestamp\":\"2026-02-27T14:23:49.105Z\"}"
+  }
+}

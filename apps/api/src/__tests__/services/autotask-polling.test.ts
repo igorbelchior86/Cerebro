@@ -65,5 +65,84 @@ describe('AutotaskPollingService P0 hardening', () => {
     expect(workflowSync).not.toHaveBeenCalled();
     expect(triageRun).toHaveBeenCalledWith('321');
   });
-});
 
+  it('retries transient sync ingestion failures and succeeds before DLQ', async () => {
+    let now = 10_000;
+    const searchTickets = jest
+      .fn()
+      .mockResolvedValueOnce([
+        { id: 777, ticketNumber: 'T20260227.0777', createDate: '2026-02-27T12:00:00.000Z' },
+      ])
+      .mockResolvedValue([]);
+    const workflowSync = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('Autotask API error: 429'))
+      .mockRejectedValueOnce(new Error('timeout while writing sync event'))
+      .mockResolvedValueOnce(undefined);
+    const triageRun = jest.fn().mockResolvedValue(undefined);
+    const service = new AutotaskPollingService({
+      buildPollContext: async () => ({
+        tenantId: 'tenant-1',
+        client: {
+          searchTickets,
+        } as any,
+      }),
+      workflowSync,
+      triageRun,
+      runWithLock: async (fn) => {
+        await fn();
+        return { acquired: true };
+      },
+      now: () => now,
+      retryBackoffMs: () => 0,
+      syncRetryMaxAttempts: 5,
+    });
+
+    await service.runOnce();
+    now += 1;
+    await service.runOnce();
+    now += 1;
+    await service.runOnce();
+
+    expect(workflowSync).toHaveBeenCalledTimes(3);
+    expect(triageRun).toHaveBeenCalled();
+  });
+
+  it('moves sync ingestion failure to DLQ after max attempts', async () => {
+    let now = 20_000;
+    const searchTickets = jest
+      .fn()
+      .mockResolvedValueOnce([
+        { id: 999, ticketNumber: 'T20260227.0999', createDate: '2026-02-27T12:00:00.000Z' },
+      ])
+      .mockResolvedValue([]);
+    const workflowSync = jest.fn().mockRejectedValue(new Error('Autotask API error: 429'));
+    const triageRun = jest.fn().mockResolvedValue(undefined);
+    const service = new AutotaskPollingService({
+      buildPollContext: async () => ({
+        tenantId: 'tenant-1',
+        client: {
+          searchTickets,
+        } as any,
+      }),
+      workflowSync,
+      triageRun,
+      runWithLock: async (fn) => {
+        await fn();
+        return { acquired: true };
+      },
+      now: () => now,
+      retryBackoffMs: () => 0,
+      syncRetryMaxAttempts: 2,
+    });
+
+    await service.runOnce();
+    now += 1;
+    await service.runOnce();
+    now += 1;
+    await service.runOnce();
+
+    // 2 attempts total for the event (retry then DLQ), no unbounded retries.
+    expect(workflowSync).toHaveBeenCalledTimes(2);
+  });
+});

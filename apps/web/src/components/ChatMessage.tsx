@@ -555,7 +555,7 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
 
   if (message.role === 'user') {
     return (
-      <div className="animate-msgIn" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', flexDirection: 'row-reverse', marginBottom: '10px' }}>
+      <div className="animate-msgIn" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', flexDirection: 'row-reverse', marginBottom: '20px' }}>
         <div style={{ width: '26px', height: '26px', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '11px', border: '1px solid rgba(91,127,255,0.2)', background: 'rgba(91,127,255,0.10)' }}>👤</div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '4px', flexDirection: 'row-reverse' }}>
@@ -694,7 +694,7 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
   ) : null;
   const isPrepareContextMessage = message.type === 'evidence';
   return (
-    <div className="animate-msgIn" style={{ marginBottom: '10px' }}>
+    <div className="animate-msgIn" style={{ marginBottom: '20px' }}>
       <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
         <div style={{ width: '26px', height: '26px', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '12px', border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
           {src.icon}
@@ -811,7 +811,7 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
           </div>
         </div>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', marginTop: '6px', marginLeft: '36px', paddingRight: '2px' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', marginTop: '10px', marginLeft: '36px', paddingRight: '2px' }}>
         <span style={channelBadgeStyle}>{channelBadge}</span>
         {message.timestamp && (
           <span

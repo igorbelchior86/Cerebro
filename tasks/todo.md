@@ -1,3 +1,86 @@
+# Task: Aumentar respiro abaixo da linha de metadata do balão
+**Update**: 2026-02-27T19:29:00-03:00
+- [x] Incremento adicional de padding conforme feedback do usuário.
+
+**Status**: completed
+**Started**: 2026-02-27T19:24:00-03:00
+
+## Plan
+- [x] Step 1: Identificar container de metadata do balão em `ChatMessage`.
+- [x] Step 2: Aumentar spacing vertical após metadata para separar melhor mensagens.
+- [x] Step 3: Aplicar o mesmo respiro para mensagens user/pipeline.
+- [x] Step 4: Validar typecheck web e documentar wiki/lessons.
+
+## Open Questions
+- Sem bloqueios técnicos.
+
+## Progress Notes
+- `marginBottom` do bloco de mensagem passou de `10px` para `16px`.
+- `marginTop` da linha de metadata passou de `6px` para `8px`.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-02-27-chatmessage-increase-meta-bottom-breathing-space.md`
+
+---
+# Task: Placeholder dinâmico conforme pill de destino
+**Status**: completed
+**Started**: 2026-02-27T19:12:00-03:00
+
+## Plan
+- [x] Step 1: Identificar ponto de render do placeholder no `ChatInput`.
+- [x] Step 2: Derivar placeholder por `targetChannel` (`AI` vs `User`).
+- [x] Step 3: Preservar placeholder de processing quando `disabled`.
+- [x] Step 4: Validar typecheck web e documentar wiki/lessons.
+
+## Open Questions
+- Sem bloqueios técnicos.
+
+## Progress Notes
+- Placeholder agora muda conforme estado da pill.
+- Contrato de submit e toggle permaneceram inalterados.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-02-27-chatinput-dynamic-placeholder-by-pill-channel.md`
+
+---
+# Task: Destination toggle como pílula única dentro do campo (esquerda)
+**Update**: 2026-02-27T19:05:00-03:00
+- [x] Ajuste de pílula para tamanho fixo (somente texto/cor variam).
+
+
+**Status**: completed
+**Started**: 2026-02-27T18:55:00-03:00
+
+## Plan
+- [x] Step 1: Remover bloco de destino separado acima do composer.
+- [x] Step 2: Inserir pílula única dentro do campo à esquerda.
+- [x] Step 3: Alternar no clique `AI` ↔ `User` mantendo `targetChannel` existente.
+- [x] Step 4: Preservar hints/tabs e comportamento atual de submit/attachments.
+- [x] Step 5: Validar typecheck web e documentar wiki/lessons.
+
+## Open Questions
+- Sem bloqueios técnicos.
+
+## Progress Notes
+- Implementação concentrada em `ChatInput`.
+- A pílula única renderiza label dinâmica (`AI` quando `internal_ai`, `User` quando `external_psa_user`).
+- Clique alterna canal sem alterar contrato do payload (`targetChannel`).
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-02-27-chatinput-destination-single-pill-inside-field.md`
+- Lessons atualizadas após correção de UX do usuário.
+
+---
+
 # Task: UX hardening da coluna central (canal AI/PSA mais limpo e legível)
 **Status**: completed
 **Started**: 2026-02-27T18:42:00-03:00

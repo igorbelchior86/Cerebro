@@ -66,6 +66,9 @@ export default function ChatInput({
     t('hintSummarize'),
     t('hintEscalate'),
   ];
+  const channelPlaceholder = targetChannel === 'external_psa_user'
+    ? 'Send update to user via PSA...'
+    : 'Refine analysis with AI...';
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -183,67 +186,45 @@ export default function ChatInput({
     transition: 'var(--transition)',
     flexShrink: 0,
   };
+  const destinationPillLabel = targetChannel === 'internal_ai' ? 'AI' : 'User';
+  const destinationPillStyle: CSSProperties = {
+    border: '1px solid',
+    borderColor: targetChannel === 'internal_ai' ? 'rgba(91,127,255,0.30)' : 'rgba(16,185,129,0.35)',
+    borderRadius: '999px',
+    width: '52px',
+    height: '24px',
+    padding: '0',
+    fontSize: '10px',
+    fontWeight: 700,
+    lineHeight: 1,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: targetChannel === 'internal_ai' ? 'var(--accent)' : '#047857',
+    background: targetChannel === 'internal_ai' ? 'rgba(91,127,255,0.10)' : 'rgba(16,185,129,0.12)',
+    cursor: disabled || isLoading ? 'not-allowed' : 'pointer',
+    opacity: disabled || isLoading ? 0.6 : 1,
+    flexShrink: 0,
+  };
 
   return (
     <div style={{ padding: '12px', border: '1px solid var(--bento-outline)', borderRadius: '14px', background: 'var(--bg-card)', flexShrink: 0 }}>
       <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={onFilesSelected} />
-      {showChannelToggle ? (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', padding: '6px 8px', border: '1px solid var(--bento-outline)', borderRadius: '10px', background: 'var(--bg-panel)' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '10px', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: targetChannel === 'external_psa_user' ? '#10b981' : 'var(--accent)' }} />
-            Destination
-          </div>
-          <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid var(--bento-outline)', borderRadius: '999px', padding: '2px', background: 'var(--bg-card)', gap: '2px' }}>
-            <button
-              type="button"
-              onClick={() => onTargetChannelChange?.('internal_ai')}
-              style={{
-                border: 'none',
-                borderRadius: '999px',
-                padding: '4px 9px',
-                fontSize: '10px',
-                fontWeight: 700,
-                color: targetChannel === 'internal_ai' ? 'var(--accent)' : 'var(--text-muted)',
-                background: targetChannel === 'internal_ai' ? 'rgba(91,127,255,0.14)' : 'transparent',
-                cursor: 'pointer',
-              }}
-            >
-              AI
-            </button>
-            <button
-              type="button"
-              onClick={() => onTargetChannelChange?.('external_psa_user')}
-              style={{
-                border: 'none',
-                borderRadius: '999px',
-                padding: '4px 9px',
-                fontSize: '10px',
-                fontWeight: 700,
-                color: targetChannel === 'external_psa_user' ? '#047857' : 'var(--text-muted)',
-                background: targetChannel === 'external_psa_user' ? 'rgba(16,185,129,0.14)' : 'transparent',
-                cursor: 'pointer',
-              }}
-            >
-              PSA/User
-            </button>
-          </div>
-        </div>
-      ) : null}
       {activeHints.length > 0 ? (
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: showChannelToggle ? '0' : '-19px', marginBottom: '10px', padding: showChannelToggle ? '0' : '0 8px' }}>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '-19px', marginBottom: '10px', padding: '0 8px' }}>
           {activeHints.map((h) => (
             <button
               key={h}
               type="button"
               onClick={() => setInput(h)}
               style={{
-                padding: showChannelToggle ? '4px 10px' : '4px 10px 5px',
-                borderRadius: showChannelToggle ? '999px' : '10px 10px 0 0',
+                padding: '4px 10px 5px',
+                borderRadius: '10px 10px 0 0',
                 fontSize: '10.5px',
                 color: 'var(--text-muted)',
-                background: showChannelToggle ? 'var(--bg-panel)' : 'var(--bg-card)',
+                background: 'var(--bg-card)',
                 border: '1px solid var(--bento-outline)',
-                borderBottom: showChannelToggle ? '1px solid var(--bento-outline)' : 'none',
+                borderBottom: 'none',
                 cursor: 'pointer',
                 fontFamily: 'var(--font-geist-sans, var(--font-dm-sans, sans-serif))',
                 transition: 'var(--transition)',
@@ -264,6 +245,20 @@ export default function ChatInput({
       ) : null}
       <form onSubmit={handleSubmit}>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', background: 'var(--bg-panel)', border: `1px solid ${focused ? 'var(--border-accent)' : 'var(--bento-outline)'}`, borderRadius: '11px', padding: '8px 10px 8px 12px', transition: 'var(--transition)' }}>
+          {showChannelToggle ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (disabled || isLoading) return;
+                onTargetChannelChange?.(targetChannel === 'internal_ai' ? 'external_psa_user' : 'internal_ai');
+              }}
+              title={`Destination: ${destinationPillLabel} (click to toggle)`}
+              aria-label={`Destination: ${destinationPillLabel} (click to toggle)`}
+              style={destinationPillStyle}
+            >
+              {destinationPillLabel}
+            </button>
+          ) : null}
           <textarea
             ref={inputRef}
             value={input}
@@ -271,7 +266,7 @@ export default function ChatInput({
             onKeyDown={handleKeyDown}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
-            placeholder={disabled ? t('processing') : placeholder}
+            placeholder={disabled ? t('processing') : channelPlaceholder}
             disabled={disabled || isLoading}
             rows={1}
             style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontFamily: 'var(--font-dm-sans, sans-serif)', fontSize: '12.5px', color: 'var(--text-primary)', letterSpacing: '-0.01em', lineHeight: `${INPUT_LINE_HEIGHT_PX}px`, resize: 'none' }}

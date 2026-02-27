@@ -1,3 +1,21 @@
+## Lesson: 2026-02-27 (dense timeline readability depends on post-metadata breathing space)
+**Mistake**: Mantive espaçamento insuficiente abaixo da linha de metadata dos balões em feeds densos.
+**Root cause**: Ajustei conteúdo e controles, mas não tratei o espaçamento entre blocos como componente de legibilidade.
+**Rule**: Em timeline com alto volume, garantir respiro explícito após metadata (`channel/time/stage`) para separar semanticamente mensagens consecutivas.
+**Pattern**: Quando leitura fica “embolada” entre balões, revisar primeiro spacing vertical entre blocos antes de alterar estrutura.
+
+## Lesson: 2026-02-27 (composer placeholder should reflect active channel context)
+**Mistake**: Mantive placeholder estático após introduzir seleção de canal na pill.
+**Root cause**: Foco em mecânica de toggle sem completar o feedback contextual do campo.
+**Rule**: Quando um composer tem múltiplos destinos, o placeholder deve refletir explicitamente o destino ativo.
+**Pattern**: Controle de canal em UI sem placeholder contextual tende a gerar ambiguidade de envio.
+
+## Lesson: 2026-02-27 (destination control should match interaction request literally)
+**Mistake**: Mantive o controle de destino como bloco segmentado separado, quando o pedido era pílula única dentro do campo.
+**Root cause**: Priorizei consistência com versão anterior em vez de aderir literalmente ao padrão de interação especificado.
+**Rule**: Quando o usuário define interação exata de controle (“pílula única no campo, clica e alterna”), implementar exatamente esse padrão sem variações estruturais.
+**Pattern**: Pedidos de microinteração de composer devem ser tratados como contrato de UX, não como sugestão visual.
+
 ## Lesson: 2026-02-27 (channel UX must prioritize clarity over density)
 **Mistake**: Introduzi badges de canal flutuando dentro dos balões e controles segmentados sem hierarquia suficiente no composer, gerando ruído visual no fluxo principal.
 **Root cause**: Foquei em “expor estado” rapidamente, mas não em reduzir competição visual entre conteúdo, metadados e controles.

@@ -1,0 +1,29 @@
+{
+  "generated_at": "2026-02-27T15:05:34Z",
+  "session_id": "phase1-agent-d-gate-20260227T150343Z",
+  "run_dir": "docs/validation/runs/20260227T150343Z-agent-d-phase1-gate-strict",
+  "base_url": "http://localhost:3001",
+  "ticket_id": "T20260226.0033",
+  "status_command_id": "b5624650-7e20-4cd1-927b-1ad87b2f59a5",
+  "comment_command_id": "8c682252-493f-4c0f-8172-9e6e4a1a73ec",
+  "status_duplicate_command_id": "b5624650-7e20-4cd1-927b-1ad87b2f59a5",
+  "artifacts": [
+    "_health.json",
+    "_auth-login.json",
+    "_auth-me.json",
+    "_launch-policy.json",
+    "s2-status-command-submit.json",
+    "s2-status-command-submit-duplicate.json",
+    "s2-comment-command-submit.json",
+    "s2-priority-blocked-submit.json",
+    "s2-launch-policy-readonly-rejection.json",
+    "s2-command-process.json",
+    "s2-command-process-replay.json",
+    "s2-status-command-status.json",
+    "s2-comment-command-status.json",
+    "s2-sync-evidence.json",
+    "s2-reconcile-result.json",
+    "s2-workflow-audit.json",
+    "s2-phase1-gate-proof.json"
+  ]
+}

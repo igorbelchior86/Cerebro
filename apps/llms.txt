@@ -1,0 +1,10 @@
+# Autotask API manual
+
+Este arquivo define o ponto de entrada para o manual exaustivo da Autotask REST API, projetado para consumo por LLMs através do Context7.
+
+- [Full Autotask API Manual](./APIAT.md)
+
+## Detalhes do Pacote
+- **Nome:** Autotask REST API Encyclopedia
+- **Versão:** 1.0 (Phase 1 Cerebro)
+- **Descrição:** Manual enciclopédico com 124 entidades, autenticação, limites e FAQ traduzido.

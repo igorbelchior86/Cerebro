@@ -1,0 +1,200 @@
+{
+  "captured_at": "2026-02-27T15:05:53Z",
+  "request": {
+    "method": "POST",
+    "path": "/workflow/reconcile/T20260226.0033",
+    "correlation_id": "phase1-agent-d-20260227T150343Z-reconcile",
+    "job_id": "phase1-agent-d-job-20260227T150343Z",
+    "body": null
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "phase1-agent-d-20260227T150343Z-reconcile",
+      "x_trace_id": "phase1-agent-d-20260227T150343Z-reconcile",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "success": true,
+      "data": {
+        "matched": false,
+        "classification": "missing_snapshot",
+        "domains": [
+          {
+            "domain": "tickets",
+            "classification": "match",
+            "local_present": true,
+            "remote_present": true,
+            "metadata": {
+              "local": {
+                "status": "In Progress",
+                "assigned_to": "30684582",
+                "ticket_number": "T20260226.0033"
+              },
+              "remote": {
+                "status": "8",
+                "status_label": "In Progress",
+                "assigned_to": "30684582",
+                "queue_id": 29682833,
+                "ticket_number": "T20260226.0033"
+              }
+            }
+          },
+          {
+            "domain": "correlates.resources",
+            "classification": "match",
+            "local_present": true,
+            "remote_present": true
+          },
+          {
+            "domain": "correlates.ticket_metadata",
+            "classification": "match",
+            "local_present": true,
+            "remote_present": true
+          },
+          {
+            "domain": "ticket_notes",
+            "classification": "missing_snapshot",
+            "local_present": true,
+            "remote_present": false,
+            "metadata": {
+              "local_note_fingerprint": "fnv1a32:7d2c15a1"
+            }
+          },
+          {
+            "domain": "correlates.ticket_note_metadata",
+            "classification": "skipped",
+            "local_present": true,
+            "remote_present": false
+          }
+        ],
+        "issue": {
+          "id": "e1e2e7e2-978d-4742-b455-d3ebda062355",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "ticket_id": "T20260226.0033",
+          "detected_at": "2026-02-27T15:05:52.938Z",
+          "severity": "warning",
+          "reason": "autotask_snapshot_missing_domain",
+          "local_snapshot": {
+            "status": "In Progress",
+            "assigned_to": "30684582",
+            "domains": [
+              {
+                "domain": "tickets",
+                "classification": "match",
+                "local_present": true,
+                "remote_present": true,
+                "metadata": {
+                  "local": {
+                    "status": "In Progress",
+                    "assigned_to": "30684582",
+                    "ticket_number": "T20260226.0033"
+                  },
+                  "remote": {
+                    "status": "8",
+                    "status_label": "In Progress",
+                    "assigned_to": "30684582",
+                    "queue_id": 29682833,
+                    "ticket_number": "T20260226.0033"
+                  }
+                }
+              },
+              {
+                "domain": "correlates.resources",
+                "classification": "match",
+                "local_present": true,
+                "remote_present": true
+              },
+              {
+                "domain": "correlates.ticket_metadata",
+                "classification": "match",
+                "local_present": true,
+                "remote_present": true
+              },
+              {
+                "domain": "ticket_notes",
+                "classification": "missing_snapshot",
+                "local_present": true,
+                "remote_present": false,
+                "metadata": {
+                  "local_note_fingerprint": "fnv1a32:7d2c15a1"
+                }
+              },
+              {
+                "domain": "correlates.ticket_note_metadata",
+                "classification": "skipped",
+                "local_present": true,
+                "remote_present": false
+              }
+            ]
+          },
+          "remote_snapshot": {
+            "status": "8",
+            "status_label": "In Progress",
+            "assigned_to": "30684582",
+            "domains": [
+              {
+                "domain": "tickets",
+                "classification": "match",
+                "local_present": true,
+                "remote_present": true,
+                "metadata": {
+                  "local": {
+                    "status": "In Progress",
+                    "assigned_to": "30684582",
+                    "ticket_number": "T20260226.0033"
+                  },
+                  "remote": {
+                    "status": "8",
+                    "status_label": "In Progress",
+                    "assigned_to": "30684582",
+                    "queue_id": 29682833,
+                    "ticket_number": "T20260226.0033"
+                  }
+                }
+              },
+              {
+                "domain": "correlates.resources",
+                "classification": "match",
+                "local_present": true,
+                "remote_present": true
+              },
+              {
+                "domain": "correlates.ticket_metadata",
+                "classification": "match",
+                "local_present": true,
+                "remote_present": true
+              },
+              {
+                "domain": "ticket_notes",
+                "classification": "missing_snapshot",
+                "local_present": true,
+                "remote_present": false,
+                "metadata": {
+                  "local_note_fingerprint": "fnv1a32:7d2c15a1"
+                }
+              },
+              {
+                "domain": "correlates.ticket_note_metadata",
+                "classification": "skipped",
+                "local_present": true,
+                "remote_present": false
+              }
+            ]
+          },
+          "correlation": {
+            "trace_id": "phase1-agent-d-20260227T150343Z-reconcile",
+            "ticket_id": "T20260226.0033"
+          },
+          "provenance": {
+            "source": "autotask_reconcile",
+            "fetched_at": "2026-02-27T15:05:52.938Z"
+          }
+        }
+      },
+      "timestamp": "2026-02-27T15:05:52.942Z"
+    },
+    "body_text": "{\"success\":true,\"data\":{\"matched\":false,\"classification\":\"missing_snapshot\",\"domains\":[{\"domain\":\"tickets\",\"classification\":\"match\",\"local_present\":true,\"remote_present\":true,\"metadata\":{\"local\":{\"status\":\"In Progress\",\"assigned_to\":\"30684582\",\"ticket_number\":\"T20260226.0033\"},\"remote\":{\"status\":\"8\",\"status_label\":\"In Progress\",\"assigned_to\":\"30684582\",\"queue_id\":29682833,\"ticket_number\":\"T20260226.0033\"}}},{\"domain\":\"correlates.resources\",\"classification\":\"match\",\"local_present\":true,\"remote_present\":true},{\"domain\":\"correlates.ticket_metadata\",\"classification\":\"match\",\"local_present\":true,\"remote_present\":true},{\"domain\":\"ticket_notes\",\"classification\":\"missing_snapshot\",\"local_present\":true,\"remote_present\":false,\"metadata\":{\"local_note_fingerprint\":\"fnv1a32:7d2c15a1\"}},{\"domain\":\"correlates.ticket_note_metadata\",\"classification\":\"skipped\",\"local_present\":true,\"remote_present\":false}],\"issue\":{\"id\":\"e1e2e7e2-978d-4742-b455-d3ebda062355\",\"tenant_id\":\"5b5f7e25-2396-4bec-a584-41352be7e876\",\"ticket_id\":\"T20260226.0033\",\"detected_at\":\"2026-02-27T15:05:52.938Z\",\"severity\":\"warning\",\"reason\":\"autotask_snapshot_missing_domain\",\"local_snapshot\":{\"status\":\"In Progress\",\"assigned_to\":\"30684582\",\"domains\":[{\"domain\":\"tickets\",\"classification\":\"match\",\"local_present\":true,\"remote_present\":true,\"metadata\":{\"local\":{\"status\":\"In Progress\",\"assigned_to\":\"30684582\",\"ticket_number\":\"T20260226.0033\"},\"remote\":{\"status\":\"8\",\"status_label\":\"In Progress\",\"assigned_to\":\"30684582\",\"queue_id\":29682833,\"ticket_number\":\"T20260226.0033\"}}},{\"domain\":\"correlates.resources\",\"classification\":\"match\",\"local_present\":true,\"remote_present\":true},{\"domain\":\"correlates.ticket_metadata\",\"classification\":\"match\",\"local_present\":true,\"remote_present\":true},{\"domain\":\"ticket_notes\",\"classification\":\"missing_snapshot\",\"local_present\":true,\"remote_present\":false,\"metadata\":{\"local_note_fingerprint\":\"fnv1a32:7d2c15a1\"}},{\"domain\":\"correlates.ticket_note_metadata\",\"classification\":\"skipped\",\"local_present\":true,\"remote_present\":false}]},\"remote_snapshot\":{\"status\":\"8\",\"status_label\":\"In Progress\",\"assigned_to\":\"30684582\",\"domains\":[{\"domain\":\"tickets\",\"classification\":\"match\",\"local_present\":true,\"remote_present\":true,\"metadata\":{\"local\":{\"status\":\"In Progress\",\"assigned_to\":\"30684582\",\"ticket_number\":\"T20260226.0033\"},\"remote\":{\"status\":\"8\",\"status_label\":\"In Progress\",\"assigned_to\":\"30684582\",\"queue_id\":29682833,\"ticket_number\":\"T20260226.0033\"}}},{\"domain\":\"correlates.resources\",\"classification\":\"match\",\"local_present\":true,\"remote_present\":true},{\"domain\":\"correlates.ticket_metadata\",\"classification\":\"match\",\"local_present\":true,\"remote_present\":true},{\"domain\":\"ticket_notes\",\"classification\":\"missing_snapshot\",\"local_present\":true,\"remote_present\":false,\"metadata\":{\"local_note_fingerprint\":\"fnv1a32:7d2c15a1\"}},{\"domain\":\"correlates.ticket_note_metadata\",\"classification\":\"skipped\",\"local_present\":true,\"remote_present\":false}]},\"correlation\":{\"trace_id\":\"phase1-agent-d-20260227T150343Z-reconcile\",\"ticket_id\":\"T20260226.0033\"},\"provenance\":{\"source\":\"autotask_reconcile\",\"fetched_at\":\"2026-02-27T15:05:52.938Z\"}}},\"timestamp\":\"2026-02-27T15:05:52.942Z\"}"
+  }
+}

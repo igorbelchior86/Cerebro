@@ -1,0 +1,39 @@
+{
+  "session_id": "phase1-agent-d-gate-20260227T150343Z",
+  "timestamp": "20260227T150343Z",
+  "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+  "ticket_id": "T20260226.0033",
+  "actor_id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+  "traces": {
+    "status_submit": "phase1-agent-d-20260227T150343Z-status-submit",
+    "comment_submit": "phase1-agent-d-20260227T150343Z-comment-submit",
+    "sync": "phase1-agent-d-20260227T150343Z-sync",
+    "reconcile": "phase1-agent-d-20260227T150343Z-reconcile",
+    "launch_policy_probe": "phase1-agent-d-20260227T150343Z-readonly-submit"
+  },
+  "operation_classes": {
+    "tickets_update_status": {
+      "idempotency_key": "phase1-agent-d-status-idem-20260227T150343Z",
+      "command_id": "b5624650-7e20-4cd1-927b-1ad87b2f59a5",
+      "duplicate_command_id": "b5624650-7e20-4cd1-927b-1ad87b2f59a5",
+      "command_ids_equal": true,
+      "audit_completed_events": 1
+    },
+    "ticket_notes_create_comment_note": {
+      "idempotency_key": "phase1-agent-d-comment-idem-20260227T150343Z",
+      "command_id": "8c682252-493f-4c0f-8172-9e6e4a1a73ec",
+      "audit_completed_events": 1
+    },
+    "tickets_update_priority_exclusion": {
+      "blocked_http_status": 403,
+      "blocked_as_expected": true
+    }
+  },
+  "assertions": {
+    "idempotency_replay_safe_for_status_update": true,
+    "multi_operation_write_coverage_present": true,
+    "explicit_exclusion_enforced": true,
+    "sync_reconcile_audit_correlation_present": true,
+    "launch_policy_non_regression": true
+  }
+}

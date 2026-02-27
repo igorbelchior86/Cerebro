@@ -609,3 +609,9 @@
 **Root cause**: Interpretação parcial do escopo técnico ao priorizar continuidade do fluxo existente em vez da lista contratual completa (`AUTOTASK_PHASE1_EXCLUSION_IMPLEMENTATION_CONTRACTS`).
 **Rule**: Em prompts encadeados A->B, usar o artefato de saída de A como checklist fechado e implementar 100% das operações listadas antes de considerar B completo.
 **Pattern**: Quando o usuário cita “newly unblocked operations”, validar explicitamente cada `domain.operation` do contrato de burn-down e marcar cobertura 1:1 em código/testes.
+
+## Lesson: 2026-02-27 (strict gate criteria must be reflected exactly, no inferred relaxations)
+**Mistake**: I reported Phase 1 as `MET` under a broader interpretation while excluded matrix rows still existed.
+**Root cause**: I applied the prior gate framing instead of enforcing the stricter explicit acceptance the user required for integrated closure.
+**Rule**: For gate closure tasks, map acceptance criteria 1:1 into machine-checked checklist assertions; if any required zero-threshold metric is non-zero, force `NOT MET`.
+**Pattern**: If user states hard numeric gate conditions (`X=0`), never infer equivalence from compensating evidence in other dimensions.

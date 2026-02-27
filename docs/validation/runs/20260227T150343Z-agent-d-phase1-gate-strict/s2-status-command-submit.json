@@ -1,0 +1,79 @@
+{
+  "captured_at": "2026-02-27T15:05:35Z",
+  "request": {
+    "method": "POST",
+    "path": "/workflow/commands",
+    "correlation_id": "phase1-agent-d-20260227T150343Z-status-submit",
+    "job_id": "phase1-agent-d-job-20260227T150343Z",
+    "body": {
+      "command_type": "status_update",
+      "target_integration": "Autotask",
+      "auto_process": false,
+      "idempotency_key": "phase1-agent-d-status-idem-20260227T150343Z",
+      "payload": {
+        "ticket_id": "T20260226.0033",
+        "status": "In Progress"
+      },
+      "audit_metadata": {
+        "validation_session": "phase1-agent-d-gate-20260227T150343Z",
+        "scenario": "S2",
+        "gate": "phase1",
+        "operation_class": "tickets.update_status"
+      },
+      "correlation": {
+        "trace_id": "phase1-agent-d-20260227T150343Z-status-submit",
+        "ticket_id": "T20260226.0033",
+        "job_id": "phase1-agent-d-job-20260227T150343Z"
+      }
+    }
+  },
+  "response": {
+    "status_code": 202,
+    "headers": {
+      "x_request_id": "phase1-agent-d-20260227T150343Z-status-submit",
+      "x_trace_id": "phase1-agent-d-20260227T150343Z-status-submit",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "success": true,
+      "data": {
+        "command": {
+          "command_id": "b5624650-7e20-4cd1-927b-1ad87b2f59a5",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "status_update",
+          "payload": {
+            "ticket_id": "T20260226.0033",
+            "status": "In Progress"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "phase1-agent-d-status-idem-20260227T150343Z",
+          "audit_metadata": {
+            "validation_session": "phase1-agent-d-gate-20260227T150343Z",
+            "scenario": "S2",
+            "gate": "phase1",
+            "operation_class": "tickets.update_status"
+          },
+          "correlation": {
+            "trace_id": "phase1-agent-d-20260227T150343Z-status-submit",
+            "ticket_id": "T20260226.0033",
+            "command_id": "b5624650-7e20-4cd1-927b-1ad87b2f59a5"
+          },
+          "requested_at": "2026-02-27T15:05:35.387Z"
+        },
+        "status": "accepted",
+        "attempts": 0,
+        "max_attempts": 3,
+        "created_at": "2026-02-27T15:05:35.388Z",
+        "updated_at": "2026-02-27T15:05:35.388Z"
+      },
+      "timestamp": "2026-02-27T15:05:35.391Z"
+    },
+    "body_text": "{\"success\":true,\"data\":{\"command\":{\"command_id\":\"b5624650-7e20-4cd1-927b-1ad87b2f59a5\",\"tenant_id\":\"5b5f7e25-2396-4bec-a584-41352be7e876\",\"target_integration\":\"Autotask\",\"command_type\":\"status_update\",\"payload\":{\"ticket_id\":\"T20260226.0033\",\"status\":\"In Progress\"},\"actor\":{\"kind\":\"user\",\"id\":\"606d9dcc-624f-42bd-95fe-5bac5f8fc2ed\",\"origin\":\"api\"},\"idempotency_key\":\"phase1-agent-d-status-idem-20260227T150343Z\",\"audit_metadata\":{\"validation_session\":\"phase1-agent-d-gate-20260227T150343Z\",\"scenario\":\"S2\",\"gate\":\"phase1\",\"operation_class\":\"tickets.update_status\"},\"correlation\":{\"trace_id\":\"phase1-agent-d-20260227T150343Z-status-submit\",\"ticket_id\":\"T20260226.0033\",\"command_id\":\"b5624650-7e20-4cd1-927b-1ad87b2f59a5\"},\"requested_at\":\"2026-02-27T15:05:35.387Z\"},\"status\":\"accepted\",\"attempts\":0,\"max_attempts\":3,\"created_at\":\"2026-02-27T15:05:35.388Z\",\"updated_at\":\"2026-02-27T15:05:35.388Z\"},\"timestamp\":\"2026-02-27T15:05:35.391Z\"}"
+  }
+}

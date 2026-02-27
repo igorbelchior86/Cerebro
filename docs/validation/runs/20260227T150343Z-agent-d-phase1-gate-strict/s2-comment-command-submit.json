@@ -1,0 +1,81 @@
+{
+  "captured_at": "2026-02-27T15:05:35Z",
+  "request": {
+    "method": "POST",
+    "path": "/workflow/commands",
+    "correlation_id": "phase1-agent-d-20260227T150343Z-comment-submit",
+    "job_id": "phase1-agent-d-job-20260227T150343Z",
+    "body": {
+      "command_type": "create_comment_note",
+      "target_integration": "Autotask",
+      "auto_process": false,
+      "idempotency_key": "phase1-agent-d-comment-idem-20260227T150343Z",
+      "payload": {
+        "ticket_id": "T20260226.0033",
+        "note_body": "Phase1 Agent D gate comment proof 20260227T150343Z",
+        "note_visibility": "internal"
+      },
+      "audit_metadata": {
+        "validation_session": "phase1-agent-d-gate-20260227T150343Z",
+        "scenario": "S2",
+        "gate": "phase1",
+        "operation_class": "ticket_notes.create_comment_note"
+      },
+      "correlation": {
+        "trace_id": "phase1-agent-d-20260227T150343Z-comment-submit",
+        "ticket_id": "T20260226.0033",
+        "job_id": "phase1-agent-d-job-20260227T150343Z"
+      }
+    }
+  },
+  "response": {
+    "status_code": 202,
+    "headers": {
+      "x_request_id": "phase1-agent-d-20260227T150343Z-comment-submit",
+      "x_trace_id": "phase1-agent-d-20260227T150343Z-comment-submit",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "success": true,
+      "data": {
+        "command": {
+          "command_id": "8c682252-493f-4c0f-8172-9e6e4a1a73ec",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "create_comment_note",
+          "payload": {
+            "ticket_id": "T20260226.0033",
+            "note_body": "Phase1 Agent D gate comment proof 20260227T150343Z",
+            "note_visibility": "internal"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "phase1-agent-d-comment-idem-20260227T150343Z",
+          "audit_metadata": {
+            "validation_session": "phase1-agent-d-gate-20260227T150343Z",
+            "scenario": "S2",
+            "gate": "phase1",
+            "operation_class": "ticket_notes.create_comment_note"
+          },
+          "correlation": {
+            "trace_id": "phase1-agent-d-20260227T150343Z-comment-submit",
+            "ticket_id": "T20260226.0033",
+            "command_id": "8c682252-493f-4c0f-8172-9e6e4a1a73ec"
+          },
+          "requested_at": "2026-02-27T15:05:35.466Z"
+        },
+        "status": "accepted",
+        "attempts": 0,
+        "max_attempts": 3,
+        "created_at": "2026-02-27T15:05:35.466Z",
+        "updated_at": "2026-02-27T15:05:35.466Z"
+      },
+      "timestamp": "2026-02-27T15:05:35.468Z"
+    },
+    "body_text": "{\"success\":true,\"data\":{\"command\":{\"command_id\":\"8c682252-493f-4c0f-8172-9e6e4a1a73ec\",\"tenant_id\":\"5b5f7e25-2396-4bec-a584-41352be7e876\",\"target_integration\":\"Autotask\",\"command_type\":\"create_comment_note\",\"payload\":{\"ticket_id\":\"T20260226.0033\",\"note_body\":\"Phase1 Agent D gate comment proof 20260227T150343Z\",\"note_visibility\":\"internal\"},\"actor\":{\"kind\":\"user\",\"id\":\"606d9dcc-624f-42bd-95fe-5bac5f8fc2ed\",\"origin\":\"api\"},\"idempotency_key\":\"phase1-agent-d-comment-idem-20260227T150343Z\",\"audit_metadata\":{\"validation_session\":\"phase1-agent-d-gate-20260227T150343Z\",\"scenario\":\"S2\",\"gate\":\"phase1\",\"operation_class\":\"ticket_notes.create_comment_note\"},\"correlation\":{\"trace_id\":\"phase1-agent-d-20260227T150343Z-comment-submit\",\"ticket_id\":\"T20260226.0033\",\"command_id\":\"8c682252-493f-4c0f-8172-9e6e4a1a73ec\"},\"requested_at\":\"2026-02-27T15:05:35.466Z\"},\"status\":\"accepted\",\"attempts\":0,\"max_attempts\":3,\"created_at\":\"2026-02-27T15:05:35.466Z\",\"updated_at\":\"2026-02-27T15:05:35.466Z\"},\"timestamp\":\"2026-02-27T15:05:35.468Z\"}"
+  }
+}

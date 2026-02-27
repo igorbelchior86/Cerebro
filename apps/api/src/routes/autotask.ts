@@ -81,6 +81,21 @@ function sanitizeSearchTerm(value: unknown): string {
   return String(value ?? '').trim().replace(/'/g, "''");
 }
 
+const MAX_ATTACHMENT_BYTES = 7 * 1024 * 1024;
+
+function toBase64Payload(value: unknown): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  return raw.replace(/^data:[^;]+;base64,/i, '').trim();
+}
+
+function estimateBase64DecodedSize(data: string): number {
+  if (!data) return 0;
+  const len = data.length;
+  const padding = data.endsWith('==') ? 2 : data.endsWith('=') ? 1 : 0;
+  return Math.floor((len * 3) / 4) - padding;
+}
+
 function stringifyStructuredSearch(filter: Array<Record<string, unknown>>, maxRecords: number): string {
   return JSON.stringify({
     MaxRecords: maxRecords,
@@ -756,6 +771,102 @@ router.patch('/ticket/:ticketId/context', async (req, res, next) => {
         contactId: Number.isFinite(authoritativeContactId) ? authoritativeContactId : null,
         contactName: `${String((contact as any)?.firstName || '').trim()} ${String((contact as any)?.lastName || '').trim()}`.trim() || null,
         contactEmail: String((contact as any)?.emailAddress || '').trim() || null,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /autotask/ticket/:ticketId/attachments
+ * Upload regular ticket attachments to Autotask (TicketAttachments entity).
+ */
+router.post('/ticket/:ticketId/attachments', async (req, res, next) => {
+  try {
+    const client = await getTenantScopedClient();
+    if (!client) {
+      res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
+      return;
+    }
+
+    const ticketId = String(req.params.ticketId || '').trim();
+    if (!ticketId) {
+      res.status(400).json({ error: 'ticketId is required' });
+      return;
+    }
+
+    const body = (req.body || {}) as {
+      files?: Array<{
+        fileName?: string;
+        contentType?: string;
+        dataBase64?: string;
+        title?: string;
+      }>;
+    };
+
+    const files = Array.isArray(body.files) ? body.files : [];
+    if (files.length === 0) {
+      res.status(400).json({ error: 'files[] is required' });
+      return;
+    }
+
+    const results: Array<{
+      fileName: string;
+      uploaded: boolean;
+      attachmentId?: string;
+      error?: string;
+    }> = [];
+
+    for (const file of files) {
+      const fileName = String(file?.fileName || '').trim();
+      const contentType = String(file?.contentType || 'application/octet-stream').trim();
+      const dataBase64 = toBase64Payload(file?.dataBase64);
+      const estimatedSize = estimateBase64DecodedSize(dataBase64);
+
+      if (!fileName || !dataBase64) {
+        results.push({ fileName: fileName || 'unknown', uploaded: false, error: 'fileName and dataBase64 are required' });
+        continue;
+      }
+      if (estimatedSize > MAX_ATTACHMENT_BYTES) {
+        results.push({
+          fileName,
+          uploaded: false,
+          error: `file exceeds max size (${MAX_ATTACHMENT_BYTES} bytes)`,
+        });
+        continue;
+      }
+
+      try {
+        const created = await client.createTicketAttachment(ticketId, {
+          title: String(file?.title || fileName).trim(),
+          fileName,
+          contentType,
+          dataBase64,
+        });
+        results.push({
+          fileName,
+          uploaded: true,
+          attachmentId: String((created as any)?.id || (created as any)?.item?.id || ''),
+        });
+      } catch (err) {
+        results.push({
+          fileName,
+          uploaded: false,
+          error: (err as Error)?.message || 'upload failed',
+        });
+      }
+    }
+
+    const failed = results.filter((r) => !r.uploaded);
+    res.status(failed.length > 0 ? 207 : 200).json({
+      success: failed.length === 0,
+      data: {
+        ticketId,
+        uploadedCount: results.filter((r) => r.uploaded).length,
+        failedCount: failed.length,
+        results,
       },
       timestamp: new Date().toISOString(),
     });

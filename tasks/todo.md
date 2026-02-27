@@ -1,3 +1,46 @@
+# Task: Attachment flow (Cerebro inline preview + Autotask regular attachment)
+**Status**: completed
+**Started**: 2026-02-27T15:38:00-03:00
+
+## Plan
+- [x] Step 1: Remover botão de imagem inline e adicionar seletor de anexos no `ChatInput`.
+- [x] Step 2: Implementar endpoint/API client para upload de anexos em `TicketAttachments` no Autotask.
+- [x] Step 3: Renderizar anexos inline no Cerebro (imagem como preview; documento como card com ícone + nome + formato).
+- [x] Step 4: Conectar envio de anexos no fluxo da sessão de ticket e validar com testes/typecheck.
+- [x] Step 5: Atualizar wiki com a mudança.
+
+## Open Questions
+- Nesta etapa, o upload será para attachment regular do ticket (não inline no texto e não vinculado a note/time entry específico).
+
+## Progress Notes
+- Skill aplicada: `workflow-orchestrator`.
+- Escopo explícito do usuário: remover inline image button, wiring do botão anexo e upload no Autotask.
+- Frontend:
+  - `ChatInput` atualizado para seleção de múltiplos arquivos, preview inline e remoção local de anexos.
+  - botão de `inline pic` removido da toolbar.
+  - `ChatMessage` passou a renderizar anexos inline em mensagens do usuário:
+    - imagem: preview visual;
+    - documento: card retangular com ícone/extensão + nome + formato.
+  - `triage/[id]` envia anexos selecionados para endpoint de upload de attachment do ticket no Autotask ao submeter mensagem.
+- Backend:
+  - `AutotaskClient` ganhou `createTicketAttachment`.
+  - nova rota `POST /autotask/ticket/:ticketId/attachments` para upload regular de anexos no ticket (com limite de tamanho por arquivo e retorno parcial por item).
+  - `express.json` ajustado para `12mb` para suportar payload base64 de anexos.
+- Verificação:
+  - `pnpm --filter @playbook-brain/api test -- src/__tests__/clients/autotask.test.ts` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+
+## Review
+- What worked:
+- Fluxo com mudança mínima: upload regular no ticket e preview inline local sem alterar contratos de workflow command existentes.
+- What was tricky:
+- Ajustar limite de body JSON e evitar revogar `objectURL` antes da renderização dos anexos na mensagem enviada.
+- Time taken:
+- Um ciclo médio (API + UI + testes + documentação).
+
+---
+
 # Task: Dual-channel text pipeline (rich interno + plain estruturado para Autotask)
 **Status**: completed
 **Started**: 2026-02-27T15:05:00-03:00

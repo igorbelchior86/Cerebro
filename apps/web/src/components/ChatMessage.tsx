@@ -14,6 +14,14 @@ export interface Message {
     cleanFormat?: 'plain' | 'markdown_llm';
     original: string;
   };
+  attachments?: Array<{
+    id: string;
+    name: string;
+    mimeType: string;
+    extension: string;
+    kind: 'image' | 'document';
+    previewUrl?: string;
+  }>;
 }
 
 interface ChatMessageProps {
@@ -510,6 +518,66 @@ export default function ChatMessage({ message, children }: ChatMessageProps) {
           <p style={userBubbleStyle}>
             {message.content}
           </p>
+          {message.attachments && message.attachments.length > 0 ? (
+            <div style={{ marginTop: '6px', width: '100%', display: 'grid', gap: '6px' }}>
+              {message.attachments.map((attachment) => (
+                attachment.kind === 'image' && attachment.previewUrl ? (
+                  <img
+                    key={attachment.id}
+                    src={attachment.previewUrl}
+                    alt={attachment.name}
+                    style={{
+                      width: '100%',
+                      maxWidth: '320px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(91,127,255,0.18)',
+                      objectFit: 'cover',
+                    }}
+                  />
+                ) : (
+                  <div
+                    key={attachment.id}
+                    style={{
+                      width: '100%',
+                      maxWidth: '320px',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(91,127,255,0.18)',
+                      background: 'rgba(91,127,255,0.06)',
+                      padding: '8px 9px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '30px',
+                        height: '30px',
+                        borderRadius: '7px',
+                        border: '1px solid rgba(91,127,255,0.25)',
+                        background: 'rgba(255,255,255,0.55)',
+                        color: 'var(--text-muted)',
+                        fontSize: '10px',
+                        fontFamily: 'var(--font-jetbrains-mono, monospace)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {attachment.extension}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: '11px', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {attachment.name}
+                      </div>
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{attachment.extension}</div>
+                    </div>
+                  </div>
+                )
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
     );

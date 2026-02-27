@@ -481,6 +481,42 @@ export class AutotaskClient {
     );
   }
 
+  async createTicketAttachment(
+    ticketId: number | string,
+    payload: {
+      title: string;
+      fileName: string;
+      contentType: string;
+      dataBase64: string;
+    }
+  ): Promise<Record<string, unknown>> {
+    const resolvedTicketId = await this.resolveTicketEntityId(ticketId);
+    const fileName = String(payload.fileName || '').trim();
+    const title = String(payload.title || fileName || 'Attachment').trim();
+    const contentType = String(payload.contentType || 'application/octet-stream').trim();
+    const data = String(payload.dataBase64 || '')
+      .replace(/^data:[^;]+;base64,/i, '')
+      .trim();
+    if (!fileName || !data) {
+      throw new Error('fileName and dataBase64 are required for TicketAttachment');
+    }
+
+    return this.requestJson<Record<string, unknown>>(
+      'POST',
+      `/tickets/${encodeURIComponent(String(resolvedTicketId))}/attachments`,
+      {
+        body: {
+          attachmentInfo: {
+            title,
+            fullPath: fileName,
+            contentType,
+            data,
+          },
+        },
+      }
+    );
+  }
+
   async getTicketChecklistItems(ticketId: number | string): Promise<Record<string, unknown>[]> {
     const resolvedTicketId = await this.resolveTicketEntityId(ticketId);
     const response = await this.request<{ records?: Record<string, unknown>[]; items?: Record<string, unknown>[]; item?: Record<string, unknown> }>(

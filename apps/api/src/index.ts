@@ -37,7 +37,7 @@ const app: Express = express();
 const observabilityRuntime = createObservabilityRuntime();
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ limit: '12mb' }));
 app.use(cookieParser());
 app.use(requestContextMiddleware);
 app.use(createObservabilityMiddleware(observabilityRuntime));

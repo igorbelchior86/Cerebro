@@ -1,15 +1,39 @@
 'use client';
 
-import { FormEvent, KeyboardEvent, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent, type ChangeEvent, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 
+export interface ChatInputAttachmentDraft {
+  id: string;
+  file: File;
+  name: string;
+  mimeType: string;
+  size: number;
+  extension: string;
+  kind: 'image' | 'document';
+  previewUrl?: string;
+}
+
+export interface ChatInputSubmitPayload {
+  message: string;
+  attachments: ChatInputAttachmentDraft[];
+}
+
 interface ChatInputProps {
-  onSubmit: (message: string) => void | Promise<void>;
+  onSubmit: (payload: ChatInputSubmitPayload) => void | Promise<void>;
   placeholder?: string;
   disabled?: boolean;
   isLoading?: boolean;
   hints?: string[];
+  attachmentsEnabled?: boolean;
+}
+
+function inferExtension(name: string, mimeType: string): string {
+  const byName = String(name || '').split('.').pop()?.trim().toUpperCase();
+  if (byName) return byName;
+  const byType = String(mimeType || '').split('/').pop()?.trim().toUpperCase();
+  return byType || 'FILE';
 }
 
 export default function ChatInput({
@@ -18,11 +42,14 @@ export default function ChatInput({
   disabled = false,
   isLoading = false,
   hints,
+  attachmentsEnabled = false,
 }: ChatInputProps) {
   const t = useTranslations('ChatInput');
   const [input, setInput] = useState('');
   const [focused, setFocused] = useState(false);
+  const [attachments, setAttachments] = useState<ChatInputAttachmentDraft[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeHints = hints || [
     t('hintReanalyze'),
@@ -33,10 +60,17 @@ export default function ChatInput({
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || disabled || isLoading) return;
-    const msg = input.trim();
+    const message = input.trim();
+    if ((!message && attachments.length === 0) || disabled || isLoading) return;
+
+    const payload: ChatInputSubmitPayload = {
+      message,
+      attachments,
+    };
+
     setInput('');
-    await onSubmit(msg);
+    setAttachments([]);
+    await onSubmit(payload);
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -78,6 +112,42 @@ export default function ChatInput({
     });
   };
 
+  const handlePickFiles = () => {
+    if (!attachmentsEnabled || disabled || isLoading) return;
+    fileInputRef.current?.click();
+  };
+
+  const onFilesSelected = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    const mapped = files.map((file): ChatInputAttachmentDraft => {
+      const mimeType = String(file.type || 'application/octet-stream').trim();
+      const isImage = mimeType.startsWith('image/');
+      return {
+        id: `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2, 8)}`,
+        file,
+        name: file.name,
+        mimeType,
+        size: file.size,
+        extension: inferExtension(file.name, mimeType),
+        kind: isImage ? 'image' : 'document',
+        ...(isImage ? { previewUrl: URL.createObjectURL(file) } : {}),
+      };
+    });
+
+    setAttachments((prev) => [...prev, ...mapped]);
+    event.currentTarget.value = '';
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments((prev) => {
+      const target = prev.find((a) => a.id === id);
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((a) => a.id !== id);
+    });
+  };
+
   const toolbarButtonStyle: CSSProperties = {
     width: '28px',
     height: '28px',
@@ -96,6 +166,7 @@ export default function ChatInput({
 
   return (
     <div style={{ padding: '12px', border: '1px solid var(--bento-outline)', borderRadius: '14px', background: 'var(--bg-card)', flexShrink: 0 }}>
+      <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={onFilesSelected} />
       <form onSubmit={handleSubmit}>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', background: 'var(--bg-panel)', border: `1px solid ${focused ? 'var(--border-accent)' : 'var(--bento-outline)'}`, borderRadius: '11px', padding: '8px 10px 8px 12px', transition: 'var(--transition)' }}>
           <input
@@ -110,10 +181,10 @@ export default function ChatInput({
             disabled={disabled || isLoading}
             style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontFamily: 'var(--font-dm-sans, sans-serif)', fontSize: '12.5px', color: 'var(--text-primary)', letterSpacing: '-0.01em' }}
           />
-          <button type="submit" disabled={!input.trim() || disabled || isLoading}
-            style={{ width: '28px', height: '28px', borderRadius: '8px', background: input.trim() && !disabled ? 'var(--accent-muted)' : 'var(--bg-card)', border: `1px solid ${input.trim() && !disabled ? 'var(--border-accent)' : 'var(--bento-outline)'}`, cursor: input.trim() && !disabled ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: !input.trim() || disabled ? 0.6 : 1, transition: 'var(--transition)', color: input.trim() && !disabled ? 'var(--accent)' : 'var(--text-muted)' }}
-            onMouseEnter={(e) => { if (input.trim() && !disabled) (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
-            onMouseLeave={(e) => { if (input.trim() && !disabled) (e.currentTarget as HTMLButtonElement).style.opacity = '0.85'; }}
+          <button type="submit" disabled={(!input.trim() && attachments.length === 0) || disabled || isLoading}
+            style={{ width: '28px', height: '28px', borderRadius: '8px', background: (input.trim() || attachments.length > 0) && !disabled ? 'var(--accent-muted)' : 'var(--bg-card)', border: `1px solid ${(input.trim() || attachments.length > 0) && !disabled ? 'var(--border-accent)' : 'var(--bento-outline)'}`, cursor: (input.trim() || attachments.length > 0) && !disabled ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: (!input.trim() && attachments.length === 0) || disabled ? 0.6 : 1, transition: 'var(--transition)', color: (input.trim() || attachments.length > 0) && !disabled ? 'var(--accent)' : 'var(--text-muted)' }}
+            onMouseEnter={(e) => { if ((input.trim() || attachments.length > 0) && !disabled) (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
+            onMouseLeave={(e) => { if ((input.trim() || attachments.length > 0) && !disabled) (e.currentTarget as HTMLButtonElement).style.opacity = '0.85'; }}
           >
             {isLoading ? (
               <span style={{ width: '10px', height: '10px', borderRadius: '50%', border: '1.5px solid rgba(255,255,255,0.3)', borderTopColor: 'white', display: 'inline-block' }} />
@@ -125,14 +196,44 @@ export default function ChatInput({
           </button>
         </div>
       </form>
+
+      {attachments.length > 0 ? (
+        <div style={{ marginTop: '8px', display: 'grid', gap: '6px' }}>
+          {attachments.map((attachment) => (
+            <div key={attachment.id} style={{ border: '1px solid var(--bento-outline)', borderRadius: '9px', background: 'var(--bg-panel)', padding: '7px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+              <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {attachment.kind === 'image' && attachment.previewUrl ? (
+                  <img src={attachment.previewUrl} alt={attachment.name} style={{ width: '34px', height: '34px', borderRadius: '6px', objectFit: 'cover', border: '1px solid var(--bento-outline)' }} />
+                ) : (
+                  <div style={{ width: '34px', height: '34px', borderRadius: '6px', border: '1px solid var(--bento-outline)', background: 'var(--bg-card)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                    {attachment.extension}
+                  </div>
+                )}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '240px' }}>{attachment.name}</div>
+                  <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{attachment.extension}</div>
+                </div>
+              </div>
+              <button type="button" onClick={() => removeAttachment(attachment.id)} style={{ width: '22px', height: '22px', borderRadius: '6px', border: '1px solid var(--bento-outline)', background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer' }} aria-label={`Remove ${attachment.name}`}>
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center', paddingRight: '2px' }}>
           <button
             type="button"
-            disabled={disabled || isLoading}
-            style={toolbarButtonStyle}
-            title="Attachment (coming soon)"
-            aria-label="Attachment (coming soon)"
+            disabled={!attachmentsEnabled || disabled || isLoading}
+            style={{
+              ...toolbarButtonStyle,
+              ...(attachmentsEnabled ? {} : { opacity: 0.45, cursor: 'not-allowed' }),
+            }}
+            title={attachmentsEnabled ? 'Attach files' : 'Attachments unavailable in this context'}
+            aria-label="Attach files"
+            onClick={handlePickFiles}
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M11.8 5.1 7 9.9a2 2 0 0 1-2.8-2.8L9 2.3a3 3 0 1 1 4.2 4.2L7.6 12a4 4 0 1 1-5.7-5.6l5.2-5.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
@@ -209,19 +310,6 @@ export default function ChatInput({
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M1.8 4h1.5v3m6.2-3h5m-5 4h5m-5 4h5M2 12h2.2m-2.2-4h2.2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            disabled={disabled || isLoading}
-            style={toolbarButtonStyle}
-            title="Inline image (coming soon)"
-            aria-label="Inline image (coming soon)"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <rect x="2.3" y="3" width="11.4" height="10" rx="1.8" stroke="currentColor" strokeWidth="1.2" />
-              <circle cx="6" cy="6.4" r="1.1" fill="currentColor" />
-              <path d="m4 11 2.6-2.5L8.7 11l2.1-2 1.2 1.1" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         </div>

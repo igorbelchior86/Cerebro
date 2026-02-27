@@ -231,5 +231,37 @@ describe('AutotaskClient', () => {
       expect(patchInit.method).toBe('PATCH');
       expect(JSON.parse(String(patchInit.body))).toMatchObject({ id: 991, hoursWorked: 2 });
     });
+
+    it('should POST /tickets/{id}/attachments with attachmentInfo payload', async () => {
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ items: [{ id: 888, ticketNumber: 'T20260227.0888' }] })
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ item: { id: 5555 } })
+        });
+
+      await client.createTicketAttachment('T20260227.0888', {
+        title: 'error screenshot',
+        fileName: 'error.png',
+        contentType: 'image/png',
+        dataBase64: 'data:image/png;base64,QUJD',
+      });
+
+      const postUrl = new URL((global.fetch as jest.Mock).mock.calls[1][0] as string);
+      const postInit = (global.fetch as jest.Mock).mock.calls[1][1];
+      expect(postUrl.pathname.toLowerCase()).toContain('/tickets/888/attachments');
+      expect(postInit.method).toBe('POST');
+      expect(JSON.parse(String(postInit.body))).toMatchObject({
+        attachmentInfo: {
+          title: 'error screenshot',
+          fullPath: 'error.png',
+          contentType: 'image/png',
+          data: 'QUJD',
+        },
+      });
+    });
   });
 });

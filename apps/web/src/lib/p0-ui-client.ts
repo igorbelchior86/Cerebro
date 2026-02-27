@@ -124,6 +124,25 @@ export interface AutotaskTicketContextUpdateResult {
   contactEmail: string | null;
 }
 
+export interface TicketAttachmentUploadInput {
+  fileName: string;
+  contentType: string;
+  dataBase64: string;
+  title?: string;
+}
+
+export interface TicketAttachmentUploadResult {
+  ticketId: string;
+  uploadedCount: number;
+  failedCount: number;
+  results: Array<{
+    fileName: string;
+    uploaded: boolean;
+    attachmentId?: string;
+    error?: string;
+  }>;
+}
+
 export class HttpError extends Error {
   status: number;
   body: unknown;
@@ -340,6 +359,13 @@ export function updateAutotaskTicketContext(
       ...(typeof input.companyId === 'number' ? { companyId: input.companyId } : {}),
       ...(typeof input.contactId === 'number' ? { contactId: input.contactId } : {}),
     }),
+  });
+}
+
+export function uploadAutotaskTicketAttachments(ticketId: string, files: TicketAttachmentUploadInput[]) {
+  return request<TicketAttachmentUploadResult>(`/autotask/ticket/${encodeURIComponent(ticketId)}/attachments`, {
+    method: 'POST',
+    body: JSON.stringify({ files }),
   });
 }
 

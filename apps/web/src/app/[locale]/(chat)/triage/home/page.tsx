@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import ChatSidebar, { type ActiveTicket } from '@/components/ChatSidebar';
 import ChatMessage, { type Message } from '@/components/ChatMessage';
-import ChatInput from '@/components/ChatInput';
+import ChatInput, { type ChatInputSubmitPayload } from '@/components/ChatInput';
 import ResizableLayout from '@/components/ResizableLayout';
 import { loadTriPaneSidebarTickets } from '@/lib/workflow-sidebar-adapter';
 
@@ -62,7 +62,7 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleSend = async (text: string) => {
+  const handleSend = async ({ message: text }: ChatInputSubmitPayload) => {
     const userMsg: Message = {
       id: `u-${Date.now()}`,
       role: 'user',
@@ -222,6 +222,7 @@ export default function HomePage() {
             disabled={isLoading}
             placeholder={t('placeholder')}
             hints={HINTS}
+            attachmentsEnabled={false}
           />
         </div>
       }

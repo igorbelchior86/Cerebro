@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import axios from 'axios';
 import ChatSidebar, { ActiveTicket } from '@/components/ChatSidebar';
 import ChatMessage, { Message } from '@/components/ChatMessage';
-import ChatInput from '@/components/ChatInput';
+import ChatInput, { type ChatInputSubmitPayload } from '@/components/ChatInput';
 import PlaybookPanel from '@/components/PlaybookPanel';
 import ResizableLayout from '@/components/ResizableLayout';
 import { usePathname } from 'next/navigation';
@@ -29,6 +29,7 @@ import {
   searchAutotaskContacts,
   searchAutotaskResources,
   submitWorkflowCommand,
+  uploadAutotaskTicketAttachments,
   updateAutotaskTicketContext,
   type ManagerOpsAIDecision,
   type WorkflowActionUxState,
@@ -863,17 +864,57 @@ export default function SessionDetail({
     };
   }, []);
 
-  const handleSendMessage = (message: string) => {
+  const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error(`Unable to read file ${file.name}`));
+    reader.readAsDataURL(file);
+  });
+
+  const handleSendMessage = async ({ message, attachments }: ChatInputSubmitPayload) => {
+    const attachmentViews = attachments.map((attachment) => ({
+      id: attachment.id,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      extension: attachment.extension,
+      kind: attachment.kind,
+      ...(attachment.previewUrl ? { previewUrl: attachment.previewUrl } : {}),
+    }));
     setMessages((prev) => [
       ...prev,
       {
         id: `msg-user-${Date.now()}`,
         role: 'user',
-        content: message,
+        content: message || (attachmentViews.length > 0 ? 'Attachment(s) added.' : ''),
         timestamp: new Date(),
         type: 'text',
+        ...(attachmentViews.length > 0 ? { attachments: attachmentViews } : {}),
       },
     ]);
+
+    let attachmentUploadError = '';
+    const ticketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
+    if (ticketId && attachments.length > 0) {
+      try {
+        const files = await Promise.all(
+          attachments.map(async (attachment) => ({
+            fileName: attachment.name,
+            contentType: attachment.mimeType,
+            dataBase64: await fileToBase64(attachment.file),
+            title: attachment.name,
+          }))
+        );
+        const upload = await uploadAutotaskTicketAttachments(ticketId, files);
+        if (upload.failedCount > 0) {
+          attachmentUploadError = upload.results
+            .filter((r) => !r.uploaded)
+            .map((r) => `${r.fileName}: ${r.error || 'upload failed'}`)
+            .join('; ');
+        }
+      } catch (err) {
+        attachmentUploadError = (err as Error)?.message || 'Attachment upload failed';
+      }
+    }
 
     setTimeout(() => {
       setMessages((prev) => [
@@ -881,7 +922,9 @@ export default function SessionDetail({
         {
           id: `msg-auto-${Date.now()}`,
           role: 'assistant',
-          content: t('processingRequest'),
+          content: attachmentUploadError
+            ? `${t('processingRequest')} (attachment issues: ${attachmentUploadError})`
+            : t('processingRequest'),
           timestamp: new Date(),
           type: 'text',
         },
@@ -1604,6 +1647,7 @@ export default function SessionDetail({
             placeholder={t('placeholder')}
             disabled={loading}
             isLoading={false}
+            attachmentsEnabled={true}
             hints={[
               'Reanalyze with new info',
               'Generate user questions',

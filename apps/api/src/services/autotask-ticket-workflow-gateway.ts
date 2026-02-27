@@ -5,6 +5,7 @@ import type {
   WorkflowExecutionResult,
 } from './ticket-workflow-core.js';
 import { resolveAutotaskOperation } from './autotask-operation-registry.js';
+import { normalizeTextForAutotask } from './autotask-text-normalizer.js';
 
 export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
   constructor(private readonly clientFactory: (tenantId: string) => Promise<AutotaskClient | null>) {}
@@ -105,7 +106,7 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
         await client.updateTicket(ticketId, patch);
       }
 
-      const commentBody = String(payload.comment_body || '').trim();
+      const commentBody = normalizeTextForAutotask(payload.comment_body).plain_text;
       if (commentBody) {
         const internal = String(payload.comment_visibility || '').toLowerCase() === 'internal';
         await client.createTicketNote(ticketId, {
@@ -123,7 +124,7 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
 
     if (operation.operation.handler === 'comment_note') {
       const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
-      const commentBody = String(payload.comment_body ?? payload.note_body ?? payload.noteText ?? '').trim();
+      const commentBody = normalizeTextForAutotask(payload.comment_body ?? payload.note_body ?? payload.noteText).plain_text;
       if (!commentBody) {
         throw new Error(`Command ${command.command_id} requires comment_body for ${command.command_type}`);
       }
@@ -142,10 +143,19 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
     if (operation.operation.handler === 'update_ticket_note') {
       const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
       const noteId = Number(payload.note_id ?? payload.id);
+      const normalizedDescription = payload.description !== undefined
+        ? normalizeTextForAutotask(payload.description).plain_text
+        : undefined;
+      const normalizedNoteText = payload.noteText !== undefined
+        ? normalizeTextForAutotask(payload.noteText).plain_text
+        : undefined;
+      const normalizedBody = payload.body !== undefined
+        ? normalizeTextForAutotask(payload.body).plain_text
+        : undefined;
       await client.updateTicketNote(ticketId, noteId, {
-        ...(payload.description !== undefined ? { description: payload.description } : {}),
-        ...(payload.noteText !== undefined ? { noteText: payload.noteText } : {}),
-        ...(payload.body !== undefined ? { description: payload.body } : {}),
+        ...(normalizedDescription !== undefined ? { description: normalizedDescription } : {}),
+        ...(normalizedNoteText !== undefined ? { noteText: normalizedNoteText } : {}),
+        ...(normalizedBody !== undefined ? { description: normalizedBody } : {}),
         ...(payload.title !== undefined ? { title: payload.title } : {}),
         ...(payload.publish !== undefined ? { publish: payload.publish } : {}),
         ...(payload.note_type !== undefined ? { noteType: payload.note_type } : {}),
@@ -195,11 +205,12 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
 
     if (operation.operation.handler === 'time_entry_create') {
       const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
+      const summaryNotes = normalizeTextForAutotask(payload.summary_notes ?? payload.summaryNotes).plain_text;
       const entry = await client.createTimeEntry({
         ticketID: ticketId,
         resourceID: payload.resource_id ?? payload.resourceID,
         hoursWorked: payload.hours_worked ?? payload.hoursWorked,
-        summaryNotes: payload.summary_notes ?? payload.summaryNotes,
+        summaryNotes,
       });
       return {
         kind: 'time_entry',
@@ -208,13 +219,19 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
     }
 
     if (operation.operation.handler === 'time_entry_update') {
+      const normalizedSummaryNotesSnake = payload.summary_notes !== undefined
+        ? normalizeTextForAutotask(payload.summary_notes).plain_text
+        : undefined;
+      const normalizedSummaryNotesCamel = payload.summaryNotes !== undefined
+        ? normalizeTextForAutotask(payload.summaryNotes).plain_text
+        : undefined;
       const entry = await client.updateTimeEntry(
         Number(payload.time_entry_id ?? payload.id),
         {
           ...(payload.hours_worked !== undefined ? { hoursWorked: payload.hours_worked } : {}),
           ...(payload.hoursWorked !== undefined ? { hoursWorked: payload.hoursWorked } : {}),
-          ...(payload.summary_notes !== undefined ? { summaryNotes: payload.summary_notes } : {}),
-          ...(payload.summaryNotes !== undefined ? { summaryNotes: payload.summaryNotes } : {}),
+          ...(normalizedSummaryNotesSnake !== undefined ? { summaryNotes: normalizedSummaryNotesSnake } : {}),
+          ...(normalizedSummaryNotesCamel !== undefined ? { summaryNotes: normalizedSummaryNotesCamel } : {}),
         }
       );
       return { kind: 'time_entry', entry_id: (entry as any)?.id ?? Number(payload.time_entry_id ?? payload.id) };

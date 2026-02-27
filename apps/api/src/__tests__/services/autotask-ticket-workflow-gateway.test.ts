@@ -82,6 +82,31 @@ describe('AutotaskTicketWorkflowGateway', () => {
     );
   });
 
+  it('normalizes markdown-rich comment body before writing ticket note', async () => {
+    const mockClient = {
+      getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 778, ticketNumber: 'T20260226.0101' }),
+      createTicketNote: jest.fn().mockResolvedValue({}),
+      getTicket: jest.fn().mockResolvedValue({ id: 778, ticketNumber: 'T20260226.0101', status: 1 }),
+    } as any;
+
+    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    await gateway.executeCommand(buildCommand({
+      command_type: 'create_comment_note',
+      payload: {
+        ticket_id: 'T20260226.0101',
+        note_body: '### Resolution\n1. **Open** [Portal](https://portal.example.com)\n2. Restart `Agent`',
+        note_visibility: 'public',
+      },
+    }));
+
+    expect(mockClient.createTicketNote).toHaveBeenCalledWith(
+      778,
+      expect.objectContaining({
+        noteText: 'RESOLUTION\n1. Open Portal (https://portal.example.com)\n2. Restart Agent',
+      }),
+    );
+  });
+
   it('rejects comment/note command without body', async () => {
     const mockClient = {
       getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 888, ticketNumber: 'T20260226.0100' }),
@@ -135,6 +160,31 @@ describe('AutotaskTicketWorkflowGateway', () => {
       expect.objectContaining({ ticketID: 333, resourceID: 42, hoursWorked: 1.5, summaryNotes: 'Remote troubleshooting' })
     );
     expect(result).toMatchObject({ kind: 'time_entry', entry_id: 2222 });
+  });
+
+  it('normalizes markdown-rich summary notes before writing time entry', async () => {
+    const mockClient = {
+      getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 334, ticketNumber: 'T20260226.0034' }),
+      createTimeEntry: jest.fn().mockResolvedValue({ id: 2223 }),
+    } as any;
+
+    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    await gateway.executeCommand(buildCommand({
+      command_type: 'time_entry',
+      payload: {
+        ticket_id: 'T20260226.0034',
+        resource_id: 42,
+        hours_worked: 0.5,
+        summary_notes: '- Checked DNS\n- **Flush** cache\nSee [KB](https://kb.example.com)',
+      },
+    }));
+
+    expect(mockClient.createTimeEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ticketID: 334,
+        summaryNotes: '- Checked DNS\n- Flush cache\nSee KB (https://kb.example.com)',
+      })
+    );
   });
 
   it('executes update_priority operation from previously excluded scope', async () => {

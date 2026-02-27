@@ -262,6 +262,18 @@ function normalizeVisibility(input: unknown): 'internal' | 'public' {
   return String(input || '').toLowerCase() === 'internal' ? 'internal' : 'public';
 }
 
+function extractCommentBodyForProjection(payload: Record<string, unknown>): string {
+  return String(
+    payload.comment_body_rich ??
+    payload.note_body_rich ??
+    payload.noteText_rich ??
+    payload.comment_body ??
+    payload.note_body ??
+    payload.noteText ??
+    ''
+  ).trim();
+}
+
 function normalizeStatusToken(value: unknown): string {
   return String(value ?? '')
     .trim()
@@ -330,7 +342,7 @@ function normalizeEventDomainSnapshots(payload: Record<string, unknown>) {
   const queueIdRaw = payload.queue_id ?? payload.queueID;
   const queueId = Number(queueIdRaw);
   const queueName = String(payload.queue_name ?? '').trim();
-  const commentBody = String(payload.comment_body ?? '').trim();
+  const commentBody = extractCommentBodyForProjection(payload);
   const commentVisibility = String(payload.comment_visibility ?? '').trim().toLowerCase();
   const noteFingerprint = fingerprintText(commentBody);
   const commentCreatedAt = String(payload.comment_created_at ?? '').trim();
@@ -919,7 +931,7 @@ export class TicketWorkflowCoreService {
       updated_at: nowIso(),
     };
 
-    const commentBody = String(patch.comment_body ?? patch.note_body ?? patch.noteText ?? '').trim();
+    const commentBody = extractCommentBodyForProjection(patch as Record<string, unknown>);
     if (commentBody) {
       next.comments = [
         ...(existing.comments || []),
@@ -1045,7 +1057,7 @@ export class TicketWorkflowCoreService {
       updated_at: nowIso(),
     };
 
-    const commentBody = String(payload.comment_body || '').trim();
+    const commentBody = extractCommentBodyForProjection(payload);
     if (commentBody) {
       next.comments.push({
         visibility: normalizeVisibility(payload.comment_visibility),

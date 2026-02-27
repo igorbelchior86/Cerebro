@@ -1,3 +1,9 @@
+## Lesson: 2026-02-27 (PSA compatibility must be validated before UI formatting behavior)
+**Mistake**: Implementei toolbar com inserção de Markdown assumindo compatibilidade de renderização no Autotask.
+**Root cause**: Não validei primeiro o contrato real de write/render do provider para campos de note/time entry.
+**Rule**: Antes de implementar recursos de formatação em fluxo com integração externa, confirmar capacidade oficial do provider (rich/plain/attachments) e projetar serializer compatível.
+**Pattern**: Quando o usuário disser “compatível com PSA”, tratar como requisito de contrato de integração, não apenas requisito visual de UI.
+
 ## Lesson: 2026-02-27 (SSOT policy needs read-time reviewer, not only write-time guards)
 **Mistake**: Focar apenas em correções de submit/write não eliminou divergência visual persistida por snapshot local + override stale.
 **Root cause**: Ausência de camada de revisão autoritativa no read path para reconciliar estado local com fonte externa (Autotask).

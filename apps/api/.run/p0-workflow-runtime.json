@@ -6228,6 +6228,78 @@
           }
         }
       }
+    },
+    {
+      "audit_id": "8d9ee9b7-b084-400a-bc6b-c565ae3a13ca",
+      "timestamp": "2026-02-27T18:37:03.789Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260227.0010"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132823",
+        "ticket_id": "T20260227.0010"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132823:ticket.created:2026-02-27T18:36:36.433Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-27T18:37:03.781Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
+    },
+    {
+      "audit_id": "f6dc96b8-5e5c-4304-9fcf-59eb62b49726",
+      "timestamp": "2026-02-27T19:27:04.290Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260227.0011"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132824",
+        "ticket_id": "T20260227.0011"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132824:ticket.created:2026-02-27T19:26:49.823Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-27T19:27:04.270Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
     }
   ],
   "processedSyncEvents": [
@@ -6269,7 +6341,9 @@
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132819:ticket.created:2026-02-27T16:38:58.333Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132820:ticket.created:2026-02-27T17:16:58.097Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132821:ticket.created:2026-02-27T17:19:05.790Z",
-    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132822:ticket.created:2026-02-27T17:31:01.350Z"
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132822:ticket.created:2026-02-27T17:31:01.350Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132823:ticket.created:2026-02-27T18:36:36.433Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132824:ticket.created:2026-02-27T19:26:49.823Z"
   ],
   "inbox": [
     [
@@ -6897,6 +6971,74 @@
           "correlates.ticket_note_metadata": {}
         },
         "updated_at": "2026-02-27T17:31:17.731Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260227.0010",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260227.0010",
+        "external_id": "132823",
+        "title": "Payment notification from The InStore Group",
+        "description": "From accounting@theinstoregroup.net: Hi Refresh Technologies, Inc.,\r\n\r\nA payment of $3,654.33 was issued to you by ach on 02/25/2026.\r\nYou'll find details about this payment below, and in the attached receipt.\r\n\r\nPayment date: 02/25/2026\r\nPayment method: ACH\r\nPayment number : 064008630007086\r\n Amount: $3,654.33 USD\r\n\r\nIf you have any questions regarding this payment, contact:\r\nAmanda Knorr\r\naccounting@theinstoregroup.net\r\n\r\nThank you,\r\nThe InStore Group",
+        "status": "1",
+        "queue_id": 29683517,
+        "comments": [],
+        "last_sync_at": "2026-02-27T18:37:03.787Z",
+        "last_event_occurred_at": "2026-02-27T18:36:36.433Z",
+        "last_event_id": "autotask-poller:132823:ticket.created:2026-02-27T18:36:36.433Z",
+        "source_of_truth": "Autotask",
+        "domain_snapshots": {
+          "tickets": {
+            "external_id": "132823",
+            "ticket_number": "T20260227.0010",
+            "status": "1",
+            "queue_id": 29683517
+          },
+          "ticket_notes": {},
+          "correlates.resources": {},
+          "correlates.ticket_metadata": {
+            "ticket_number": "T20260227.0010",
+            "status": "1",
+            "queue_id": 29683517
+          },
+          "correlates.ticket_note_metadata": {}
+        },
+        "updated_at": "2026-02-27T18:37:03.787Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260227.0011",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260227.0011",
+        "external_id": "132824",
+        "title": "Undelivered Mail Returned to Sender",
+        "description": "From MAILER-DAEMON@autotask.net (Mail Delivery System): This is the mail system at host phl-p-mail03.autotask.net.\r\n\r\nI'm sorry to have to inform you that your message could not\r\nbe delivered to one or more recipients. It's attached below.\r\n\r\nFor further assistance, please send mail to postmaster.\r\n\r\nIf you do so, please include this problem report. You can\r\ndelete your own text from the attached returned message.\r\n\r\n                   The mail system\r\n\r\n<avery.pm@stintinomanagement.com>: host smtp.google.com[192.178.155.27] said:\r\n    550-5.2.1 The email account that you tried to reach is inactive. For more\r\n    550-5.2.1 information, go to 550 5.2.1\r\n    https://support.google.com/mail/?p=DisabledUser\r\n    6a1803df08f44-899c7532614si60924716d6.647 - gsmtp (in reply to RCPT TO\r\n    command)",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-27T19:27:04.286Z",
+        "last_event_occurred_at": "2026-02-27T19:26:49.823Z",
+        "last_event_id": "autotask-poller:132824:ticket.created:2026-02-27T19:26:49.823Z",
+        "source_of_truth": "Autotask",
+        "domain_snapshots": {
+          "tickets": {
+            "external_id": "132824",
+            "ticket_number": "T20260227.0011",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "ticket_notes": {},
+          "correlates.resources": {},
+          "correlates.ticket_metadata": {
+            "ticket_number": "T20260227.0011",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "correlates.ticket_note_metadata": {}
+        },
+        "updated_at": "2026-02-27T19:27:04.286Z"
       }
     ]
   ],

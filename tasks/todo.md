@@ -1,3 +1,77 @@
+# Task: Dual-channel text pipeline (rich interno + plain estruturado para Autotask)
+**Status**: completed
+**Started**: 2026-02-27T15:05:00-03:00
+
+## Plan
+- [x] Step 1: Implementar normalizador backend `rich/markdown/html -> plain text` compatível com payloads de note/time entry do Autotask.
+- [x] Step 2: Integrar normalizador no gateway de escrita (`comment_note`, `legacy_update` com comment, `update_note`, `time_entry create/update`) preservando payload rico para projeção interna.
+- [x] Step 3: Adicionar/atualizar testes do gateway para provar conversão antes do write em Autotask.
+- [x] Step 4: Verificar typecheck/tests API/Web e atualizar wiki.
+
+## Open Questions
+- Nesta iteração, anexos seguem fora de escopo (placeholders de UI permanecem) e sem upload automático.
+
+## Progress Notes
+- Skill aplicada: `workflow-orchestrator`.
+- Escopo autorizado pelo usuário: implementar dual-channel com conversão em background para Autotask.
+- Backend:
+  - novo `apps/api/src/services/autotask-text-normalizer.ts` para converter conteúdo rich/markdown/html em plain text compatível com Autotask.
+  - `AutotaskTicketWorkflowGateway` agora normaliza texto antes de write em:
+    - `legacy_update` (comment),
+    - `comment_note` / `create_comment_note`,
+    - `update_ticket_note`,
+    - `time_entry` create/update (`summaryNotes`).
+- Projeção interna (Cerebro):
+  - `ticket-workflow-core` agora prioriza campos rich (`comment_body_rich`, `note_body_rich`, `noteText_rich`) para exibição/fingerprint local quando presentes.
+- Verificação:
+  - `pnpm --filter @playbook-brain/api test -- src/__tests__/services/autotask-ticket-workflow-gateway.test.ts` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+
+## Review
+- What worked:
+- Converter no gateway (write boundary) permitiu dual-channel sem quebrar contratos atuais de comando.
+- What was tricky:
+- Manter compatibilidade de aliases (`comment_body/note_body/noteText`, `summary_notes/summaryNotes`) em todos os handlers.
+- Time taken:
+- Um ciclo médio (RCA + implementação + testes + documentação).
+
+---
+
+# Task: ChatInput toolbar PSA (etapa 1 de 3)
+**Status**: completed
+**Started**: 2026-02-27T13:55:00-03:00
+
+## Plan
+- [x] Step 1: Mapear componente compartilhado de input nas telas de triage.
+- [x] Step 2: Adicionar toolbar na área de sugestões com ações solicitadas.
+- [x] Step 3: Executar verificação (typecheck web) e documentar wiki.
+
+## Open Questions
+- Sem bloqueios para etapa 1. Etapas 2 e 3 (reposicionar sugestões e textarea dinâmica) ficam para próximas mudanças.
+
+## Progress Notes
+- Skill aplicada: `workflow-orchestrator`.
+- Componente alterado: `apps/web/src/components/ChatInput.tsx`.
+- Toolbar adicionada com ordem solicitada:
+  - anexo (placeholder), emoji, divisor vertical, bold, italic, underline, bulleted list, numbered list, inline pic (placeholder).
+- Ações implementadas:
+  - emoji, bold, italic, underline, lista com bullet e lista numerada aplicam formatação no texto atual.
+  - botões placeholder não fazem upload/render de mídia ainda, apenas presença visual.
+- Comportamento preservado:
+  - submit no botão enviar e Enter.
+  - chips de sugestão mantidos na posição atual para não antecipar etapa 2.
+
+## Review
+- What worked:
+- Mudança isolada em componente compartilhado entregou toolbar nos dois fluxos (home e sessão) sem alterar contratos de dados.
+- What was tricky:
+- Garantir que todos os botões da toolbar fossem `type="button"` para não disparar submit do form por acidente.
+- Time taken:
+- Um ciclo curto (análise + implementação + typecheck + wiki).
+
+---
+
 # Task: Reviewer layer AT-wins para campos críticos (evitar split-brain Cerebro x Autotask)
 **Status**: completed
 **Started**: 2026-02-27T17:46:00-03:00

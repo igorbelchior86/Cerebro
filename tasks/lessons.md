@@ -1,3 +1,9 @@
+## Lesson: 2026-02-27 (Autotask IDs can be zero)
+**Mistake**: Tratei IDs Autotask no frontend como estritamente positivos (`> 0`), o que bloqueou a org `Refresh Technologies` no fluxo `Org -> User`.
+**Root cause**: Assunção implícita de que todo ID válido seria truthy/positivo; faltou validação com payload real de tenant.
+**Rule**: Para entidades Autotask, validar ID por número finito e ausência (`null/undefined`), não por truthiness.
+**Pattern**: Sempre investigar payload de casos específicos reportados antes de iterar em correções de UI/dependência.
+
 ## Lesson: 2026-02-26 (rerun requests require fresh execution evidence)
 **Mistake**: Entreguei o framework da Fase 4 e o primeiro dry-run, mas o pedido seguinte exigia uma nova execução explícita (novo run) e não apenas reexplicar o que já existia.
 **Root cause**: Interpretação orientada a “status de entrega” em vez de “ação operacional” solicitada pelo usuário.
@@ -645,3 +651,27 @@
 **Root cause**: Regra técnica foi aplicada sem camada de exceção de negócio explicitada pelo usuário.
 **Rule**: Em políticas de catálogo (`active-only`), manter regra base mas prever exceções explícitas de negócio (ex.: org proprietária) quando requerido.
 **Pattern**: Usuário pede “manter dependência/política, mas exceção X” => implementar filtro composto (`base_policy OR business_exception`).
+
+## Lesson: 2026-02-27 (empty-search UX needs explicit default query strategy)
+**Mistake**: Na rota de org search, deixei `q` vazio gerar filtro vazio para Autotask, quebrando o estado inicial de sugestões do modal.
+**Root cause**: Assumi que query sem filtro retornaria catálogo útil, mas o endpoint não garante isso.
+**Rule**: Para modais com sugestões iniciais, tratar busca vazia como modo próprio com estratégia explícita (queries default + merge), nunca depender de filtro vazio implícito.
+**Pattern**: UI mostra "No options found" apenas no open inicial e volta a funcionar ao digitar => falta estratégia de seed para `q=''`.
+
+## Lesson: 2026-02-27 (never coerce nullable IDs with Number() in selection gates)
+**Mistake**: Usei `Number(company_id)` para decidir org ativa; `null` virou `0` e contaminou a lógica de "org selecionada" no modal.
+**Root cause**: Coerção numérica implícita sem validação de domínio (`id > 0`) em fluxo de gate de UI.
+**Rule**: Em IDs de entidade, usar normalizador explícito para ID positivo e tratar `null/undefined/0/NaN` como ausente.
+**Pattern**: Mensagem "Select X first" mesmo após seleção aparente pode indicar ID inválido derivado de coerção silenciosa.
+
+## Lesson: 2026-02-27 (User-by-Org flows need name-to-id fallback when backend payload is partially denormalized)
+**Mistake**: Assumi que `company_id` estaria sempre disponível no momento de abrir o modal de usuários.
+**Root cause**: O fluxo pode carregar nome da org sem o ID correspondente materializado em todos os estados intermediários.
+**Rule**: Em flows dependentes de ID (`User -> Org`), se houver nome canônico e ID ausente, aplicar resolução automática nome->ID antes de bloquear UX.
+**Pattern**: Mensagem "Select an Org first" com org visível na UI indica ausência de resolução ID e não ausência real de seleção.
+
+## Lesson: 2026-02-27 (Org->User dependency should not be blocked by intermediate integration write failures)
+**Mistake**: Condicionei o avanço do fluxo de seleção de User ao sucesso imediato do write de Org no Autotask.
+**Root cause**: Acoplamento excessivo entre persistência externa e estado local de dependência de UI.
+**Rule**: Em fluxos multi-etapa dependentes (`Org -> User`), aplicar estado local otimista para continuidade operacional e tratar write externo como best-effort com feedback explícito.
+**Pattern**: Caso específico de tenant/org com validação mais restritiva no provider externo deve degradar para warning, não bloquear seleção subsequente necessária ao próprio reparo (escolher User).

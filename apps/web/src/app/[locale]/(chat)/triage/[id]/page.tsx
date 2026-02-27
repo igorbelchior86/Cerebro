@@ -203,6 +203,7 @@ export default function SessionDetail({
   const [contextEditorSaving, setContextEditorSaving] = useState(false);
   const [contextEditorError, setContextEditorError] = useState('');
   const [contextEditorOptions, setContextEditorOptions] = useState<ContextEditorOption[]>([]);
+  const [resolvedOrgIdFallback, setResolvedOrgIdFallback] = useState<number | null>(null);
 
   const p0LookupTicketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
   const workflowInboxState = usePollingResource(listWorkflowInbox, {
@@ -283,6 +284,11 @@ export default function SessionDetail({
     if (/^employee\b/.test(normalized)) return false;
     if (/^new hire\b/.test(normalized)) return false;
     return true;
+  };
+
+  const toAutotaskId = (value: unknown): number | null => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
   };
 
   const selectUiUserFromSsot = (input: {
@@ -1016,11 +1022,15 @@ export default function SessionDetail({
   }, [workflowTicket?.assigned_to, data?.ticket?.assigned_resource_name, techAssignmentDraft]);
 
   const activeOrgId = (() => {
-    if (typeof contextOverrides.org?.id === 'number' && Number.isFinite(contextOverrides.org.id)) {
-      return contextOverrides.org.id;
-    }
-    const baseCompanyId = Number(data?.ticket?.company_id);
-    return Number.isFinite(baseCompanyId) ? baseCompanyId : null;
+    const overrideOrgId = toAutotaskId(contextOverrides.org?.id);
+    if (overrideOrgId !== null) return overrideOrgId;
+    const ticketCompanyId = toAutotaskId(data?.ticket?.company_id);
+    if (ticketCompanyId !== null) return ticketCompanyId;
+    const resolvedFallback = toAutotaskId(resolvedOrgIdFallback);
+    if (resolvedFallback !== null) return resolvedFallback;
+    const userScopedOrgId = toAutotaskId(contextOverrides.user?.companyId);
+    if (userScopedOrgId !== null) return userScopedOrgId;
+    return null;
   })();
 
   const openContextEditor = (key: string) => {
@@ -1029,6 +1039,7 @@ export default function SessionDetail({
     setContextEditorQuery('');
     setContextEditorError('');
     setContextEditorOptions([]);
+    setResolvedOrgIdFallback(null);
   };
 
   const closeContextEditor = () => {
@@ -1038,6 +1049,7 @@ export default function SessionDetail({
     setContextEditorOptions([]);
     setContextEditorLoading(false);
     setContextEditorSaving(false);
+    setResolvedOrgIdFallback(null);
   };
 
   const handleSelectContextOption = async (option: ContextEditorOption) => {
@@ -1048,26 +1060,36 @@ export default function SessionDetail({
       return;
     }
     if (activeContextEditor === 'Org') {
-      setContextEditorSaving(true);
-      setContextEditorError('');
-      try {
-        const updated = await updateAutotaskTicketContext(ticketRef, { companyId: option.id });
+      const applyOrgSelection = (companyId: number, companyName: string) => {
         setContextOverrides((prev) => ({
           ...(() => {
             const { user: _omitUser, ...rest } = prev;
             return rest;
           })(),
-          org: { id: updated.companyId ?? option.id, name: updated.companyName || option.label },
+          org: { id: companyId, name: companyName },
         }));
-        closeContextEditor();
+      };
+
+      // Optimistic local selection guarantees User->Org dependency immediately.
+      applyOrgSelection(option.id, option.label);
+      setContextEditorSaving(true);
+      setContextEditorError('');
+      try {
+        const updated = await updateAutotaskTicketContext(ticketRef, { companyId: option.id });
+        const resolvedCompanyId = toAutotaskId(updated.companyId) ?? option.id;
+        applyOrgSelection(resolvedCompanyId, updated.companyName || option.label);
       } catch (err: any) {
-        setContextEditorError(String(err?.message || 'Unable to update Org in Autotask'));
-        setContextEditorSaving(false);
+        // Keep local Org selection so user can continue to User selection flow.
+        setWorkflowActionError(
+          `Org selected locally. Autotask write pending/failed: ${String(err?.message || 'Unable to update Org in Autotask')}`
+        );
+      } finally {
+        closeContextEditor();
       }
       return;
     }
     if (activeContextEditor === 'User') {
-      if (!activeOrgId) {
+      if (activeOrgId === null) {
         setContextEditorError('Select an Org first to set User.');
         return;
       }
@@ -1082,7 +1104,7 @@ export default function SessionDetail({
             name: updated.contactName || option.label,
             companyId: updated.companyId ?? activeOrgId,
           },
-          ...(updated.companyId && updated.companyName
+          ...(updated.companyId !== null && updated.companyId !== undefined && updated.companyName
             ? { org: { id: updated.companyId, name: updated.companyName } }
             : {}),
         }));
@@ -1100,10 +1122,49 @@ export default function SessionDetail({
 
   useEffect(() => {
     if (!activeContextEditor) return;
-    if (activeContextEditor === 'User' && !activeOrgId) {
-      setContextEditorOptions([]);
-      setContextEditorError('Select an Org first to list User options.');
-      return;
+    if (activeContextEditor === 'User' && activeOrgId === null) {
+      const orgName = String(
+        contextOverrides.org?.name ||
+        data?.ssot?.company ||
+        data?.ticket?.company ||
+        selectedTicketView?.company ||
+        selectedTicketView?.org ||
+        ''
+      ).trim();
+      if (!orgName) {
+        setContextEditorOptions([]);
+        setContextEditorError('Select an Org first to list User options.');
+        return;
+      }
+      let ignoreResolve = false;
+      setContextEditorLoading(true);
+      setContextEditorError('');
+      void (async () => {
+        try {
+          const rows = await searchAutotaskCompanies(orgName, 30);
+          if (ignoreResolve) return;
+          const exact = rows.find((row) => row.name.trim().toLowerCase() === orgName.toLowerCase());
+          const picked = exact || rows[0];
+          const resolvedId = toAutotaskId(picked?.id);
+          if (resolvedId !== null) {
+            setResolvedOrgIdFallback(resolvedId);
+            setContextEditorError('');
+          } else {
+            setContextEditorOptions([]);
+            setContextEditorError('Select an Org first to list User options.');
+          }
+        } catch (err: any) {
+          if (!ignoreResolve) {
+            setContextEditorOptions([]);
+            setContextEditorError(String(err?.message || 'Unable to resolve Org before listing users'));
+          }
+        } finally {
+          if (!ignoreResolve) setContextEditorLoading(false);
+        }
+      })();
+      return () => {
+        ignoreResolve = true;
+      };
     }
 
     let ignore = false;
@@ -1122,7 +1183,7 @@ export default function SessionDetail({
           }
           return;
         }
-        if (activeContextEditor === 'User' && activeOrgId) {
+        if (activeContextEditor === 'User' && activeOrgId !== null) {
           const rows = await searchAutotaskContacts(contextEditorQuery, activeOrgId, 30);
           if (!ignore) {
             setContextEditorOptions(rows.map((row: AutotaskContactOption) => ({
@@ -1527,7 +1588,7 @@ export default function SessionDetail({
                     <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>Edit {activeContextEditor}</div>
                     <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
                       {activeContextEditor === 'User'
-                        ? activeOrgId
+                        ? activeOrgId !== null
                           ? `Listing users only from selected Org (ID ${activeOrgId}).`
                           : 'Select an Org first to list users.'
                         : 'Source: Autotask read-only search.'}

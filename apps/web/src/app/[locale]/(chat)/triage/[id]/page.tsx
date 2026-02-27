@@ -45,6 +45,7 @@ interface SessionData {
   session: { id: string; ticket_id: string; status: 'pending' | 'processing' | 'approved' | 'failed' | 'needs_more_info' | 'blocked' };
   ticket?: {
     id?: string;
+    autotask_ticket_id_numeric?: number | null;
     title?: string;
     description?: string;
     description_normalized?: string;
@@ -177,6 +178,7 @@ export default function SessionDetail({
   const flowRequestSeqRef = useRef(0);
   const hardRefreshInProgressRef = useRef(false);
   const sidebarTicketsRef = useRef<ActiveTicket[]>([]);
+  const workflowInboxRef = useRef<WorkflowInboxTicket[]>([]);
   const ticketSnapshotRef = useRef<Record<string, {
     ticketId: string;
     subject: string;
@@ -254,6 +256,54 @@ export default function SessionDetail({
     if (!value) return new Date();
     const d = new Date(value);
     return Number.isNaN(d.getTime()) ? new Date() : d;
+  };
+
+  const normalizeCommentVisibility = (value?: string): 'internal' | 'public' =>
+    String(value || '').toLowerCase() === 'public' ? 'public' : 'internal';
+
+  const visibilityFromAutotaskNote = (note: Record<string, unknown>): 'internal' | 'public' => {
+    const publish = Number(note.publish);
+    if (Number.isFinite(publish)) {
+      // Autotask note publish: 1 = public, 2 = internal/co-managed.
+      return publish === 1 ? 'public' : 'internal';
+    }
+    const hint = String(note.visibility || note.noteVisibility || note.noteType || '').toLowerCase();
+    if (hint.includes('public')) return 'public';
+    return 'internal';
+  };
+
+  const isWorkflowRuleAutotaskNote = (note: Record<string, unknown>): boolean => {
+    const combined = [
+      note.title,
+      note.subject,
+      note.noteText,
+      note.description,
+      note.noteType,
+      note.creatorName,
+      note.createdBy,
+    ]
+      .map((value) => normalizePlainText(String(value ?? '').trim(), ''))
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    if (!combined) return false;
+    return /\bworkflow rule\b/.test(combined);
+  };
+
+  const buildAutotaskNoteContent = (note: Record<string, unknown>): string => {
+    const title = normalizePlainText(String(note.title ?? note.subject ?? '').trim(), '');
+    const body = normalizePlainText(
+      String(note.noteText ?? note.description ?? note.body ?? '').trim(),
+      ''
+    );
+    const fallback = normalizePlainText(String(note.noteType || 'Autotask note').trim(), 'Autotask note');
+
+    if (title && body && title.toLowerCase() !== body.toLowerCase()) {
+      return `**${title}**\n\n${body}`;
+    }
+    if (body) return body;
+    if (title) return `**${title}**`;
+    return fallback;
   };
 
   const trackChatEvent = (event: string, payload: Record<string, unknown> = {}) => {
@@ -556,6 +606,10 @@ export default function SessionDetail({
   }, [sidebarTickets]);
 
   useEffect(() => {
+    workflowInboxRef.current = workflowInboxState.data || [];
+  }, [workflowInboxState.data]);
+
+  useEffect(() => {
     let cancelled = false;
     let inFlight = false;
 
@@ -597,6 +651,44 @@ export default function SessionDetail({
           ticket_text_artifact: flowData.ticket_text_artifact ?? null,
           ticket_context_appendix: flowData.ticket_context_appendix ?? null,
         };
+
+        const workflowTicketLookup = workflowInboxRef.current.find(
+          (row) => row.ticket_id === resolvedTicketId || row.ticket_id === selectedTicketId
+        );
+        const notesLookupCandidates: unknown[] = [
+          resolvedTicket?.autotask_ticket_id_numeric,
+          resolvedSsot?.autotask_authoritative?.ticket_id_numeric,
+          workflowTicketLookup?.external_id,
+          resolvedTicket?.id,
+          resolvedTicketId,
+          selectedTicketId,
+        ];
+        let notesLookupRef: string | number | null = null;
+        for (const candidate of notesLookupCandidates) {
+          const raw = String(candidate ?? '').trim();
+          if (!raw) continue;
+          const numeric = toAutotaskId(raw);
+          if (numeric !== null && /^\d+$/.test(raw)) {
+            notesLookupRef = numeric;
+            break;
+          }
+          notesLookupRef = raw;
+          break;
+        }
+        let autotaskNotes: Array<Record<string, unknown>> = [];
+        if (notesLookupRef !== null) {
+          try {
+            const notesRes = await axios.get(`${apiUrl}/autotask/ticket/${encodeURIComponent(String(notesLookupRef))}/notes`, {
+              withCredentials: true,
+            });
+            const rows = notesRes.data?.data;
+            if (Array.isArray(rows)) {
+              autotaskNotes = rows.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'));
+            }
+          } catch {
+            // Notes fetch is best-effort; keep timeline resilient if notes endpoint is unavailable.
+          }
+        }
 
         setData(newData);
         const pack = newData.evidence_pack || {};
@@ -789,10 +881,62 @@ export default function SessionDetail({
             channel: 'internal_ai',
           });
         }
+
+        const workflowTicket = workflowInboxRef.current.find(
+          (row) => row.ticket_id === ticketId || row.ticket_id === selectedTicketId
+        );
+        const ticketComments = Array.isArray(workflowTicket?.comments) ? workflowTicket.comments : [];
+        const notesTimeline: Message[] = ticketComments.map((note, index) => {
+          const visibility = normalizeCommentVisibility(note.visibility);
+          return {
+            id: `note-${selectedTicketId}-${String(note.created_at || '').trim() || 'na'}-${index}`,
+            role: 'assistant',
+            type: 'note',
+            timestamp: parseDate(note.created_at),
+            content: normalizePlainText(note.body, 'Empty note'),
+            channel: visibility === 'public' ? 'external_psa_user' : 'internal_ai',
+          };
+        });
+        const notesFromAutotaskTimeline: Message[] = autotaskNotes
+          .filter((note) => !isWorkflowRuleAutotaskNote(note))
+          .map((note, index) => {
+          const noteText = buildAutotaskNoteContent(note);
+          const rawCreatedAt = String(note.createDate || note.created_at || '').trim();
+          const createdAt = rawCreatedAt || new Date().toISOString();
+          const noteId = String(note.id || '').trim() || `${createdAt}-${index}`;
+          return {
+            id: `autotask-note-${selectedTicketId}-${noteId}`,
+            role: 'assistant',
+            type: 'note',
+            timestamp: parseDate(createdAt),
+            content: noteText,
+            channel: visibilityFromAutotaskNote(note) === 'public' ? 'external_psa_user' : 'internal_ai',
+          };
+        });
+        const dedupeKey = (m: Message) => {
+          const iso = m.timestamp instanceof Date ? m.timestamp.toISOString() : '';
+          return `${m.channel ?? 'internal_ai'}::${normalizePlainText(m.content, '').toLowerCase()}::${iso}`;
+        };
+        const seenNoteKeys = new Set(notesTimeline.map(dedupeKey));
+        const mergedAutotaskNotes = notesFromAutotaskTimeline.filter((m) => {
+          const key = dedupeKey(m);
+          if (seenNoteKeys.has(key)) return false;
+          seenNoteKeys.add(key);
+          return true;
+        });
+        timeline.push(...notesTimeline);
+        timeline.push(...mergedAutotaskNotes);
+        timeline.sort((a, b) => {
+          const aTs = a.timestamp instanceof Date ? a.timestamp.getTime() : 0;
+          const bTs = b.timestamp instanceof Date ? b.timestamp.getTime() : 0;
+          return aTs - bTs;
+        });
+
         const signature = JSON.stringify(
           timeline.map((m) => ({
             id: m.id,
             type: m.type,
+            channel: m.channel,
             content: m.content,
             ticketTextVariant:
               m.ticketTextVariant

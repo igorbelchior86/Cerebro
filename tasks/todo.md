@@ -1,3 +1,117 @@
+# Task: Paridade semi-total de comunicação PSA (excluir workflow rules)
+**Status**: completed
+**Started**: 2026-02-27T20:42:00-03:00
+
+## Plan
+- [x] Step 1: Definir recorte de paridade: incluir stream de notas PSA e excluir `Workflow Rule`.
+- [x] Step 2: Filtrar notas de workflow rule no mapeamento do feed.
+- [x] Step 3: Enriquecer composição de nota para preservar título + corpo quando ambos existirem.
+- [x] Step 4: Validar typecheck web e atualizar documentação obrigatória.
+
+## Open Questions
+- Sem bloqueios técnicos; recorte atual permanece no stream de ticket notes (não inclui time entries).
+
+## Progress Notes
+- Filtro adicionado no stream de notas do Autotask com regra explícita por conteúdo (`workflow rule`).
+- Composição de notas PSA ficou mais fiel: quando há `title/subject` e `body/noteText`, o feed renderiza ambos em vez de descartar um dos campos.
+- Isso preserva a maior parte da comunicação do PSA dentro do feed e elimina o ruído operacional de regras automáticas.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-02-27-psa-semi-total-parity-excluding-workflow-rules.md`
+
+---
+# Task: Paridade de notas PSA no Cerebro (lookup robusto + tenant-scoped)
+**Status**: completed
+**Started**: 2026-02-27T20:28:00-03:00
+
+## Plan
+- [x] Step 1: Confirmar por que a nota do PSA ainda não aparecia após fix anterior.
+- [x] Step 2: Corrigir endpoint de notas para usar client tenant-scoped e aceitar ticket number além de ID numérico.
+- [x] Step 3: Corrigir frontend para resolver referência de lookup com fallback (`numeric id`, `external_id`, `ticket number`).
+- [x] Step 4: Validar typecheck web+api e atualizar documentação obrigatória.
+
+## Open Questions
+- Sem bloqueios técnicos.
+
+## Progress Notes
+- Identificado gap: endpoint `/autotask/ticket/:id/notes` usava `getClient()` (env) + `parseInt`, o que podia falhar para `T2026...` e/ou tenant incorreto.
+- Endpoint ajustado para:
+  - usar `getTenantScopedClient()`;
+  - resolver ticket por `ticketNumber` quando parâmetro não numérico;
+  - retornar `ticket_lookup` com referência solicitada e ID resolvido.
+- Frontend ajustado para lookup de notas com fallback encadeado:
+  - `ticket.autotask_ticket_id_numeric`;
+  - `ssot.autotask_authoritative.ticket_id_numeric`;
+  - `workflow inbox external_id`;
+  - `ticket.id`;
+  - `resolved ticketId/sessionId`.
+- Mantida deduplicação + ordenação cronológica no feed.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-02-27-psa-note-parity-tenant-scoped-lookup-fallback.md`
+
+---
+# Task: Nota específica do Autotask (Service Desk Notification) não aparece no feed
+**Status**: completed
+**Started**: 2026-02-27T20:10:00-03:00
+
+## Plan
+- [x] Step 1: Reproduzir causa raiz no fluxo atual (Autotask -> workflow inbox -> timeline).
+- [x] Step 2: Corrigir projeção para incluir notas do endpoint Autotask por ticket numérico.
+- [x] Step 3: Deduplicar notas entre `workflow inbox comments` e `autotask notes`.
+- [x] Step 4: Validar typecheck e atualizar documentação obrigatória.
+
+## Open Questions
+- Sem bloqueios técnicos.
+
+## Progress Notes
+- Causa raiz confirmada: `workflow inbox comments` só refletia notas de comandos locais/sync com payload de comentário; notas externas como “Service Desk Notification” não eram ingeridas pelo poller padrão.
+- Implementado fetch best-effort de `/autotask/ticket/:id/notes` usando `ticket.autotask_ticket_id_numeric`/SSOT.
+- Notas do Autotask agora entram como `type: note` no feed com mapeamento de visibilidade (`publish=1` público, demais interno).
+- Deduplicação aplicada para evitar duplicatas quando nota já existe em `workflow inbox comments`.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-02-27-autotask-service-desk-notification-note-feed-fix.md`
+
+---
+# Task: Notas internas/externas do Autotask não aparecem no Cerebro (T20260226.0033)
+**Status**: completed
+**Started**: 2026-02-27T19:48:00-03:00
+
+## Plan
+- [x] Step 1: Reproduzir com ticket `T20260226.0033` e identificar camada de perda (Autotask/API/UI).
+- [x] Step 2: Corrigir ingestão/projeção/renderização das notas mantendo separação internal/public.
+- [x] Step 3: Validar com evidência (endpoint + UI model) e checks de tipo/testes relevantes.
+- [x] Step 4: Atualizar `tasks/todo.md`, `tasks/lessons.md` e wiki.
+
+## Open Questions
+- Sem bloqueios técnicos após diagnóstico.
+
+## Progress Notes
+- Iniciado diagnóstico orientado por ticket real informado pelo usuário.
+- Confirmado: `/playbook/full-flow` não devolve notas no payload da timeline, mas `workflow inbox` já expõe `comments` (`internal`/`public`).
+- `triage/[id]/page.tsx` passou a projetar `workflowTicket.comments` no feed central como mensagens `type: 'note'`.
+- Mapeamento aplicado: `visibility=internal -> channel=internal_ai`; `visibility=public -> channel=external_psa_user`.
+- Timeline agora ordena por `timestamp` após injeção de notas para manter cronologia estável.
+- `ChatMessage` atualizado para suportar `type: 'note'` com label contextual (`Internal Note` / `PSA/User Note`).
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-02-27-autotask-internal-external-notes-visible-in-middle-feed.md`
+
+---
 # Task: Colorização de balões por categoria de mensagem
 **Status**: completed
 **Started**: 2026-02-27T19:39:00-03:00

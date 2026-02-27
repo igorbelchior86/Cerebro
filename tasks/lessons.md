@@ -1,3 +1,27 @@
+## Lesson: 2026-02-27 (parity scope needs an explicit exclusion list)
+**Mistake**: Evoluir a paridade de comunicação sem tratar explicitamente o conjunto de exclusões aceitas pelo usuário.
+**Root cause**: “Paridade” tende a puxar tudo do provider, mas nem todo evento operacional agrega valor no feed principal.
+**Rule**: Quando o objetivo é espelhar um sistema externo, definir também a lista de exclusões semânticas (ex.: `Workflow Rule`) e filtrar isso no projection layer.
+**Pattern**: Em feeds tipo “skin do provider”, separar comunicação humana/sistêmica útil de ruído automático antes de renderizar.
+
+## Lesson: 2026-02-27 (note parity needs tenant-scoped lookup and identifier fallback)
+**Mistake**: Fechar o bug apenas com fetch por ID numérico presumindo que o endpoint de notas sempre resolveria o ticket corretamente.
+**Root cause**: Endpoint antigo usava client de env e parse numérico rígido; quando o ticket chega como `T2026...` ou em contexto tenant específico, a busca pode falhar silenciosamente.
+**Rule**: Para paridade PSA->Cerebro, endpoints de leitura devem ser tenant-scoped e aceitar lookup por `ticketNumber` + `ticketId` com fallback explícito no frontend.
+**Pattern**: Se uma comunicação específica não aparece mas outras aparecem, revisar resolução de identidade do ticket e escopo de credencial antes de mexer em UI.
+
+## Lesson: 2026-02-27 (workflow inbox comments are not a complete Autotask note source)
+**Mistake**: Assumir que toda nota visível no Autotask já estaria no `workflow inbox comments`.
+**Root cause**: O ingest atual prioriza eventos de ticket/sync local; notas externas específicas (ex.: `Service Desk Notification`) podem não entrar nesse read model.
+**Rule**: Para timeline de ticket, usar `workflow inbox comments` + fetch direto de notas Autotask quando houver `autotask_ticket_id_numeric`, com deduplicação.
+**Pattern**: Se “algumas notas aparecem e outras não”, o problema geralmente é cobertura parcial da fonte de ingestão, não renderização de UI.
+
+## Lesson: 2026-02-27 (ticket notes need explicit timeline projection)
+**Mistake**: Assumir que notas internas/externas do Autotask apareceriam automaticamente no feed central após integrar canais AI/PSA.
+**Root cause**: A timeline de `triage/[id]` era montada apenas com etapas do pipeline + mensagens locais do técnico, sem projetar `workflowInbox.comments`.
+**Rule**: Sempre que um campo crítico já existe no read model (`comments`), ele precisa ser mapeado explicitamente para mensagens do feed com regra de canal/visibilidade.
+**Pattern**: Se dado existe no backend mas não aparece na UI, revisar primeiro o projection layer da tela (builder de timeline), não apenas tipos/contratos.
+
 ## Lesson: 2026-02-27 (category-color design needs explicit real-category mapping)
 **Mistake**: Risco de colorir só por `channel` e ignorar subcategorias operacionais (note, validation, system/status).
 **Root cause**: Modelo inicial de estilo simplificado demais para a densidade semântica do feed.

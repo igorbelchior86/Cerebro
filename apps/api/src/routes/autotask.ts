@@ -297,14 +297,35 @@ router.get('/company/:companyId/devices', async (req, res, next) => {
  */
 router.get('/ticket/:id/notes', async (req, res, next) => {
   try {
-    const client = getClient();
+    const client = await getTenantScopedClient();
     if (!client) { res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' }); return; }
-    const ticketId = parseInt(req.params.id, 10);
+    const requestedRef = String(req.params.id || '').trim();
+    if (!requestedRef) {
+      res.status(400).json({ error: 'ticket reference required' });
+      return;
+    }
+
+    let ticketId = Number.NaN;
+    if (/^\d+$/.test(requestedRef)) {
+      ticketId = Number.parseInt(requestedRef, 10);
+    } else {
+      const ticket = await client.getTicketByTicketNumber(requestedRef);
+      ticketId = Number((ticket as any)?.id);
+    }
+    if (!Number.isFinite(ticketId)) {
+      res.status(404).json({ error: `Ticket ${requestedRef} not found` });
+      return;
+    }
+
     const notes = await client.getTicketNotes(ticketId);
     res.json({
       success: true,
       data: notes,
       count: notes.length,
+      ticket_lookup: {
+        requested_ref: requestedRef,
+        resolved_ticket_id: ticketId,
+      },
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

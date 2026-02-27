@@ -6300,6 +6300,42 @@
           "correlates.ticket_note_metadata"
         ]
       }
+    },
+    {
+      "audit_id": "01f97a97-ac5c-4132-9f07-f50bfee7d939",
+      "timestamp": "2026-02-27T20:50:55.155Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260227.0012"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132825",
+        "ticket_id": "T20260227.0012"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132825:ticket.created:2026-02-27T20:50:51.997Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-27T20:50:55.126Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
     }
   ],
   "processedSyncEvents": [
@@ -6343,7 +6379,8 @@
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132821:ticket.created:2026-02-27T17:19:05.790Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132822:ticket.created:2026-02-27T17:31:01.350Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132823:ticket.created:2026-02-27T18:36:36.433Z",
-    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132824:ticket.created:2026-02-27T19:26:49.823Z"
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132824:ticket.created:2026-02-27T19:26:49.823Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132825:ticket.created:2026-02-27T20:50:51.997Z"
   ],
   "inbox": [
     [
@@ -7039,6 +7076,40 @@
           "correlates.ticket_note_metadata": {}
         },
         "updated_at": "2026-02-27T19:27:04.286Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260227.0012",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260227.0012",
+        "external_id": "132825",
+        "title": "Undelivered Mail Returned to Sender",
+        "description": "From MAILER-DAEMON@autotask.net (Mail Delivery System): This is the mail system at host phl-p-mail03.autotask.net.\r\n\r\nI'm sorry to have to inform you that your message could not\r\nbe delivered to one or more recipients. It's attached below.\r\n\r\nFor further assistance, please send mail to postmaster.\r\n\r\nIf you do so, please include this problem report. You can\r\ndelete your own text from the attached returned message.\r\n\r\n                   The mail system\r\n\r\n<chatgenie@refreshtech.com>: host\r\n    refreshtech-com.mail.protection.outlook.com[52.101.50.4] said: 550 5.4.1\r\n    Recipient address rejected: Access denied. For more information see\r\n    https://aka.ms/EXOSmtpErrors [CO1PEPF00012E84.namprd03.prod.outlook.com\r\n    2026-02-27T20:50:12.894Z 08DE75C179EDDB65] (in reply to RCPT TO command)",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-27T20:50:55.153Z",
+        "last_event_occurred_at": "2026-02-27T20:50:51.997Z",
+        "last_event_id": "autotask-poller:132825:ticket.created:2026-02-27T20:50:51.997Z",
+        "source_of_truth": "Autotask",
+        "domain_snapshots": {
+          "tickets": {
+            "external_id": "132825",
+            "ticket_number": "T20260227.0012",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "ticket_notes": {},
+          "correlates.resources": {},
+          "correlates.ticket_metadata": {
+            "ticket_number": "T20260227.0012",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "correlates.ticket_note_metadata": {}
+        },
+        "updated_at": "2026-02-27T20:50:55.153Z"
       }
     ]
   ],

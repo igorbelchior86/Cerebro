@@ -7,7 +7,7 @@ export interface Message {
   content: string;
   channel?: 'internal_ai' | 'external_psa_user';
   timestamp?: Date;
-  type?: 'text' | 'status' | 'autotask' | 'evidence' | 'diagnosis' | 'validation';
+  type?: 'text' | 'status' | 'autotask' | 'evidence' | 'diagnosis' | 'validation' | 'note';
   delivery?: {
     status: 'sending' | 'sent' | 'failed' | 'retrying';
     error?: string;
@@ -37,6 +37,7 @@ interface ChatMessageProps {
 
 const SOURCE_CONFIG: Record<string, { icon: string; label: string }> = {
   autotask: { icon: '🎟', label: 'Autotask' },
+  note: { icon: '📝', label: 'TicketNote' },
   evidence: { icon: '⚡', label: 'PrepareContext' },
   diagnosis: { icon: '🧠', label: 'LLM Diagnose' },
   validation: { icon: '🛡', label: 'ValidateAndPolicy' },
@@ -575,7 +576,7 @@ function resolveBubbleCategory(message: Message): BubbleCategory {
   if (message.role === 'user') {
     return message.channel === 'external_psa_user' ? 'tech_to_user' : 'tech_to_ai';
   }
-  if (message.type === 'autotask') return 'note';
+  if (message.type === 'autotask' || message.type === 'note') return 'note';
   if (message.type === 'validation') return 'ai_validation';
   if (message.type === 'text' && message.channel === 'internal_ai') return 'ai_exchange';
   return 'ai';
@@ -748,6 +749,10 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
   }
 
   const src = SOURCE_CONFIG[message.type ?? 'text'] ?? { icon: '📋', label: 'PlaybookWriter' };
+  const sourceLabel =
+    message.type === 'note'
+      ? (channel === 'external_psa_user' ? 'PSA/User Note' : 'Internal Note')
+      : src.label;
   const canToggleTicketText =
     message.type === 'autotask' &&
     Boolean(message.ticketTextVariant?.original?.trim());
@@ -906,7 +911,7 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
             {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </span>
         )}
-        <span style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--text-secondary)' }}>{src.label}</span>
+        <span style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--text-secondary)' }}>{sourceLabel}</span>
       </div>
     </div>
   );

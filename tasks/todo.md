@@ -1,3 +1,78 @@
+# Task: Nota ainda ausente por processo local da API desatualizado
+**Status**: completed
+**Started**: 2026-02-27T21:34:00-03:00
+
+## Plan
+- [x] Step 1: Verificar se o backend em `:3001` estava servindo o código novo.
+- [x] Step 2: Confirmar modo de execução da API local.
+- [x] Step 3: Reiniciar a API em watch mode com o código atualizado.
+
+## Open Questions
+- Sem bloqueios técnicos.
+
+## Progress Notes
+- O processo da API em `localhost:3001` estava rodando uma instância antiga e sem watch, então não recarregou as mudanças recentes.
+- A UI no browser estava falando com esse processo stale, por isso a nota continuava faltando mesmo com o patch já no código.
+- API reiniciada com `pnpm dev` (`nodemon -w src`) e servidor confirmado em `http://localhost:3001`.
+
+## Review
+- Verificação executada:
+  - startup confirmado: `[API] ✓ Server running at http://localhost:3001`
+
+---
+# Task: Nota ausente resolvida via server-side notes no full-flow
+**Status**: completed
+**Started**: 2026-02-27T21:18:00-03:00
+
+## Plan
+- [x] Step 1: Eliminar dependência de fetch best-effort de notas no browser.
+- [x] Step 2: Incluir notas do Autotask no payload de `/playbook/full-flow`.
+- [x] Step 3: Adaptar frontend para consumir `data.ticket_notes` do backend.
+- [x] Step 4: Validar typecheck web+api e atualizar documentação obrigatória.
+
+## Open Questions
+- Sem bloqueios técnicos.
+
+## Progress Notes
+- A explicação anterior focada em ordenação era insuficiente para o bug reportado.
+- Solução estrutural aplicada: `playbook/full-flow` agora busca `ticket notes` no backend e devolve `data.ticket_notes`.
+- Frontend deixou de depender de um request adicional silencioso no browser para montar o feed de notas.
+- Isso remove uma classe inteira de falhas de sessão/CORS/erro engolido e alinha melhor com a meta de “skin do Autotask”.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-02-27-playbook-full-flow-server-side-ticket-notes.md`
+
+---
+# Task: Nota de 2:22 PM ausente por campo de timestamp Autotask
+**Status**: completed
+**Started**: 2026-02-27T21:05:00-03:00
+
+## Plan
+- [x] Step 1: Inspecionar payload real do `getTicketNotes(132810)`.
+- [x] Step 2: Corrigir parser do frontend para o shape real do Autotask.
+- [x] Step 3: Endurecer filtro de workflow rule pelo `noteType`.
+- [x] Step 4: Validar typecheck web e atualizar documentação obrigatória.
+
+## Open Questions
+- Sem bloqueios técnicos; o payload real confirmou o shape esperado.
+
+## Progress Notes
+- Reproduzido com script local contra o client do projeto: a nota `Service Desk Notification` existe em Autotask (`id=30753243`).
+- Root cause confirmado: o payload usa `createDateTime`, mas o frontend estava lendo `createDate`.
+- Isso distorcia a ordenação temporal e dificultava localizar a nota correta no feed.
+- Filtro de workflow rule endurecido para `noteType = 13`, além do texto.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-02-27-autotask-note-createdatetime-parser-fix.md`
+
+---
 # Task: Paridade semi-total de comunicação PSA (excluir workflow rules)
 **Status**: completed
 **Started**: 2026-02-27T20:42:00-03:00

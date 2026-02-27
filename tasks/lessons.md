@@ -1,3 +1,21 @@
+## Lesson: 2026-02-27 (when UI still shows old behavior, verify the running process before revisiting the patch)
+**Mistake**: Continuar iterando no diagnóstico lógico sem confirmar primeiro se a API local estava servindo a versão nova do código.
+**Root cause**: O processo em `:3001` estava stale e fora de watch mode, então o browser seguia falando com código antigo.
+**Rule**: Se o usuário mostra screenshot de comportamento antigo após patch aplicado, validar imediatamente o processo ativo (PID, mode, startup command) antes de inferir novo bug.
+**Pattern**: “Ainda não apareceu” após mudança local costuma ser runtime stale antes de ser bug novo.
+
+## Lesson: 2026-02-27 (critical provider data should come from the main backend payload, not a silent browser-side sidequest)
+**Mistake**: Tentar resolver a ausência de notas críticas com um fetch adicional best-effort no frontend, engolindo falhas.
+**Root cause**: Isso manteve um ponto cego operacional: se o request secundário falha, o dado some e a UI não evidencia a falha.
+**Rule**: Dados essenciais do ticket (como comunicação PSA) devem vir no payload principal do backend da tela, não em um fetch auxiliar silencioso no browser.
+**Pattern**: Se o item é core para a proposta de valor da tela, consolidar no read model principal (`full-flow`) em vez de adicionar side requests frágeis.
+
+## Lesson: 2026-02-27 (always inspect provider payload shape before assuming field names)
+**Mistake**: Assumi `createDate` no parser de notas sem validar o payload real retornado pelo Autotask.
+**Root cause**: Confiança excessiva em naming heurístico; o provider devolve `createDateTime` nesse endpoint.
+**Rule**: Em integrações de leitura, confirmar o shape real do payload antes de fechar um bug de projeção/ordenação.
+**Pattern**: Se um item “existe mas não aparece onde deveria”, validar primeiro campo de timestamp e ordenação, não apenas presença do registro.
+
 ## Lesson: 2026-02-27 (parity scope needs an explicit exclusion list)
 **Mistake**: Evoluir a paridade de comunicação sem tratar explicitamente o conjunto de exclusões aceitas pelo usuário.
 **Root cause**: “Paridade” tende a puxar tudo do provider, mas nem todo evento operacional agrega valor no feed principal.

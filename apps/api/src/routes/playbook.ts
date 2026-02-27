@@ -165,6 +165,38 @@ async function applyAutotaskReviewerOverlay(
   };
 }
 
+async function getAutotaskTicketNotesForFeed(ticketRef: string): Promise<Record<string, unknown>[]> {
+  const client = await getAutotaskClientForReviewer();
+  if (!client) return [];
+
+  const ref = String(ticketRef || '').trim();
+  if (!ref) return [];
+
+  let numericTicketId = Number.NaN;
+  try {
+    if (/^\d+$/.test(ref)) {
+      numericTicketId = Number(ref);
+    } else {
+      const remoteTicket = await client.getTicketByTicketNumber(ref);
+      numericTicketId = Number((remoteTicket as any)?.id);
+    }
+  } catch {
+    return [];
+  }
+
+  if (!Number.isFinite(numericTicketId)) return [];
+
+  try {
+    const notes = await client.getTicketNotes(numericTicketId);
+    if (!Array.isArray(notes)) return [];
+    return notes
+      .filter((note) => Boolean(note && typeof note === 'object'))
+      .map((note) => ({ ...(note as Record<string, unknown>) }));
+  } catch {
+    return [];
+  }
+}
+
 async function resolveOrCreateFullFlowSession(ticketId: string, tenantId: string | null): Promise<{ id: string; created: boolean }> {
   return transaction(async (client) => {
     await client.query(
@@ -539,6 +571,9 @@ router.get('/full-flow', async (req, res) => {
     };
     const authoritativeReviewed = await applyAutotaskReviewerOverlay(String(ticketId || rawId || ''), canonicalTicket);
     const canonicalTicketResolved = authoritativeReviewed?.ticket || canonicalTicket;
+    const ticketNotes = await getAutotaskTicketNotesForFeed(
+      String(canonicalTicketResolved.autotask_ticket_id_numeric || canonicalTicketResolved.id || ticketId || rawId || '')
+    );
 
     const diagResult = await queryOne<{ payload: any }>(
       `SELECT payload
@@ -793,6 +828,7 @@ router.get('/full-flow', async (req, res) => {
       },
       data: {
         ticket: canonicalTicketResolved,
+        ticket_notes: ticketNotes,
         authoritative_review: authoritativeReviewed?.review || {
           source: 'autotask',
           applied: false,

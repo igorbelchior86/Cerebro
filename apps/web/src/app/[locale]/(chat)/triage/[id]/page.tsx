@@ -125,6 +125,7 @@ interface SessionData {
   diagnosis?: any;
   validation?: any;
   playbook?: { content_md: string };
+  ticket_notes?: Array<Record<string, unknown>>;
 }
 
 interface WorkflowActionFeedback {
@@ -273,6 +274,8 @@ export default function SessionDetail({
   };
 
   const isWorkflowRuleAutotaskNote = (note: Record<string, unknown>): boolean => {
+    const noteType = Number(note.noteType);
+    if (Number.isFinite(noteType) && noteType === 13) return true;
     const combined = [
       note.title,
       note.subject,
@@ -650,45 +653,8 @@ export default function SessionDetail({
           evidence_pack: flowData.evidence_pack ?? flowData.pack ?? null,
           ticket_text_artifact: flowData.ticket_text_artifact ?? null,
           ticket_context_appendix: flowData.ticket_context_appendix ?? null,
+          ticket_notes: Array.isArray(flowData.ticket_notes) ? flowData.ticket_notes : [],
         };
-
-        const workflowTicketLookup = workflowInboxRef.current.find(
-          (row) => row.ticket_id === resolvedTicketId || row.ticket_id === selectedTicketId
-        );
-        const notesLookupCandidates: unknown[] = [
-          resolvedTicket?.autotask_ticket_id_numeric,
-          resolvedSsot?.autotask_authoritative?.ticket_id_numeric,
-          workflowTicketLookup?.external_id,
-          resolvedTicket?.id,
-          resolvedTicketId,
-          selectedTicketId,
-        ];
-        let notesLookupRef: string | number | null = null;
-        for (const candidate of notesLookupCandidates) {
-          const raw = String(candidate ?? '').trim();
-          if (!raw) continue;
-          const numeric = toAutotaskId(raw);
-          if (numeric !== null && /^\d+$/.test(raw)) {
-            notesLookupRef = numeric;
-            break;
-          }
-          notesLookupRef = raw;
-          break;
-        }
-        let autotaskNotes: Array<Record<string, unknown>> = [];
-        if (notesLookupRef !== null) {
-          try {
-            const notesRes = await axios.get(`${apiUrl}/autotask/ticket/${encodeURIComponent(String(notesLookupRef))}/notes`, {
-              withCredentials: true,
-            });
-            const rows = notesRes.data?.data;
-            if (Array.isArray(rows)) {
-              autotaskNotes = rows.filter((row): row is Record<string, unknown> => Boolean(row && typeof row === 'object'));
-            }
-          } catch {
-            // Notes fetch is best-effort; keep timeline resilient if notes endpoint is unavailable.
-          }
-        }
 
         setData(newData);
         const pack = newData.evidence_pack || {};
@@ -897,11 +863,14 @@ export default function SessionDetail({
             channel: visibility === 'public' ? 'external_psa_user' : 'internal_ai',
           };
         });
-        const notesFromAutotaskTimeline: Message[] = autotaskNotes
-          .filter((note) => !isWorkflowRuleAutotaskNote(note))
-          .map((note, index) => {
+        const apiTicketNotes = Array.isArray(flowData.ticket_notes)
+          ? flowData.ticket_notes.filter((row: unknown): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
+          : [];
+        const notesFromAutotaskTimeline: Message[] = apiTicketNotes
+          .filter((note: Record<string, unknown>) => !isWorkflowRuleAutotaskNote(note))
+          .map((note: Record<string, unknown>, index: number) => {
           const noteText = buildAutotaskNoteContent(note);
-          const rawCreatedAt = String(note.createDate || note.created_at || '').trim();
+          const rawCreatedAt = String(note.createDateTime || note.createDate || note.created_at || '').trim();
           const createdAt = rawCreatedAt || new Date().toISOString();
           const noteId = String(note.id || '').trim() || `${createdAt}-${index}`;
           return {

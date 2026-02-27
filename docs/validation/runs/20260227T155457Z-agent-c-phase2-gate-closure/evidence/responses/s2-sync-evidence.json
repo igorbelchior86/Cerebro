@@ -1,0 +1,46 @@
+{
+  "captured_at": "2026-02-27T16:02:37Z",
+  "request": {
+    "method": "POST",
+    "path": "/workflow/sync/autotask",
+    "correlation_id": "phase2-agent-c-20260227T160218Z-sync",
+    "body": {
+      "event_id": "phase2-agent-c-sync-20260227T160218Z",
+      "event_type": "ticket.updated",
+      "entity_id": "T20260226.0033",
+      "payload": {
+        "ticket_id": "T20260226.0033",
+        "status": "In Progress",
+        "source": "phase2-agent-c-gate"
+      },
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T160218Z-sync",
+        "ticket_id": "T20260226.0033"
+      },
+      "provenance": {
+        "source": "autotask_webhook",
+        "adapter_version": "phase2-agent-c",
+        "sync_cursor": "phase2-agent-c-sync-20260227T160218Z"
+      }
+    }
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "phase2-agent-c-20260227T160218Z-sync",
+      "x_trace_id": "phase2-agent-c-20260227T160218Z-sync",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "success": true,
+      "data": {
+        "duplicate": false,
+        "applied": true,
+        "divergence": true
+      },
+      "timestamp": "2026-02-27T16:02:37.504Z"
+    },
+    "body_text": "{\"success\":true,\"data\":{\"duplicate\":false,\"applied\":true,\"divergence\":true},\"timestamp\":\"2026-02-27T16:02:37.504Z\"}"
+  }
+}

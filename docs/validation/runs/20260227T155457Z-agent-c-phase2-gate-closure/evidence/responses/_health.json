@@ -1,0 +1,23 @@
+{
+  "captured_at": "2026-02-27T16:02:18Z",
+  "request": {
+    "method": "GET",
+    "path": "/health",
+    "correlation_id": "phase2-agent-c-health",
+    "body": null
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "phase2-agent-c-health",
+      "x_trace_id": "phase2-agent-c-health",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "status": "ok",
+      "timestamp": "2026-02-27T16:02:18.664Z"
+    },
+    "body_text": "{\"status\":\"ok\",\"timestamp\":\"2026-02-27T16:02:18.664Z\"}"
+  }
+}

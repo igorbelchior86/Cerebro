@@ -14,6 +14,7 @@ import {
   listWorkflowAudit,
   listWorkflowInbox,
   listWorkflowReconciliationIssues,
+  mapHttpErrorToFrontendState,
   reconcileWorkflowTicket,
 } from '@/lib/p0-ui-client';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
@@ -27,12 +28,16 @@ const ENRICHMENT_SOURCES = [
 ] as const;
 
 export default function P0WorkflowTicketPage({ ticketId }: { ticketId: string }) {
-  const inbox = usePollingResource(listWorkflowInbox, { intervalMs: 10000 });
+  const inbox = usePollingResource(listWorkflowInbox, {
+    intervalMs: 10000,
+    realtime: { path: '/workflow/realtime' },
+  });
   const workflowAudit = usePollingResource(() => listWorkflowAudit(ticketId), { intervalMs: 15000 });
   const reconciliation = usePollingResource(() => listWorkflowReconciliationIssues(ticketId), { intervalMs: 20000 });
   const aiDecisions = usePollingResource(() => listManagerOpsAiDecisions(200), { intervalMs: 15000 });
   const trustAudit = usePollingResource(() => listManagerOpsAudit(300), { intervalMs: 15000 });
   const [reconcileBusy, setReconcileBusy] = useState(false);
+  const [reconcileState, setReconcileState] = useState<'idle' | 'pending' | 'retrying' | 'failed' | 'succeeded'>('idle');
   const [reconcileResult, setReconcileResult] = useState<string | null>(null);
   const [reconcileError, setReconcileError] = useState<string | null>(null);
 
@@ -61,14 +66,18 @@ export default function P0WorkflowTicketPage({ ticketId }: { ticketId: string })
 
   const triggerReconcile = async () => {
     setReconcileBusy(true);
+    setReconcileState('pending');
     setReconcileError(null);
     setReconcileResult(null);
     try {
       const result = await reconcileWorkflowTicket(ticketId);
       setReconcileResult(JSON.stringify(result));
+      setReconcileState('succeeded');
       await Promise.all([workflowAudit.refresh(), reconciliation.refresh(), inbox.refresh()]);
     } catch (err) {
-      setReconcileError(err instanceof Error ? err.message : 'Reconcile failed');
+      const mapped = mapHttpErrorToFrontendState(err, 'Reconcile failed');
+      setReconcileError(`${mapped.summary}: ${mapped.detail}`);
+      setReconcileState(mapped.retryable ? 'retrying' : 'failed');
     } finally {
       setReconcileBusy(false);
     }
@@ -94,8 +103,19 @@ export default function P0WorkflowTicketPage({ ticketId }: { ticketId: string })
         </>
       )}
     >
-      {(reconcileError || reconcileResult) ? (
-        reconcileError ? <ErrorBanner message={`Reconcile failed: ${reconcileError}`} /> : (
+      {(reconcileState !== 'idle' || reconcileError || reconcileResult) ? (
+        reconcileError ? (
+          <div className="rounded-xl border px-3 py-2 text-xs" style={{ borderColor: 'rgba(248,113,113,0.30)', background: 'rgba(248,113,113,0.08)', color: '#fecaca' }}>
+            <div className="flex items-center justify-between gap-2">
+              <span>Reconcile {reconcileState === 'retrying' ? 'retrying' : 'failed'}: {reconcileError}</span>
+              {reconcileState === 'retrying' || reconcileState === 'failed' ? (
+                <InlineButton onClick={() => void triggerReconcile()} disabled={reconcileBusy}>
+                  Retry now
+                </InlineButton>
+              ) : null}
+            </div>
+          </div>
+        ) : (
           <div className="rounded-xl border px-3 py-2 text-xs" style={{ borderColor: 'rgba(33,197,142,0.25)', background: 'rgba(33,197,142,0.08)', color: '#bbf7d0' }}>
             Reconcile completed: {reconcileResult}
           </div>

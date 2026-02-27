@@ -2,6 +2,7 @@ import { queryOne } from '../db/index.js';
 import { AutotaskClient } from '../clients/autotask.js';
 import { AutotaskTicketWorkflowGateway } from './autotask-ticket-workflow-gateway.js';
 import { InMemoryTicketWorkflowRepository, TicketWorkflowCoreService } from './ticket-workflow-core.js';
+import { WorkflowRealtimeHub } from './workflow-realtime.js';
 
 interface AutotaskCreds {
   apiIntegrationCode: string;
@@ -49,7 +50,12 @@ const workflowRepo = new InMemoryTicketWorkflowRepository({
   persistenceFilePath: process.env.P0_WORKFLOW_RUNTIME_FILE || `${process.cwd()}/.run/p0-workflow-runtime.json`,
 });
 const workflowGateway = new AutotaskTicketWorkflowGateway(getTenantAutotaskClient);
-const workflowService = new TicketWorkflowCoreService(workflowRepo, workflowGateway, { maxAttempts: 3 });
+const workflowRealtimeHub = new WorkflowRealtimeHub();
+const workflowService = new TicketWorkflowCoreService(workflowRepo, workflowGateway, {
+  maxAttempts: 3,
+  realtimePublisher: (payload) => {
+    workflowRealtimeHub.publishTicketChange(payload);
+  },
+});
 
-export { workflowRepo, workflowGateway, workflowService, getTenantAutotaskClient };
-
+export { workflowRepo, workflowGateway, workflowService, workflowRealtimeHub, getTenantAutotaskClient };

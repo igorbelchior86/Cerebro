@@ -6,7 +6,8 @@ import {
   buildCommandEnvelope,
   type WorkflowEventEnvelope,
 } from '../services/ticket-workflow-core.js';
-import { workflowService } from '../services/workflow-runtime.js';
+import { workflowRealtimeHub, workflowService } from '../services/workflow-runtime.js';
+import { toSseChunk } from '../services/workflow-realtime.js';
 
 const router: ExpressRouter = Router();
 
@@ -38,6 +39,59 @@ router.get('/inbox', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+router.get('/realtime', async (req, res) => {
+  const tenantId = requireTenant(req, res);
+  if (!tenantId) return;
+
+  const traceId = String(req.header('x-correlation-id') || req.header('x-trace-id') || '').trim() || `realtime-${Date.now()}`;
+  const ticketId = String(req.query.ticketId || '').trim();
+
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  const { clientId, close } = workflowRealtimeHub.subscribe(tenantId, res);
+  res.write(
+    toSseChunk({
+      event: 'connection.state',
+      id: `${Date.now()}-connected`,
+      retryMs: 2_000,
+      data: {
+        kind: 'connection.state',
+        event_id: `${Date.now()}-connected`,
+        payload: {
+          tenant_id: tenantId,
+          state: 'connected',
+          occurred_at: new Date().toISOString(),
+          reason: 'sse_stream_ready',
+        },
+      },
+    })
+  );
+
+  console.info('[workflow.realtime.connected]', {
+    tenant_id: tenantId,
+    ticket_id: ticketId || undefined,
+    trace_id: traceId,
+    client_id: clientId,
+    clients_for_tenant: workflowRealtimeHub.clientCount(tenantId),
+  });
+
+  req.on('close', () => {
+    close();
+    console.info('[workflow.realtime.disconnected]', {
+      tenant_id: tenantId,
+      ticket_id: ticketId || undefined,
+      trace_id: traceId,
+      client_id: clientId,
+      clients_for_tenant: workflowRealtimeHub.clientCount(tenantId),
+    });
+  });
 });
 
 router.post('/commands', async (req, res, next) => {

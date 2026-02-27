@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { readJsonFileSafe, writeJsonFileAtomic } from './runtime-json-file.js';
 import { classifyQueueError } from '../platform/errors.js';
 import { resolveAutotaskOperation } from './autotask-operation-registry.js';
+import type { WorkflowRealtimeTicketChangePayload } from './workflow-realtime.js';
 
 export type WorkflowTargetIntegration =
   | 'Autotask'
@@ -522,8 +523,20 @@ export class TicketWorkflowCoreService {
   constructor(
     private readonly repo: TicketWorkflowRepository,
     private readonly gateway: TicketWorkflowGateway,
-    private readonly options: { maxAttempts?: number } = {}
+    private readonly options: { maxAttempts?: number; realtimePublisher?: (payload: WorkflowRealtimeTicketChangePayload) => void } = {}
   ) {}
+
+  private publishRealtime(payload: WorkflowRealtimeTicketChangePayload): void {
+    console.info('[workflow.realtime.publish]', {
+      tenant_id: payload.tenant_id,
+      ticket_id: payload.ticket_id,
+      trace_id: payload.trace_id,
+      change_kind: payload.change_kind,
+      command_id: payload.command_id,
+      sync_event_id: payload.sync_event_id,
+    });
+    this.options.realtimePublisher?.(payload);
+  }
 
   private maxAttempts(): number {
     return Math.max(1, this.options.maxAttempts ?? 3);
@@ -716,6 +729,25 @@ export class TicketWorkflowCoreService {
         completed += 1;
 
         await this.applyLocalProjectionFromCommandResult(attempt, result);
+        this.publishRealtime({
+          tenant_id: attempt.command.tenant_id,
+          ticket_id: String(
+            (result as any)?.external_ticket_id ||
+            attempt.command.correlation.ticket_id ||
+            attempt.command.payload.ticket_id ||
+            ''
+          ),
+          trace_id: attempt.command.correlation.trace_id,
+          command_id: attempt.command.command_id,
+          occurred_at: nowIso(),
+          change_kind: 'process_result',
+          process_result: {
+            command_id: attempt.command.command_id,
+            command_type: attempt.command.command_type,
+            outcome: 'completed',
+            attempts: attempt.attempts,
+          },
+        });
         await this.writeAudit({
           tenant_id: attempt.command.tenant_id,
           actor: attempt.command.actor,
@@ -785,6 +817,23 @@ export class TicketWorkflowCoreService {
             attempts: attempt.attempts,
             status: attempt.status,
             next_retry_at: attempt.next_retry_at,
+          },
+        });
+
+        this.publishRealtime({
+          tenant_id: attempt.command.tenant_id,
+          ticket_id: String(attempt.command.correlation.ticket_id || attempt.command.payload.ticket_id || ''),
+          trace_id: attempt.command.correlation.trace_id,
+          command_id: attempt.command.command_id,
+          occurred_at: nowIso(),
+          change_kind: 'process_result',
+          process_result: {
+            command_id: attempt.command.command_id,
+            command_type: attempt.command.command_type,
+            outcome: attempt.status === 'retry_pending' ? 'retry_pending' : attempt.status === 'dlq' ? 'dlq' : 'failed',
+            attempts: attempt.attempts,
+            ...(attempt.next_retry_at ? { next_retry_at: attempt.next_retry_at } : {}),
+            ...(attempt.last_error ? { reason: attempt.last_error } : {}),
           },
         });
       }
@@ -904,6 +953,37 @@ export class TicketWorkflowCoreService {
     }
 
     await this.repo.upsertInboxTicket(next);
+    const traceId = attempt.command.correlation.trace_id;
+    const comment = next.comments[next.comments.length - 1];
+    const changeKind: WorkflowRealtimeTicketChangePayload['change_kind'] =
+      commentBody
+        ? 'comment'
+        : String(patch.assignee_resource_id ?? patch.assigned_to ?? (result as any)?.assigned_to ?? '').trim()
+          ? 'assigned'
+          : String(patch.status ?? (result as any)?.status ?? '').trim()
+            ? 'status'
+            : 'sync';
+    this.publishRealtime({
+      tenant_id: tenantId,
+      ticket_id: ticketId,
+      trace_id: traceId,
+      command_id: attempt.command.command_id,
+      occurred_at: nowIso(),
+      change_kind: changeKind,
+      ...(next.status ? { status: next.status } : {}),
+      ...(next.assigned_to ? { assigned_to: next.assigned_to } : {}),
+      ...(Number.isFinite(Number(next.queue_id)) ? { queue_id: Number(next.queue_id) } : {}),
+      ...(next.queue_name ? { queue_name: next.queue_name } : {}),
+      ...(comment && commentBody
+        ? {
+          comment: {
+            visibility: comment.visibility,
+            body: comment.body,
+            created_at: comment.created_at,
+          },
+        }
+        : {}),
+    });
   }
 
   async processAutotaskSyncEvent(event: WorkflowEventEnvelope): Promise<{ duplicate: boolean; applied: boolean; divergence?: boolean }> {
@@ -975,6 +1055,26 @@ export class TicketWorkflowCoreService {
     }
 
     await this.repo.upsertInboxTicket(next);
+    const syncedComment = commentBody
+      ? {
+        visibility: normalizeVisibility(payload.comment_visibility),
+        body: commentBody,
+        created_at: String(payload.comment_created_at || nowIso()),
+      }
+      : undefined;
+    this.publishRealtime({
+      tenant_id: event.tenant_id,
+      ticket_id: ticketId,
+      trace_id: event.correlation.trace_id,
+      sync_event_id: event.event_id,
+      occurred_at: nowIso(),
+      change_kind: commentBody ? 'comment' : 'sync',
+      ...(next.status ? { status: next.status } : {}),
+      ...(next.assigned_to ? { assigned_to: next.assigned_to } : {}),
+      ...(Number.isFinite(Number(next.queue_id)) ? { queue_id: Number(next.queue_id) } : {}),
+      ...(next.queue_name ? { queue_name: next.queue_name } : {}),
+      ...(syncedComment ? { comment: syncedComment } : {}),
+    });
     await this.writeAudit({
       tenant_id: event.tenant_id,
       actor: { kind: 'system', id: 'autotask-sync', origin: event.provenance.source },

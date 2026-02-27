@@ -15,7 +15,10 @@ import {
 import { Badge, EmptyState, ErrorBanner, InlineButton, MetaText, P0PageShell, Panel } from './P0UiPrimitives';
 
 export default function P0ManagerOpsPage() {
-  const inbox = usePollingResource(listWorkflowInbox, { intervalMs: 10000 });
+  const inbox = usePollingResource(listWorkflowInbox, {
+    intervalMs: 10000,
+    realtime: { path: '/workflow/realtime' },
+  });
   const ai = usePollingResource(() => listManagerOpsAiDecisions(200), { intervalMs: 15000 });
   const audit = usePollingResource(() => listManagerOpsAudit(300), { intervalMs: 15000 });
   const rolloutPolicy = usePollingResource(getRolloutPolicy, { intervalMs: 30000 });

@@ -1,0 +1,15 @@
+{
+  "fallback_checks": {
+    "realtime_endpoint_unavailable_status": 404,
+    "polling_status_while_realtime_unavailable": 200,
+    "polling_status_after_api_recover": 200
+  },
+  "hardening_checks": {
+    "unauthenticated_workflow_inbox_status": 401
+  },
+  "assertions": {
+    "fallback_endpoint_level_ok": true,
+    "recoverable_after_api_drop": true,
+    "auth_failure_safe": true
+  }
+}

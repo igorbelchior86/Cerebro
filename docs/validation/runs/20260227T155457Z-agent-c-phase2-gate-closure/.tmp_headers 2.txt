@@ -1,0 +1,14 @@
+HTTP/1.1 200 OK
+X-Powered-By: Express
+x-request-id: phase2-agent-c-inbox-after
+x-trace-id: phase2-agent-c-inbox-after
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Authorization, x-bootstrap-token, x-request-id, x-trace-id, x-ticket-id, x-job-id, x-command-id
+Content-Type: application/json; charset=utf-8
+Content-Length: 36369
+ETag: W/"8e11-0A2mkfcjcOnBk4WQ5pWCG9QqCsQ"
+Date: Fri, 27 Feb 2026 16:00:05 GMT
+Connection: keep-alive
+Keep-Alive: timeout=5
+

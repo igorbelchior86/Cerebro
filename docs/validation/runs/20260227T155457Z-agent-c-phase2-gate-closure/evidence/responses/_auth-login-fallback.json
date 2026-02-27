@@ -1,0 +1,31 @@
+{
+  "captured_at": "2026-02-27T16:04:14Z",
+  "request": {
+    "method": "POST",
+    "path": "/auth/login",
+    "correlation_id": "phase2-agent-c-fallback-auth-login",
+    "body": {
+      "email": "admin@cerebro.local",
+      "password": "CerebroSecure2026!"
+    }
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "x_request_id": "phase2-agent-c-fallback-auth-login",
+      "x_trace_id": "phase2-agent-c-fallback-auth-login",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "user": {
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "email": "admin@cerebro.local",
+        "role": "owner",
+        "tenantId": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "mfaEnabled": false
+      }
+    },
+    "body_text": "{\"user\":{\"id\":\"606d9dcc-624f-42bd-95fe-5bac5f8fc2ed\",\"email\":\"admin@cerebro.local\",\"role\":\"owner\",\"tenantId\":\"5b5f7e25-2396-4bec-a584-41352be7e876\",\"mfaEnabled\":false}}"
+  }
+}

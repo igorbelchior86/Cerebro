@@ -16,9 +16,16 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
   const tenantId = 'tenant-1';
   const actor = { kind: 'user' as const, id: 'user-1', origin: 'ui' };
 
-  function createService(gateway: TicketWorkflowGateway, maxAttempts = 3) {
+  function createService(
+    gateway: TicketWorkflowGateway,
+    maxAttempts = 3,
+    options?: { realtimePublisher?: (payload: any) => void }
+  ) {
     const repo = new InMemoryTicketWorkflowRepository();
-    const service = new TicketWorkflowCoreService(repo, gateway, { maxAttempts });
+    const service = new TicketWorkflowCoreService(repo, gateway, {
+      maxAttempts,
+      ...(options?.realtimePublisher ? { realtimePublisher: options.realtimePublisher } : {}),
+    });
     return { repo, service };
   }
 
@@ -210,6 +217,53 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
       event_type: 'ticket.updated',
       provenance: expect.objectContaining({ source: 'autotask_webhook', adapter_version: 'p0-test' }),
     });
+  });
+
+  it('emits realtime ticket change events for command/sync lifecycle', async () => {
+    const realtimePublisher = jest.fn();
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn().mockResolvedValue({
+        kind: 'assigned',
+        assigned_to: '42',
+        snapshot: { id: 5001, title: 'Printer down', status: 'Assigned', assigned_to: '42' },
+      }),
+    };
+    const { service } = createService(gateway, 3, { realtimePublisher });
+
+    const cmd = buildCommandEnvelope({
+      tenantId,
+      targetIntegration: 'Autotask',
+      commandType: 'update_assign',
+      payload: { ticket_id: '5001', assignee_resource_id: '42' },
+      actor,
+      idempotencyKey: 'rt-assign',
+      correlation: { trace_id: 'trace-rt', ticket_id: '5001' },
+    });
+    await service.submitCommand(cmd);
+    await service.processPendingCommands();
+
+    const event: WorkflowEventEnvelope = {
+      event_id: 'evt-rt-1',
+      tenant_id: tenantId,
+      event_type: 'ticket.comment',
+      source: 'Autotask',
+      entity_type: 'ticket',
+      entity_id: '5001',
+      payload: {
+        comment_body: 'Comment from sync',
+        comment_visibility: 'public',
+      },
+      occurred_at: '2026-02-26T12:00:00.000Z',
+      correlation: { trace_id: 'trace-rt', ticket_id: '5001' },
+      provenance: { source: 'autotask_webhook', fetched_at: '2026-02-26T12:00:01.000Z' },
+    };
+    await service.processAutotaskSyncEvent(event);
+
+    expect(realtimePublisher).toHaveBeenCalled();
+    const calls = realtimePublisher.mock.calls.map((entry) => entry[0]);
+    expect(calls.some((payload: any) => payload.change_kind === 'assigned' && payload.ticket_id === '5001')).toBe(true);
+    expect(calls.some((payload: any) => payload.change_kind === 'process_result' && payload.process_result?.outcome === 'completed')).toBe(true);
+    expect(calls.some((payload: any) => payload.change_kind === 'comment' && payload.sync_event_id === 'evt-rt-1')).toBe(true);
   });
 
   it('handles webhook/poll sync duplicates and out-of-order events safely', async () => {

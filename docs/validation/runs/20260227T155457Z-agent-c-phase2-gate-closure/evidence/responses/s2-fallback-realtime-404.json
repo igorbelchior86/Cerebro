@@ -1,0 +1,23 @@
+{
+  "captured_at": "2026-02-27T16:04:14Z",
+  "request": {
+    "method": "GET",
+    "path": "/workflow/realtime-unavailable",
+    "correlation_id": "phase2-agent-c-fallback-realtime-404",
+    "body": null
+  },
+  "response": {
+    "status_code": 404,
+    "headers": {
+      "x_request_id": "phase2-agent-c-fallback-realtime-404",
+      "x_trace_id": "phase2-agent-c-fallback-realtime-404",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "error": "Not Found",
+      "path": "/workflow/realtime-unavailable"
+    },
+    "body_text": "{\"error\":\"Not Found\",\"path\":\"/workflow/realtime-unavailable\"}"
+  }
+}

@@ -11,14 +11,22 @@ import ResizableLayout from '@/components/ResizableLayout';
 import { usePathname } from 'next/navigation';
 import { usePollingResource } from '@/hooks/usePollingResource';
 import {
+  getWorkflowCommandStatus,
+  isRetryableCommandStatus,
   listManagerOpsAiDecisions,
   listManagerOpsAudit,
   listWorkflowAudit,
   listWorkflowInbox,
   listWorkflowReconciliationIssues,
+  mapCommandStatusToUxState,
+  mapHttpErrorToFrontendState,
+  processWorkflowCommands,
   reconcileWorkflowTicket,
+  submitWorkflowCommand,
   type ManagerOpsAIDecision,
+  type WorkflowActionUxState,
   type WorkflowAuditRecord,
+  type WorkflowCommandStatus,
   type WorkflowInboxTicket,
   type WorkflowReconciliationIssue,
 } from '@/lib/p0-ui-client';
@@ -107,6 +115,18 @@ interface SessionData {
   playbook?: { content_md: string };
 }
 
+interface WorkflowActionFeedback {
+  commandId: string;
+  status: WorkflowCommandStatus['status'];
+  uxState: WorkflowActionUxState;
+  detail: string;
+  retryable: boolean;
+  attempts: number;
+  maxAttempts: number;
+  nextRetryAt?: string;
+  updatedAt: string;
+}
+
 export default function SessionDetail({
   params,
 }: {
@@ -151,10 +171,17 @@ export default function SessionDetail({
   const [isManualSuppressionSaving, setIsManualSuppressionSaving] = useState(false);
   const [isWorkflowReconcileRunning, setIsWorkflowReconcileRunning] = useState(false);
   const [workflowActionError, setWorkflowActionError] = useState('');
+  const [techAssignmentDraft, setTechAssignmentDraft] = useState('');
+  const [isSubmittingTechAssignment, setIsSubmittingTechAssignment] = useState(false);
+  const [workflowActionFeedback, setWorkflowActionFeedback] = useState<WorkflowActionFeedback | null>(null);
+  const [workflowWritePolicyDisabled, setWorkflowWritePolicyDisabled] = useState(false);
   const [isDevPanelOpen, setIsDevPanelOpen] = useState(false);
 
   const p0LookupTicketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
-  const workflowInboxState = usePollingResource(listWorkflowInbox, { intervalMs: 10000 });
+  const workflowInboxState = usePollingResource(listWorkflowInbox, {
+    intervalMs: 10000,
+    realtime: { path: '/workflow/realtime' },
+  });
   const workflowAuditState = usePollingResource(
     () => listWorkflowAudit(p0LookupTicketId),
     { intervalMs: 12000, enabled: Boolean(p0LookupTicketId) }
@@ -351,6 +378,104 @@ export default function SessionDetail({
       rows.push({ icon, text: contentLine });
     }
     return rows;
+  };
+
+  const refreshWorkflowCommandFeedback = async (commandId: string) => {
+    try {
+      const status = await getWorkflowCommandStatus(commandId);
+      const uxState = mapCommandStatusToUxState(status.status);
+      setWorkflowActionFeedback({
+        commandId,
+        status: status.status,
+        uxState,
+        detail: status.last_error || `Command ${status.status}`,
+        retryable: isRetryableCommandStatus(status.status),
+        attempts: status.attempts,
+        maxAttempts: status.max_attempts,
+        ...(status.next_retry_at ? { nextRetryAt: status.next_retry_at } : {}),
+        updatedAt: status.updated_at,
+      });
+      if (uxState === 'succeeded') {
+        setWorkflowActionError('');
+        setWorkflowWritePolicyDisabled(false);
+        await Promise.all([
+          workflowInboxState.refresh(),
+          workflowAuditState.refresh(),
+          workflowReconciliationState.refresh(),
+        ]);
+      }
+    } catch (err) {
+      const mapped = mapHttpErrorToFrontendState(err, 'Command status unavailable');
+      setWorkflowActionError(`${mapped.summary}: ${mapped.detail}`);
+    }
+  };
+
+  const handleSubmitTechAssignment = async () => {
+    const ticketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
+    const assigneeResourceId = String(techAssignmentDraft || '').trim();
+    if (!ticketId || !assigneeResourceId || isSubmittingTechAssignment) return;
+
+    setIsSubmittingTechAssignment(true);
+    setWorkflowActionError('');
+    try {
+      const idempotencyKey = `ui-tech-${ticketId}-${assigneeResourceId}-${Date.now()}`;
+      const command = await submitWorkflowCommand({
+        command_type: 'update_assign',
+        ticket_id: ticketId,
+        payload: {
+          assignee_resource_id: assigneeResourceId,
+          assigned_to: assigneeResourceId,
+        },
+        idempotency_key: idempotencyKey,
+        auto_process: true,
+      });
+      const commandId = String(command.command_id || '').trim();
+      if (!commandId) throw new Error('Workflow command id missing');
+
+      setWorkflowActionFeedback({
+        commandId,
+        status: 'accepted',
+        uxState: 'pending',
+        detail: 'Assignment command accepted and queued',
+        retryable: true,
+        attempts: 0,
+        maxAttempts: 3,
+        updatedAt: new Date().toISOString(),
+      });
+      setWorkflowWritePolicyDisabled(false);
+      await refreshWorkflowCommandFeedback(commandId);
+    } catch (err) {
+      const mapped = mapHttpErrorToFrontendState(err, 'Unable to submit assignment command');
+      setWorkflowActionError(`${mapped.summary}: ${mapped.detail}`);
+      setWorkflowActionFeedback({
+        commandId: '',
+        status: 'failed',
+        uxState: 'failed',
+        detail: mapped.detail,
+        retryable: mapped.retryable,
+        attempts: 0,
+        maxAttempts: 0,
+        updatedAt: new Date().toISOString(),
+      });
+      if (mapped.code === 'forbidden' || mapped.code === 'auth') {
+        setWorkflowWritePolicyDisabled(true);
+      }
+    } finally {
+      setIsSubmittingTechAssignment(false);
+    }
+  };
+
+  const handleManualWorkflowRetry = async () => {
+    const commandId = String(workflowActionFeedback?.commandId || '').trim();
+    if (!commandId) return;
+    setWorkflowActionError('');
+    try {
+      await processWorkflowCommands(5);
+      await refreshWorkflowCommandFeedback(commandId);
+    } catch (err) {
+      const mapped = mapHttpErrorToFrontendState(err, 'Manual retry failed');
+      setWorkflowActionError(`${mapped.summary}: ${mapped.detail}`);
+    }
   };
 
   useEffect(() => {
@@ -824,6 +949,31 @@ export default function SessionDetail({
     workflowAuditState.error,
     workflowReconciliationState.error
   );
+  const workflowActionStateTone = workflowActionFeedback?.uxState === 'succeeded'
+    ? 'good'
+    : workflowActionFeedback?.uxState === 'failed'
+      ? 'bad'
+      : workflowActionFeedback?.uxState === 'retrying'
+        ? 'warn'
+        : 'info';
+
+  useEffect(() => {
+    const commandId = String(workflowActionFeedback?.commandId || '').trim();
+    if (!commandId) return;
+    if (workflowActionFeedback?.uxState !== 'pending' && workflowActionFeedback?.uxState !== 'retrying') return;
+    const timer = window.setInterval(() => {
+      void refreshWorkflowCommandFeedback(commandId);
+    }, 4000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [workflowActionFeedback?.commandId, workflowActionFeedback?.uxState]);
+
+  useEffect(() => {
+    if (techAssignmentDraft) return;
+    const fallback = String(workflowTicket?.assigned_to || data?.ticket?.assigned_resource_name || '').trim();
+    if (fallback) setTechAssignmentDraft(fallback);
+  }, [workflowTicket?.assigned_to, data?.ticket?.assigned_resource_name, techAssignmentDraft]);
 
   const digestFacts = Array.isArray(data?.evidence_pack?.evidence_digest?.facts_confirmed)
     ? data?.evidence_pack?.evidence_digest?.facts_confirmed
@@ -1283,6 +1433,99 @@ export default function SessionDetail({
                       <div style={triPaneMetricValueStyle()}>{humanizeProviderStatus(status.label)}</div>
                     </div>
                   ))}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '10px' }}>
+                <div style={{ ...triPaneMetricLabelStyle(), marginBottom: '6px' }}>Technician assignment command</div>
+                <div style={triPaneMetricCardStyle()}>
+                  {workflowWritePolicyDisabled ? (
+                    <div style={{
+                      border: '1px solid rgba(245,158,11,0.22)',
+                      background: 'rgba(245,158,11,0.08)',
+                      borderRadius: '10px',
+                      padding: '8px',
+                      marginBottom: '8px',
+                      color: '#b45309',
+                      fontSize: '11px',
+                    }}>
+                      Write policy currently disabled for this session (read-only mode). Re-authenticate or request policy update before retrying writes.
+                    </div>
+                  ) : null}
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <input
+                      value={techAssignmentDraft}
+                      onChange={(e) => setTechAssignmentDraft(e.target.value)}
+                      disabled={workflowWritePolicyDisabled || isSubmittingTechAssignment}
+                      placeholder="Assignee resource id"
+                      aria-label="Assignee resource id"
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        height: '30px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--bento-outline)',
+                        padding: '0 9px',
+                        fontSize: '11px',
+                        color: 'var(--text-primary)',
+                        background: '#fff',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSubmitTechAssignment}
+                      disabled={workflowWritePolicyDisabled || isSubmittingTechAssignment || !techAssignmentDraft.trim()}
+                      style={{
+                        height: '30px',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(91,127,255,0.25)',
+                        background: 'rgba(91,127,255,0.08)',
+                        color: '#3f5fcb',
+                        padding: '0 10px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        opacity: (workflowWritePolicyDisabled || isSubmittingTechAssignment || !techAssignmentDraft.trim()) ? 0.6 : 1,
+                      }}
+                    >
+                      {isSubmittingTechAssignment ? 'Submitting…' : 'Edit Tech'}
+                    </button>
+                  </div>
+                  {workflowActionFeedback ? (
+                    <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                      <span style={triPaneBadgeStyle(workflowActionStateTone)}>
+                        {workflowActionFeedback.uxState.toUpperCase()}
+                      </span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                        {workflowActionFeedback.detail}
+                      </span>
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                        attempts {workflowActionFeedback.attempts}/{workflowActionFeedback.maxAttempts || 'n/a'}
+                      </span>
+                      {workflowActionFeedback.nextRetryAt ? (
+                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                          next retry {new Date(workflowActionFeedback.nextRetryAt).toLocaleTimeString()}
+                        </span>
+                      ) : null}
+                      {workflowActionFeedback.retryable && workflowActionFeedback.commandId ? (
+                        <button
+                          type="button"
+                          onClick={handleManualWorkflowRetry}
+                          style={{
+                            height: '24px',
+                            borderRadius: '999px',
+                            border: '1px solid rgba(245,158,11,0.25)',
+                            background: 'rgba(245,158,11,0.08)',
+                            color: '#b45309',
+                            padding: '0 9px',
+                            fontSize: '10px',
+                            fontWeight: 600,
+                          }}
+                        >
+                          Retry now
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

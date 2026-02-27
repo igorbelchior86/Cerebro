@@ -681,6 +681,287 @@
           "completed_at": "2026-02-27T15:05:48.652Z"
         }
       }
+    ],
+    [
+      "36d4c799-e597-4443-ab85-459022dca89c",
+      {
+        "command": {
+          "command_id": "36d4c799-e597-4443-ab85-459022dca89c",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "update_assign",
+          "payload": {
+            "ticket_id": "T20260226.0033",
+            "assignee_resource_id": "42",
+            "queue_id": 7,
+            "queue_name": "Service Desk"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "phase2-agent-c-assign-idem-20260227T155457Z",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "phase2-agent-c-20260227T155457Z-assign",
+            "ticket_id": "T20260226.0033",
+            "command_id": "36d4c799-e597-4443-ab85-459022dca89c"
+          },
+          "requested_at": "2026-02-27T15:59:51.999Z"
+        },
+        "status": "failed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-27T15:59:51.999Z",
+        "updated_at": "2026-02-27T15:59:54.288Z",
+        "last_error": "Autotask API error: 500 Internal Server Error - {\"errors\":[\"Picklist value [7] does not exist for queueID. \",\"Error updating entity for record number [1].\"]}"
+      }
+    ],
+    [
+      "25003067-be0c-4d84-a01e-0f99eb9f4aa9",
+      {
+        "command": {
+          "command_id": "25003067-be0c-4d84-a01e-0f99eb9f4aa9",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "create_comment_note",
+          "payload": {
+            "ticket_id": "T20260226.0033",
+            "note_body": "Phase2 Agent C gate comment 20260227T155457Z",
+            "note_visibility": "internal"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "phase2-agent-c-comment-idem-20260227T155457Z",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "phase2-agent-c-20260227T155457Z-comment",
+            "ticket_id": "T20260226.0033",
+            "command_id": "25003067-be0c-4d84-a01e-0f99eb9f4aa9"
+          },
+          "requested_at": "2026-02-27T15:59:54.490Z"
+        },
+        "status": "completed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-27T15:59:54.490Z",
+        "updated_at": "2026-02-27T15:59:58.744Z",
+        "result": {
+          "kind": "updated",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 30684582,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          },
+          "completed_at": "2026-02-27T15:59:58.744Z"
+        }
+      }
+    ],
+    [
+      "a906c4c4-9038-44b8-9ac3-3da5f4a6648e",
+      {
+        "command": {
+          "command_id": "a906c4c4-9038-44b8-9ac3-3da5f4a6648e",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "status_update",
+          "payload": {
+            "ticket_id": "T20260226.0033",
+            "status": "In Progress"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "phase2-agent-c-status-idem-20260227T155457Z",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "phase2-agent-c-20260227T155457Z-status",
+            "ticket_id": "T20260226.0033",
+            "command_id": "a906c4c4-9038-44b8-9ac3-3da5f4a6648e"
+          },
+          "requested_at": "2026-02-27T15:59:58.795Z"
+        },
+        "status": "completed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-27T15:59:58.795Z",
+        "updated_at": "2026-02-27T16:00:04.924Z",
+        "result": {
+          "kind": "status",
+          "status": "In Progress",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 30684582,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          },
+          "completed_at": "2026-02-27T16:00:04.924Z"
+        }
+      }
+    ],
+    [
+      "628e8498-5a0c-493d-8b8d-8a28ad07a4d0",
+      {
+        "command": {
+          "command_id": "628e8498-5a0c-493d-8b8d-8a28ad07a4d0",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "update_assign",
+          "payload": {
+            "ticket_id": "T20260226.0033",
+            "assignee_resource_id": "30684582"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "phase2-agent-c-assign-idem-20260227T160218Z",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "phase2-agent-c-20260227T160218Z-assign",
+            "ticket_id": "T20260226.0033",
+            "command_id": "628e8498-5a0c-493d-8b8d-8a28ad07a4d0"
+          },
+          "requested_at": "2026-02-27T16:02:21.015Z"
+        },
+        "status": "completed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-27T16:02:21.015Z",
+        "updated_at": "2026-02-27T16:02:27.765Z",
+        "result": {
+          "kind": "assigned",
+          "assigned_to": "30684582",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 30684582,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          },
+          "completed_at": "2026-02-27T16:02:27.765Z"
+        }
+      }
+    ],
+    [
+      "a204e277-c646-48f4-a203-aff617677c75",
+      {
+        "command": {
+          "command_id": "a204e277-c646-48f4-a203-aff617677c75",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "create_comment_note",
+          "payload": {
+            "ticket_id": "T20260226.0033",
+            "note_body": "Phase2 Agent C gate comment 20260227T160218Z",
+            "note_visibility": "internal"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "phase2-agent-c-comment-idem-20260227T160218Z",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "phase2-agent-c-20260227T160218Z-comment",
+            "ticket_id": "T20260226.0033",
+            "command_id": "a204e277-c646-48f4-a203-aff617677c75"
+          },
+          "requested_at": "2026-02-27T16:02:27.942Z"
+        },
+        "status": "completed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-27T16:02:27.942Z",
+        "updated_at": "2026-02-27T16:02:32.129Z",
+        "result": {
+          "kind": "updated",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 30684582,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          },
+          "completed_at": "2026-02-27T16:02:32.129Z"
+        }
+      }
+    ],
+    [
+      "33409093-81b1-4d58-8066-fda58f19e928",
+      {
+        "command": {
+          "command_id": "33409093-81b1-4d58-8066-fda58f19e928",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "status_update",
+          "payload": {
+            "ticket_id": "T20260226.0033",
+            "status": "In Progress"
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "phase2-agent-c-status-idem-20260227T160218Z",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "phase2-agent-c-20260227T160218Z-status",
+            "ticket_id": "T20260226.0033",
+            "command_id": "33409093-81b1-4d58-8066-fda58f19e928"
+          },
+          "requested_at": "2026-02-27T16:02:32.174Z"
+        },
+        "status": "completed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-02-27T16:02:32.174Z",
+        "updated_at": "2026-02-27T16:02:37.448Z",
+        "result": {
+          "kind": "status",
+          "status": "In Progress",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 30684582,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          },
+          "completed_at": "2026-02-27T16:02:37.448Z"
+        }
+      }
     ]
   ],
   "commandsByIdempotency": [
@@ -743,6 +1024,30 @@
     [
       "5b5f7e25-2396-4bec-a584-41352be7e876::phase1-agent-d-comment-idem-20260227T150343Z",
       "8c682252-493f-4c0f-8172-9e6e4a1a73ec"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::phase2-agent-c-assign-idem-20260227T155457Z",
+      "36d4c799-e597-4443-ab85-459022dca89c"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::phase2-agent-c-comment-idem-20260227T155457Z",
+      "25003067-be0c-4d84-a01e-0f99eb9f4aa9"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::phase2-agent-c-status-idem-20260227T155457Z",
+      "a906c4c4-9038-44b8-9ac3-3da5f4a6648e"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::phase2-agent-c-assign-idem-20260227T160218Z",
+      "628e8498-5a0c-493d-8b8d-8a28ad07a4d0"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::phase2-agent-c-comment-idem-20260227T160218Z",
+      "a204e277-c646-48f4-a203-aff617677c75"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::phase2-agent-c-status-idem-20260227T160218Z",
+      "33409093-81b1-4d58-8066-fda58f19e928"
     ]
   ],
   "audits": [
@@ -3683,6 +3988,645 @@
           }
         ]
       }
+    },
+    {
+      "audit_id": "4b95f9a2-c7c1-4b73-88df-2bd50e404f05",
+      "timestamp": "2026-02-27T15:59:52.002Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T155457Z-assign",
+        "ticket_id": "T20260226.0033",
+        "command_id": "36d4c799-e597-4443-ab85-459022dca89c"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "idempotency_key": "phase2-agent-c-assign-idem-20260227T155457Z",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "eb4f3882-f1be-4bf4-b692-17da8d1d9f02",
+      "timestamp": "2026-02-27T15:59:54.292Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.failed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "failure",
+      "reason": "Autotask API error: 500 Internal Server Error - {\"errors\":[\"Picklist value [7] does not exist for queueID. \",\"Error updating entity for record number [1].\"]}",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T155457Z-assign",
+        "ticket_id": "T20260226.0033",
+        "command_id": "36d4c799-e597-4443-ab85-459022dca89c"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "failure_class": "terminal",
+        "attempts": 1,
+        "status": "failed"
+      }
+    },
+    {
+      "audit_id": "93681810-49c3-496c-9649-2199c9d39d21",
+      "timestamp": "2026-02-27T15:59:54.492Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T155457Z-comment",
+        "ticket_id": "T20260226.0033",
+        "command_id": "25003067-be0c-4d84-a01e-0f99eb9f4aa9"
+      },
+      "metadata": {
+        "command_type": "create_comment_note",
+        "autotask_operation": "ticket_notes.create_comment_note",
+        "autotask_handler": "comment_note",
+        "autotask_audit_action": "autotask.command.ticket_notes.create_comment_note",
+        "idempotency_key": "phase2-agent-c-comment-idem-20260227T155457Z",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "0b4cb205-ca18-43b5-9113-932355aade65",
+      "timestamp": "2026-02-27T15:59:58.751Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.completed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T155457Z-comment",
+        "ticket_id": "T20260226.0033",
+        "command_id": "25003067-be0c-4d84-a01e-0f99eb9f4aa9"
+      },
+      "metadata": {
+        "command_type": "create_comment_note",
+        "autotask_operation": "ticket_notes.create_comment_note",
+        "autotask_handler": "comment_note",
+        "autotask_audit_action": "autotask.command.ticket_notes.create_comment_note",
+        "attempts": 1,
+        "result": {
+          "kind": "updated",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 30684582,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          }
+        }
+      }
+    },
+    {
+      "audit_id": "d5c07bc3-b1dd-4606-ba9d-146ea858b102",
+      "timestamp": "2026-02-27T15:59:58.796Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T155457Z-status",
+        "ticket_id": "T20260226.0033",
+        "command_id": "a906c4c4-9038-44b8-9ac3-3da5f4a6648e"
+      },
+      "metadata": {
+        "command_type": "status_update",
+        "autotask_operation": "tickets.update_status",
+        "autotask_handler": "status",
+        "autotask_audit_action": "autotask.command.tickets.update_status",
+        "idempotency_key": "phase2-agent-c-status-idem-20260227T155457Z",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "5236b26d-7f86-4e76-9876-1f02b9652ccb",
+      "timestamp": "2026-02-27T16:00:04.932Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.completed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T155457Z-status",
+        "ticket_id": "T20260226.0033",
+        "command_id": "a906c4c4-9038-44b8-9ac3-3da5f4a6648e"
+      },
+      "metadata": {
+        "command_type": "status_update",
+        "autotask_operation": "tickets.update_status",
+        "autotask_handler": "status",
+        "autotask_audit_action": "autotask.command.tickets.update_status",
+        "attempts": 1,
+        "result": {
+          "kind": "status",
+          "status": "In Progress",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 30684582,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          }
+        }
+      }
+    },
+    {
+      "audit_id": "462fa246-83c8-413f-8a9a-46a7e602f155",
+      "timestamp": "2026-02-27T16:00:04.982Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_webhook"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T155457Z-sync",
+        "ticket_id": "T20260226.0033"
+      },
+      "metadata": {
+        "event_type": "ticket.updated",
+        "event_id": "phase2-agent-c-sync-20260227T155457Z",
+        "provenance": {
+          "source": "autotask_webhook",
+          "fetched_at": "2026-02-27T16:00:04.978Z",
+          "adapter_version": "phase2-agent-c",
+          "sync_cursor": "phase2-agent-c-sync-20260227T155457Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
+    },
+    {
+      "audit_id": "8b304169-ca01-4820-9331-61f324f43670",
+      "timestamp": "2026-02-27T16:00:04.983Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_webhook"
+      },
+      "action": "workflow.reconciliation.divergence_detected",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "failure",
+      "reason": "autotask_status_differs_from_last_local_projection",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T155457Z-sync",
+        "ticket_id": "T20260226.0033"
+      },
+      "metadata": {
+        "issue_id": "853a5b9e-fa58-443d-843c-e5ee6bc715a5",
+        "event_id": "phase2-agent-c-sync-20260227T155457Z"
+      }
+    },
+    {
+      "audit_id": "f4b64919-6640-4260-8af6-20398e3aefb1",
+      "timestamp": "2026-02-27T16:00:58.604Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.idempotent_replay",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T155457Z-assign",
+        "ticket_id": "T20260226.0033",
+        "command_id": "36d4c799-e597-4443-ab85-459022dca89c"
+      },
+      "metadata": {
+        "idempotency_key": "phase2-agent-c-assign-idem-20260227T155457Z",
+        "existing_command_id": "36d4c799-e597-4443-ab85-459022dca89c",
+        "existing_status": "failed"
+      }
+    },
+    {
+      "audit_id": "779787cd-4012-4fbd-a32f-27579c8dff53",
+      "timestamp": "2026-02-27T16:00:58.629Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.idempotent_replay",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T155457Z-comment",
+        "ticket_id": "T20260226.0033",
+        "command_id": "25003067-be0c-4d84-a01e-0f99eb9f4aa9"
+      },
+      "metadata": {
+        "idempotency_key": "phase2-agent-c-comment-idem-20260227T155457Z",
+        "existing_command_id": "25003067-be0c-4d84-a01e-0f99eb9f4aa9",
+        "existing_status": "completed"
+      }
+    },
+    {
+      "audit_id": "3ba59d0f-ce87-45f1-b588-ab6cd08580d4",
+      "timestamp": "2026-02-27T16:00:58.650Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.idempotent_replay",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T155457Z-status",
+        "ticket_id": "T20260226.0033",
+        "command_id": "a906c4c4-9038-44b8-9ac3-3da5f4a6648e"
+      },
+      "metadata": {
+        "idempotency_key": "phase2-agent-c-status-idem-20260227T155457Z",
+        "existing_command_id": "a906c4c4-9038-44b8-9ac3-3da5f4a6648e",
+        "existing_status": "completed"
+      }
+    },
+    {
+      "audit_id": "a59293b0-e217-4aab-b303-b1cac6991d65",
+      "timestamp": "2026-02-27T16:02:21.018Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T160218Z-assign",
+        "ticket_id": "T20260226.0033",
+        "command_id": "628e8498-5a0c-493d-8b8d-8a28ad07a4d0"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "idempotency_key": "phase2-agent-c-assign-idem-20260227T160218Z",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "f44ac7c6-e30e-46be-87e1-dc9b51dec114",
+      "timestamp": "2026-02-27T16:02:27.771Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.completed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T160218Z-assign",
+        "ticket_id": "T20260226.0033",
+        "command_id": "628e8498-5a0c-493d-8b8d-8a28ad07a4d0"
+      },
+      "metadata": {
+        "command_type": "update_assign",
+        "autotask_operation": "tickets.update_assign",
+        "autotask_handler": "assign",
+        "autotask_audit_action": "autotask.command.tickets.update_assign",
+        "attempts": 1,
+        "result": {
+          "kind": "assigned",
+          "assigned_to": "30684582",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 30684582,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          }
+        }
+      }
+    },
+    {
+      "audit_id": "854af9fb-8b59-4f3e-b293-ee98a75a601c",
+      "timestamp": "2026-02-27T16:02:27.943Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T160218Z-comment",
+        "ticket_id": "T20260226.0033",
+        "command_id": "a204e277-c646-48f4-a203-aff617677c75"
+      },
+      "metadata": {
+        "command_type": "create_comment_note",
+        "autotask_operation": "ticket_notes.create_comment_note",
+        "autotask_handler": "comment_note",
+        "autotask_audit_action": "autotask.command.ticket_notes.create_comment_note",
+        "idempotency_key": "phase2-agent-c-comment-idem-20260227T160218Z",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "a3b4d07a-823e-4ebb-b17f-e8920790f8be",
+      "timestamp": "2026-02-27T16:02:32.136Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.completed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T160218Z-comment",
+        "ticket_id": "T20260226.0033",
+        "command_id": "a204e277-c646-48f4-a203-aff617677c75"
+      },
+      "metadata": {
+        "command_type": "create_comment_note",
+        "autotask_operation": "ticket_notes.create_comment_note",
+        "autotask_handler": "comment_note",
+        "autotask_audit_action": "autotask.command.ticket_notes.create_comment_note",
+        "attempts": 1,
+        "result": {
+          "kind": "updated",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 30684582,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          }
+        }
+      }
+    },
+    {
+      "audit_id": "1ad9be18-049e-4d65-bdec-e52177be3380",
+      "timestamp": "2026-02-27T16:02:32.176Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T160218Z-status",
+        "ticket_id": "T20260226.0033",
+        "command_id": "33409093-81b1-4d58-8066-fda58f19e928"
+      },
+      "metadata": {
+        "command_type": "status_update",
+        "autotask_operation": "tickets.update_status",
+        "autotask_handler": "status",
+        "autotask_audit_action": "autotask.command.tickets.update_status",
+        "idempotency_key": "phase2-agent-c-status-idem-20260227T160218Z",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "e8fcddee-168c-43c7-8ada-c49c4db98c89",
+      "timestamp": "2026-02-27T16:02:37.455Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.completed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T160218Z-status",
+        "ticket_id": "T20260226.0033",
+        "command_id": "33409093-81b1-4d58-8066-fda58f19e928"
+      },
+      "metadata": {
+        "command_type": "status_update",
+        "autotask_operation": "tickets.update_status",
+        "autotask_handler": "status",
+        "autotask_audit_action": "autotask.command.tickets.update_status",
+        "attempts": 1,
+        "result": {
+          "kind": "status",
+          "status": "In Progress",
+          "snapshot": {
+            "id": 132810,
+            "ticket_number": "T20260226.0033",
+            "title": "Test",
+            "description": null,
+            "status": 8,
+            "assigned_to": 30684582,
+            "queue_id": 29682833,
+            "company_id": 0,
+            "status_label": "In Progress"
+          }
+        }
+      }
+    },
+    {
+      "audit_id": "6c15ba67-4522-48f0-a3c3-7cf14c540131",
+      "timestamp": "2026-02-27T16:02:37.501Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_webhook"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T160218Z-sync",
+        "ticket_id": "T20260226.0033"
+      },
+      "metadata": {
+        "event_type": "ticket.updated",
+        "event_id": "phase2-agent-c-sync-20260227T160218Z",
+        "provenance": {
+          "source": "autotask_webhook",
+          "fetched_at": "2026-02-27T16:02:37.498Z",
+          "adapter_version": "phase2-agent-c",
+          "sync_cursor": "phase2-agent-c-sync-20260227T160218Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
+    },
+    {
+      "audit_id": "f8210810-8d94-4ba3-b08a-83ddbb85ad52",
+      "timestamp": "2026-02-27T16:02:37.503Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_webhook"
+      },
+      "action": "workflow.reconciliation.divergence_detected",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260226.0033"
+      },
+      "result": "failure",
+      "reason": "autotask_status_differs_from_last_local_projection",
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T160218Z-sync",
+        "ticket_id": "T20260226.0033"
+      },
+      "metadata": {
+        "issue_id": "d745e59a-cfae-4824-a349-18f2352151d8",
+        "event_id": "phase2-agent-c-sync-20260227T160218Z"
+      }
     }
   ],
   "processedSyncEvents": [
@@ -3717,7 +4661,9 @@
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132816:ticket.created:2026-02-27T13:32:22.787Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::phase1-agent-d-sync-20260227T141906Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132817:ticket.created:2026-02-27T14:26:40.843Z",
-    "5b5f7e25-2396-4bec-a584-41352be7e876::phase1-agent-d-sync-20260227T150343Z"
+    "5b5f7e25-2396-4bec-a584-41352be7e876::phase1-agent-d-sync-20260227T150343Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::phase2-agent-c-sync-20260227T155457Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::phase2-agent-c-sync-20260227T160218Z"
   ],
   "inbox": [
     [
@@ -4036,12 +4982,22 @@
             "visibility": "internal",
             "body": "Phase1 Agent D gate comment proof 20260227T150343Z",
             "created_at": "2026-02-27T15:05:48.666Z"
+          },
+          {
+            "visibility": "internal",
+            "body": "Phase2 Agent C gate comment 20260227T155457Z",
+            "created_at": "2026-02-27T15:59:58.748Z"
+          },
+          {
+            "visibility": "internal",
+            "body": "Phase2 Agent C gate comment 20260227T160218Z",
+            "created_at": "2026-02-27T16:02:32.133Z"
           }
         ],
-        "last_sync_at": "2026-02-27T15:05:49.785Z",
-        "last_event_occurred_at": "2026-02-27T15:05:49.782Z",
-        "last_event_id": "phase1-agent-d-sync-20260227T150343Z",
-        "last_command_id": "8c682252-493f-4c0f-8172-9e6e4a1a73ec",
+        "last_sync_at": "2026-02-27T16:02:37.500Z",
+        "last_event_occurred_at": "2026-02-27T16:02:37.498Z",
+        "last_event_id": "phase2-agent-c-sync-20260227T160218Z",
+        "last_command_id": "33409093-81b1-4d58-8066-fda58f19e928",
         "source_of_truth": "Autotask",
         "domain_snapshots": {
           "tickets": {
@@ -4055,7 +5011,7 @@
           "ticket_notes": {},
           "correlates.ticket_note_metadata": {}
         },
-        "updated_at": "2026-02-27T15:05:49.785Z"
+        "updated_at": "2026-02-27T16:02:37.500Z"
       }
     ],
     [
@@ -4789,6 +5745,58 @@
       "provenance": {
         "source": "autotask_reconcile",
         "fetched_at": "2026-02-27T15:05:52.938Z"
+      }
+    },
+    {
+      "id": "853a5b9e-fa58-443d-843c-e5ee6bc715a5",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "ticket_id": "T20260226.0033",
+      "detected_at": "2026-02-27T16:00:04.982Z",
+      "severity": "warning",
+      "reason": "autotask_status_differs_from_last_local_projection",
+      "local_snapshot": {
+        "status_before_sync": "8",
+        "last_command_id": "a906c4c4-9038-44b8-9ac3-3da5f4a6648e"
+      },
+      "remote_snapshot": {
+        "status": "In Progress",
+        "event_id": "phase2-agent-c-sync-20260227T155457Z"
+      },
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T155457Z-sync",
+        "ticket_id": "T20260226.0033"
+      },
+      "provenance": {
+        "source": "autotask_webhook",
+        "fetched_at": "2026-02-27T16:00:04.978Z",
+        "adapter_version": "phase2-agent-c",
+        "sync_cursor": "phase2-agent-c-sync-20260227T155457Z"
+      }
+    },
+    {
+      "id": "d745e59a-cfae-4824-a349-18f2352151d8",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "ticket_id": "T20260226.0033",
+      "detected_at": "2026-02-27T16:02:37.502Z",
+      "severity": "warning",
+      "reason": "autotask_status_differs_from_last_local_projection",
+      "local_snapshot": {
+        "status_before_sync": "8",
+        "last_command_id": "33409093-81b1-4d58-8066-fda58f19e928"
+      },
+      "remote_snapshot": {
+        "status": "In Progress",
+        "event_id": "phase2-agent-c-sync-20260227T160218Z"
+      },
+      "correlation": {
+        "trace_id": "phase2-agent-c-20260227T160218Z-sync",
+        "ticket_id": "T20260226.0033"
+      },
+      "provenance": {
+        "source": "autotask_webhook",
+        "fetched_at": "2026-02-27T16:02:37.498Z",
+        "adapter_version": "phase2-agent-c",
+        "sync_cursor": "phase2-agent-c-sync-20260227T160218Z"
       }
     }
   ]

@@ -109,6 +109,146 @@ export class HttpError extends Error {
   }
 }
 
+export type WorkflowCommandTypeUi =
+  | 'assign'
+  | 'update_assign'
+  | 'status'
+  | 'status_update'
+  | 'update_status'
+  | 'comment_note'
+  | 'create_comment_note';
+
+export interface WorkflowCommandSubmission {
+  command_id: string;
+  tenant_id: string;
+  target_integration: string;
+  command_type: string;
+  payload: Record<string, unknown>;
+  actor: { kind: string; id: string; origin?: string };
+  idempotency_key: string;
+  audit_metadata: Record<string, unknown>;
+  correlation: { trace_id: string; ticket_id?: string; job_id?: string; command_id?: string };
+  requested_at: string;
+}
+
+export interface WorkflowCommandStatus {
+  command: WorkflowCommandSubmission;
+  status: 'accepted' | 'processing' | 'completed' | 'retry_pending' | 'failed' | 'dlq' | 'rejected';
+  attempts: number;
+  max_attempts: number;
+  next_retry_at?: string;
+  last_error?: string;
+  result?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkflowCommandSubmitInput {
+  command_type: WorkflowCommandTypeUi;
+  ticket_id: string;
+  payload: Record<string, unknown>;
+  idempotency_key: string;
+  auto_process?: boolean;
+}
+
+export type WorkflowActionUxState = 'pending' | 'retrying' | 'failed' | 'succeeded';
+
+export function mapCommandStatusToUxState(status?: string): WorkflowActionUxState {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'completed') return 'succeeded';
+  if (normalized === 'retry_pending') return 'retrying';
+  if (normalized === 'failed' || normalized === 'dlq' || normalized === 'rejected') return 'failed';
+  return 'pending';
+}
+
+export function isRetryableCommandStatus(status?: string): boolean {
+  const normalized = String(status || '').trim().toLowerCase();
+  return normalized === 'retry_pending' || normalized === 'failed';
+}
+
+export interface FrontendErrorState {
+  status: number | null;
+  code: 'auth' | 'forbidden' | 'rate_limit' | 'server' | 'network' | 'unknown';
+  retryable: boolean;
+  summary: string;
+  detail: string;
+}
+
+function extractErrorMessage(body: unknown): string | null {
+  if (!body || typeof body !== 'object') return null;
+  const obj = body as Record<string, unknown>;
+  const direct = obj.message ?? obj.error;
+  if (typeof direct === 'string' && direct.trim()) return direct.trim();
+  return null;
+}
+
+export function mapHttpErrorToFrontendState(error: unknown, fallbackSummary = 'Request failed'): FrontendErrorState {
+  if (error instanceof HttpError) {
+    const detail = extractErrorMessage(error.body) || error.message || fallbackSummary;
+    if (error.status === 401) {
+      return {
+        status: 401,
+        code: 'auth',
+        retryable: false,
+        summary: 'Authentication required',
+        detail,
+      };
+    }
+    if (error.status === 403) {
+      return {
+        status: 403,
+        code: 'forbidden',
+        retryable: false,
+        summary: 'Operation not allowed by policy',
+        detail,
+      };
+    }
+    if (error.status === 429) {
+      return {
+        status: 429,
+        code: 'rate_limit',
+        retryable: true,
+        summary: 'Rate limit reached',
+        detail,
+      };
+    }
+    if (error.status >= 500) {
+      return {
+        status: error.status,
+        code: 'server',
+        retryable: true,
+        summary: 'Temporary backend failure',
+        detail,
+      };
+    }
+    return {
+      status: error.status,
+      code: 'unknown',
+      retryable: false,
+      summary: fallbackSummary,
+      detail,
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      status: null,
+      code: 'network',
+      retryable: true,
+      summary: 'Network or client error',
+      detail: error.message || fallbackSummary,
+    };
+  }
+
+  return {
+    status: null,
+    code: 'unknown',
+    retryable: false,
+    summary: fallbackSummary,
+    detail: fallbackSummary,
+  };
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API}${path}`, {
     credentials: 'include',
@@ -152,6 +292,29 @@ export function processWorkflowCommands(limit = 20) {
     method: 'POST',
     body: JSON.stringify({ limit }),
   });
+}
+
+export function submitWorkflowCommand(input: WorkflowCommandSubmitInput) {
+  return request<{ command_id: string; status: string }>(
+    '/workflow/commands',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        command_type: input.command_type,
+        target_integration: 'Autotask',
+        idempotency_key: input.idempotency_key,
+        payload: {
+          ...input.payload,
+          ticket_id: input.ticket_id,
+        },
+        auto_process: input.auto_process ?? true,
+      }),
+    }
+  );
+}
+
+export function getWorkflowCommandStatus(commandId: string) {
+  return request<WorkflowCommandStatus>(`/workflow/commands/${encodeURIComponent(commandId)}`);
 }
 
 export function reconcileWorkflowTicket(ticketId: string) {

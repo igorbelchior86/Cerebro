@@ -4,9 +4,9 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePollingResource } from '@/hooks/usePollingResource';
 import {
-  HttpError,
   WorkflowInboxTicket,
   listWorkflowInbox,
+  mapHttpErrorToFrontendState,
   processWorkflowCommands,
   relativeMinutesFromNow,
 } from '@/lib/p0-ui-client';
@@ -23,9 +23,13 @@ function ticketSubtitle(ticket: WorkflowInboxTicket) {
 }
 
 export default function P0InboxPage() {
-  const inbox = usePollingResource(listWorkflowInbox, { intervalMs: 10000 });
+  const inbox = usePollingResource(listWorkflowInbox, {
+    intervalMs: 10000,
+    realtime: { path: '/workflow/realtime' },
+  });
   const [commandStatus, setCommandStatus] = useState<string | null>(null);
   const [commandError, setCommandError] = useState<string | null>(null);
+  const [commandState, setCommandState] = useState<'idle' | 'pending' | 'retrying' | 'failed' | 'succeeded'>('idle');
   const [processingCommands, setProcessingCommands] = useState(false);
 
   const tickets = useMemo(() => inbox.data || [], [inbox.data]);
@@ -44,14 +48,18 @@ export default function P0InboxPage() {
 
   const runCommandWorker = async () => {
     setProcessingCommands(true);
+    setCommandState('pending');
     setCommandError(null);
     setCommandStatus(null);
     try {
       const result = await processWorkflowCommands(20);
       setCommandStatus(`Worker processed pending commands (${JSON.stringify(result)})`);
+      setCommandState('succeeded');
       await inbox.refresh();
     } catch (err) {
-      setCommandError(err instanceof Error ? err.message : 'Failed to process commands');
+      const mapped = mapHttpErrorToFrontendState(err, 'Failed to process commands');
+      setCommandError(`${mapped.summary}: ${mapped.detail}`);
+      setCommandState(mapped.retryable ? 'retrying' : 'failed');
     } finally {
       setProcessingCommands(false);
     }
@@ -91,7 +99,14 @@ export default function P0InboxPage() {
             <Metric label="Pending" value={String(counts.pending)} />
             <Metric label="Completed" value={String(counts.completed)} />
           </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Badge tone={inbox.realtime.connected ? 'good' : inbox.realtime.degraded ? 'warn' : 'neutral'}>
+              Realtime {inbox.realtime.connected ? 'connected' : inbox.realtime.degraded ? 'degraded' : 'connecting'}
+            </Badge>
+            {inbox.realtime.degraded ? <Badge tone="warn">Polling fallback active</Badge> : null}
+          </div>
           <div className="mt-3"><MetaText>{inbox.lastUpdatedAt ? `Updated ${new Date(inbox.lastUpdatedAt).toLocaleTimeString()}` : 'Waiting for first fetch…'}</MetaText></div>
+          {inbox.realtime.reason ? <MetaText>{inbox.realtime.reason}</MetaText> : null}
         </Panel>
         <Panel title="Operations Notes" subtitle="P0 UI wiring constraints and degraded behavior.">
           <ul className="space-y-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
@@ -109,7 +124,12 @@ export default function P0InboxPage() {
         />
       ) : null}
 
-      {commandError ? <ErrorBanner message={`Command worker failed: ${commandError}`} /> : null}
+      {commandError ? (
+        <ErrorBanner
+          message={`Command worker ${commandState === 'retrying' ? 'retrying' : 'failed'}: ${commandError}`}
+          {...(commandState === 'retrying' ? { hint: 'Manual retry is available and safe for retryable failures.' } : {})}
+        />
+      ) : null}
       {commandStatus ? (
         <div className="rounded-xl border px-3 py-2 text-xs" style={{ borderColor: 'rgba(91,127,255,0.22)', background: 'rgba(91,127,255,0.07)', color: '#c8d6ff' }}>
           {commandStatus}

@@ -1,0 +1,31 @@
+{
+  "ticket_id": "T20260226.0033",
+  "commands": {
+    "assign": "628e8498-5a0c-493d-8b8d-8a28ad07a4d0",
+    "comment": "a204e277-c646-48f4-a203-aff617677c75",
+    "status": "33409093-81b1-4d58-8066-fda58f19e928"
+  },
+  "http": {
+    "assign": 202,
+    "comment": 202,
+    "status": 202,
+    "sync": 200
+  },
+  "realtime_stream": {
+    "connection_events": 1,
+    "ticket_change_events": 7,
+    "heartbeat_events": 2
+  },
+  "audit_correlation": {
+    "assign_completed": 1,
+    "comment_completed": 4,
+    "status_completed": 4,
+    "sync_applied": 11
+  },
+  "assertions": {
+    "command_http_ok": true,
+    "sync_http_ok": true,
+    "realtime_received_changes": true,
+    "audit_flow_present": true
+  }
+}

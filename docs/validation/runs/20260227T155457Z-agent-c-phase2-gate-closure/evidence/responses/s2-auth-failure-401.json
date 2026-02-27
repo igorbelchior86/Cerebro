@@ -1,0 +1,22 @@
+{
+  "captured_at": "2026-02-27T16:04:14Z",
+  "request": {
+    "method": "GET",
+    "path": "/workflow/inbox",
+    "correlation_id": "phase2-agent-c-auth-failure",
+    "body": null
+  },
+  "response": {
+    "status_code": 401,
+    "headers": {
+      "x_request_id": "phase2-agent-c-auth-failure",
+      "x_trace_id": "phase2-agent-c-auth-failure",
+      "x_correlation_id": "",
+      "content_type": ""
+    },
+    "body_json": {
+      "error": "Authentication required"
+    },
+    "body_text": "{\"error\":\"Authentication required\"}"
+  }
+}

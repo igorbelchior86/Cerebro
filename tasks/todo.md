@@ -1,3 +1,28 @@
+# Task: Blueprint P2-GRAPH no Execution Guide (Neo4j + GDS)
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Localizar a seção correta do `Cerebro-Execution-Guide.md` para inserir um blueprint técnico de P2-GRAPH.
+- [x] Step 2: Redigir blueprint adaptado ao Cerebro (modelo de projeção, algoritmos, integração com SSOT/fusion, segurança multi-tenant, rollout e métricas).
+- [x] Step 3: Atualizar wiki obrigatória com registro da mudança (`wiki/architecture` + `wiki/changelog`).
+- [x] Step 4: Revisar consistência e referências de arquivos alterados.
+
+## Open Questions
+- Nenhuma pendente para este escopo.
+
+## Progress Notes
+- Blueprint foi inserido na seção `P2 (Could Ship, Advanced Differentiation)` como `P2-GRAPH Blueprint (Neo4j + GDS Adaptation)`.
+- O conteúdo foi alinhado ao contrato Cerebro: isolamento multi-tenant, guardrails de policy/HITL, auditoria, idempotência/replay em projeção e degraded mode.
+- Registro de documentação complementar criado na wiki (`architecture` e `changelog`).
+
+## Review
+- What worked: o blueprint ficou acoplado ao roadmap existente sem alterar escopo de P0/P1 e sem conflitar com launch policy atual.
+- What was tricky: manter foco em “engine de cross-referencing” sem introduzir escrita automática em integrações read-only.
+- Time taken: ciclo único de documentação técnica.
+
+---
+
 # Task: Phase 1 Autotask two-way engine behavior hardening (assign/status/comment + replay/retry/sync/reconcile)
 **Status**: completed
 **Started**: 2026-02-26
@@ -873,3 +898,88 @@
 - What worked: Reusing the proven Agent M S2 contract allowed deterministic live capture with objective, machine-readable artifacts.
 - What was tricky: Needed one artifact synthesis correction (`command_terminal_status` extraction) and shell-safe markdown generation.
 - Time taken: one focused validation cycle.
+
+---
+
+# Task: Execution guide dedupe + Execution PRD-first realignment
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Inspect `/Users/igorbelchior/Documents/Github/Cerebro/Cerebro-Execution-Guide.md` for duplicate blocks and scope contradictions.
+- [x] Step 2: Realign Phase 1 to P0 scope (Execution PRD-first) and remove redundant duplicate appendix sections.
+- [x] Step 3: Verify heading uniqueness and section consistency after edits.
+
+## Progress Notes
+- Found duplicate Appendix C blocks (`Execution PRD`, `Investor/Board`, `Delivery Timeline`, `Planning Range`).
+- Found Phase 1 scope drift to full Autotask API coverage conflicting with P0-first execution model.
+- Updated Operating Rules with explicit Execution PRD priority rule.
+
+## Review
+- What worked: deterministic section-level edits + heading occurrence checks.
+- What was tricky: preserving one canonical appendix block while removing repeated content safely.
+- Time taken: short cleanup pass.
+
+---
+
+# Task: Restructure execution guide (PRD-first)
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Promote `Execution PRD (P0/P1/P2)` to the beginning of the guide.
+- [x] Step 2: Keep phases only as sequencing logic and remove executive/board redundancy from this file.
+- [x] Step 3: Move progress snapshot to a dedicated status file and leave appendices as reference-only at the end.
+
+## Progress Notes
+- `Execution PRD` moved to top-level near Operating Rules.
+- `Investor / Board Readability`, `Delivery Timeline Summary`, and `Planning Range` removed from execution guide.
+- Progress snapshot extracted to `/Users/igorbelchior/Documents/Github/Cerebro/Cerebro-Execution-Status.md`.
+
+## Review
+- What worked: section extraction and reconstruction preserved content while reducing redundancy.
+- What was tricky: keeping cross-references coherent after removing old Appendix B placement.
+- Time taken: short structural cleanup.
+
+---
+
+# Task: Merge Execution PRD + Implementation Sequence into single SSOT
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Step 1: Merge both sections under one SSOT heading in the execution guide.
+- [x] Step 2: Normalize heading hierarchy so phases are sequencing subsections of the same SSOT.
+- [x] Step 3: Re-check appendix placement and section discoverability after merge.
+
+## Review
+- What worked: structural merge preserved all backlog and phase detail without content loss.
+- What was tricky: heading hierarchy normalization after demoting phase blocks.
+- Time taken: short structural pass.
+
+---
+
+# Task: Move GRAPH blueprint from P2 to P0 in SSOT
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Move GRAPH blueprint block from P2 to P0 in SSOT section.
+- [x] Update internal labels/flags/gate text from P2 to P0.
+- [x] Update P2 workflow line to indicate only advanced graph expansion remains in P2.
+
+## Review
+- What worked: section move preserved blueprint details and removed prioritization ambiguity.
+- What was tricky: ensuring in-block references (`p2.graph.*`, gate label) were fully realigned to P0.
+- Time taken: short doc pass.
+
+---
+
+# Task: Remove standalone Implementation Sequence area (hard merge into SSOT)
+**Status**: completed
+**Started**: 2026-02-26
+
+## Plan
+- [x] Remove the standalone Implementation Sequence section boundary.
+- [x] Keep sequence directly nested under SSOT backlog area.
+- [x] Normalize heading hierarchy for merged readability.

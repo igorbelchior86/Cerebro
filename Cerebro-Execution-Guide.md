@@ -1,9 +1,9 @@
-# Cerebro Execution Guide (Chronological)
+# Cerebro Execution Guide
 **Date:** February 2026  
 **Version:** 2.0 (chronological rewrite)  
 
-This document is a chronological build guide.  
-Architecture and backlog exist only to support the timeline and are kept in appendices.
+This document is an execution guide with `Execution PRD (P0/P1/P2)` as the primary priority source.  
+Phases describe sequencing; appendices contain reference architecture and quality constraints.
 
 ---
 
@@ -12,6 +12,7 @@ Architecture and backlog exist only to support the timeline and are kept in appe
 - **Autotask is the only two-way integration in P0.** All other integrations remain **read-only** at launch.
 - **Internal dogfooding only** until the founder explicitly switches to external controlled launch.
 - Prefer **end-to-end workflow completion** over broad feature surface area.
+- **Execution PRD priority rule:** sequencing and scope decisions follow the **Execution PRD (P0/P1/P2)** section first; phase chronology must not expand scope beyond backlog priority.
 
 ### Definition of Done (DoD) for any phase
 A phase is “done” only when:
@@ -24,11 +25,123 @@ Notation used below:
 
 ---
 
-## Phase 0: Foundations Skeleton
-### Objective
+## SSOT: Execution PRD + Implementation Sequence
+
+Goal: translate strategy into an executable backlog by workflow and by integration, preserving commercial focus for launch.
+
+#### P0 (Must Ship, Commercial Launch)
+
+##### Critical Workflows
+- **F0. Intake & Triage:** unified inbox (chat/email), ticket create/update, AI triage with confidence and human review **[~ implemented in code; pending Refresh internal validation]**
+- **F1. Dispatch & Routing:** assign/reassign, priority, internal comments, routing rules **[~ implemented in code; pending Refresh internal validation]**
+- **F2. Technician Context:** side panel with customer/ticket/device/docs/security context (Autotask + IT Glue + Ninja + SentinelOne + Check Point) **[~ implemented in code; pending Refresh internal validation]**
+- **F3. Handoff & Escalation:** AI summary, escalation tag, recent history and correlated alerts **[~ implemented in code; pending Refresh internal validation]**
+- **F4. Manager Visibility:** queue, SLA risk, audit of automations/AI suggestions **[~ implemented in code; pending Refresh internal validation + runbooks]**
+
+##### Integrations (Launch)
+- **Autotask (P0):** ticket CRUD/sync, contacts/companies, assisted time entries, basic reconciliation (**100% two-way / manageable via Cerebro**) **[~ core two-way workflow implemented; live E2E with real credentials pending]**
+- **IT Glue (P0):** contextual lookup by customer/site/device, suggested links/runbooks, cache and per-tenant permissions (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
+- **Ninja (P0):** alert ingestion, correlation by device/customer, ticket enrichment, device status (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
+- **SentinelOne (P0):** ingest/lookup alerts/incidents and endpoint/security context for triage/handoff (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
+- **Check Point (P0):** lookup/ingest perimeter/network/security context for troubleshooting (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
+
+##### Platform / Operations (P0)
+- **Tenant isolation + RBAC** **[x implemented baseline in CP0]**
+- **Observability (correlated logs/metrics/traces)** **[x baseline implemented in CP0]**
+- **Retry/DLQ/idempotency for integrations** **[x skeleton/baseline implemented; [~] durable backing pending]**
+- **Per-tenant feature flags** **[x scaffold implemented; [~] rollout hardening pending]**
+- **Audit trail for AI and automation decisions** **[x implemented baseline + P0 workflow/AI coverage]**
+
+##### P0-GRAPH Blueprint (Neo4j + GDS Adaptation)
+Goal: add a mature graph analytics layer for cross-referencing while preserving current `PrepareContext` safety controls.
+
+1) Scope and boundaries
+- Keep `Postgres` as source of truth for ticket/workflow state.
+- Build a tenant-scoped graph projection in `Neo4j` for read-optimized traversal and analytics.
+- Keep write actions in existing workflow engines; graph layer is decision-support/evidence only in P0.
+
+2) Graph projection model (minimum)
+- Nodes: `Tenant`, `Ticket`, `Person`, `UserAccount`, `Device`, `Organization`, `Software`, `Alert`, `IntegrationEvent`.
+- Relationships: `REQUESTED_BY`, `AFFECTS`, `LOGGED_IN_ON`, `BELONGS_TO_ORG`, `MENTIONS_SOFTWARE`, `OBSERVED_IN_ALERT`, `HAS_EVENT`.
+- Every node/edge must carry `tenant_id`, `source_system`, `source_ref`, `observed_at`, `confidence`, `provenance_version`.
+
+3) Projection pipeline
+- Trigger projection job after SSOT persistence and after major enrichment updates (`round 7/8/9` outputs).
+- Use idempotent upserts keyed by deterministic IDs (`tenant_id + entity_type + canonical_key`).
+- Keep checkpoint cursor per tenant (`last_projected_ticket_ssot_version`) for replay-safe backfills.
+- DLQ failed projection batches with correlation IDs and explicit retry metadata.
+
+4) Algorithm pack (initial)
+- `Louvain` for community clustering (entity/device/software co-occurrence clusters).
+- `PageRank` for centrality/risk amplification in tenant-local interaction graph.
+- `Shortest Path` (weighted) for causal hint chains between actor/device/alert/software.
+- `Node Similarity` for candidate historical analogs beyond lexical ticket matching.
+
+5) Result integration into Cerebro
+- Persist graph outputs into `ticket_context_appendix.graph_hints` and `fusion_audit.graph_support`.
+- Output contract per hint:
+  - `hint_type` (`community_risk|centrality_risk|causal_path|similar_case_graph`)
+  - `score` (0-1), `confidence` (0-1), `evidence_refs`, `path_entities`, `algorithm`, `algorithm_version`, `projection_version`.
+- Graph hints are advisory only; policy gates continue to govern any actionable workflow decisions.
+
+6) Safety and policy guards (mandatory)
+- Strict tenant partitioning in graph keys, projection jobs, and query filters (`tenant_id` required at every query entrypoint).
+- Reject cross-tenant traversals by design (query templates include tenant anchor node).
+- Keep AI/HITL guardrails unchanged: low-confidence or sensitive hints route to human review.
+- Audit every graph query invocation with `tenant_id`, `ticket_id`, `trace_id`, algorithm, and result hash.
+
+7) Rollout plan
+- Stage A: shadow mode (compute hints, do not display/apply).
+- Stage B: read-only UI exposure in technician context panel with evidence/provenance.
+- Stage C: consume hints in ranking/calibration logic with conservative weights and rollback flags.
+- Stage D: per-tenant enablement via rollout flags (`p0.graph.*`) with instant disable path.
+
+8) Acceptance criteria (P0-GRAPH gate)
+- Deterministic replay of projection for same SSOT snapshot yields same graph entities/edges.
+- No cross-tenant leakage in graph queries (negative tests required).
+- At least one validated improvement in troubleshooting correlation quality versus baseline history-only matching.
+- Full degraded mode: if graph layer unavailable, `PrepareContext` and workflow engine continue without blocking.
+
+9) Operational metrics
+- Projection latency P95, query latency P95, graph hint generation success rate.
+- Graph hint adoption/override rates in HITL review.
+- False-positive and unsupported-hint rates with weekly QA sampling.
+
+#### P1 (Should Ship, Immediate Post-Launch Expansion)
+
+##### Workflows
+- **Voice AI (initial phase):** basic answering + transcript + handoff
+- **Two-way SMS:** updates and simple conversations
+- **Workflow builder (v1):** no-code rules for common MSP scenarios
+- **ROI Analytics (v1.5):** richer dashboards by tenant/customer
+
+##### Integrations
+- **ConnectWise Manage**
+- **HaloPSA**
+- **Additional documentation/knowledge connectors** (Confluence/SharePoint)
+- **Assisted (HITL) actions in SentinelOne / Check Point** per policies and audit
+
+#### P2 (Could Ship, Advanced Differentiation)
+
+##### Workflows / AI
+- **Controlled agentic workflows** (assisted execution with policy gates)
+- **Advanced graph analytics expansion** (beyond P0 graph baseline)
+- **Predictive analytics** (repeat incidents, SLA risk, forecasting)
+- **Runbook generation & optimization loop**
+
+##### Integrations
+- **RMM expansion** (Kaseya, N-able, etc.)
+- **PSA/ITSM expansion** (Jira SM, Freshservice, Zendesk, etc.)
+
+
+##### Execution Sequence (Phase 0 -> Phase 6)
+Integrated in the same SSOT as backlog priorities.
+
+##### Phase 0: Foundations Skeleton
+###### Objective
 ~~Stand up a tenant-safe runtime (API + workers + queue + storage) with observability and audit from day 1.~~
 
-### Scope
+###### Scope
 **In**
 - ~~Tenant model + RBAC hooks~~
 - ~~Queue runtime + retry/DLQ skeleton~~
@@ -41,86 +154,94 @@ Notation used below:
 - Full AI engine
 - Non-Autotask two-way actions
 
-### Prerequisites
+###### Prerequisites
 ~~None.~~
 
-### Steps (in order)
+###### Steps (in order)
 1) ~~Implement tenant scoping in API + storage boundaries~~  
 2) ~~Stand up worker runtime and queue processing skeleton~~  
 3) ~~Add audit trail primitives for commands + AI suggestions~~  
 4) ~~Add feature flags and integration policy guardrail (two-way vs read-only)~~  
 5) ~~Add baseline observability: correlated logs/metrics/traces~~  
 
-### Gate (exit criteria)
+###### Gate (exit criteria)
 - ~~API + worker runtime operational~~
 - ~~Tenant scoping and audit hooks verified end-to-end~~
 - ~~Queue + retry + DLQ skeleton works with a dummy job~~
 - ~~Integration policy enforcement is testable~~
 
-### Evidence to capture
+###### Evidence to capture
 - ~~Test pack results for tenant scoping + audit + queue primitives~~
 - ~~A sample audit log entry generated by a command stub~~
 - ~~A screenshot/log of correlation IDs flowing (tenant_id/ticket_id/trace_id)~~
 
-### Rollback / degraded mode
+###### Rollback / degraded mode
 - ~~If worker runtime fails, API remains up and returns safe error states.~~
 - ~~Integrations can be disabled per-tenant via feature flags.~~
 
 ---
 
-## Phase 1: Autotask Two-way Happy Path (E2E)
-### Objective
-~~Prove the one thing that can sink the whole product: **two-way PSA writes** that are idempotent, auditable, and reconcilable.~~
+##### Phase 1: Autotask Two-way Happy Path (E2E)
+###### Objective
+Deliver the **P0 Autotask two-way happy path** in Cerebro (assign, status update, comment/note + sync + reconcile), with idempotent, auditable, and replay-safe behavior.
 
-### Scope
+###### Scope
 **In**
-- ~~Autotask adapter contract + credentials~~
-- ~~Commands: assign, status update, comment (minimum set)~~
-- ~~Inbound sync via polling/webhook + reconciliation baseline~~
-- ~~Idempotency keys + retry/DLQ for Autotask writes~~
+- Ticket command flow for P0-safe operations: `assign`, `status_update`, `comment_note`
+- Inbound sync ingestion for ticket updates used by the inbox workflow
+- Idempotency keys + retry/DLQ + error taxonomy for P0 command paths
+- Reconciliation and drift detection for the P0 ticket domain
+- End-to-end auditability for command submission, execution, sync, and reconcile
 
 **Out**
 - Two-way writes to any other system
-- Advanced time entry automation (optional later)
+- Full Autotask REST entity coverage (moved to P1 expansion track)
+- P1/P2 non-Autotask feature expansion
 
-### Prerequisites
+###### Prerequisites
 - ~~Phase 0 done~~
-- ~~Adapter contract scaffolded (Appendix A map)~~
+- Autotask Phase 1A contract freeze completed (minimum scope delivered and documented)
 
-### Steps (in order)
-1) ~~Implement Autotask command model (minimum 3 commands)~~  
-2) ~~Implement idempotency and replay-safe writes~~  
-3) ~~Implement inbound sync ingestion (polling/webhook)~~  
-4) ~~Implement reconciliation checks (external ↔ internal)~~  
-5) ~~Add retry/backoff + DLQ for Autotask calls~~  
-6) ~~Add audit entries for every write attempt and outcome~~  
+###### Steps (in order)
+1) Implement/verify command handlers for `assign`, `status_update`, and `comment_note`  
+2) Enforce idempotency + replay-safe processing for submitted commands  
+3) Verify sync ingestion path for Autotask ticket updates (poll/webhook -> workflow core)  
+4) Verify reconciliation path and divergence classification/remediation signals  
+5) Harden retry/backoff + DLQ behavior for retryable command failures  
+6) Ensure audit coverage for accept/process/sync/reconcile outcomes with correlation IDs  
+7) Execute live P0 E2E proof (submit -> process -> sync -> reconcile -> audit)  
 
-### Phase 1 contract freeze artifacts
+###### Phase 1 contract freeze artifacts
 - `packages/types/src/autotask-two-way-contract.ts`
 - `docs/contracts/autotask-phase1-two-way-freeze.md`
 
-### Gate (exit criteria)
-- ~~A real ticket can be updated in Autotask through Cerebro (E2E)~~
-- ~~Writes are replay-safe (idempotency proven)~~
-- ~~Sync ingestion updates Cerebro state reliably~~
-- ~~Reconciliation detects mismatch and produces a clear remediation path~~
+###### Gate (exit criteria)
+- P0 command set (`assign`, `status_update`, `comment_note`) is operational end-to-end
+- Command writes are idempotent/replay-safe and policy-enforced
+- Sync ingestion and reconciliation are operational for the P0 ticket domain
+- Audit trail covers full command lifecycle with correlation metadata
 
-### Evidence to capture
-- ~~Video or log transcript of one E2E run (request → queue → Autotask → confirmation → UI state update)~~
-- ~~Idempotency replay proof (same command twice yields one external mutation)~~
-- ~~Reconciliation report sample (even if “no mismatch”)~~
+###### Evidence to capture
+- Live E2E logs for submit/process/sync/reconcile on an approved safe test ticket
+- Idempotency replay proof (same command envelope -> no duplicate external mutation)
+- Reconciliation sample with match/mismatch handling evidence
+- Audit coverage proof for lifecycle events and correlation IDs
 
-### Rollback / degraded mode
-- ~~If Autotask is down/rate-limited, commands queue and surface a “pending” state.~~
-- ~~A per-tenant “disable writes” flag forces read-only mode immediately.~~
+###### Rollback / degraded mode
+- If Autotask is down/rate-limited, commands queue and surface actionable pending/degraded state for P0 command paths
+- Per-tenant “disable writes” flag forces read-only mode immediately for all Autotask write paths
+- Use P0 operation-level guardrails to disable specific command types if needed without full Autotask shutdown
+
+###### Expansion note (post-P0)
+Full Autotask REST API coverage remains in backlog as a post-P0 expansion item and must be planned under the Execution PRD priority (P1/P2), not in this Phase 1 gate.
 
 ---
 
-## Phase 2: Inbox Workflow Core (usable day-to-day)
-### Objective
+##### Phase 2: Inbox Workflow Core (usable day-to-day)
+###### Objective
 Make Cerebro operationally usable: a technician/dispatcher can work tickets without fighting the system.
 
-### Scope
+###### Scope
 **In**
 - Inbox list + ticket detail + basic actions (assign/status/comment)
 - Internal vs public comments
@@ -131,36 +252,36 @@ Make Cerebro operationally usable: a technician/dispatcher can work tickets with
 - Full manager dashboards
 - Advanced workflow builder
 
-### Prerequisites
+###### Prerequisites
 - Phase 1 done (two-way commands power the actions)
 
-### Steps (in order)
+###### Steps (in order)
 1) ~~Implement inbox projection from canonical ticket state~~  
 2) ~~Implement ticket detail view data contract~~  
 3) ~~Wire UI actions to Autotask command API (two-way)~~  
 4) Add realtime updates for state changes  
 5) Harden error states (pending, failed, retrying)  
 
-### Gate (exit criteria)
+###### Gate (exit criteria)
 - Inbox + ticket detail works for real internal tickets
 - Actions reflect in Autotask and return to Cerebro state
 - Basic error handling is not catastrophic (no blank screens)
 
-### Evidence to capture
+###### Evidence to capture
 - Screen recording showing: open ticket → assign → comment → status change → state updates
 - A set of “failure screenshots” (rate limit, auth expired, Autotask error) showing safe UX
 
-### Rollback / degraded mode
+###### Rollback / degraded mode
 - If realtime gateway fails, UI falls back to polling.
 - If Autotask writes disabled, UI switches to read-only and shows clear banner.
 
 ---
 
-## Phase 3: Read-only Enrichments (Context that differentiates)
-### Objective
+##### Phase 3: Read-only Enrichments (Context that differentiates)
+###### Objective
 Deliver troubleshooting advantage with **zero external risk**: pull context, normalize, and present it as evidence.
 
-### Scope
+###### Scope
 **In**
 - IT Glue, Ninja, SentinelOne, Check Point adapters (read-only)
 - Normalization into context cards + evidence records
@@ -169,38 +290,38 @@ Deliver troubleshooting advantage with **zero external risk**: pull context, nor
 **Out**
 - Any “push” action into security tools (P1+)
 
-### Prerequisites
+###### Prerequisites
 - Phase 0 foundations (credentials, tenant policy)
 - Inbox ticket detail contract (Phase 2) to display context
 
-### Steps (in order)
+###### Steps (in order)
 1) ~~Implement adapter health check + connectivity status per integration~~  
 2) ~~Implement read-only fetch/lookup operations per system~~  
 3) ~~Normalize into canonical context schema (Appendix A contract)~~  
 4) ~~Attach context to ticket as evidence records with provenance~~  
 5) ~~Add cache/timeouts; enforce “no external mutation” at adapter boundary~~  
 
-### Gate (exit criteria)
+###### Gate (exit criteria)
 - Context cards appear for real internal tickets
 - Read-only policy is enforced (attempted mutations are rejected + audited)
 - Timeouts/failures produce “partial context” not “broken workflow”
 
-### Evidence to capture
+###### Evidence to capture
 - One ticket with all 4 enrichments visible (or the ones you have credentials for)
 - Logs showing provenance metadata captured
 - A forced-failure test (one integration down) with correct degraded behavior
 
-### Rollback / degraded mode
+###### Rollback / degraded mode
 - Each enrichment is independently disableable per tenant.
 - If an integration fails, the rest still load and the inbox remains usable.
 
 ---
 
-## Phase 4: AI Assist (HITL first) + Audit
-### Objective
+##### Phase 4: AI Assist (HITL first) + Audit
+###### Objective
 Make AI useful without operational risk: suggestions and drafts with confidence, audit, and human approval where needed.
 
-### Scope
+###### Scope
 **In**
 - AI triage suggestions + confidence + rationale/provenance
 - AI summary/handoff draft using enrichment evidence
@@ -211,11 +332,11 @@ Make AI useful without operational risk: suggestions and drafts with confidence,
 - Full autonomous remediation (P2)
 - Auto-resolution except explicitly approved low-risk flows
 
-### Prerequisites
+###### Prerequisites
 - Audit trail + policy layer (Phase 0)
 - Enrichment evidence records (Phase 3)
 
-### Steps (in order)
+###### Steps (in order)
 1) Implement triage inference pipeline that consumes ticket + evidence snapshot  
 2) Emit confidence + rationale/provenance  
 3) Enforce policy gates for action types (field suggestions vs routing vs responses)  
@@ -223,28 +344,28 @@ Make AI useful without operational risk: suggestions and drafts with confidence,
 5) Add audit logging for model/prompt versions and decision outcomes  
 6) Implement QA sampling workflow + defect log loop  
 
-### Gate (exit criteria)
+###### Gate (exit criteria)
 - AI generates suggestions and drafts reliably with auditable provenance
 - HITL works (a human can accept/edit/reject)
 - Audit records exist for every AI decision
 - A minimal QA sampling cycle is runnable weekly
 
-### Evidence to capture
+###### Evidence to capture
 - 10-ticket sample: AI suggestion + human outcome + audit entry
 - A prompt/model version change with rollback proof
 - A “low confidence” example routed to HITL correctly
 
-### Rollback / degraded mode
+###### Rollback / degraded mode
 - AI features are feature-flagged per tenant and can be disabled instantly.
 - If AI is down, workflows continue without AI (no blocking).
 
 ---
 
-## Phase 5: Manager Ops + Controls (operational trust)
-### Objective
+##### Phase 5: Manager Ops + Controls (operational trust)
+###### Objective
 Give managers visibility, controls, and confidence to adopt the system.
 
-### Scope
+###### Scope
 **In**
 - Queue/SLA dashboard (minimum)
 - Automation/AI audit views
@@ -255,45 +376,45 @@ Give managers visibility, controls, and confidence to adopt the system.
 - Full ROI analytics suite (P1)
 - No-code workflow builder (P1)
 
-### Prerequisites
+###### Prerequisites
 - Reliable audit + telemetry from phases 0-4
 
-### Steps (in order)
+###### Steps (in order)
 1) Implement manager views over queue + SLA risk  
 2) Implement audit views for AI + automation decisions  
 3) ~~Implement per-tenant rollout controls and operating mode switch (internal-only vs external)~~  
 4) ~~Write runbooks for: Autotask failure, enrichment failure, AI failure, reconciliation mismatch~~  
 
-### Gate (exit criteria)
+###### Gate (exit criteria)
 - Manager can see backlog and SLA risk without opening PSA
 - Manager can audit AI/automation decisions
 - Runbooks exist and can be executed without guesswork
 
-### Evidence to capture
+###### Evidence to capture
 - Screenshots of manager dashboards populated by real data
 - A runbook drill log (one simulated incident executed end-to-end)
 
-### Rollback / degraded mode
+###### Rollback / degraded mode
 - Rollout controls allow disabling each subsystem independently.
 - Fallback path is always “manual operation in PSA.”
 
 ---
 
-## Phase 6: Hardening + Drills (make it boring)
-### Objective
+##### Phase 6: Hardening + Drills (make it boring)
+###### Objective
 Turn the system into something you can trust daily: failure handling, repeatability, and operational muscle memory.
 
-### Scope
+###### Scope
 **In**
 - DLQ + replay
 - Rate limit handling, credential expiry, timeouts
 - Data integrity checks and reconciliation remediation
 - Rollback drills and hypercare signals
 
-### Prerequisites
+###### Prerequisites
 - Phases 0-5 functional
 
-### Steps (in order)
+###### Steps (in order)
 1) Implement DLQ viewer + replay tooling  
 2) Add rate limit + retry budget policies per integration  
 3) Add credential health + expiry detection and safe UX messaging  
@@ -301,18 +422,18 @@ Turn the system into something you can trust daily: failure handling, repeatabil
 5) ~~Execute rollback drills (feature flag disable, write disable, integration disable)~~  
 6) Start an internal dogfooding scorecard (daily reliability + throughput + quality)  
 
-### Gate (exit criteria)
+###### Gate (exit criteria)
 - A failed job can be replayed safely
 - Degraded modes are proven, not theoretical
 - Rollback drills executed and documented
 - Dogfooding scorecard is running and informs priority
 
-### Evidence to capture
+###### Evidence to capture
 - DLQ replay demo (log + outcome)
 - Rollback drill checklist with timestamps
 - Week 1 scorecard snapshot
 
-### Rollback / degraded mode
+###### Rollback / degraded mode
 - This phase is literally about proving rollback works.
 
 ---
@@ -406,41 +527,6 @@ P0 recommendation: start with a simple topology that supports the contracts abov
 
 ---
 
-# Appendix B: Backlog (reference only)
-### P0
-- **P0-F0**: Intake & Triage: unified inbox (chat/email), ticket create/update, AI triage with confidence + review
-- **P0-F1**: Dispatch & Routing: assign/reassign, priority, internal comments, routing rules
-- **P0-F2**: Technician Context: context side panel (Autotask + IT Glue + Ninja + SentinelOne + Check Point)
-- **P0-F3**: Handoff & Escalation: AI summary, escalation tag, correlated alerts + history
-- **P0-F4**: Manager Visibility: queue, SLA risk, audit of automations/AI suggestions
-- **P0-AT**: Autotask two-way: ticket CRUD/sync, contacts/companies minimal, assisted time entries, reconciliation
-- **P0-IG**: IT Glue read-only enrichment: contextual lookup + links/runbooks + cache + permissions
-- **P0-NJ**: Ninja read-only enrichment: alert ingestion + device correlation + status context
-- **P0-S1**: SentinelOne read-only enrichment: alerts/incidents + endpoint/security context
-- **P0-CP**: Check Point read-only enrichment: perimeter/network/security context
-- **P0-PLAT**: Platform/ops: tenant isolation + RBAC, observability, retry/DLQ/idempotency, feature flags, audit trail
-- **P0-OPS**: Operational readiness: onboarding, rollback/fallback, degraded-mode runbooks
-
-### P1
-- **P1-VOICE**: Voice AI v1: answer + transcript + handoff
-- **P1-SMS**: Two-way SMS: updates + simple conversations
-- **P1-WFB**: Workflow builder v1: no-code rules for common MSP scenarios
-- **P1-ROI**: ROI analytics v1.5: richer dashboards
-- **P1-CW**: ConnectWise Manage integration
-- **P1-HALO**: HaloPSA integration
-- **P1-KNOW**: Additional knowledge connectors (Confluence/SharePoint)
-- **P1-SEC-HITL**: Assisted (HITL) actions in SentinelOne/Check Point with policy + audit
-
-### P2
-- **P2-AGENT**: Controlled agentic workflows (assisted execution with policy gates)
-- **P2-GRAPH**: Troubleshooting graph / causal hints
-- **P2-PRED**: Predictive analytics (repeat incidents, SLA risk, forecasting)
-- **P2-RUNBOOK**: Runbook generation + optimization loop
-- **P2-RMM**: RMM expansion (Kaseya, N-able, etc.)
-- **P2-ITSM**: PSA/ITSM expansion (Jira SM, Freshservice, Zendesk, etc.)
-
----
-
 # Appendix C: NFRs + AI Quality Gates (reference only)
 ## NFRs
 #### 1. SLO / Performance / Availability
@@ -497,485 +583,7 @@ P0 recommendation: start with a simple topology that supports the contracts abov
 - **Operational rollback:** revert prompt/model version per tenant/cohort
 - **AI quality KPIs:** acceptance rate, override rate, false-escalation rate, false-auto-resolve rate
 
-### Execution PRD (Prioritized Backlog P0 / P1 / P2)
-
-Goal: translate strategy into an executable backlog by workflow and by integration, preserving commercial focus for launch.
-
-#### P0 (Must Ship, Commercial Launch)
-
-##### Critical Workflows
-- **F0. Intake & Triage:** unified inbox (chat/email), ticket create/update, AI triage with confidence and human review **[~ implemented in code; pending Refresh internal validation]**
-- **F1. Dispatch & Routing:** assign/reassign, priority, internal comments, routing rules **[~ implemented in code; pending Refresh internal validation]**
-- **F2. Technician Context:** side panel with customer/ticket/device/docs/security context (Autotask + IT Glue + Ninja + SentinelOne + Check Point) **[~ implemented in code; pending Refresh internal validation]**
-- **F3. Handoff & Escalation:** AI summary, escalation tag, recent history and correlated alerts **[~ implemented in code; pending Refresh internal validation]**
-- **F4. Manager Visibility:** queue, SLA risk, audit of automations/AI suggestions **[~ implemented in code; pending Refresh internal validation + runbooks]**
-
-##### Integrations (Launch)
-- **Autotask (P0):** ticket CRUD/sync, contacts/companies, assisted time entries, basic reconciliation (**100% two-way / manageable via Cerebro**) **[~ core two-way workflow implemented; live E2E with real credentials pending]**
-- **IT Glue (P0):** contextual lookup by customer/site/device, suggested links/runbooks, cache and per-tenant permissions (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
-- **Ninja (P0):** alert ingestion, correlation by device/customer, ticket enrichment, device status (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
-- **SentinelOne (P0):** ingest/lookup alerts/incidents and endpoint/security context for triage/handoff (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
-- **Check Point (P0):** lookup/ingest perimeter/network/security context for troubleshooting (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
-
-##### Platform / Operations (P0)
-- **Tenant isolation + RBAC** **[x implemented baseline in CP0]**
-- **Observability (correlated logs/metrics/traces)** **[x baseline implemented in CP0]**
-- **Retry/DLQ/idempotency for integrations** **[x skeleton/baseline implemented; [~] durable backing pending]**
-- **Per-tenant feature flags** **[x scaffold implemented; [~] rollout hardening pending]**
-- **Audit trail for AI and automation decisions** **[x implemented baseline + P0 workflow/AI coverage]**
-
-#### P1 (Should Ship, Immediate Post-Launch Expansion)
-
-##### Workflows
-- **Voice AI (initial phase):** basic answering + transcript + handoff
-- **Two-way SMS:** updates and simple conversations
-- **Workflow builder (v1):** no-code rules for common MSP scenarios
-- **ROI Analytics (v1.5):** richer dashboards by tenant/customer
-
-##### Integrations
-- **ConnectWise Manage**
-- **HaloPSA**
-- **Additional documentation/knowledge connectors** (Confluence/SharePoint)
-- **Assisted (HITL) actions in SentinelOne / Check Point** per policies and audit
-
-#### P2 (Could Ship, Advanced Differentiation)
-
-##### Workflows / AI
-- **Controlled agentic workflows** (assisted execution with policy gates)
-- **Troubleshooting graph / causal hints**
-- **Predictive analytics** (repeat incidents, SLA risk, forecasting)
-- **Runbook generation & optimization loop**
-
-##### Integrations
-- **RMM expansion** (Kaseya, N-able, etc.)
-- **PSA/ITSM expansion** (Jira SM, Freshservice, Zendesk, etc.)
-
-### Investor / Board Readability (Executive Version of the PRD)
-
-Goal: summarize product thesis, execution, and risk in a fast-read format for leadership/investors.
-
-#### 1. Problem
-- MSPs operate with high administrative costs, inconsistent manual triage, and fragmented context across PSA, documentation, and RMM.
-
-#### 2. Solution (Cerebro)
-- A service delivery + troubleshooting intelligence platform for MSPs, starting with the stack `Autotask + IT Glue + Ninja + SentinelOne + Check Point`.
-
-#### 3. Differentiator
-- Beyond dispatch/triage, Cerebro improves **resolution quality** via operational context and troubleshooting-oriented AI.
-
-#### 4. Go-To-Market Entry Strategy
-- Functional parity on critical service desk workflows (no essential trade-off)
-- MSP design partners using the stack `Autotask + IT Glue + Ninja + SentinelOne + Check Point`
-- ROI proof in 30-60 days via operational metrics
-
-#### 5. Key Risks
-- Multi-system integration/synchronization complexity
-- Quality and security of AI automations
-- Operational adoption by technicians/managers
-- Dependency on onboarding and well-executed rollout
-
-#### 6. Mitigations
-- P0 scope focused on critical workflows
-- AI quality gates + HITL + continuous auditing
-- Per-tenant feature flags + progressive rollout
-- NFRs and observability defined from launch
-
-#### 7. Milestones (Board-Level)
-- **M1:** Commercial launch with Autotask (two-way) + IT Glue/Ninja/SentinelOne/Check Point (read-only) (P0)
-- **M2:** Channel/automation expansion and dashboards (P1)
-- **M3:** Integration expansion (ConnectWise/Halo) + troubleshooting differentiation (early P2)
-- **M4:** Consolidate competitive advantage in resolution/advanced automation
-
-### Delivery Timeline Summary (Founder + AI Agents)
-
-This timeline summarizes the detailed implementation plan above in a compact format for ongoing tracking.
-
-#### P0 (Internal Validation + Launch Readiness): ~14-18 weeks
-- Weeks 1-2: Architecture/foundations (runtime, queue, audit, policy contracts)
-- Weeks 3-5: Autotask two-way + inbox workflow skeleton
-- Weeks 6-8: Read-only enrichments (IT Glue/Ninja/SentinelOne/Check Point) + handoff differentiation
-- Weeks 9-11: Manager visibility, AI controls, hardening
-- Weeks 12-14: Refresh internal validation
-- Weeks 15-18: Controlled design-partner launch (if validation gates pass)
-
-#### P1 (Post-Launch Expansion): ~8-12 weeks
-- Voice AI (initial phase)
-- Two-way SMS
-- Workflow builder v1
-- ROI analytics v1.5
-- ConnectWise/HaloPSA
-- Assisted/HITL security actions (SentinelOne/Check Point)
-
-#### P2 (Advanced Differentiation): ongoing (sequenced by validation and demand)
-- Controlled agentic workflows
-- Troubleshooting graph / causal hints
-- Predictive analytics
-- Runbook optimization loop
-- Broader PSA/RMM/ITSM expansion
-
-### Planning Range (Reality-Based)
-- **P0 internal validation + launch readiness:** ~3.5 to 4.5 months
-- **P1 expansion after launch:** +2 to 3 months
-- **Feature parity + differentiated baseline:** ~6 to 9 months (execution-quality dependent)
-
 ---
 
-## AI Quality Gates
-#### 1. Confidence Policy by Action Type
-- **Field suggestions (title/category/type):** allow auto-fill visuals with confidence >= 0.70
-- **Priority/routing:** auto-apply only with confidence >= 0.85 and compatible business rules
-- **Auto-response to customer:** requires confidence >= 0.90 + validated KB/runbook match
-- **Auto-resolution:** allowed only in explicitly approved workflows (FAQ/low-risk)
-
-#### 2. Human-in-the-Loop (HITL)
-- **Mandatory approval:** P1/P2, VIP customers, negative sentiment, low confidence, sensitive categories
-- **Minimum explainability:** show signals used (keywords, history, KB match, device alert)
-- **One-click feedback:** Accept / Edit / Reject to improve prompts/models
-- **Escalation path:** if low confidence or signal conflict, send to manager/dispatcher
-
-#### 3. Continuous Audit and QA
-- **Sampling QA:** review samples of triage, routing, auto-responses, and auto-resolutions
-- **Golden set per tenant/segment:** regression set before changes to prompts/models
-- **Prompt/model versioning:** log the version used for every AI decision
-- **Operational rollback:** revert prompt/model version per tenant/cohort
-- **AI quality KPIs:** acceptance rate, override rate, false-escalation rate, false-auto-resolve rate
-
-### Execution PRD (Prioritized Backlog P0 / P1 / P2)
-
-Goal: translate strategy into an executable backlog by workflow and by integration, preserving commercial focus for launch.
-
-#### P0 (Must Ship, Commercial Launch)
-
-##### Critical Workflows
-- **F0. Intake & Triage:** unified inbox (chat/email), ticket create/update, AI triage with confidence and human review **[~ implemented in code; pending Refresh internal validation]**
-- **F1. Dispatch & Routing:** assign/reassign, priority, internal comments, routing rules **[~ implemented in code; pending Refresh internal validation]**
-- **F2. Technician Context:** side panel with customer/ticket/device/docs/security context (Autotask + IT Glue + Ninja + SentinelOne + Check Point) **[~ implemented in code; pending Refresh internal validation]**
-- **F3. Handoff & Escalation:** AI summary, escalation tag, recent history and correlated alerts **[~ implemented in code; pending Refresh internal validation]**
-- **F4. Manager Visibility:** queue, SLA risk, audit of automations/AI suggestions **[~ implemented in code; pending Refresh internal validation + runbooks]**
-
-##### Integrations (Launch)
-- **Autotask (P0):** ticket CRUD/sync, contacts/companies, assisted time entries, basic reconciliation (**100% two-way / manageable via Cerebro**) **[~ core two-way workflow implemented; live E2E with real credentials pending]**
-- **IT Glue (P0):** contextual lookup by customer/site/device, suggested links/runbooks, cache and per-tenant permissions (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
-- **Ninja (P0):** alert ingestion, correlation by device/customer, ticket enrichment, device status (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
-- **SentinelOne (P0):** ingest/lookup alerts/incidents and endpoint/security context for triage/handoff (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
-- **Check Point (P0):** lookup/ingest perimeter/network/security context for troubleshooting (**read-only**) **[~ read-only enrichment implemented; internal validation pending]**
-
-##### Platform / Operations (P0)
-- **Tenant isolation + RBAC** **[x implemented baseline in CP0]**
-- **Observability (correlated logs/metrics/traces)** **[x baseline implemented in CP0]**
-- **Retry/DLQ/idempotency for integrations** **[x skeleton/baseline implemented; [~] durable backing pending]**
-- **Per-tenant feature flags** **[x scaffold implemented; [~] rollout hardening pending]**
-- **Audit trail for AI and automation decisions** **[x implemented baseline + P0 workflow/AI coverage]**
-
-#### P1 (Should Ship, Immediate Post-Launch Expansion)
-
-##### Workflows
-- **Voice AI (initial phase):** basic answering + transcript + handoff
-- **Two-way SMS:** updates and simple conversations
-- **Workflow builder (v1):** no-code rules for common MSP scenarios
-- **ROI Analytics (v1.5):** richer dashboards by tenant/customer
-
-##### Integrations
-- **ConnectWise Manage**
-- **HaloPSA**
-- **Additional documentation/knowledge connectors** (Confluence/SharePoint)
-- **Assisted (HITL) actions in SentinelOne / Check Point** per policies and audit
-
-#### P2 (Could Ship, Advanced Differentiation)
-
-##### Workflows / AI
-- **Controlled agentic workflows** (assisted execution with policy gates)
-- **Troubleshooting graph / causal hints**
-- **Predictive analytics** (repeat incidents, SLA risk, forecasting)
-- **Runbook generation & optimization loop**
-
-##### Integrations
-- **RMM expansion** (Kaseya, N-able, etc.)
-- **PSA/ITSM expansion** (Jira SM, Freshservice, Zendesk, etc.)
-
-### Investor / Board Readability (Executive Version of the PRD)
-
-Goal: summarize product thesis, execution, and risk in a fast-read format for leadership/investors.
-
-#### 1. Problem
-- MSPs operate with high administrative costs, inconsistent manual triage, and fragmented context across PSA, documentation, and RMM.
-
-#### 2. Solution (Cerebro)
-- A service delivery + troubleshooting intelligence platform for MSPs, starting with the stack `Autotask + IT Glue + Ninja + SentinelOne + Check Point`.
-
-#### 3. Differentiator
-- Beyond dispatch/triage, Cerebro improves **resolution quality** via operational context and troubleshooting-oriented AI.
-
-#### 4. Go-To-Market Entry Strategy
-- Functional parity on critical service desk workflows (no essential trade-off)
-- MSP design partners using the stack `Autotask + IT Glue + Ninja + SentinelOne + Check Point`
-- ROI proof in 30-60 days via operational metrics
-
-#### 5. Key Risks
-- Multi-system integration/synchronization complexity
-- Quality and security of AI automations
-- Operational adoption by technicians/managers
-- Dependency on onboarding and well-executed rollout
-
-#### 6. Mitigations
-- P0 scope focused on critical workflows
-- AI quality gates + HITL + continuous auditing
-- Per-tenant feature flags + progressive rollout
-- NFRs and observability defined from launch
-
-#### 7. Milestones (Board-Level)
-- **M1:** Commercial launch with Autotask (two-way) + IT Glue/Ninja/SentinelOne/Check Point (read-only) (P0)
-- **M2:** Channel/automation expansion and dashboards (P1)
-- **M3:** Integration expansion (ConnectWise/Halo) + troubleshooting differentiation (early P2)
-- **M4:** Consolidate competitive advantage in resolution/advanced automation
-
-### Delivery Timeline Summary (Founder + AI Agents)
-
-This timeline summarizes the detailed implementation plan above in a compact format for ongoing tracking.
-
-#### P0 (Internal Validation + Launch Readiness): ~14-18 weeks
-- Weeks 1-2: Architecture/foundations (runtime, queue, audit, policy contracts)
-- Weeks 3-5: Autotask two-way + inbox workflow skeleton
-- Weeks 6-8: Read-only enrichments (IT Glue/Ninja/SentinelOne/Check Point) + handoff differentiation
-- Weeks 9-11: Manager visibility, AI controls, hardening
-- Weeks 12-14: Refresh internal validation
-- Weeks 15-18: Controlled design-partner launch (if validation gates pass)
-
-#### P1 (Post-Launch Expansion): ~8-12 weeks
-- Voice AI (initial phase)
-- Two-way SMS
-- Workflow builder v1
-- ROI analytics v1.5
-- ConnectWise/HaloPSA
-- Assisted/HITL security actions (SentinelOne/Check Point)
-
-#### P2 (Advanced Differentiation): ongoing (sequenced by validation and demand)
-- Controlled agentic workflows
-- Troubleshooting graph / causal hints
-- Predictive analytics
-- Runbook optimization loop
-- Broader PSA/RMM/ITSM expansion
-
-### Planning Range (Reality-Based)
-- **P0 internal validation + launch readiness:** ~3.5 to 4.5 months
-- **P1 expansion after launch:** +2 to 3 months
-- **Feature parity + differentiated baseline:** ~6 to 9 months (execution-quality dependent)
-
----
-
----
-
-# Appendix D: Current Progress Snapshot (as of 2026-02-26)
-This is a snapshot only. The phases above are the execution truth.
-
-This plan translates the architecture into execution order. It is optimized for the actual execution model (`Founder + AI Agents`) and for internal validation at Refresh before commercialization.
-
-#### Planning Assumptions
-- One primary human operator (founder) with AI agents for implementation, review, QA, and documentation
-- P0 objective is internal validation + launch readiness, not broad feature breadth
-- `Autotask` is the only P0 two-way integration; all other P0 integrations are read-only
-- Weekly planning cadence with milestone reviews every 2 weeks
-
-#### Execution Status (Current Progress — 2026-02-26)
-
-Status legend:
-- `[x]` Implemented and validated with targeted tests/typecheck
-- `[~]` Partially implemented / needs hardening or operational validation
-- `[ ]` Not started
-
-Batch 1 (first 3 parallel prompts) completion summary:
-- `[x]` Agent A (CP0): contract freeze + platform foundations + launch policy guardrail + platform tests
-- `[x]` Agent B (P0 workflow core): Autotask-only two-way command/sync path + inbox workflow core + tests
-- `[x]` Agent C (P0 trust layer): AI triage/assist + read-only enrichments + manager ops visibility + tests
-- `[x]` Targeted P0 test pack green (`platform + workflow core + trust layer`)
-- `[x]` `@playbook-brain/api` typecheck green after Agent C route strict-typing fix
-
-Batch 2 (next 3 parallel prompts) completion summary:
-- `[x]` Agent D (P0 hardening): file-backed local durability for workflow/trust runtime state, Autotask poller -> workflow sync wiring, CP0 trust-contract consolidation, hardening tests
-- `[x]` Agent E (Phase 4 framework): Refresh internal validation framework, acceptance matrix, evidence capture script/dry-run, QA sampling workflow, defect triage + launch/no-launch packet templates
-- `[x]` Agent F (Phase 5 prep): rollout-control durability hardening, rollout/rollback procedures, launch-readiness runbooks/checklists, rollout dry-run
-- `[x]` Batch 2 validation green (`types/api typecheck`, targeted D/F suites, evidence-capture dry-run, rollout dry-run)
-
-Batch 3 (UI + live validation + local launch preflight) completion summary:
-- `[~]` Agent G (P0 frontend UI wiring): first visible P0 UI routes/surfaces implemented and web build/typecheck green; browser validation showed inbox working but ticket detail and manager ops pages require follow-up integration/bug fixes
-- `[x]` Agent H (Phase 4 live validation execution): authenticated live API validation executed, evidence bundle captured, acceptance matrix/QA sampling/defect log/conditional decision packet populated
-- `[x]` Agent I (Phase 5 local preflight execution): real local tenant-scoped rollout/rollback drills executed, guardrails verified in practice, hypercare-style signals captured, recommendation `PAUSE` pending founder signoff + partner credentials
-- `[x]` Batch 3 CLI validation green (`web typecheck/build`, `api typecheck`, rollout-control tests, rollout dry-run, artifact integrity checks)
-
-#### Operating Mode Override (Founder Directive — Internal Only)
-
-Current execution mode is **Internal Dogfooding Only**.
-
-Meaning:
-- Founder uses Cerebro in real daily internal operations (all own clients/tickets) to harden workflow, UX, and reliability.
-- External design-partner rollout is **deferred** regardless of preflight readiness.
-
-External launch gating policy override:
-- Any Wave 1 / design-partner execution remains blocked until founder explicitly switches operating mode from `Internal Dogfooding` to `External Controlled Launch`.
-
-Known follow-ups already identified (not blockers for Batch 1 completion):
-- `[x]` Replace in-memory runtime stores/scaffolds (queue/audit/trust/workflow state) with durable backing for bounded P0 single-host operation (file-backed JSON persistence for workflow/trust/rollout control)
-- `[x]` Consolidate Agent C additive trust-layer types to import CP0 shared contracts directly (`cp0-contracts.ts`) via CP0-based trust contracts
-- `[x]` Wire existing Autotask polling runtime into the new workflow core sync ingestion path
-- `[~]` Upgrade local file-backed durability to multi-process/shared transactional storage for production-grade scale
-- `[x]` Execute live Refresh internal validation session (Phase 4) with real tenant/operator flows and fill decision packet (conditional result captured)
-- `[x]` Execute controlled design-partner launch Wave 0/1 local preflight with telemetry and hypercare evidence (local preflight only; external wave still pending)
-- `[~]` Fix/finish integrated P0 UI ticket detail and manager ops pages in the canonical Cerebro UX (Agent G follow-up)
-- `[~]` Close Phase 4 hard gates from live validation (Autotask two-way happy-path proof, F4 integrity mismatch remediation, founder signoff artifact)
-- `[ ]` Execute external design-partner Wave 1 rollout with approved signoff + real partner credentials/onboarding scope (**deferred by founder internal-only directive**)
-- `[~]` Complete UI integration in canonical Cerebro UX (no parallel/standalone replacement UI)
-- `[~]` Start AI engine MVP implementation (currently not started)
-- `[~]` Define and track internal dogfooding scorecard (daily operational reliability + ticket throughput + quality)
-
-#### UI Visibility Remark (Reminder)
-
-At this stage (Batches 1-3), backend/platform/runtime and operational tooling are implemented; UI wiring has started, but visible P0 UX is still in transition and requires integration polish/fixes.
-
-UI-visible changes should start when implementation explicitly targets frontend wiring for:
-- inbox screens consuming the new workflow core
-- technician context panel (enrichment + AI handoff surfaces)
-- manager dashboards consuming `/manager-ops/p0/*`
-- rollout/admin UI controls (if included in scope)
-
-Reminder for future reviews: do not use "no visible UI change" as a signal that progress is low during backend/hardening batches.
-
-#### Workstreams (What)
-
-##### WS-A. Platform Foundations
-**Status:** `[x] Completed (Batch 1)` — CP0 contracts, tenant/RBAC hooks, queue skeleton, observability, audit, guardrails
-- tenant model + RBAC
-- API/worker split + queue runtime
-- observability baseline (logs/metrics/traces)
-- feature flags + audit trail
-- integration credential management
-
-##### WS-B. Autotask Two-Way Core
-**Status:** `[x] Completed (Batches 1-2)` — P0 command/sync/reconciliation backbone implemented, poller->workflow sync wired, hardening tests added
-- command model (create/update/assign/status/time entries)
-- sync ingestion (webhook/polling)
-- reconciliation + idempotency
-- error handling + retry/DLQ
-
-##### WS-C. Inbox & Workflow Core
-**Status:** `[~] Backend complete; frontend integration in progress (Batches 1-3)` — unified inbox projection + ticket command routes/flows implemented, first UI wiring delivered, canonical UX integration still needs follow-up
-- unified inbox (chat/email)
-- ticket command UX
-- internal/public comments
-- routing rules and assignment workflow
-
-##### WS-D. AI Triage + Assist
-**Status:** `[~] Foundations ready, engine MVP not started` — P0 scaffolding/contracts exist, but full AI engine implementation remains pending
-- triage inference pipeline
-- confidence scores + rationale/provenance
-- policy gates + HITL
-- AI summary/handoff drafting
-
-##### WS-E. Read-Only Context Enrichment
-**Status:** `[x] Completed (Batches 1-2)` — IT Glue, Ninja, SentinelOne, Check Point read-only normalization + explicit mutation rejection/audit + durability/hardening coverage
-- IT Glue context cards
-- Ninja alert/device enrichment
-- SentinelOne alert/incident/endpoint enrichment
-- Check Point perimeter/network/security enrichment
-
-##### WS-F. Manager Visibility + Ops Readiness
-**Status:** `[~] Substantially completed (Batches 1-3)` — manager visibility + AI/audit views + QA sampling + runbooks + validation frameworks implemented; UI integration and internal dogfooding scorecard execution still pending
-- queue/SLA dashboard
-- automation/AI audit views
-- runbooks for degraded mode and reconciliation
-- validation instrumentation and QA sampling workflows
-
-#### Sequence (When)
-
-##### Phase 0 — Architecture & Foundations (Weeks 1-2)
-**Status:** `[x] Completed (Batch 1)`
-**Primary goal:** establish runtime contracts and delivery scaffolding
-
-- WS-A baseline implementation
-- adapter interface contract for all integrations
-- canonical ticket/context/audit schemas
-- Autotask command boundaries (explicitly scoped two-way operations)
-- launch policy enforcement mechanism (two-way vs read-only)
-
-**Exit criteria**
-- API + worker runtime operational
-- queue/retry/DLQ skeleton working
-- tenant scoping and audit hooks in place
-- integration mode policy testable end-to-end
-
-##### Phase 1 — P0 Workflow Skeleton (Weeks 3-5)
-**Status:** `[x] Completed (Batch 1)`
-**Primary goal:** end-to-end ticket flow with Autotask two-way backbone
-
-- WS-B core Autotask command + sync paths
-- WS-C inbox MVP (chat/email + ticket commands)
-- WS-D basic AI triage pipeline (suggestion-first)
-
-**Exit criteria**
-- create/update/assign in Autotask works through Cerebro
-- inbox reflects Autotask state changes reliably
-- audit records created for commands and AI suggestions
-
-##### Phase 2 — Context Enrichment & Handoff (Weeks 6-8)
-**Status:** `[x] Completed (Batch 1)`
-**Primary goal:** deliver Cerebro’s troubleshooting differentiation in P0
-
-- WS-E read-only enrichments (IT Glue, Ninja, SentinelOne, Check Point)
-- WS-D AI summary/handoff drafting with enriched context
-- WS-C technician context panel + handoff flows
-
-**Exit criteria**
-- ticket context panel shows multi-source enrichment
-- no write actions issued to read-only integrations
-- handoff summary uses enriched evidence/provenance
-
-##### Phase 3 — Manager Visibility, Controls, and Hardening (Weeks 9-11)
-**Status:** `[x] Completed (Batch 2)` — hardening, runbooks, poller wiring, durability layer, and rollout-control hardening implemented and validated via targeted tests/dry-runs
-**Primary goal:** operational trust and internal validation readiness
-
-- WS-F dashboards/audit views
-- WS-D confidence thresholds + HITL enforcement
-- WS-B/WS-E reconciliation, retries, degraded mode hardening
-
-**Exit criteria**
-- queue/SLA/audit visibility available
-- AI quality gates active and observable
-- reconciliation jobs and degraded-mode runbooks tested
-
-##### Phase 4 — Refresh Internal Validation (Weeks 12-14)
-**Status:** `[~] Live validation executed (Batch 3); now continuing as internal dogfooding cycle`
-**Primary goal:** validate with real workflows and identify gaps for internal operational readiness
-
-- production-like usage with Refresh operators/technicians
-- issue triage backlog + fixes
-- measurement against P0 success criteria (speed, data quality, usability)
-
-**Exit criteria**
-- P0 workflow acceptance criteria met
-- critical bugs closed
-- launch/no-launch decision documented
-
-##### Phase 5 — Controlled Design-Partner Launch (Weeks 15-18)
-**Status:** `[ ] Deferred (founder internal-only directive)`
-**Primary goal:** limited external rollout with guardrails (deferred until operating mode switch)
-
-- per-tenant feature-flag rollout
-- onboarding hardening
-- support/playbooks for operational incidents
-
-**Exit criteria**
-- at least one stable design-partner cohort
-- acceptable operational load for founder + AI agents model
-- prioritized P1 backlog validated by real usage
-
-**Current note:** Exit criteria intentionally not active while operating mode is `Internal Dogfooding Only`.
-
-#### Dependency Notes (Critical Path)
-- WS-B (Autotask two-way) depends on WS-A foundations and adapter contract
-- WS-D (AI policy gates) depends on audit trail and workflow command model
-- WS-E enrichments depend on credential/tenant policy infrastructure
-- WS-F dashboards depend on reliable audit and event telemetry
-
-#### Resourcing Model (Execution Reality)
-- **Founder:** architecture decisions, implementation orchestration, final reviews, operational validation
-- **AI Agents:** code generation, refactors, test generation, documentation updates, review support, checklists
-- **Rule:** optimize for narrow-but-deep progress by milestone, not parallel feature sprawl
+## Progress Snapshot
+Current implementation/progress tracking moved to: `Cerebro-Execution-Status.md`.

@@ -1,3 +1,15 @@
+## Lesson: 2026-02-27 (SSOT policy needs read-time reviewer, not only write-time guards)
+**Mistake**: Focar apenas em correções de submit/write não eliminou divergência visual persistida por snapshot local + override stale.
+**Root cause**: Ausência de camada de revisão autoritativa no read path para reconciliar estado local com fonte externa (Autotask).
+**Rule**: Para campos críticos de integração, aplicar `provider-win` no read path com diff explícito e limpeza de cache/override local divergente.
+**Pattern**: Quando usuário reporta “não mexi em nada e UI segue diferente do sistema externo”, o problema é reconciliação de leitura (read-repair), não apenas comando de escrita.
+
+## Lesson: 2026-02-27 (never apply local context override before provider write confirmation)
+**Mistake**: A UI aplicava `contextOverrides.tech` antes da confirmação final do `update_assign` no Autotask.
+**Root cause**: Mistura de UX otimista com campo de contexto que o usuário interpreta como estado autoritativo.
+**Rule**: Para campos com write externo crítico (Org/User/Tech), só refletir novo valor localmente após confirmação `completed` do provider.
+**Pattern**: “UI mostra valor novo, sistema externo ficou antigo” = quebra de confiança por confirmação antecipada no frontend.
+
 ## Lesson: 2026-02-27 (resource list must reflect assignability constraints)
 **Mistake**: Listei todos os recursos ativos no `Edit Tech`, inclusive recursos sem role padrão válida para assignment.
 **Root cause**: Filtro de busca considerava apenas `isActive` e ignorava requisito de combinação `assignedResourceID + AssignedRoleID`.

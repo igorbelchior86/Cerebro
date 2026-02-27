@@ -413,15 +413,16 @@ export default function SessionDetail({
     return rows;
   };
 
-  const refreshWorkflowCommandFeedback = async (commandId: string) => {
+  const refreshWorkflowCommandFeedback = async (commandId: string): Promise<{ ok: boolean; uxState: WorkflowActionUxState; detail: string }> => {
     try {
       const status = await getWorkflowCommandStatus(commandId);
       const uxState = mapCommandStatusToUxState(status.status);
+      const detail = status.last_error || `Command ${status.status}`;
       setWorkflowActionFeedback({
         commandId,
         status: status.status,
         uxState,
-        detail: status.last_error || `Command ${status.status}`,
+        detail,
         retryable: isRetryableCommandStatus(status.status),
         attempts: status.attempts,
         maxAttempts: status.max_attempts,
@@ -436,10 +437,13 @@ export default function SessionDetail({
           workflowAuditState.refresh(),
           workflowReconciliationState.refresh(),
         ]);
+        return { ok: true, uxState, detail };
       }
+      return { ok: false, uxState, detail };
     } catch (err) {
       const mapped = mapHttpErrorToFrontendState(err, 'Command status unavailable');
       setWorkflowActionError(`${mapped.summary}: ${mapped.detail}`);
+      return { ok: false, uxState: 'failed', detail: mapped.detail };
     }
   };
 
@@ -480,7 +484,13 @@ export default function SessionDetail({
         updatedAt: new Date().toISOString(),
       });
       setWorkflowWritePolicyDisabled(false);
-      await refreshWorkflowCommandFeedback(commandId);
+      const refreshResult = await refreshWorkflowCommandFeedback(commandId);
+      if (!refreshResult.ok) {
+        const pendingHint = refreshResult.uxState === 'pending' || refreshResult.uxState === 'retrying'
+          ? 'Assignment is still processing in Autotask. Wait for completion before applying local context.'
+          : refreshResult.detail;
+        return { ok: false, error: pendingHint };
+      }
       if (techName) {
         setContextOverrides((prev) => ({
           ...prev,
@@ -1026,6 +1036,45 @@ export default function SessionDetail({
     const fallback = String(workflowTicket?.assigned_to || data?.ticket?.assigned_resource_name || '').trim();
     if (fallback) setTechAssignmentDraft(fallback);
   }, [workflowTicket?.assigned_to, data?.ticket?.assigned_resource_name, techAssignmentDraft]);
+
+  // Autotask is authoritative for editable context fields.
+  // If local override diverges from server snapshot, drop local override.
+  useEffect(() => {
+    const serverCompanyId = toAutotaskId(data?.ticket?.company_id);
+    const serverContactId = toAutotaskId(data?.ticket?.contact_id);
+    const serverTechId = toAutotaskId(data?.ticket?.assigned_resource_id);
+
+    setContextOverrides((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      if (prev.org) {
+        const localOrgId = toAutotaskId(prev.org.id);
+        if (serverCompanyId !== null && localOrgId !== serverCompanyId) {
+          delete next.org;
+          changed = true;
+        }
+      }
+
+      if (prev.user) {
+        const localUserId = toAutotaskId(prev.user.id);
+        if (serverContactId !== null && localUserId !== serverContactId) {
+          delete next.user;
+          changed = true;
+        }
+      }
+
+      if (prev.tech) {
+        const localTechId = toAutotaskId(prev.tech.id);
+        if (serverTechId !== null && localTechId !== serverTechId) {
+          delete next.tech;
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [data?.ticket?.company_id, data?.ticket?.contact_id, data?.ticket?.assigned_resource_id]);
 
   const activeOrgId = (() => {
     const overrideOrgId = toAutotaskId(contextOverrides.org?.id);

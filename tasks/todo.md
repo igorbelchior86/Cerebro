@@ -1,3 +1,76 @@
+# Task: Reviewer layer AT-wins para campos críticos (evitar split-brain Cerebro x Autotask)
+**Status**: completed
+**Started**: 2026-02-27T17:46:00-03:00
+
+## Plan
+- [x] Step 1: Implementar camada de reviewer no `playbook/full-flow` com overlay autoritativo do Autotask.
+- [x] Step 2: Aplicar política `AT win` para campos críticos em caso de divergência.
+- [x] Step 3: Blindar frontend contra overrides locais stale quando snapshot do servidor divergir.
+- [x] Step 4: Verificar typecheck API/Web e atualizar wiki/lessons.
+
+## Open Questions
+- Sem bloqueios para implementação. Se houver campos adicionais de SSOT, basta expandir o overlay do reviewer.
+
+## Progress Notes
+- Skill aplicada: `workflow-orchestrator`.
+- Problema reportado: ticket mostrava Tech diferente entre Cerebro e Autotask sem nova ação do operador.
+- Backend:
+  - novo reviewer em `GET /playbook/full-flow` busca snapshot atual no AT e aplica overlay autoritativo nos campos críticos.
+  - payload agora inclui `data.authoritative_review` com divergências detectadas.
+- Frontend:
+  - efeito de reconciliação remove `contextOverrides` (`org/user/tech`) quando divergem do snapshot servidor.
+  - evita que override local stale continue vencendo renderização.
+- Campos no overlay `AT win`:
+  - account/company, contact, status, priority, additional contacts, issue type, sub-issue type, source, due date, SLA, queue, primary resource, secondary resource.
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+
+## Review
+- What worked:
+- Overlay autoritativo no read path + limpeza de override no UI remove divergência sem mudar semântica de write.
+- What was tricky:
+- Garantir compatibilidade com fallback local quando AT não disponível sem quebrar rota de leitura.
+- Time taken:
+- Um ciclo de arquitetura + implementação + validação.
+
+---
+
+# Task: Bugfix - Evitar divergência Tech entre Cerebro e Autotask (no local-save before AT confirm)
+**Status**: completed
+**Started**: 2026-02-27T17:34:00-03:00
+
+## Plan
+- [x] Step 1: Confirmar ponto de divergência no fluxo `update_assign`.
+- [x] Step 2: Ajustar fluxo para atualização de Tech somente com confirmação `completed`.
+- [x] Step 3: Em `pending/retrying/failed`, manter contexto local inalterado e exibir erro/estado.
+- [x] Step 4: Verificar typecheck e atualizar wiki/lessons.
+
+## Open Questions
+- Sem bloqueios técnicos. O ticket pode continuar em processamento assíncrono; UI só aplica override local em sucesso confirmado.
+
+## Progress Notes
+- Skill aplicada: `workflow-orchestrator`.
+- Causa da disparidade:
+  - `submitTechAssignmentById` atualizava `contextOverrides.tech` logo após primeiro refresh de status, mesmo sem `completed`.
+  - Isso permitia “Cerebro mostrar Tech novo” antes de confirmação real no Autotask.
+- Correção:
+  - `refreshWorkflowCommandFeedback` passou a retornar `{ ok, uxState, detail }`.
+  - `submitTechAssignmentById` só seta `contextOverrides.tech` quando `ok=true` (`uxState === succeeded`).
+  - Em `pending/retrying/failed`, retorna erro e mantém estado local anterior.
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+
+## Review
+- What worked:
+- Gate explícito de confirmação remove split-brain visual/local.
+- What was tricky:
+- Conciliar fluxo assíncrono de comando com UX sem comprometer confiança de estado.
+- Time taken:
+- Um ciclo curto focado em consistência autoritativa.
+
+---
+
 # Task: Bugfix - Edit Tech não permite todos os recursos (restrição AssignedRole + UX de erro)
 **Status**: completed
 **Started**: 2026-02-27T17:18:00-03:00

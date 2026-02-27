@@ -16,12 +16,154 @@ import { queryOne, execute, transaction } from '../db/index.js';
 import { diagnoseEvidencePack } from '../services/diagnose.js';
 import { validateDiagnosis } from '../services/validate-policy.js';
 import { PrepareContextService } from '../services/prepare-context.js';
+import { AutotaskClient } from '../clients/autotask.js';
 
 const router: Router = Router();
 const fullFlowInFlight = new Set<string>();
 const FULL_FLOW_SESSION_CREATE_LOCK_NAMESPACE = 41022;
 const FULL_FLOW_RETRY_BASE_DELAY_MS = 2 * 60 * 1000;
 const FULL_FLOW_RETRY_MAX_DELAY_MS = 30 * 60 * 1000;
+
+interface AutotaskCreds {
+  apiIntegrationCode: string;
+  username: string;
+  secret: string;
+  zoneUrl?: string;
+}
+
+type AuthoritativeFieldDiff = {
+  field: string;
+  local: unknown;
+  autotask: unknown;
+};
+
+async function getAutotaskClientForReviewer(): Promise<AutotaskClient | null> {
+  const row = await queryOne<{ credentials: AutotaskCreds }>(
+    `SELECT credentials
+     FROM integration_credentials
+     WHERE service = 'autotask'
+     ORDER BY updated_at DESC
+     LIMIT 1`
+  );
+  const creds = row?.credentials;
+  if (!creds?.apiIntegrationCode || !creds?.username || !creds?.secret) return null;
+  return new AutotaskClient({
+    apiIntegrationCode: creds.apiIntegrationCode,
+    username: creds.username,
+    secret: creds.secret,
+    ...(creds.zoneUrl ? { zoneUrl: creds.zoneUrl } : {}),
+  });
+}
+
+function normalizeCompareValue(input: unknown): unknown {
+  if (input === undefined || input === null) return null;
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  return input;
+}
+
+function valuesDiffer(a: unknown, b: unknown): boolean {
+  return JSON.stringify(normalizeCompareValue(a)) !== JSON.stringify(normalizeCompareValue(b));
+}
+
+async function applyAutotaskReviewerOverlay(
+  ticketRef: string,
+  localTicket: Record<string, unknown>
+): Promise<{
+  ticket: Record<string, unknown>;
+  review: {
+    source: 'autotask';
+    applied: true;
+    ticket_ref: string;
+    divergences: AuthoritativeFieldDiff[];
+  };
+} | null> {
+  const client = await getAutotaskClientForReviewer();
+  if (!client) return null;
+
+  const ref = String(ticketRef || '').trim();
+  if (!ref) return null;
+
+  let remoteTicket: Record<string, unknown>;
+  try {
+    remoteTicket = /^\d+$/.test(ref)
+      ? await client.getTicket(Number(ref)) as unknown as Record<string, unknown>
+      : await client.getTicketByTicketNumber(ref) as unknown as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+
+  const companyId = Number((remoteTicket as any)?.companyID);
+  const contactId = Number((remoteTicket as any)?.contactID);
+  const primaryResourceId = Number((remoteTicket as any)?.assignedResourceID);
+  const secondaryResourceId = Number((remoteTicket as any)?.secondaryResourceID);
+  const queueId = Number((remoteTicket as any)?.queueID);
+
+  const [company, contact, primaryResource, secondaryResource, queueOptions] = await Promise.all([
+    Number.isFinite(companyId) ? client.getCompany(companyId).catch(() => null) : Promise.resolve(null),
+    Number.isFinite(contactId) ? client.getContact(contactId).catch(() => null) : Promise.resolve(null),
+    Number.isFinite(primaryResourceId) ? client.getResource(primaryResourceId).catch(() => null) : Promise.resolve(null),
+    Number.isFinite(secondaryResourceId) ? client.getResource(secondaryResourceId).catch(() => null) : Promise.resolve(null),
+    client.getTicketQueues().catch(() => []),
+  ]);
+
+  const queueLabelMap = new Map<number, string>();
+  for (const option of queueOptions || []) {
+    const id = Number((option as any)?.id);
+    const label = String((option as any)?.label || '').trim();
+    if (Number.isFinite(id) && label) queueLabelMap.set(id, label);
+  }
+
+  const contactName = `${String((contact as any)?.firstName || '').trim()} ${String((contact as any)?.lastName || '').trim()}`.trim();
+  const primaryName = `${String((primaryResource as any)?.firstName || '').trim()} ${String((primaryResource as any)?.lastName || '').trim()}`.trim();
+  const secondaryName = `${String((secondaryResource as any)?.firstName || '').trim()} ${String((secondaryResource as any)?.lastName || '').trim()}`.trim();
+
+  const authoritativeOverlay: Record<string, unknown> = {
+    company_id: Number.isFinite(companyId) ? companyId : null,
+    company: String((company as any)?.companyName || (remoteTicket as any)?.companyName || '').trim() || null,
+    contact_id: Number.isFinite(contactId) ? contactId : null,
+    contact_name: contactName || null,
+    contact_email: String((contact as any)?.emailAddress || '').trim() || null,
+    status: (remoteTicket as any)?.status ?? null,
+    priority: (remoteTicket as any)?.priority ?? null,
+    additional_contacts: (remoteTicket as any)?.additionalContactIDs ?? null,
+    issue_type: (remoteTicket as any)?.issueType ?? null,
+    sub_issue_type: (remoteTicket as any)?.subIssueType ?? null,
+    source: (remoteTicket as any)?.source ?? null,
+    due_date: (remoteTicket as any)?.dueDateTime ?? (remoteTicket as any)?.dueDate ?? null,
+    sla: (remoteTicket as any)?.serviceLevelAgreementID ?? null,
+    queue_id: Number.isFinite(queueId) ? queueId : null,
+    queue_name: Number.isFinite(queueId) ? (queueLabelMap.get(queueId) || null) : null,
+    assigned_resource_id: Number.isFinite(primaryResourceId) ? primaryResourceId : null,
+    assigned_resource_name: primaryName || null,
+    assigned_resource_email: String((primaryResource as any)?.email || '').trim() || null,
+    secondary_resource_id: Number.isFinite(secondaryResourceId) ? secondaryResourceId : null,
+    secondary_resource_name: secondaryName || null,
+    secondary_resource_email: String((secondaryResource as any)?.email || '').trim() || null,
+  };
+
+  const divergences: AuthoritativeFieldDiff[] = [];
+  for (const [field, atValue] of Object.entries(authoritativeOverlay)) {
+    if (valuesDiffer(localTicket[field], atValue)) {
+      divergences.push({ field, local: localTicket[field], autotask: atValue });
+    }
+  }
+
+  return {
+    ticket: {
+      ...localTicket,
+      ...authoritativeOverlay,
+    },
+    review: {
+      source: 'autotask',
+      applied: true,
+      ticket_ref: ref,
+      divergences,
+    },
+  };
+}
 
 async function resolveOrCreateFullFlowSession(ticketId: string, tenantId: string | null): Promise<{ id: string; created: boolean }> {
   return transaction(async (client) => {
@@ -395,6 +537,8 @@ router.get('/full-flow', async (req, res) => {
         source: round0Finding?.source || null,
       },
     };
+    const authoritativeReviewed = await applyAutotaskReviewerOverlay(String(ticketId || rawId || ''), canonicalTicket);
+    const canonicalTicketResolved = authoritativeReviewed?.ticket || canonicalTicket;
 
     const diagResult = await queryOne<{ payload: any }>(
       `SELECT payload
@@ -648,7 +792,13 @@ router.get('/full-flow', async (req, res) => {
         playbook: playbook ? '✅ Ready' : (manuallySuppressed ? '⛔ Suppressed' : '⏳ Waiting'),
       },
       data: {
-        ticket: canonicalTicket,
+        ticket: canonicalTicketResolved,
+        authoritative_review: authoritativeReviewed?.review || {
+          source: 'autotask',
+          applied: false,
+          ticket_ref: String(ticketId || rawId || ''),
+          divergences: [],
+        },
         suppression: {
           manual_suppressed: manuallySuppressed,
           effective_suppressed: manuallySuppressed,

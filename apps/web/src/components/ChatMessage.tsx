@@ -31,6 +31,7 @@ export interface Message {
 
 interface ChatMessageProps {
   message: Message;
+  index?: number;
   children?: ReactNode;
   onRetryExternalMessage?: (message: Message) => void;
 }
@@ -582,7 +583,7 @@ function resolveBubbleCategory(message: Message): BubbleCategory {
   return 'ai';
 }
 
-export default function ChatMessage({ message, children, onRetryExternalMessage }: ChatMessageProps) {
+export default function ChatMessage({ message, index, children, onRetryExternalMessage }: ChatMessageProps) {
   const [ticketTextMode, setTicketTextMode] = useState<'clean' | 'original'>(
     message.ticketTextVariant?.clean?.trim()
       ? 'clean'
@@ -627,9 +628,17 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
     boxShadow: `inset -3px 0 0 ${tone.bubbleAccent}, var(--shadow-card)`,
   };
 
+  // Calculate differential scroll physics based on index
+  const idx = index || 0;
+  // Vary the spring stiffness (transition duration: 0.08s -> 0.14s)
+  const durationMs = 80 + (idx % 4) * 20;
+  // Very slight scale multiplier to give them different movement weights
+  const multiplier = 1 + (idx % 3) * 0.15;
+
   const elasticScrollStyle: CSSProperties = {
-    transform: 'translate3d(0, var(--scroll-velocity, 0px), 0)',
-    transition: 'transform 0.1s cubic-bezier(0.1, 0.9, 0.2, 1)',
+    // We calculate the translateY inside the css var injection but multiply it here to offset individually
+    transform: `translate3d(0, calc(var(--scroll-velocity, 0px) * ${multiplier}), 0)`,
+    transition: `transform ${durationMs}ms cubic-bezier(0.1, 0.9, 0.2, 1)`,
     willChange: 'transform',
   };
 
@@ -794,133 +803,135 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
   const isPrepareContextMessage = message.type === 'evidence';
   return (
     <div className="animate-msgIn" style={{ marginBottom: '20px' }}>
-      <div style={{ ...elasticScrollStyle, display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
-        <div style={{ width: '26px', height: '26px', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '12px', border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
-          {src.icon}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={assistantBubbleByChannel}>
-            {canToggleTicketText && ticketTextMode === 'clean' && hasCleanTicketText ? (
-              <RichCleanTicketText
-                text={message.ticketTextVariant!.clean!}
-                format={message.ticketTextVariant!.cleanFormat ?? 'plain'}
-              />
-            ) : (
-              <MarkdownRenderer content={String(renderedContent) + (message.type === 'validation' ? ' **Status:** `approved`' : '')} />
-            )}
-            {stepsList && (isPrepareContextMessage ? (
-              <details style={{ marginTop: '8px' }}>
-                <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: '10.5px', fontWeight: 600, listStylePosition: 'inside' }}>
-                  PrepareContext items ({message.steps?.length ?? 0})
-                </summary>
-                {stepsList}
-              </details>
-            ) : (
-              stepsList
-            ))}
-            {children && <div style={{ marginTop: '8px' }}>{children}</div>}
-            {message.delivery ? (
-              <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start', fontSize: '10px', color: 'var(--text-muted)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ ...deliveryStatusToneMap[message.delivery.status], borderRadius: '999px', padding: '1px 7px', fontSize: '9px', fontWeight: 700 }}>
-                    {deliveryStatusLabelMap[message.delivery.status]}
-                  </span>
-                  <span>PSA delivery</span>
+      <div style={{ ...elasticScrollStyle, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+          <div style={{ width: '26px', height: '26px', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '12px', border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+            {src.icon}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={assistantBubbleByChannel}>
+              {canToggleTicketText && ticketTextMode === 'clean' && hasCleanTicketText ? (
+                <RichCleanTicketText
+                  text={message.ticketTextVariant!.clean!}
+                  format={message.ticketTextVariant!.cleanFormat ?? 'plain'}
+                />
+              ) : (
+                <MarkdownRenderer content={String(renderedContent) + (message.type === 'validation' ? ' **Status:** `approved`' : '')} />
+              )}
+              {stepsList && (isPrepareContextMessage ? (
+                <details style={{ marginTop: '8px' }}>
+                  <summary style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: '10.5px', fontWeight: 600, listStylePosition: 'inside' }}>
+                    PrepareContext items ({message.steps?.length ?? 0})
+                  </summary>
+                  {stepsList}
+                </details>
+              ) : (
+                stepsList
+              ))}
+              {children && <div style={{ marginTop: '8px' }}>{children}</div>}
+              {message.delivery ? (
+                <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start', fontSize: '10px', color: 'var(--text-muted)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ ...deliveryStatusToneMap[message.delivery.status], borderRadius: '999px', padding: '1px 7px', fontSize: '9px', fontWeight: 700 }}>
+                      {deliveryStatusLabelMap[message.delivery.status]}
+                    </span>
+                    <span>PSA delivery</span>
+                  </div>
+                  {message.delivery.error ? (
+                    <span style={{ color: '#b91c1c' }}>{message.delivery.error}</span>
+                  ) : null}
+                  {message.delivery.status === 'failed' && onRetryExternalMessage ? (
+                    <button
+                      type="button"
+                      onClick={() => onRetryExternalMessage(message)}
+                      style={{
+                        borderRadius: '999px',
+                        border: '1px solid rgba(185,28,28,0.25)',
+                        background: 'rgba(185,28,28,0.08)',
+                        color: '#b91c1c',
+                        fontSize: '9px',
+                        fontWeight: 700,
+                        padding: '2px 7px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Retry
+                    </button>
+                  ) : null}
                 </div>
-                {message.delivery.error ? (
-                  <span style={{ color: '#b91c1c' }}>{message.delivery.error}</span>
-                ) : null}
-                {message.delivery.status === 'failed' && onRetryExternalMessage ? (
-                  <button
-                    type="button"
-                    onClick={() => onRetryExternalMessage(message)}
-                    style={{
-                      borderRadius: '999px',
-                      border: '1px solid rgba(185,28,28,0.25)',
-                      background: 'rgba(185,28,28,0.08)',
-                      color: '#b91c1c',
-                      fontSize: '9px',
-                      fontWeight: 700,
-                      padding: '2px 7px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Retry
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
+              ) : null}
 
-            {canToggleTicketText && (
-              <div style={{
-                position: 'absolute',
-                bottom: '6px',
-                right: '6px',
-                display: 'flex',
-                gap: '4px',
-                zIndex: 10
-              }}>
-                {ticketTextModes.map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => setTicketTextMode(mode)}
-                    title={mode === 'clean' ? 'Clean View' : 'Original View'}
-                    style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '6px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      border: '1px solid',
-                      borderColor: ticketTextMode === mode ? 'rgba(91,127,255,0.3)' : 'var(--bento-outline)',
-                      background: ticketTextMode === mode ? 'rgba(91,127,255,0.12)' : 'var(--bg-card)',
-                      color: ticketTextMode === mode ? 'var(--accent)' : 'var(--text-faint)',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease',
-                      boxShadow: ticketTextMode === mode ? '0 1px 4px rgba(91,127,255,0.1)' : 'none',
-                    }}
-                    onMouseEnter={(e) => {
-                      if (ticketTextMode !== mode) {
-                        e.currentTarget.style.borderColor = 'var(--accent)';
-                        e.currentTarget.style.color = 'var(--accent)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (ticketTextMode !== mode) {
-                        e.currentTarget.style.borderColor = 'var(--bento-outline)';
-                        e.currentTarget.style.color = 'var(--text-faint)';
-                      }
-                    }}
-                  >
-                    {mode === 'clean' ? (
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                        <path d="M8 2L9.5 5.5L13 7L9.5 8.5L8 12L6.5 8.5L3 7L6.5 5.5L8 2Z" fill="currentColor" />
-                        <path d="M12 10L12.5 11.5L14 12L12.5 12.5L12 14L11.5 12.5L10 12L11.5 11.5L12 10Z" fill="currentColor" />
-                      </svg>
-                    ) : (
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                        <path d="M4 4H12V5.5H4V4ZM4 7H12V8.5H4V7ZM4 10H9V11.5H4V10Z" fill="currentColor" />
-                      </svg>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
+              {canToggleTicketText && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: '6px',
+                  right: '6px',
+                  display: 'flex',
+                  gap: '4px',
+                  zIndex: 10
+                }}>
+                  {ticketTextModes.map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setTicketTextMode(mode)}
+                      title={mode === 'clean' ? 'Clean View' : 'Original View'}
+                      style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '6px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: '1px solid',
+                        borderColor: ticketTextMode === mode ? 'rgba(91,127,255,0.3)' : 'var(--bento-outline)',
+                        background: ticketTextMode === mode ? 'rgba(91,127,255,0.12)' : 'var(--bg-card)',
+                        color: ticketTextMode === mode ? 'var(--accent)' : 'var(--text-faint)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        boxShadow: ticketTextMode === mode ? '0 1px 4px rgba(91,127,255,0.1)' : 'none',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (ticketTextMode !== mode) {
+                          e.currentTarget.style.borderColor = 'var(--accent)';
+                          e.currentTarget.style.color = 'var(--accent)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (ticketTextMode !== mode) {
+                          e.currentTarget.style.borderColor = 'var(--bento-outline)';
+                          e.currentTarget.style.color = 'var(--text-faint)';
+                        }
+                      }}
+                    >
+                      {mode === 'clean' ? (
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                          <path d="M8 2L9.5 5.5L13 7L9.5 8.5L8 12L6.5 8.5L3 7L6.5 5.5L8 2Z" fill="currentColor" />
+                          <path d="M12 10L12.5 11.5L14 12L12.5 12.5L12 14L11.5 12.5L10 12L11.5 11.5L12 10Z" fill="currentColor" />
+                        </svg>
+                      ) : (
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                          <path d="M4 4H12V5.5H4V4ZM4 7H12V8.5H4V7ZM4 10H9V11.5H4V10Z" fill="currentColor" />
+                        </svg>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', marginTop: '10px', marginLeft: '36px', paddingRight: '2px' }}>
-        <span style={channelBadgeStyle}>{channelBadge}</span>
-        {message.timestamp && (
-          <span
-            suppressHydrationWarning
-            style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)', letterSpacing: '0.04em' }}
-          >
-            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-          </span>
-        )}
-        <span style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--text-secondary)' }}>{sourceLabel}</span>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', marginTop: '10px', marginLeft: '36px', paddingRight: '2px' }}>
+          <span style={channelBadgeStyle}>{channelBadge}</span>
+          {message.timestamp && (
+            <span
+              suppressHydrationWarning
+              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)', letterSpacing: '0.04em' }}
+            >
+              {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+          )}
+          <span style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--text-secondary)' }}>{sourceLabel}</span>
+        </div>
       </div>
     </div>
   );

@@ -2030,8 +2030,8 @@ export default function SessionDetail({
               </div>
             )}
 
-            {visibleMessages.map((msg) => (
-              <ChatMessage key={msg.id} message={msg} onRetryExternalMessage={handleRetryExternalMessage} />
+            {visibleMessages.map((msg, idx) => (
+              <ChatMessage key={msg.id} message={msg} index={idx} onRetryExternalMessage={handleRetryExternalMessage} />
             ))}
 
             {loading && messages.length === 1 && (
@@ -2045,6 +2045,7 @@ export default function SessionDetail({
                   type: 'status',
                   channel: 'internal_ai',
                 }}
+                index={visibleMessages.length}
               />
             )}
           </div>

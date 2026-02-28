@@ -36,13 +36,13 @@ interface ChatMessageProps {
   onRetryExternalMessage?: (message: Message) => void;
 }
 
-const SOURCE_CONFIG: Record<string, { icon: string; label: string }> = {
-  autotask: { icon: '🎟', label: 'Autotask' },
-  note: { icon: '📝', label: 'TicketNote' },
-  evidence: { icon: '⚡', label: 'PrepareContext' },
-  diagnosis: { icon: '🧠', label: 'LLM Diagnose' },
-  validation: { icon: '🛡', label: 'ValidateAndPolicy' },
-  text: { icon: '📋', label: 'PlaybookWriter' },
+const SOURCE_CONFIG: Record<string, { icon: ReactNode; label: string }> = {
+  autotask: { icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76l2.03-7.92A2 2 0 0 1 10.74 1h4a2 2 0 0 1 1.67.92z" /></svg>, label: 'Autotask' },
+  note: { icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>, label: 'TicketNote' },
+  evidence: { icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>, label: 'PrepareContext' },
+  diagnosis: { icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z" /><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-1.98-3A2.5 2.5 0 0 0 14.5 2Z" /></svg>, label: 'LLM Diagnose' },
+  validation: { icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>, label: 'ValidateAndPolicy' },
+  text: { icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><line x1="10" y1="9" x2="8" y2="9" /></svg>, label: 'PlaybookWriter' },
 };
 
 function MsgTag({ children, color, bg }: { children: ReactNode; color?: string; bg?: string }) {
@@ -473,26 +473,28 @@ function RichCleanTicketText({
 }
 
 const assistantBubbleStyle: CSSProperties = {
-  width: '100%',
-  borderRadius: '12px 12px 12px 3px',
-  border: '1px solid var(--bento-outline)',
+  width: 'fit-content',
+  maxWidth: '92%',
+  borderRadius: '20px 20px 20px 4px',
   background: 'var(--bg-card)',
-  boxShadow: 'inset 3px 0 0 var(--accent), var(--shadow-card)',
-  padding: '10px 12px 24px 12px',
+  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+  padding: '12px 16px',
   position: 'relative',
+  border: '1px solid var(--border)',
 };
 
 const userBubbleStyle: CSSProperties = {
-  width: '100%',
+  width: 'fit-content',
+  maxWidth: '85%',
   margin: 0,
-  borderRadius: '12px 12px 3px 12px',
-  border: '1px solid var(--border-accent)',
-  background: 'var(--bg-card-active)',
-  boxShadow: 'var(--shadow-card)',
-  padding: '10px 12px',
-  fontSize: '12.5px',
-  color: 'var(--text-primary)',
+  borderRadius: '20px 20px 4px 20px',
+  padding: '12px 16px',
+  fontSize: '13px',
   lineHeight: 1.55,
+  color: '#FFFFFF',
+  background: 'linear-gradient(135deg, #007aff, #0056b3)',
+  boxShadow: '0 2px 4px rgba(0, 122, 255, 0.2)',
+  border: 'none',
 };
 
 type BubbleCategory =
@@ -515,7 +517,7 @@ type BubbleTone = {
 
 const BUBBLE_TONES: Record<BubbleCategory, BubbleTone> = {
   system_status: {
-    bubbleBg: 'var(--bg-card)',
+    bubbleBg: 'transparent',
     bubbleBorder: 'var(--border)',
     bubbleAccent: 'var(--text-muted)',
     badgeBg: 'var(--bg-badge)',
@@ -523,7 +525,7 @@ const BUBBLE_TONES: Record<BubbleCategory, BubbleTone> = {
     badgeText: 'var(--text-muted)',
   },
   ai: {
-    bubbleBg: 'var(--accent-muted)',
+    bubbleBg: 'transparent',
     bubbleBorder: 'var(--border-accent)',
     bubbleAccent: 'var(--accent)',
     badgeBg: 'var(--accent-muted)',
@@ -531,41 +533,41 @@ const BUBBLE_TONES: Record<BubbleCategory, BubbleTone> = {
     badgeText: 'var(--accent)',
   },
   note: {
-    bubbleBg: 'rgba(211,166,61,0.10)',
-    bubbleBorder: 'rgba(211,166,61,0.24)',
+    bubbleBg: 'rgba(211,166,61,0.03)',
+    bubbleBorder: 'rgba(211,166,61,0.15)',
     bubbleAccent: 'var(--yellow)',
-    badgeBg: 'rgba(211,166,61,0.14)',
-    badgeBorder: 'rgba(211,166,61,0.30)',
+    badgeBg: 'rgba(211,166,61,0.10)',
+    badgeBorder: 'rgba(211,166,61,0.20)',
     badgeText: 'var(--yellow)',
   },
   tech_to_ai: {
-    bubbleBg: 'var(--green-muted)',
-    bubbleBorder: 'var(--green-border)',
-    bubbleAccent: 'var(--green)',
-    badgeBg: 'var(--green-muted)',
-    badgeBorder: 'var(--green-border)',
-    badgeText: 'var(--green)',
+    bubbleBg: 'transparent',
+    bubbleBorder: 'var(--border)',
+    bubbleAccent: 'var(--text-muted)',
+    badgeBg: 'var(--bg-badge)',
+    badgeBorder: 'var(--border)',
+    badgeText: 'var(--text-muted)',
   },
   tech_to_user: {
-    bubbleBg: 'rgba(214,124,124,0.11)',
-    bubbleBorder: 'rgba(214,124,124,0.28)',
-    bubbleAccent: 'var(--red)',
-    badgeBg: 'rgba(214,124,124,0.14)',
-    badgeBorder: 'rgba(214,124,124,0.32)',
-    badgeText: 'var(--red)',
+    bubbleBg: 'transparent',
+    bubbleBorder: 'var(--border)',
+    bubbleAccent: 'var(--text-muted)',
+    badgeBg: 'var(--bg-badge)',
+    badgeBorder: 'var(--border)',
+    badgeText: 'var(--text-muted)',
   },
   ai_exchange: {
-    bubbleBg: 'var(--accent-muted)',
-    bubbleBorder: 'var(--border-accent)',
+    bubbleBg: 'transparent',
+    bubbleBorder: 'var(--green-border)',
     bubbleAccent: 'var(--green)',
     badgeBg: 'var(--green-muted)',
     badgeBorder: 'var(--green-border)',
     badgeText: 'var(--green)',
   },
   ai_validation: {
-    bubbleBg: 'var(--green-muted)',
+    bubbleBg: 'rgba(16,185,129,0.03)',
     bubbleBorder: 'var(--green-border)',
-    bubbleAccent: 'var(--yellow)',
+    bubbleAccent: 'var(--green)',
     badgeBg: 'var(--green-muted)',
     badgeBorder: 'var(--green-border)',
     badgeText: 'var(--green)',
@@ -618,14 +620,18 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
   };
   const assistantBubbleByChannel: CSSProperties = {
     ...assistantBubbleStyle,
-    border: `1px solid ${tone.bubbleBorder}`,
-    background: tone.bubbleBg,
+    background: tone.bubbleBg !== 'transparent' ? tone.bubbleBg : assistantBubbleStyle.background,
+    borderColor: tone.bubbleBorder,
+    // Add very faint tint based on category without making it look like a warning box
+    boxShadow: `inset 2px 0 0 ${tone.bubbleAccent}, 0 2px 4px rgba(0,0,0,0.02)`,
   };
   const userBubbleByChannel: CSSProperties = {
     ...userBubbleStyle,
-    border: `1px solid ${tone.bubbleBorder}`,
-    background: tone.bubbleBg,
-    boxShadow: `inset -3px 0 0 ${tone.bubbleAccent}, var(--shadow-card)`,
+    ...(channel === 'internal_ai' ? {
+      // Tech-to-AI (internal message): Gray/Dark sleek
+      background: 'linear-gradient(135deg, #4B5563, #374151)',
+      boxShadow: '0 2px 6px rgba(0, 0, 0, 0.15)',
+    } : {}),
   };
 
   // Calculate differential scroll physics based on index
@@ -658,10 +664,12 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
   if (message.role === 'user') {
     return (
       <div className="animate-msgIn" style={{ marginBottom: '20px' }}>
-        <div style={{ ...elasticScrollStyle, display: 'flex', gap: '10px', alignItems: 'flex-start', flexDirection: 'row-reverse' }}>
-          <div style={{ width: '26px', height: '26px', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '11px', border: '1px solid rgba(91,127,255,0.2)', background: 'rgba(91,127,255,0.10)' }}>👤</div>
+        <div style={{ ...elasticScrollStyle, display: 'flex', gap: '10px', alignItems: 'flex-end', flexDirection: 'row-reverse' }}>
+          <div style={{ width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', background: channel === 'internal_ai' ? '#4B5563' : '#007aff', boxShadow: '0 2px 4px rgba(0,122,255,0.2)' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '4px', flexDirection: 'row-reverse' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '6px', flexDirection: 'row-reverse', marginRight: '4px' }}>
               <span style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>You</span>
               <span style={channelBadgeStyle}>{channelBadge}</span>
               {message.timestamp && <span suppressHydrationWarning style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)' }}>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
@@ -805,10 +813,10 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
     <div className="animate-msgIn" style={{ marginBottom: '20px' }}>
       <div style={{ ...elasticScrollStyle, display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
-          <div style={{ width: '26px', height: '26px', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '12px', border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+          <div style={{ width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--text-secondary)', background: 'var(--bg-card)', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid var(--border)' }}>
             {src.icon}
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', flex: 1, minWidth: 0 }}>
             <div style={assistantBubbleByChannel}>
               {canToggleTicketText && ticketTextMode === 'clean' && hasCleanTicketText ? (
                 <RichCleanTicketText
@@ -920,17 +928,17 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '10px', marginTop: '10px', marginLeft: '36px', paddingRight: '2px' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '10px', marginTop: '6px', marginLeft: '42px' }}>
+          <span style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>{sourceLabel}</span>
           <span style={channelBadgeStyle}>{channelBadge}</span>
           {message.timestamp && (
             <span
               suppressHydrationWarning
-              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)', letterSpacing: '0.04em' }}
+              style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)' }}
             >
-              {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
-          <span style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--text-secondary)' }}>{sourceLabel}</span>
         </div>
       </div>
     </div>

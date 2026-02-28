@@ -1727,8 +1727,8 @@ export default function SessionDetail({
         { key: 'Firewall', val: data?.ssot?.firewall_make_model || data?.evidence_pack?.config?.firewall || 'Unknown' },
         { key: 'Switch', val: data?.ssot?.switch_make_model || 'Unknown' },
         { key: 'WiFi', val: data?.ssot?.wifi_make_model || 'Unknown' },
-        { key: 'Alternate Device', val: data?.ssot?.alternate_device || 'Unknown' },
-      ],
+        { key: 'Additional Devices', val: data?.ssot?.alternate_device || 'Unknown' },
+      ].map(item => ({ ...item, val: item.val?.toLowerCase() === 'unknown' || item.val?.toLowerCase() === 'unknown org' ? '-' : item.val })),
       hypotheses: Array.isArray(data.diagnosis?.top_hypotheses)
         ? data.diagnosis.top_hypotheses.slice(0, 3).map((h: any, i: number) => ({
           rank: Number(h?.rank) || i + 1,

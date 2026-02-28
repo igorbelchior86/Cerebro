@@ -245,22 +245,24 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
         {ctx.length > 0 && (
           <div style={{
             position: 'sticky',
-            top: '-14px',
+            top: '0px',
             background: 'var(--bg-panel)',
             backdropFilter: 'blur(24px)',
             WebkitBackdropFilter: 'blur(24px)',
             zIndex: 20,
             margin: '0 -14px 22px -14px',
-            padding: '14px 14px 14px 14px',
+            padding: '14px 0 14px 0',
             borderBottom: isContextOpen ? 'none' : '1px solid var(--bento-outline)',
             boxShadow: '0 8px 16px -4px rgba(0,0,0,0.06)'
           }}>
-            <SectionLabel
-              isOpen={isContextOpen}
-              onToggle={() => setIsContextOpen(!isContextOpen)}
-            >
-              Context
-            </SectionLabel>
+            <div style={{ padding: '0 14px' }}>
+              <SectionLabel
+                isOpen={isContextOpen}
+                onToggle={() => setIsContextOpen(!isContextOpen)}
+              >
+                Context
+              </SectionLabel>
+            </div>
             {isContextOpen && (
               <div
                 className="animate-in fade-in slide-in-from-top-1 duration-300"
@@ -269,7 +271,8 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
                   flexDirection: 'column',
                   gap: '12px',
                   width: '100%',
-                  position: 'relative'
+                  position: 'relative',
+                  padding: '0 14px'
                 }}
               >
                 {/* 1. CUSTOMER IDENTITY - Fixed Top Position */}
@@ -336,12 +339,12 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
                 </div>
 
                 {/* 2. TECHNICAL SPLIT - Fixed Left/Right columns */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                   {/* Connectivity/Network Cluster */}
                   <div style={{
-                    display: 'flex', flexDirection: 'column', gap: '8px',
+                    display: 'flex', flexDirection: 'column', gap: '6px',
                     background: 'rgba(255, 255, 255, 0.015)',
-                    padding: '10px', borderRadius: '14px', border: '1px solid var(--bento-outline)',
+                    padding: '8px', borderRadius: '14px', border: '1px solid var(--bento-outline)',
                     transition: 'all 0.25s cubic-bezier(0.23, 1, 0.32, 1)'
                   }}
                     onMouseEnter={(e) => {
@@ -356,9 +359,9 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
                       e.currentTarget.style.transform = 'translateY(0)';
                       e.currentTarget.style.background = 'rgba(255, 255, 255, 0.015)';
                     }}>
-                    <div style={{ fontSize: '7.5px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px', opacity: 0.8 }}>Network</div>
+                    <div style={{ fontSize: '7.5px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2px', opacity: 0.8 }}>Network</div>
                     {ctx.filter(c => ['ISP', 'Phone Provider', 'Firewall'].includes(c.key)).map(c => (
-                      <div key={c.key} style={{ padding: '8px 10px', borderRadius: '8px', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                      <div key={c.key} style={{ padding: '8px 14px', borderRadius: '8px', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
                         <div style={{ fontSize: '8px', color: 'var(--text-faint)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>{c.key}</div>
                         <div style={{ fontSize: '10.5px', fontWeight: 600, color: c.highlight ?? 'var(--text-secondary)', lineHeight: 1.3, wordBreak: 'break-word' }}>{c.val}</div>
                       </div>
@@ -367,9 +370,9 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
 
                   {/* Assets Cluster */}
                   <div style={{
-                    display: 'flex', flexDirection: 'column', gap: '8px',
+                    display: 'flex', flexDirection: 'column', gap: '6px',
                     background: 'rgba(255, 255, 255, 0.015)',
-                    padding: '10px', borderRadius: '14px', border: '1px solid var(--bento-outline)',
+                    padding: '8px', borderRadius: '14px', border: '1px solid var(--bento-outline)',
                     transition: 'all 0.25s cubic-bezier(0.23, 1, 0.32, 1)'
                   }}
                     onMouseEnter={(e) => {
@@ -384,13 +387,16 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
                       e.currentTarget.style.transform = 'translateY(0)';
                       e.currentTarget.style.background = 'rgba(255, 255, 255, 0.015)';
                     }}>
-                    <div style={{ fontSize: '7.5px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px', opacity: 0.8 }}>Environment</div>
-                    {ctx.filter(c => ['User Device', 'Alternate Device', 'Switch', 'WiFi'].includes(c.key)).map(c => (
-                      <div key={c.key} style={{ padding: '8px 10px', borderRadius: '8px', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                        <div style={{ fontSize: '8px', color: 'var(--text-faint)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>{c.key}</div>
-                        <div style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)', lineHeight: 1.3, wordBreak: 'break-word' }}>{c.val}</div>
-                      </div>
-                    ))}
+                    <div style={{ fontSize: '7.5px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2px', opacity: 0.8 }}>Environment</div>
+                    {['User Device', 'Additional Devices', 'WiFi', 'Switch']
+                      .map(key => ctx.find(c => c.key === key))
+                      .filter((c): c is NonNullable<typeof c> => Boolean(c))
+                      .map(c => (
+                        <div key={c.key} style={{ padding: '8px 14px', borderRadius: '8px', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                          <div style={{ fontSize: '8px', color: 'var(--text-faint)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>{c.key}</div>
+                          <div style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)', lineHeight: 1.3, wordBreak: 'break-word' }}>{c.val}</div>
+                        </div>
+                      ))}
                   </div>
                 </div>
               </div>

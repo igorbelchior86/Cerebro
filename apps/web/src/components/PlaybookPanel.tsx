@@ -269,10 +269,10 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
             backdropFilter: 'blur(24px)',
             WebkitBackdropFilter: 'blur(24px)',
             zIndex: 20,
-            margin: '0 -14px 22px -14px',
-            padding: '14px 0 14px 0',
+            margin: '0 -14px 0 -14px',
+            padding: '10px 0 10px 0',
             borderBottom: isContextOpen ? 'none' : '1px solid var(--bento-outline)',
-            boxShadow: '0 8px 16px -4px rgba(0,0,0,0.06)'
+            boxShadow: '0 4px 12px -4px rgba(0,0,0,0.04)'
           }}>
             <div style={{ padding: '0 14px' }}>
               <SectionLabel
@@ -298,7 +298,9 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
                     width: '100%',
                     position: 'relative',
                     padding: '0 14px',
-                    paddingTop: '16px',
+                    paddingTop: '6px',
+                    paddingBottom: '24px',
+                    marginBottom: '-24px',
                     transition: 'opacity 0.4s cubic-bezier(0.23, 1, 0.32, 1), transform 0.4s cubic-bezier(0.23, 1, 0.32, 1), visibility 0.4s',
                     opacity: isContextOpen ? 1 : 0,
                     transform: isContextOpen ? 'translateY(0)' : 'translateY(-10px)',

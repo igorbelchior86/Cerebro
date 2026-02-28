@@ -208,24 +208,30 @@ export default function ChatInput({
               type="button"
               onClick={() => setInput(h)}
               style={{
-                padding: '4px 10px 5px',
-                borderRadius: '10px 10px 0 0',
-                fontSize: '10.5px',
-                color: 'var(--text-muted)',
-                background: 'var(--bg-card)',
-                border: '1px solid var(--bento-outline)',
+                padding: '5px 12px 6px',
+                borderRadius: '12px 12px 0 0',
+                fontSize: '11px',
+                fontWeight: 500,
+                color: 'var(--text-secondary)',
+                background: 'var(--bg-card-hover)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                border: '1px solid var(--border-strong)',
                 borderBottom: 'none',
+                boxShadow: '0 -2px 8px rgba(0,0,0,0.05)',
                 cursor: 'pointer',
                 fontFamily: 'var(--font-geist-sans, var(--font-dm-sans, sans-serif))',
                 transition: 'var(--transition)',
               }}
               onMouseEnter={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.color = 'var(--accent)';
+                (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-primary)';
+                (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card-active)';
                 (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-accent)';
               }}
               onMouseLeave={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-muted)';
-                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--bento-outline)';
+                (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-secondary)';
+                (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card-hover)';
+                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-strong)';
               }}
             >
               {h}

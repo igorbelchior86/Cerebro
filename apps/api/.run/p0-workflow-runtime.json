@@ -6336,6 +6336,150 @@
           "correlates.ticket_note_metadata"
         ]
       }
+    },
+    {
+      "audit_id": "06ab15ad-0621-4bae-8057-d4ec5a9dc80b",
+      "timestamp": "2026-02-28T01:34:57.479Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260227.0013"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132826",
+        "ticket_id": "T20260227.0013"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132826:ticket.created:2026-02-28T01:34:19.880Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-28T01:34:57.468Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
+    },
+    {
+      "audit_id": "dbf094ba-dcdd-45fb-b33b-a8a5cfd14d1b",
+      "timestamp": "2026-02-28T02:13:11.026Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260227.0014"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132827",
+        "ticket_id": "T20260227.0014"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132827:ticket.created:2026-02-28T02:10:24.007Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-28T02:13:11.008Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
+    },
+    {
+      "audit_id": "890afc28-d653-4f9f-ae69-fd08c07c077f",
+      "timestamp": "2026-02-28T06:20:39.979Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260228.0001"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132828",
+        "ticket_id": "T20260228.0001"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132828:ticket.created:2026-02-28T06:20:16.187Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-28T06:20:39.965Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
+    },
+    {
+      "audit_id": "283e70f3-5d5b-43d7-8384-7df1560f49d1",
+      "timestamp": "2026-02-28T12:18:06.569Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260228.0002"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132829",
+        "ticket_id": "T20260228.0002"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132829:ticket.created:2026-02-28T12:10:14.567Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-28T12:18:06.535Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
     }
   ],
   "processedSyncEvents": [
@@ -6380,7 +6524,11 @@
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132822:ticket.created:2026-02-27T17:31:01.350Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132823:ticket.created:2026-02-27T18:36:36.433Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132824:ticket.created:2026-02-27T19:26:49.823Z",
-    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132825:ticket.created:2026-02-27T20:50:51.997Z"
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132825:ticket.created:2026-02-27T20:50:51.997Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132826:ticket.created:2026-02-28T01:34:19.880Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132827:ticket.created:2026-02-28T02:10:24.007Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132828:ticket.created:2026-02-28T06:20:16.187Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132829:ticket.created:2026-02-28T12:10:14.567Z"
   ],
   "inbox": [
     [
@@ -7110,6 +7258,142 @@
           "correlates.ticket_note_metadata": {}
         },
         "updated_at": "2026-02-27T20:50:55.153Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260227.0013",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260227.0013",
+        "external_id": "132826",
+        "title": "Security event detected",
+        "description": "From do-not-reply@portal.checkpoint.com: Hello,\r\nPlease look at the details of the following anomaly event.\r\nDetails:\r\n\r\nmchavez@instoregrp.com performed geo-suspicious events: logged in from United States (2600:1011:a124:5901:3926:b134:259b:78f5) and after 25 minutes logged in from United States (2607:fb90:3502:d8e8:d368:207c:fa57:493b)\r\n\r\n\tDate\t2026-02-28 01:23:04 UTC\r\n\r\n\tSeverity\tMedium\r\nThis email was sent to instoregroup1",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-28T01:34:57.474Z",
+        "last_event_occurred_at": "2026-02-28T01:34:19.880Z",
+        "last_event_id": "autotask-poller:132826:ticket.created:2026-02-28T01:34:19.880Z",
+        "source_of_truth": "Autotask",
+        "domain_snapshots": {
+          "tickets": {
+            "external_id": "132826",
+            "ticket_number": "T20260227.0013",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "ticket_notes": {},
+          "correlates.resources": {},
+          "correlates.ticket_metadata": {
+            "ticket_number": "T20260227.0013",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "correlates.ticket_note_metadata": {}
+        },
+        "updated_at": "2026-02-28T01:34:57.474Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260227.0014",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260227.0014",
+        "external_id": "132827",
+        "title": "Microsoft 365 Technology User List",
+        "description": "From Roger Smith <roger.smith@techanalyticshub.site>: Hi ,\r\n\r\nI hope you're having a productive week.\r\n\r\nI wanted to introduce our recently Verified Microsoft 365 company dataset, designed to support business research and planning initiatives.\r\n\r\nThe file provides structured company-level insights along with associated professional contacts, organized for easy review and segmentation.\r\n\r\nDetails available include:\r\nProfessional roles grouped by department and responsibility area\r\nCompany attributes such as industry category, employee size, revenue range, and location\r\nPublicly available business contact information\r\nData maintained through periodic reviews\r\nProvided in Excel or CSV format for internal use\r\n\r\nIf this information is relevant to your current focus areas, I’d be glad to share a short sample for evaluation.\r\n\r\nBest regards,\r\nRoger Smith\r\nSenior Demand Generation Specialist\r\n\r\n100 Church Street, New York, NY 10007\r\n\r\nTo stop receiving future messages, reply with \"Remove.\"",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-28T02:13:11.016Z",
+        "last_event_occurred_at": "2026-02-28T02:10:24.007Z",
+        "last_event_id": "autotask-poller:132827:ticket.created:2026-02-28T02:10:24.007Z",
+        "source_of_truth": "Autotask",
+        "domain_snapshots": {
+          "tickets": {
+            "external_id": "132827",
+            "ticket_number": "T20260227.0014",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "ticket_notes": {},
+          "correlates.resources": {},
+          "correlates.ticket_metadata": {
+            "ticket_number": "T20260227.0014",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "correlates.ticket_note_metadata": {}
+        },
+        "updated_at": "2026-02-28T02:13:11.016Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260228.0001",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260228.0001",
+        "external_id": "132828",
+        "title": "Set Out of Office Auto-Reply for March 2nd and 3rd",
+        "description": "I will be out of office Monday, March 2nd & Tuesday, March 3rd and will monitor emails periodically.",
+        "status": "1",
+        "queue_id": 29683517,
+        "comments": [],
+        "last_sync_at": "2026-02-28T06:20:39.973Z",
+        "last_event_occurred_at": "2026-02-28T06:20:16.187Z",
+        "last_event_id": "autotask-poller:132828:ticket.created:2026-02-28T06:20:16.187Z",
+        "source_of_truth": "Autotask",
+        "domain_snapshots": {
+          "tickets": {
+            "external_id": "132828",
+            "ticket_number": "T20260228.0001",
+            "status": "1",
+            "queue_id": 29683517
+          },
+          "ticket_notes": {},
+          "correlates.resources": {},
+          "correlates.ticket_metadata": {
+            "ticket_number": "T20260228.0001",
+            "status": "1",
+            "queue_id": 29683517
+          },
+          "correlates.ticket_note_metadata": {}
+        },
+        "updated_at": "2026-02-28T06:20:39.973Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260228.0002",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260228.0002",
+        "external_id": "132829",
+        "title": "Quarantined and Spam/Junk Email Report",
+        "description": "From no-reply@checkpoint.com: You have 1 new quarantined and Spam/Junk emails over the last 24 hours, which are listed below.\r\n\r\nFor some of the quarantined emails, you can request the Security Administrator to release the email to the inbox or release the email yourself, based on the security policy.\r\n\r\nThe Spam/Junk emails were moved to your Junk folder. Quarantined Emails\r\n\r\nNo Items\r\n\r\n Spam/Junk Emails Emails detected as Spam or Marketing. Usually redirected to your Junk folder.\r\n\r\n\tSender\tSubject\tDate (GMT)\tAction\r\n\r\n\tSender roger.smith@techanalyticshub.site\tSubject Microsoft 365 Technology User List\tDate (GMT) 02/28/2026 02:08 AM\tAction\r\n\r\nTrust Sender\r\n\r\n Generate a new quarantine report of the last 24 hours",
+        "status": "19",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-28T12:18:06.553Z",
+        "last_event_occurred_at": "2026-02-28T12:10:14.567Z",
+        "last_event_id": "autotask-poller:132829:ticket.created:2026-02-28T12:10:14.567Z",
+        "source_of_truth": "Autotask",
+        "domain_snapshots": {
+          "tickets": {
+            "external_id": "132829",
+            "ticket_number": "T20260228.0002",
+            "status": "19",
+            "queue_id": 29683512
+          },
+          "ticket_notes": {},
+          "correlates.resources": {},
+          "correlates.ticket_metadata": {
+            "ticket_number": "T20260228.0002",
+            "status": "19",
+            "queue_id": 29683512
+          },
+          "correlates.ticket_note_metadata": {}
+        },
+        "updated_at": "2026-02-28T12:18:06.553Z"
       }
     ]
   ],

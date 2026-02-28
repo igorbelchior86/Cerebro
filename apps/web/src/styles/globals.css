@@ -539,3 +539,57 @@ body {
   border-radius: 3px;
   font-size: 11px;
 }
+
+/* ===================== VIEW TRANSITIONS (THEME TOGGLE) ===================== */
+
+/* By default, we do not want view transitions to run the generic cross-fade. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* Wiping Dark Theme (Left -> Right) */
+html.theme-transition-to-dark::view-transition-old(root) {
+  /* Keep the old Light theme locked at the bottom */
+  animation: none;
+  z-index: 1;
+}
+
+html.theme-transition-to-dark::view-transition-new(root) {
+  /* Slide the new Dark theme in as a sweeping mask from Left to Right */
+  animation: wipe-in-ltr 0.6s cubic-bezier(0.8, 0, 0.2, 1) forwards;
+  z-index: 2;
+}
+
+/* Wiping Light Theme (Right -> Left) */
+html.theme-transition-to-light::view-transition-old(root) {
+  /* Keep the old Dark theme locked at the bottom */
+  animation: none;
+  z-index: 1;
+}
+
+html.theme-transition-to-light::view-transition-new(root) {
+  /* Slide the new Light theme in as a sweeping mask from Right to Left */
+  animation: wipe-in-rtl 0.6s cubic-bezier(0.8, 0, 0.2, 1) forwards;
+  z-index: 2;
+}
+
+/* Keyframes for Spatial Polygon Clipping */
+@keyframes wipe-in-ltr {
+  from {
+    clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+  }
+  to {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+}
+
+@keyframes wipe-in-rtl {
+  from {
+    clip-path: polygon(100% 0, 100% 0, 100% 100%, 100% 100%);
+  }
+  to {
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+  }
+}

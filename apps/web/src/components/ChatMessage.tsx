@@ -477,10 +477,10 @@ const assistantBubbleStyle: CSSProperties = {
   maxWidth: '92%',
   borderRadius: '20px 20px 20px 4px',
   background: 'var(--bg-card)',
-  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04)',
   padding: '12px 16px',
   position: 'relative',
-  border: '1px solid var(--border)',
+  border: 'none',
 };
 
 const userBubbleStyle: CSSProperties = {
@@ -493,7 +493,7 @@ const userBubbleStyle: CSSProperties = {
   lineHeight: 1.55,
   color: '#FFFFFF',
   background: 'linear-gradient(135deg, #007aff, #0056b3)',
-  boxShadow: '0 2px 4px rgba(0, 122, 255, 0.2)',
+  boxShadow: '0 2px 6px rgba(0, 122, 255, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.1)',
   border: 'none',
 };
 
@@ -621,9 +621,10 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
   const assistantBubbleByChannel: CSSProperties = {
     ...assistantBubbleStyle,
     background: tone.bubbleBg !== 'transparent' ? tone.bubbleBg : assistantBubbleStyle.background,
-    borderColor: tone.bubbleBorder,
+    // Provide a faint tint border if a tone dictates one, otherwise none.
+    border: tone.bubbleBorder && tone.bubbleBorder !== 'var(--border)' ? `1px solid ${tone.bubbleBorder}` : assistantBubbleStyle.border,
     // Add very faint tint based on category without making it look like a warning box
-    boxShadow: `inset 2px 0 0 ${tone.bubbleAccent}, 0 2px 4px rgba(0,0,0,0.02)`,
+    boxShadow: `inset 2px 0 0 ${tone.bubbleAccent}, 0 2px 8px rgba(0,0,0,0.05)`,
   };
   const userBubbleByChannel: CSSProperties = {
     ...userBubbleStyle,
@@ -664,19 +665,19 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
   if (message.role === 'user') {
     return (
       <div className="animate-msgIn" style={{ marginBottom: '20px' }}>
-        <div style={{ ...elasticScrollStyle, display: 'flex', gap: '10px', alignItems: 'flex-end', flexDirection: 'row-reverse' }}>
+        <div style={{ ...elasticScrollStyle, display: 'flex', gap: '8px', alignItems: 'flex-end', flexDirection: 'row-reverse' }}>
           <div style={{ width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', background: channel === 'internal_ai' ? '#4B5563' : '#007aff', boxShadow: '0 2px 4px rgba(0,122,255,0.2)' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '6px', flexDirection: 'row-reverse', marginRight: '4px' }}>
-              <span style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>You</span>
-              <span style={channelBadgeStyle}>{channelBadge}</span>
-              {message.timestamp && <span suppressHydrationWarning style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)' }}>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
-            </div>
             <p style={userBubbleByChannel}>
               {message.content}
             </p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '4px', flexDirection: 'row-reverse', marginRight: '6px' }}>
+              <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)' }}>You</span>
+              <span style={{ ...channelBadgeStyle, fontSize: '9px' }}>{channelBadge}</span>
+              {message.timestamp && <span suppressHydrationWarning style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)' }}>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+            </div>
             {message.delivery ? (
               <div style={{ marginTop: '5px', fontSize: '10px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
@@ -812,17 +813,50 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
   return (
     <div className="animate-msgIn" style={{ marginBottom: '20px' }}>
       <div style={{ ...elasticScrollStyle, display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
-          <div style={{ width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--text-secondary)', background: 'var(--bg-card)', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+          <div style={{ width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--text-secondary)', background: 'var(--bg-card)', boxShadow: '0 2px 6px rgba(0,0,0,0.06)', border: 'none' }}>
             {src.icon}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', flex: 1, minWidth: 0 }}>
             <div style={assistantBubbleByChannel}>
-              {canToggleTicketText && ticketTextMode === 'clean' && hasCleanTicketText ? (
-                <RichCleanTicketText
-                  text={message.ticketTextVariant!.clean!}
-                  format={message.ticketTextVariant!.cleanFormat ?? 'plain'}
-                />
+              {canToggleTicketText && hasCleanTicketText ? (
+                <div style={{ display: 'grid' }}>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateRows: ticketTextMode === 'clean' ? '1fr' : '0fr',
+                      opacity: ticketTextMode === 'clean' ? 1 : 0,
+                      filter: ticketTextMode === 'clean' ? 'blur(0px)' : 'blur(4px)',
+                      transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                      gridArea: '1 / 1 / 2 / 2',
+                      pointerEvents: ticketTextMode === 'clean' ? 'auto' : 'none',
+                      alignItems: 'start',
+                    }}
+                  >
+                    <div style={{ overflow: 'hidden' }}>
+                      <RichCleanTicketText
+                        text={message.ticketTextVariant!.clean!}
+                        format={message.ticketTextVariant!.cleanFormat ?? 'plain'}
+                      />
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateRows: ticketTextMode === 'original' ? '1fr' : '0fr',
+                      opacity: ticketTextMode === 'original' ? 1 : 0,
+                      filter: ticketTextMode === 'original' ? 'blur(0px)' : 'blur(4px)',
+                      transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                      gridArea: '1 / 1 / 2 / 2',
+                      pointerEvents: ticketTextMode === 'original' ? 'auto' : 'none',
+                      alignItems: 'start',
+                    }}
+                  >
+                    <div style={{ overflow: 'hidden' }}>
+                      <MarkdownRenderer content={String(message.ticketTextVariant!.original) + (message.type === 'validation' ? ' **Status:** `approved`' : '')} />
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <MarkdownRenderer content={String(renderedContent) + (message.type === 'validation' ? ' **Status:** `approved`' : '')} />
               )}
@@ -871,12 +905,10 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
 
               {canToggleTicketText && (
                 <div style={{
-                  position: 'absolute',
-                  bottom: '6px',
-                  right: '6px',
                   display: 'flex',
+                  justifyContent: 'flex-end',
                   gap: '4px',
-                  zIndex: 10
+                  marginTop: '8px',
                 }}>
                   {ticketTextModes.map((mode) => (
                     <button
@@ -928,9 +960,9 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '10px', marginTop: '6px', marginLeft: '42px' }}>
-          <span style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>{sourceLabel}</span>
-          <span style={channelBadgeStyle}>{channelBadge}</span>
+        <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '7px', marginTop: '4px', marginLeft: '40px' }}>
+          <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)' }}>{sourceLabel}</span>
+          <span style={{ ...channelBadgeStyle, fontSize: '9px' }}>{channelBadge}</span>
           {message.timestamp && (
             <span
               suppressHydrationWarning

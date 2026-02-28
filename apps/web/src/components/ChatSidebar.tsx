@@ -7,6 +7,7 @@ import ProfileModal from './ProfileModal';
 import ThemeToggle from './ThemeToggle';
 import { useAuth } from '@/hooks/useAuth';
 import { useTranslations } from 'next-intl';
+import { flushSync } from 'react-dom';
 import { usePathname, useSearchParams } from 'next/navigation';
 
 export interface ActiveTicket {
@@ -304,12 +305,38 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(newTheme);
-    localStorage.setItem('theme', newTheme);
-    // Persist to user profile preferences
-    if (user) {
-      updateProfile({ preferences: { ...user.preferences, theme: newTheme } });
+
+    // Helper to persist the theme
+    const applyTheme = () => {
+      setTheme(newTheme);
+      localStorage.setItem('theme', newTheme);
+      if (user) {
+        updateProfile({ preferences: { ...user.preferences, theme: newTheme } });
+      }
+    };
+
+    // If View Transitions API is not supported, just snap to the new theme
+    if (!document.startViewTransition) {
+      applyTheme();
+      return;
     }
+
+    // Determine the animation direction class
+    const transitionClass = newTheme === 'dark' ? 'theme-transition-to-dark' : 'theme-transition-to-light';
+    document.documentElement.classList.add(transitionClass);
+
+    // Start the transition
+    const transition = document.startViewTransition(() => {
+      // flushSync forces React to render the new state synchronously so the API can capture it immediately
+      flushSync(() => {
+        applyTheme();
+      });
+    });
+
+    // Cleanup the directional class after the animation finishes
+    transition.finished.finally(() => {
+      document.documentElement.classList.remove(transitionClass);
+    });
   };
 
   const selectedGlobalQueueId = selectedGlobalQueue.startsWith('queue:')

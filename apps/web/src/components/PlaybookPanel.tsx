@@ -99,26 +99,45 @@ function SectionLabel({ children, onToggle, isOpen }: { children: ReactNode; onT
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            transition: 'all 0.2s ease',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+            transition: 'all 0.3s cubic-bezier(0.23, 1, 0.32, 1)',
+            boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+            position: 'relative',
+            overflow: 'hidden'
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.borderColor = 'var(--accent)';
-            e.currentTarget.style.background = 'rgba(91,127,255,0.04)';
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+            e.currentTarget.style.boxShadow = '0 0 0 2px rgba(91, 127, 255, 0.15), 0 4px 12px rgba(91, 127, 255, 0.15)';
+            e.currentTarget.style.transform = 'translateY(-1px)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.borderColor = 'var(--bento-outline)';
             e.currentTarget.style.background = 'var(--bg-card)';
+            e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.03)';
+            e.currentTarget.style.transform = 'translateY(0)';
           }}
           title={isOpen ? 'Collapse' : 'Expand'}
         >
+          {/* Subtle inner radial gradient for a premium "glow" look */}
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            background: 'radial-gradient(circle at center, rgba(91,127,255,0.12) 0%, transparent 80%)',
+            opacity: 0,
+            transition: 'opacity 0.3s ease',
+            pointerEvents: 'none'
+          }}
+          // Standard CSS can't access parent hover directly from inline styles here easily without classes, 
+          // but the parent's background color shift + outer glow is enough for the effect. 
+          // This div could be wired to a state variable, but the parent scale/shadow does most of the heavy lifting.
+          />
           <svg
             width="10"
             height="10"
             viewBox="0 0 12 12"
             fill="none"
             style={{
-              transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+              transform: isOpen ? 'rotate(0deg)' : 'rotate(-180deg)',
               transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
             }}
           >
@@ -263,144 +282,156 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
                 Context
               </SectionLabel>
             </div>
-            {isContextOpen && (
-              <div
-                className="animate-in fade-in slide-in-from-top-1 duration-300"
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '12px',
-                  width: '100%',
-                  position: 'relative',
-                  padding: '0 14px'
-                }}
-              >
-                {/* 1. CUSTOMER IDENTITY - Fixed Top Position */}
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '8px',
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  padding: '12px',
-                  borderRadius: '16px',
-                  border: '1px solid var(--bento-outline)',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                  transition: 'all 0.25s cubic-bezier(0.23, 1, 0.32, 1)'
-                }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--border-accent)';
-                    e.currentTarget.style.boxShadow = '0 12px 24px rgba(20,24,38,0.2)';
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateRows: isContextOpen ? '1fr' : '0fr',
+                transition: 'grid-template-rows 0.4s cubic-bezier(0.23, 1, 0.32, 1)',
+              }}
+            >
+              <div style={{ overflow: 'hidden' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px',
+                    width: '100%',
+                    position: 'relative',
+                    padding: '0 14px',
+                    paddingTop: '16px',
+                    transition: 'opacity 0.4s cubic-bezier(0.23, 1, 0.32, 1), transform 0.4s cubic-bezier(0.23, 1, 0.32, 1), visibility 0.4s',
+                    opacity: isContextOpen ? 1 : 0,
+                    transform: isContextOpen ? 'translateY(0)' : 'translateY(-10px)',
+                    visibility: isContextOpen ? 'visible' : 'hidden',
                   }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = 'var(--bento-outline)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
-                  }}>
-                  {ctx.filter(c => ['Org', 'Contact', 'Additional contacts'].includes(c.key)).map((c) => (
-                    <div
-                      key={c.key}
-                      style={{
-                        gridColumn: c.key === 'Additional contacts' ? 'span 2' : 'span 1',
-                        padding: '10px 12px',
-                        borderRadius: '10px',
-                        background: 'var(--bg-card)',
-                        border: '1px solid var(--border)',
-                        position: 'relative',
-                        transition: 'all 0.2s ease',
-                      }}
-                    >
-                      {c.editable && onEditContextItem ? (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); onEditContextItem(c.key); }}
-                          style={{
-                            position: 'absolute', top: '8px', right: '8px',
-                            width: '20px', height: '20px', borderRadius: '6px',
-                            border: '1px solid var(--bento-outline)',
-                            background: 'var(--bg-panel)', color: 'var(--accent)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            cursor: 'pointer', transition: 'all 0.2s ease'
-                          }}
-                          onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'rgba(110, 134, 201, 0.08)'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--bento-outline)'; e.currentTarget.style.background = 'var(--bg-panel)'; }}
-                        >
-                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
-                          </svg>
-                        </button>
-                      ) : null}
-                      <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8.5px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontWeight: 700 }}>{c.key}</div>
-                      <div style={{ fontSize: '11.5px', fontWeight: 600, color: c.highlight ?? 'var(--text-primary)', lineHeight: 1.4, wordBreak: 'break-word' }}>{c.val}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* 2. TECHNICAL SPLIT - Fixed Left/Right columns */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                  {/* Connectivity/Network Cluster */}
+                >
+                  {/* 1. CUSTOMER IDENTITY - Fixed Top Position */}
                   <div style={{
-                    display: 'flex', flexDirection: 'column', gap: '6px',
-                    background: 'rgba(255, 255, 255, 0.015)',
-                    padding: '8px', borderRadius: '14px', border: '1px solid var(--bento-outline)',
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '8px',
+                    background: 'rgba(255, 255, 255, 0.03)',
+                    padding: '12px',
+                    borderRadius: '16px',
+                    border: '1px solid var(--bento-outline)',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
                     transition: 'all 0.25s cubic-bezier(0.23, 1, 0.32, 1)'
                   }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.borderColor = 'var(--border-accent)';
-                      e.currentTarget.style.boxShadow = '0 10px 20px rgba(20,24,38,0.15)';
+                      e.currentTarget.style.boxShadow = '0 12px 24px rgba(20,24,38,0.2)';
                       e.currentTarget.style.transform = 'translateY(-2px)';
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.borderColor = 'var(--bento-outline)';
-                      e.currentTarget.style.boxShadow = 'none';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
                       e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.015)';
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
                     }}>
-                    <div style={{ fontSize: '7.5px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2px', opacity: 0.8 }}>Network</div>
-                    {ctx.filter(c => ['ISP', 'Phone Provider', 'Firewall'].includes(c.key)).map(c => (
-                      <div key={c.key} style={{ padding: '8px 14px', borderRadius: '8px', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-                        <div style={{ fontSize: '8px', color: 'var(--text-faint)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>{c.key}</div>
-                        <div style={{ fontSize: '10.5px', fontWeight: 600, color: c.highlight ?? 'var(--text-secondary)', lineHeight: 1.3, wordBreak: 'break-word' }}>{c.val}</div>
+                    {ctx.filter(c => ['Org', 'Contact', 'Additional contacts'].includes(c.key)).map((c) => (
+                      <div
+                        key={c.key}
+                        style={{
+                          gridColumn: c.key === 'Additional contacts' ? 'span 2' : 'span 1',
+                          padding: '10px 12px',
+                          borderRadius: '10px',
+                          background: 'var(--bg-card)',
+                          border: '1px solid var(--border)',
+                          position: 'relative',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        {c.editable && onEditContextItem ? (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onEditContextItem(c.key); }}
+                            style={{
+                              position: 'absolute', top: '8px', right: '8px',
+                              width: '20px', height: '20px', borderRadius: '6px',
+                              border: '1px solid var(--bento-outline)',
+                              background: 'var(--bg-panel)', color: 'var(--accent)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              cursor: 'pointer', transition: 'all 0.2s ease'
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'rgba(110, 134, 201, 0.08)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--bento-outline)'; e.currentTarget.style.background = 'var(--bg-panel)'; }}
+                          >
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                            </svg>
+                          </button>
+                        ) : null}
+                        <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8.5px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontWeight: 700 }}>{c.key}</div>
+                        <div style={{ fontSize: '11.5px', fontWeight: 600, color: c.highlight ?? 'var(--text-primary)', lineHeight: 1.4, wordBreak: 'break-word' }}>{c.val}</div>
                       </div>
                     ))}
                   </div>
 
-                  {/* Assets Cluster */}
-                  <div style={{
-                    display: 'flex', flexDirection: 'column', gap: '6px',
-                    background: 'rgba(255, 255, 255, 0.015)',
-                    padding: '8px', borderRadius: '14px', border: '1px solid var(--bento-outline)',
-                    transition: 'all 0.25s cubic-bezier(0.23, 1, 0.32, 1)'
-                  }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = 'var(--border-accent)';
-                      e.currentTarget.style.boxShadow = '0 10px 20px rgba(20,24,38,0.15)';
-                      e.currentTarget.style.transform = 'translateY(-2px)';
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                  {/* 2. TECHNICAL SPLIT - Fixed Left/Right columns */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                    {/* Connectivity/Network Cluster */}
+                    <div style={{
+                      display: 'flex', flexDirection: 'column', gap: '6px',
+                      background: 'rgba(255, 255, 255, 0.015)',
+                      padding: '8px', borderRadius: '14px', border: '1px solid var(--bento-outline)',
+                      transition: 'all 0.25s cubic-bezier(0.23, 1, 0.32, 1)'
                     }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = 'var(--bento-outline)';
-                      e.currentTarget.style.boxShadow = 'none';
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.015)';
-                    }}>
-                    <div style={{ fontSize: '7.5px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2px', opacity: 0.8 }}>Environment</div>
-                    {['User Device', 'Additional Devices', 'WiFi', 'Switch']
-                      .map(key => ctx.find(c => c.key === key))
-                      .filter((c): c is NonNullable<typeof c> => Boolean(c))
-                      .map(c => (
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--border-accent)';
+                        e.currentTarget.style.boxShadow = '0 10px 20px rgba(20,24,38,0.15)';
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--bento-outline)';
+                        e.currentTarget.style.boxShadow = 'none';
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.015)';
+                      }}>
+                      <div style={{ fontSize: '7.5px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2px', opacity: 0.8 }}>Network</div>
+                      {ctx.filter(c => ['ISP', 'Phone Provider', 'Firewall'].includes(c.key)).map(c => (
                         <div key={c.key} style={{ padding: '8px 14px', borderRadius: '8px', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
                           <div style={{ fontSize: '8px', color: 'var(--text-faint)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>{c.key}</div>
-                          <div style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)', lineHeight: 1.3, wordBreak: 'break-word' }}>{c.val}</div>
+                          <div style={{ fontSize: '10.5px', fontWeight: 600, color: c.highlight ?? 'var(--text-secondary)', lineHeight: 1.3, wordBreak: 'break-word' }}>{c.val}</div>
                         </div>
                       ))}
+                    </div>
+
+                    {/* Assets Cluster */}
+                    <div style={{
+                      display: 'flex', flexDirection: 'column', gap: '6px',
+                      background: 'rgba(255, 255, 255, 0.015)',
+                      padding: '8px', borderRadius: '14px', border: '1px solid var(--bento-outline)',
+                      transition: 'all 0.25s cubic-bezier(0.23, 1, 0.32, 1)'
+                    }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--border-accent)';
+                        e.currentTarget.style.boxShadow = '0 10px 20px rgba(20,24,38,0.15)';
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--bento-outline)';
+                        e.currentTarget.style.boxShadow = 'none';
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.015)';
+                      }}>
+                      <div style={{ fontSize: '7.5px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '2px', opacity: 0.8 }}>Environment</div>
+                      {['User Device', 'Additional Devices', 'WiFi', 'Switch']
+                        .map(key => ctx.find(c => c.key === key))
+                        .filter((c): c is NonNullable<typeof c> => Boolean(c))
+                        .map(c => (
+                          <div key={c.key} style={{ padding: '8px 14px', borderRadius: '8px', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+                            <div style={{ fontSize: '8px', color: 'var(--text-faint)', textTransform: 'uppercase', fontWeight: 700, marginBottom: '2px' }}>{c.key}</div>
+                            <div style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)', lineHeight: 1.3, wordBreak: 'break-word' }}>{c.val}</div>
+                          </div>
+                        ))}
+                    </div>
                   </div>
                 </div>
               </div>
-            )}
+            </div>
           </div>
         )}
 

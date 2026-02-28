@@ -145,13 +145,14 @@ interface WorkflowActionFeedback {
   updatedAt: string;
 }
 
-type EditableContextKey = 'Org' | 'Contact' | 'Tech';
+type EditableContextKey = 'Org' | 'Contact' | 'Tech' | 'Additional contacts';
 
 interface ContextOverrideState {
   org?: { id?: number; name: string };
   user?: { id?: number; name: string; companyId?: number };
   tech?: { id?: number; name: string };
   secondary_tech?: { id?: number; name: string };
+  additional_contact?: { id?: number; name: string; companyId?: number };
 }
 
 type ContextEditorOption = { id: number; label: string; sublabel?: string };
@@ -1457,8 +1458,8 @@ export default function SessionDetail({
   })();
 
   const openContextEditor = (key: string) => {
-    if (key !== 'Org' && key !== 'Contact' && key !== 'Tech') return;
-    setActiveContextEditor(key);
+    if (key !== 'Org' && key !== 'Contact' && key !== 'Tech' && key !== 'Additional contacts') return;
+    setActiveContextEditor(key as EditableContextKey);
     setContextEditorQuery('');
     setContextEditorError('');
     setContextEditorOptions([]);
@@ -1511,7 +1512,8 @@ export default function SessionDetail({
       }
       return;
     }
-    if (activeContextEditor === 'Contact') {
+
+    if (activeContextEditor === 'Contact' || activeContextEditor === 'Additional contacts') {
       if (activeOrgId === null) {
         setContextEditorError('Select an Org first to set Contact.');
         return;
@@ -1519,21 +1521,34 @@ export default function SessionDetail({
       setContextEditorSaving(true);
       setContextEditorError('');
       try {
-        const updated = await updateAutotaskTicketContext(ticketRef, { companyId: activeOrgId, contactId: option.id });
-        setContextOverrides((prev) => ({
-          ...prev,
-          user: {
-            id: updated.contactId ?? option.id,
-            name: updated.contactName || option.label,
-            companyId: updated.companyId ?? activeOrgId,
-          },
-          ...(updated.companyId !== null && updated.companyId !== undefined && updated.companyName
-            ? { org: { id: updated.companyId, name: updated.companyName } }
-            : {}),
-        }));
+        if (activeContextEditor === 'Contact') {
+          const updated = await updateAutotaskTicketContext(ticketRef, { companyId: activeOrgId, contactId: option.id });
+          setContextOverrides((prev) => ({
+            ...prev,
+            user: {
+              id: updated.contactId ?? option.id,
+              name: updated.contactName || option.label,
+              companyId: updated.companyId ?? activeOrgId,
+            },
+            ...(updated.companyId !== null && updated.companyId !== undefined && updated.companyName
+              ? { org: { id: updated.companyId, name: updated.companyName } }
+              : {}),
+          }));
+        } else {
+          // For Additional contacts, we just update the local UX override for now. 
+          // Autotask doesn't natively support this on the primary patch endpoint without secondary mapping.
+          setContextOverrides((prev) => ({
+            ...prev,
+            additional_contact: {
+              id: option.id,
+              name: option.label,
+              companyId: activeOrgId,
+            },
+          }));
+        }
         closeContextEditor();
       } catch (err: any) {
-        setContextEditorError(String(err?.message || 'Unable to update Contact in Autotask'));
+        setContextEditorError(String(err?.message || `Unable to update ${activeContextEditor} in Autotask`));
         setContextEditorSaving(false);
       }
       return;
@@ -1563,7 +1578,7 @@ export default function SessionDetail({
 
   useEffect(() => {
     if (!activeContextEditor) return;
-    if (activeContextEditor === 'Contact' && activeOrgId === null) {
+    if ((activeContextEditor === 'Contact' || activeContextEditor === 'Additional contacts') && activeOrgId === null) {
       const orgName = String(
         contextOverrides.org?.name ||
         data?.ssot?.company ||
@@ -1574,7 +1589,7 @@ export default function SessionDetail({
       ).trim();
       if (!orgName) {
         setContextEditorOptions([]);
-        setContextEditorError('Select an Org first to list Contact options.');
+        setContextEditorError(`Select an Org first to list ${activeContextEditor.toLowerCase()} options.`);
         return;
       }
       let ignoreResolve = false;
@@ -1592,12 +1607,12 @@ export default function SessionDetail({
             setContextEditorError('');
           } else {
             setContextEditorOptions([]);
-            setContextEditorError('Select an Org first to list Contact options.');
+            setContextEditorError(`Select an Org first to list ${activeContextEditor.toLowerCase()} options.`);
           }
         } catch (err: any) {
           if (!ignoreResolve) {
             setContextEditorOptions([]);
-            setContextEditorError(String(err?.message || 'Unable to resolve Org before listing users'));
+            setContextEditorError(String(err?.message || `Unable to resolve Org before listing ${activeContextEditor.toLowerCase()} options.`));
           }
         } finally {
           if (!ignoreResolve) setContextEditorLoading(false);
@@ -1624,7 +1639,7 @@ export default function SessionDetail({
           }
           return;
         }
-        if (activeContextEditor === 'Contact' && activeOrgId !== null) {
+        if ((activeContextEditor === 'Contact' || activeContextEditor === 'Additional contacts') && activeOrgId !== null) {
           const rows = await searchAutotaskContacts(contextEditorQuery, activeOrgId, 30);
           if (!ignore) {
             setContextEditorOptions(rows.map((row: AutotaskContactOption) => ({
@@ -1693,7 +1708,8 @@ export default function SessionDetail({
         },
         {
           key: 'Additional contacts',
-          val: data?.ssot?.additional_contacts || 'Unknown',
+          val: contextOverrides.additional_contact?.name || data?.ssot?.additional_contacts || 'Unknown',
+          editable: true,
         },
         {
           key: 'User Device',
@@ -2099,7 +2115,7 @@ export default function SessionDetail({
                         Edit {activeContextEditor}
                       </h2>
                       <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px', margin: 0 }}>
-                        {activeContextEditor === 'Contact'
+                        {activeContextEditor === 'Contact' || activeContextEditor === 'Additional contacts'
                           ? activeOrgId !== null
                             ? `Listing contacts from selected Org (ID ${activeOrgId})`
                             : 'Select an Org first to list contacts'

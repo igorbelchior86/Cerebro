@@ -183,8 +183,28 @@ export default function ChatInput({
     justifyContent: 'center',
     cursor: disabled || isLoading ? 'not-allowed' : 'pointer',
     opacity: disabled || isLoading ? 0.55 : 1,
-    transition: 'var(--transition)',
+    transition: 'all 0.25s cubic-bezier(0.23, 1, 0.32, 1)',
     flexShrink: 0,
+  };
+
+  const handleToolbarMouseEnter = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!disabled && !isLoading) {
+      e.currentTarget.style.borderColor = 'var(--border-accent)';
+      e.currentTarget.style.background = 'var(--bg-card-hover)';
+      e.currentTarget.style.boxShadow = '0 6px 12px rgba(20,24,38,0.12)';
+      e.currentTarget.style.transform = 'translateY(-2px)';
+      e.currentTarget.style.color = 'var(--accent)';
+    }
+  };
+
+  const handleToolbarMouseLeave = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!disabled && !isLoading) {
+      e.currentTarget.style.borderColor = 'var(--bento-outline)';
+      e.currentTarget.style.background = 'var(--bg-panel)';
+      e.currentTarget.style.boxShadow = 'none';
+      e.currentTarget.style.transform = 'translateY(0)';
+      e.currentTarget.style.color = 'var(--text-muted)';
+    }
   };
   const destinationPillLabel = targetChannel === 'internal_ai' ? 'AI' : 'User';
   const destinationPillStyle: CSSProperties = {
@@ -254,7 +274,24 @@ export default function ChatInput({
               }}
               title={`Destination: ${destinationPillLabel} (click to toggle)`}
               aria-label={`Destination: ${destinationPillLabel} (click to toggle)`}
-              style={destinationPillStyle}
+              style={{
+                ...destinationPillStyle,
+                transition: 'all 0.25s cubic-bezier(0.23, 1, 0.32, 1)',
+              }}
+              onMouseEnter={(e) => {
+                if (!disabled && !isLoading) {
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-accent)';
+                  (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 8px 16px rgba(20,24,38,0.15)';
+                  (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!disabled && !isLoading) {
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = targetChannel === 'internal_ai' ? 'rgba(91,127,255,0.30)' : 'rgba(16,185,129,0.35)';
+                  (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
+                  (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+                }
+              }}
             >
               {destinationPillLabel}
             </button>
@@ -272,9 +309,43 @@ export default function ChatInput({
             style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontFamily: 'var(--font-dm-sans, sans-serif)', fontSize: '12.5px', color: 'var(--text-primary)', letterSpacing: '-0.01em', lineHeight: `${INPUT_LINE_HEIGHT_PX}px`, resize: 'none' }}
           />
           <button type="submit" disabled={(!input.trim() && attachments.length === 0) || disabled || isLoading}
-            style={{ width: '52px', height: '28px', borderRadius: '8px', background: (input.trim() || attachments.length > 0) && !disabled ? 'var(--accent-muted)' : 'var(--bg-card)', border: `1px solid ${(input.trim() || attachments.length > 0) && !disabled ? 'var(--border-accent)' : 'var(--bento-outline)'}`, cursor: (input.trim() || attachments.length > 0) && !disabled ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', flexShrink: 0, opacity: (!input.trim() && attachments.length === 0) || disabled ? 0.6 : 1, transition: 'var(--transition)', color: (input.trim() || attachments.length > 0) && !disabled ? 'var(--accent)' : 'var(--text-muted)' }}
-            onMouseEnter={(e) => { if ((input.trim() || attachments.length > 0) && !disabled) (e.currentTarget as HTMLButtonElement).style.opacity = '1'; }}
-            onMouseLeave={(e) => { if ((input.trim() || attachments.length > 0) && !disabled) (e.currentTarget as HTMLButtonElement).style.opacity = '0.85'; }}
+            style={{
+              width: '52px',
+              height: '28px',
+              borderRadius: '8px',
+              background: (input.trim() || attachments.length > 0) && !disabled ? 'var(--accent-muted)' : 'var(--bg-card)',
+              border: `1px solid ${(input.trim() || attachments.length > 0) && !disabled ? 'var(--border-accent)' : 'var(--bento-outline)'}`,
+              cursor: (input.trim() || attachments.length > 0) && !disabled ? 'pointer' : 'not-allowed',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '4px',
+              flexShrink: 0,
+              opacity: (!input.trim() && attachments.length === 0) || disabled ? 0.6 : 1,
+              transition: 'all 0.25s cubic-bezier(0.23, 1, 0.32, 1)',
+              color: (input.trim() || attachments.length > 0) && !disabled ? 'var(--accent)' : 'var(--text-muted)'
+            }}
+            onMouseEnter={(e) => {
+              if ((input.trim() || attachments.length > 0) && !disabled && !isLoading) {
+                (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card-hover)';
+                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-accent)';
+                (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 8px 16px rgba(20,24,38,0.15)';
+                (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if ((input.trim() || attachments.length > 0) && !disabled && !isLoading) {
+                (e.currentTarget as HTMLButtonElement).style.background = 'var(--accent-muted)';
+                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-accent)';
+                (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
+                (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+              } else {
+                (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card)';
+                (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--bento-outline)';
+                (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
+                (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+              }
+            }}
             title="Send (Enter)"
             aria-label="Send (Enter)"
           >
@@ -329,6 +400,8 @@ export default function ChatInput({
             title={attachmentsEnabled ? 'Attach files' : 'Attachments unavailable in this context'}
             aria-label="Attach files"
             onClick={handlePickFiles}
+            onMouseEnter={handleToolbarMouseEnter}
+            onMouseLeave={handleToolbarMouseLeave}
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M11.8 5.1 7 9.9a2 2 0 0 1-2.8-2.8L9 2.3a3 3 0 1 1 4.2 4.2L7.6 12a4 4 0 1 1-5.7-5.6l5.2-5.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
@@ -341,6 +414,8 @@ export default function ChatInput({
             title="Emoji"
             aria-label="Insert emoji"
             onClick={() => applyInlineFormat('🙂', '')}
+            onMouseEnter={handleToolbarMouseEnter}
+            onMouseLeave={handleToolbarMouseLeave}
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.4" />
@@ -357,6 +432,8 @@ export default function ChatInput({
             title="Bold"
             aria-label="Bold"
             onClick={() => applyInlineFormat('**')}
+            onMouseEnter={handleToolbarMouseEnter}
+            onMouseLeave={handleToolbarMouseLeave}
           >
             <span style={{ fontWeight: 700, fontSize: '14px', lineHeight: 1 }}>B</span>
           </button>
@@ -367,6 +444,8 @@ export default function ChatInput({
             title="Italic"
             aria-label="Italic"
             onClick={() => applyInlineFormat('*')}
+            onMouseEnter={handleToolbarMouseEnter}
+            onMouseLeave={handleToolbarMouseLeave}
           >
             <span style={{ fontStyle: 'italic', fontSize: '14px', lineHeight: 1 }}>I</span>
           </button>
@@ -377,6 +456,8 @@ export default function ChatInput({
             title="Underline"
             aria-label="Underline"
             onClick={() => applyInlineFormat('<u>', '</u>')}
+            onMouseEnter={handleToolbarMouseEnter}
+            onMouseLeave={handleToolbarMouseLeave}
           >
             <span style={{ textDecoration: 'underline', fontSize: '14px', lineHeight: 1 }}>U</span>
           </button>
@@ -387,6 +468,8 @@ export default function ChatInput({
             title="Bulleted list"
             aria-label="Bulleted list"
             onClick={() => applyLinePrefix('- ')}
+            onMouseEnter={handleToolbarMouseEnter}
+            onMouseLeave={handleToolbarMouseLeave}
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <circle cx="3" cy="4" r="1.2" fill="currentColor" />
@@ -402,6 +485,8 @@ export default function ChatInput({
             title="Numbered list"
             aria-label="Numbered list"
             onClick={() => applyLinePrefix('1. ')}
+            onMouseEnter={handleToolbarMouseEnter}
+            onMouseLeave={handleToolbarMouseLeave}
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d="M1.8 4h1.5v3m6.2-3h5m-5 4h5m-5 4h5M2 12h2.2m-2.2-4h2.2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />

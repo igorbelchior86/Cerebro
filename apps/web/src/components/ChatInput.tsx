@@ -55,7 +55,7 @@ export default function ChatInput({
   const [input, setInput] = useState('');
   const [focused, setFocused] = useState(false);
   const [attachments, setAttachments] = useState<ChatInputAttachmentDraft[]>([]);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const INPUT_LINE_HEIGHT_PX = 18;
   const INPUT_MAX_LINES = 5;
@@ -82,57 +82,27 @@ export default function ChatInput({
     };
 
     setInput('');
+    if (inputRef.current) {
+      inputRef.current.innerHTML = '';
+    }
     setAttachments([]);
     await onSubmit(payload);
   };
 
-  useLayoutEffect(() => {
-    const field = inputRef.current;
-    if (!field) return;
-    field.style.height = 'auto';
-    const maxHeight = INPUT_LINE_HEIGHT_PX * INPUT_MAX_LINES;
-    const nextHeight = Math.min(field.scrollHeight, maxHeight);
-    field.style.height = `${nextHeight}px`;
-    field.style.overflowY = field.scrollHeight > maxHeight ? 'auto' : 'hidden';
-  }, [input, INPUT_LINE_HEIGHT_PX, INPUT_MAX_LINES]);
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e as unknown as FormEvent);
     }
   };
 
-  const applyInlineFormat = (prefix: string, suffix: string = prefix) => {
-    const field = inputRef.current;
-    if (!field || disabled || isLoading) return;
-
-    const start = field.selectionStart ?? 0;
-    const end = field.selectionEnd ?? 0;
-    const selected = input.slice(start, end);
-    const replacement = `${prefix}${selected}${suffix}`;
-    const next = `${input.slice(0, start)}${replacement}${input.slice(end)}`;
-
-    setInput(next);
-    requestAnimationFrame(() => {
-      field.focus();
-      const cursor = start + replacement.length;
-      field.setSelectionRange(cursor, cursor);
-    });
-  };
-
-  const applyLinePrefix = (prefix: string) => {
-    const field = inputRef.current;
-    if (!field || disabled || isLoading) return;
-
-    const start = field.selectionStart ?? 0;
-    const next = `${input.slice(0, start)}${prefix}${input.slice(start)}`;
-    setInput(next);
-    requestAnimationFrame(() => {
-      field.focus();
-      const cursor = start + prefix.length;
-      field.setSelectionRange(cursor, cursor);
-    });
+  const executeCommand = (command: string, arg?: string) => {
+    if (disabled || isLoading) return;
+    inputRef.current?.focus();
+    document.execCommand(command, false, arg);
+    if (inputRef.current) {
+      setInput(inputRef.current.innerHTML);
+    }
   };
 
   const handlePickFiles = () => {
@@ -296,18 +266,38 @@ export default function ChatInput({
               {destinationPillLabel}
             </button>
           ) : null}
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            placeholder={disabled ? t('processing') : channelPlaceholder}
-            disabled={disabled || isLoading}
-            rows={1}
-            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontFamily: 'var(--font-dm-sans, sans-serif)', fontSize: '12.5px', color: 'var(--text-primary)', letterSpacing: '-0.01em', lineHeight: `${INPUT_LINE_HEIGHT_PX}px`, resize: 'none' }}
-          />
+          <div style={{ flex: 1, position: 'relative' }}>
+            {!input && !focused && (
+              <div style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', color: 'var(--text-muted)', fontFamily: 'var(--font-dm-sans, sans-serif)', fontSize: '12.5px', letterSpacing: '-0.01em', lineHeight: `${INPUT_LINE_HEIGHT_PX}px` }}>
+                {disabled ? t('processing') : channelPlaceholder}
+              </div>
+            )}
+            <div
+              ref={inputRef}
+              contentEditable={!disabled && !isLoading}
+              onInput={(e) => setInput(e.currentTarget.innerHTML)}
+              onKeyDown={handleKeyDown}
+              onFocus={() => setFocused(true)}
+              onBlur={() => setFocused(false)}
+              style={{
+                width: '100%',
+                minHeight: `${INPUT_LINE_HEIGHT_PX}px`,
+                maxHeight: `${INPUT_LINE_HEIGHT_PX * INPUT_MAX_LINES}px`,
+                overflowY: 'auto',
+                background: 'none',
+                border: 'none',
+                outline: 'none',
+                fontFamily: 'var(--font-dm-sans, sans-serif)',
+                fontSize: '12.5px',
+                color: 'var(--text-primary)',
+                letterSpacing: '-0.01em',
+                lineHeight: `${INPUT_LINE_HEIGHT_PX}px`,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+              suppressContentEditableWarning={true}
+            />
+          </div>
           <button type="submit" disabled={(!input.trim() && attachments.length === 0) || disabled || isLoading}
             style={{
               width: '52px',
@@ -413,7 +403,8 @@ export default function ChatInput({
             style={toolbarButtonStyle}
             title="Emoji"
             aria-label="Insert emoji"
-            onClick={() => applyInlineFormat('🙂', '')}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => executeCommand('insertText', '🙂')}
             onMouseEnter={handleToolbarMouseEnter}
             onMouseLeave={handleToolbarMouseLeave}
           >
@@ -431,7 +422,8 @@ export default function ChatInput({
             style={toolbarButtonStyle}
             title="Bold"
             aria-label="Bold"
-            onClick={() => applyInlineFormat('**')}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => executeCommand('bold')}
             onMouseEnter={handleToolbarMouseEnter}
             onMouseLeave={handleToolbarMouseLeave}
           >
@@ -443,7 +435,8 @@ export default function ChatInput({
             style={toolbarButtonStyle}
             title="Italic"
             aria-label="Italic"
-            onClick={() => applyInlineFormat('*')}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => executeCommand('italic')}
             onMouseEnter={handleToolbarMouseEnter}
             onMouseLeave={handleToolbarMouseLeave}
           >
@@ -455,7 +448,8 @@ export default function ChatInput({
             style={toolbarButtonStyle}
             title="Underline"
             aria-label="Underline"
-            onClick={() => applyInlineFormat('<u>', '</u>')}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => executeCommand('underline')}
             onMouseEnter={handleToolbarMouseEnter}
             onMouseLeave={handleToolbarMouseLeave}
           >
@@ -467,7 +461,8 @@ export default function ChatInput({
             style={toolbarButtonStyle}
             title="Bulleted list"
             aria-label="Bulleted list"
-            onClick={() => applyLinePrefix('- ')}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => executeCommand('insertUnorderedList')}
             onMouseEnter={handleToolbarMouseEnter}
             onMouseLeave={handleToolbarMouseLeave}
           >
@@ -484,7 +479,8 @@ export default function ChatInput({
             style={toolbarButtonStyle}
             title="Numbered list"
             aria-label="Numbered list"
-            onClick={() => applyLinePrefix('1. ')}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => executeCommand('insertOrderedList')}
             onMouseEnter={handleToolbarMouseEnter}
             onMouseLeave={handleToolbarMouseLeave}
           >

@@ -550,7 +550,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
         {/* Ambient glow */}
         <div style={{ position: 'absolute', top: '-100px', left: '-80px', width: '320px', height: '320px', borderRadius: '50%', background: 'var(--glow-sidebar)', pointerEvents: 'none', zIndex: 0 }} />
 
-        <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: '24px', flex: 1, minHeight: 0, padding: '16px 12px 12px 12px' }}>
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, minHeight: 0, padding: 0 }}>
           {/* 1. Header Card */}
           <div style={{ borderRadius: '24px', border: '1px solid var(--bento-outline)', background: 'var(--bg-bento-panel)', boxShadow: 'var(--shadow-card)', overflow: 'hidden', flexShrink: 0 }}>
             <div style={{ padding: '16px 14px 12px', position: 'relative' }}>

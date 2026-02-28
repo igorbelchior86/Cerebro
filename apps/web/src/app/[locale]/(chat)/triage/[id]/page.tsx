@@ -10,6 +10,7 @@ import PlaybookPanel from '@/components/PlaybookPanel';
 import ResizableLayout from '@/components/ResizableLayout';
 import { usePathname } from 'next/navigation';
 import { usePollingResource } from '@/hooks/usePollingResource';
+import { useScrollVelocity } from '@/hooks/useScrollVelocity';
 import {
   type AutotaskCompanyOption,
   type AutotaskContactOption,
@@ -254,6 +255,7 @@ export default function SessionDetail({
   const pathname = usePathname();
   const [selectedTicketId, setSelectedTicketId] = useState(params.id);
   const [data, setData] = useState<SessionData | null>(null);
+  const { scrollRef, style: velocityStyle } = useScrollVelocity();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '0',
@@ -1975,8 +1977,10 @@ export default function SessionDetail({
 
           {/* Messages Container */}
           <div
+            ref={scrollRef}
             className="flex-1 overflow-y-auto"
             style={{
+              ...velocityStyle,
               padding: '14px 14px 8px',
               border: '1px solid var(--bento-outline)',
               borderRadius: '14px',

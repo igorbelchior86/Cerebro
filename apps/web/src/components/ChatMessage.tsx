@@ -627,121 +627,131 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
     boxShadow: `inset -3px 0 0 ${tone.bubbleAccent}, var(--shadow-card)`,
   };
 
+  const elasticScrollStyle: CSSProperties = {
+    transform: 'translate3d(0, var(--scroll-velocity, 0px), 0)',
+    transition: 'transform 0.1s cubic-bezier(0.1, 0.9, 0.2, 1)',
+    willChange: 'transform',
+  };
+
   if (isSystem) {
     return (
-      <div className="animate-msgIn" style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 10px', borderRadius: '999px', fontSize: '10px', color: 'var(--text-muted)', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-          <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} className="animate-throbber" />
-          {message.content}
-        </span>
+      <div className="animate-msgIn" style={{ marginBottom: '10px' }}>
+        <div style={{ ...elasticScrollStyle, display: 'flex', justifyContent: 'center' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '3px 10px', borderRadius: '999px', fontSize: '10px', color: 'var(--text-muted)', background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+            <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} className="animate-throbber" />
+            {message.content}
+          </span>
+        </div>
       </div>
     );
   }
 
   if (message.role === 'user') {
     return (
-      <div className="animate-msgIn" style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', flexDirection: 'row-reverse', marginBottom: '20px' }}>
-        <div style={{ width: '26px', height: '26px', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '11px', border: '1px solid rgba(91,127,255,0.2)', background: 'rgba(91,127,255,0.10)' }}>👤</div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '4px', flexDirection: 'row-reverse' }}>
-            <span style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>You</span>
-            <span style={channelBadgeStyle}>{channelBadge}</span>
-            {message.timestamp && <span suppressHydrationWarning style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)' }}>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
-          </div>
-          <p style={userBubbleByChannel}>
-            {message.content}
-          </p>
-          {message.delivery ? (
-            <div style={{ marginTop: '5px', fontSize: '10px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                <span style={{ ...deliveryStatusToneMap[message.delivery.status], borderRadius: '999px', padding: '1px 7px', fontSize: '9px', fontWeight: 700 }}>
-                  {deliveryStatusLabelMap[message.delivery.status]}
-                </span>
-                <span>PSA delivery</span>
-              </div>
-              {message.delivery.error ? (
-                <span style={{ color: '#b91c1c', maxWidth: '360px', textAlign: 'right' }}>{message.delivery.error}</span>
-              ) : null}
-              {message.delivery.status === 'failed' && onRetryExternalMessage ? (
-                <button
-                  type="button"
-                  onClick={() => onRetryExternalMessage(message)}
-                  style={{
-                    borderRadius: '999px',
-                    border: '1px solid rgba(185,28,28,0.25)',
-                    background: 'rgba(185,28,28,0.08)',
-                    color: '#b91c1c',
-                    fontSize: '9px',
-                    fontWeight: 700,
-                    padding: '2px 7px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Retry
-                </button>
-              ) : null}
+      <div className="animate-msgIn" style={{ marginBottom: '20px' }}>
+        <div style={{ ...elasticScrollStyle, display: 'flex', gap: '10px', alignItems: 'flex-start', flexDirection: 'row-reverse' }}>
+          <div style={{ width: '26px', height: '26px', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '11px', border: '1px solid rgba(91,127,255,0.2)', background: 'rgba(91,127,255,0.10)' }}>👤</div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '4px', flexDirection: 'row-reverse' }}>
+              <span style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>You</span>
+              <span style={channelBadgeStyle}>{channelBadge}</span>
+              {message.timestamp && <span suppressHydrationWarning style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)' }}>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
             </div>
-          ) : null}
-          {message.attachments && message.attachments.length > 0 ? (
-            <div style={{ marginTop: '6px', width: '100%', display: 'grid', gap: '6px' }}>
-              {message.attachments.map((attachment) => (
-                attachment.kind === 'image' && attachment.previewUrl ? (
-                  <img
-                    key={attachment.id}
-                    src={attachment.previewUrl}
-                    alt={attachment.name}
+            <p style={userBubbleByChannel}>
+              {message.content}
+            </p>
+            {message.delivery ? (
+              <div style={{ marginTop: '5px', fontSize: '10px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                  <span style={{ ...deliveryStatusToneMap[message.delivery.status], borderRadius: '999px', padding: '1px 7px', fontSize: '9px', fontWeight: 700 }}>
+                    {deliveryStatusLabelMap[message.delivery.status]}
+                  </span>
+                  <span>PSA delivery</span>
+                </div>
+                {message.delivery.error ? (
+                  <span style={{ color: '#b91c1c', maxWidth: '360px', textAlign: 'right' }}>{message.delivery.error}</span>
+                ) : null}
+                {message.delivery.status === 'failed' && onRetryExternalMessage ? (
+                  <button
+                    type="button"
+                    onClick={() => onRetryExternalMessage(message)}
                     style={{
-                      width: '100%',
-                      maxWidth: '320px',
-                      borderRadius: '10px',
-                      border: '1px solid rgba(91,127,255,0.18)',
-                      objectFit: 'cover',
-                    }}
-                  />
-                ) : (
-                  <div
-                    key={attachment.id}
-                    style={{
-                      width: '100%',
-                      maxWidth: '320px',
-                      borderRadius: '10px',
-                      border: '1px solid rgba(91,127,255,0.18)',
-                      background: 'rgba(91,127,255,0.06)',
-                      padding: '8px 9px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
+                      borderRadius: '999px',
+                      border: '1px solid rgba(185,28,28,0.25)',
+                      background: 'rgba(185,28,28,0.08)',
+                      color: '#b91c1c',
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      padding: '2px 7px',
+                      cursor: 'pointer',
                     }}
                   >
-                    <div
+                    Retry
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {message.attachments && message.attachments.length > 0 ? (
+              <div style={{ marginTop: '6px', width: '100%', display: 'grid', gap: '6px' }}>
+                {message.attachments.map((attachment) => (
+                  attachment.kind === 'image' && attachment.previewUrl ? (
+                    <img
+                      key={attachment.id}
+                      src={attachment.previewUrl}
+                      alt={attachment.name}
                       style={{
-                        width: '30px',
-                        height: '30px',
-                        borderRadius: '7px',
-                        border: '1px solid rgba(91,127,255,0.25)',
-                        background: 'rgba(255,255,255,0.55)',
-                        color: 'var(--text-muted)',
-                        fontSize: '10px',
-                        fontFamily: 'var(--font-jetbrains-mono, monospace)',
+                        width: '100%',
+                        maxWidth: '320px',
+                        borderRadius: '10px',
+                        border: '1px solid rgba(91,127,255,0.18)',
+                        objectFit: 'cover',
+                      }}
+                    />
+                  ) : (
+                    <div
+                      key={attachment.id}
+                      style={{
+                        width: '100%',
+                        maxWidth: '320px',
+                        borderRadius: '10px',
+                        border: '1px solid rgba(91,127,255,0.18)',
+                        background: 'rgba(91,127,255,0.06)',
+                        padding: '8px 9px',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
+                        gap: '8px',
                       }}
                     >
-                      {attachment.extension}
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: '11px', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {attachment.name}
+                      <div
+                        style={{
+                          width: '30px',
+                          height: '30px',
+                          borderRadius: '7px',
+                          border: '1px solid rgba(91,127,255,0.25)',
+                          background: 'rgba(255,255,255,0.55)',
+                          color: 'var(--text-muted)',
+                          fontSize: '10px',
+                          fontFamily: 'var(--font-jetbrains-mono, monospace)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {attachment.extension}
                       </div>
-                      <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{attachment.extension}</div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: '11px', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {attachment.name}
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{attachment.extension}</div>
+                      </div>
                     </div>
-                  </div>
-                )
-              ))}
-            </div>
-          ) : null}
+                  )
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     );
@@ -784,7 +794,7 @@ export default function ChatMessage({ message, children, onRetryExternalMessage 
   const isPrepareContextMessage = message.type === 'evidence';
   return (
     <div className="animate-msgIn" style={{ marginBottom: '20px' }}>
-      <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
+      <div style={{ ...elasticScrollStyle, display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
         <div style={{ width: '26px', height: '26px', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '12px', border: '1px solid var(--border)', background: 'var(--bg-card)' }}>
           {src.icon}
         </div>

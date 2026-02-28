@@ -88,6 +88,8 @@ interface SessionData {
     wifi_make_model?: string;
     switch_make_model?: string;
     phone_provider_name?: string;
+    additional_contacts?: string;
+    alternate_device?: string;
   };
   ticket_text_artifact?: {
     ticket_id?: string;
@@ -143,7 +145,7 @@ interface WorkflowActionFeedback {
   updatedAt: string;
 }
 
-type EditableContextKey = 'Org' | 'User' | 'Tech';
+type EditableContextKey = 'Org' | 'Contact' | 'Tech';
 
 interface ContextOverrideState {
   org?: { id?: number; name: string };
@@ -1455,7 +1457,7 @@ export default function SessionDetail({
   })();
 
   const openContextEditor = (key: string) => {
-    if (key !== 'Org' && key !== 'User' && key !== 'Tech') return;
+    if (key !== 'Org' && key !== 'Contact' && key !== 'Tech') return;
     setActiveContextEditor(key);
     setContextEditorQuery('');
     setContextEditorError('');
@@ -1491,7 +1493,7 @@ export default function SessionDetail({
         }));
       };
 
-      // Optimistic local selection guarantees User->Org dependency immediately.
+      // Optimistic local selection guarantees Contact->Org dependency immediately.
       applyOrgSelection(option.id, option.label);
       setContextEditorSaving(true);
       setContextEditorError('');
@@ -1500,7 +1502,7 @@ export default function SessionDetail({
         const resolvedCompanyId = toAutotaskId(updated.companyId) ?? option.id;
         applyOrgSelection(resolvedCompanyId, updated.companyName || option.label);
       } catch (err: any) {
-        // Keep local Org selection so user can continue to User selection flow.
+        // Keep local Org selection so user can continue to Contact selection flow.
         setWorkflowActionError(
           `Org selected locally. Autotask write pending/failed: ${String(err?.message || 'Unable to update Org in Autotask')}`
         );
@@ -1509,9 +1511,9 @@ export default function SessionDetail({
       }
       return;
     }
-    if (activeContextEditor === 'User') {
+    if (activeContextEditor === 'Contact') {
       if (activeOrgId === null) {
-        setContextEditorError('Select an Org first to set User.');
+        setContextEditorError('Select an Org first to set Contact.');
         return;
       }
       setContextEditorSaving(true);
@@ -1531,7 +1533,7 @@ export default function SessionDetail({
         }));
         closeContextEditor();
       } catch (err: any) {
-        setContextEditorError(String(err?.message || 'Unable to update User in Autotask'));
+        setContextEditorError(String(err?.message || 'Unable to update Contact in Autotask'));
         setContextEditorSaving(false);
       }
       return;
@@ -1561,7 +1563,7 @@ export default function SessionDetail({
 
   useEffect(() => {
     if (!activeContextEditor) return;
-    if (activeContextEditor === 'User' && activeOrgId === null) {
+    if (activeContextEditor === 'Contact' && activeOrgId === null) {
       const orgName = String(
         contextOverrides.org?.name ||
         data?.ssot?.company ||
@@ -1572,7 +1574,7 @@ export default function SessionDetail({
       ).trim();
       if (!orgName) {
         setContextEditorOptions([]);
-        setContextEditorError('Select an Org first to list User options.');
+        setContextEditorError('Select an Org first to list Contact options.');
         return;
       }
       let ignoreResolve = false;
@@ -1590,7 +1592,7 @@ export default function SessionDetail({
             setContextEditorError('');
           } else {
             setContextEditorOptions([]);
-            setContextEditorError('Select an Org first to list User options.');
+            setContextEditorError('Select an Org first to list Contact options.');
           }
         } catch (err: any) {
           if (!ignoreResolve) {
@@ -1622,7 +1624,7 @@ export default function SessionDetail({
           }
           return;
         }
-        if (activeContextEditor === 'User' && activeOrgId !== null) {
+        if (activeContextEditor === 'Contact' && activeOrgId !== null) {
           const rows = await searchAutotaskContacts(contextEditorQuery, activeOrgId, 30);
           if (!ignore) {
             setContextEditorOptions(rows.map((row: AutotaskContactOption) => ({
@@ -1678,50 +1680,38 @@ export default function SessionDetail({
           editable: true,
         },
         {
-          key: 'User',
+          key: 'Contact',
           val: contextOverrides.user?.name || normalizePlainText(
             selectUiUserFromSsot({
               affected: data?.ssot?.affected_user_name,
               requester: data?.ssot?.requester_name,
               fallbacks: [selectedTicketView?.requester],
             }),
-            'Unknown user'
+            'Unknown'
           ),
           editable: true,
         },
         {
-          key: 'Tech',
-          val: contextOverrides.tech?.name || normalizePlainText(data?.ticket?.assigned_resource_name, 'Unknown'),
-          editable: true,
+          key: 'Additional contacts',
+          val: data?.ssot?.additional_contacts || 'Unknown',
+        },
+        {
+          key: 'User Device',
+          val: data?.ssot?.device_name || data?.evidence_pack?.device?.hostname || 'Unknown',
         },
         {
           key: 'ISP',
-          val: data?.ssot?.isp_name || data.evidence_pack?.external_status?.[0]?.provider || 'Unknown',
-          ...(data.evidence_pack?.external_status?.[0]?.status ? { highlight: '#F97316' } : {}),
+          val: data?.ssot?.isp_name || data?.evidence_pack?.external_status?.[0]?.provider || 'Unknown',
+          ...(data?.evidence_pack?.external_status?.[0]?.status ? { highlight: '#F97316' } : {}),
         },
-        { key: 'Firewall', val: data?.ssot?.firewall_make_model || data.evidence_pack?.config?.firewall || 'Unknown' },
-        { key: 'WiFi', val: data?.ssot?.wifi_make_model || 'Unknown' },
-        { key: 'Switch', val: data?.ssot?.switch_make_model || 'Unknown' },
-        { key: 'User device', val: data?.ssot?.device_name || data.evidence_pack?.device?.hostname || 'Unknown' },
         {
           key: 'Phone Provider',
           val: data?.ssot?.phone_provider_name || 'Unknown',
         },
-        {
-          key: 'History',
-          val: `${Number(data?.ticket_context_appendix?.history_correlation?.matched_case_count || 0)} matches`,
-          ...(Number(data?.ticket_context_appendix?.history_correlation?.matched_case_count || 0) > 0
-            ? { highlight: '#5B7FFF' }
-            : {}),
-        },
-        {
-          key: 'Refinement',
-          val: `${Array.isArray(data?.ticket_context_appendix?.final_refinement?.fields_updated) ? data.ticket_context_appendix?.final_refinement?.fields_updated?.length || 0 : 0} fields`,
-          ...(Array.isArray(data?.ticket_context_appendix?.final_refinement?.fields_updated) &&
-            (data.ticket_context_appendix?.final_refinement?.fields_updated?.length || 0) > 0
-            ? { highlight: '#1DB98A' }
-            : {}),
-        },
+        { key: 'Firewall', val: data?.ssot?.firewall_make_model || data?.evidence_pack?.config?.firewall || 'Unknown' },
+        { key: 'Switch', val: data?.ssot?.switch_make_model || 'Unknown' },
+        { key: 'WiFi', val: data?.ssot?.wifi_make_model || 'Unknown' },
+        { key: 'Alternate Device', val: data?.ssot?.alternate_device || 'Unknown' },
       ],
       hypotheses: Array.isArray(data.diagnosis?.top_hypotheses)
         ? data.diagnosis.top_hypotheses.slice(0, 3).map((h: any, i: number) => ({
@@ -2065,119 +2055,191 @@ export default function SessionDetail({
               role="dialog"
               aria-modal="true"
               aria-label={`Edit ${activeContextEditor}`}
+              // Increased duration and added ease-out for a very smooth, magical fade of the dark blur backdrop
+              className="animate-in fade-in duration-500 ease-out"
               style={{
                 position: 'fixed',
                 inset: 0,
-                zIndex: 70,
-                background: 'rgba(9,12,20,0.35)',
+                zIndex: 9999, // Ensure global positioning top-level
+                background: 'rgba(2, 4, 8, 0.55)', // Elegant darker glass
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: 'flex-start', // Anchors to top
                 justifyContent: 'center',
-                padding: '16px',
+                paddingTop: '12vh', // Fixed vertical position, exactly like the screenshot
               }}
               onClick={closeContextEditor}
             >
               <div
+                // Softer zoom and gentle slide for a floating magical entrance
+                className="animate-in zoom-in-[0.95] slide-in-from-top-4 duration-500 ease-out"
                 style={{
-                  width: 'min(560px, 100%)',
-                  maxHeight: 'min(80vh, 760px)',
-                  overflowY: 'auto',
-                  borderRadius: '14px',
-                  border: '1px solid var(--bento-outline)',
-                  background: 'var(--bg-card)',
-                  boxShadow: '0 22px 48px rgba(10,18,35,0.28)',
-                  padding: '14px',
+                  width: 'min(640px, calc(100vw - 32px))',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  borderRadius: '20px',
+                  border: '1px solid rgba(255,255,255,0.08)', // Subtle glass border
+                  background: 'var(--bg-elevated)', // Deep dark or clean light depending on theme
+                  boxShadow: '0 32px 64px -12px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04) inset',
+                  overflow: 'hidden', // Contains content cleanly
+                  transformOrigin: 'top center',
                 }}
                 onClick={(e) => e.stopPropagation()}
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>Edit {activeContextEditor}</div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                      {activeContextEditor === 'User'
-                        ? activeOrgId !== null
-                          ? `Listing users only from selected Org (ID ${activeOrgId}).`
-                          : 'Select an Org first to list users.'
-                        : 'Source: Autotask read-only search.'}
+                {/* Header Section (Always Visible) */}
+                <div style={{ padding: '20px 24px 16px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'var(--bg-card)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', marginBottom: '20px' }}>
+                    <div>
+                      <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.02em', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7 }}>
+                          <circle cx="11" cy="11" r="8"></circle>
+                          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        Edit {activeContextEditor}
+                      </h2>
+                      <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px', margin: 0 }}>
+                        {activeContextEditor === 'Contact'
+                          ? activeOrgId !== null
+                            ? `Listing contacts from selected Org (ID ${activeOrgId})`
+                            : 'Select an Org first to list contacts'
+                          : 'Source: Autotask read-only global search'}
+                      </p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={closeContextEditor}
+                      disabled={contextEditorSaving}
+                      className="hover:bg-white/10 hover:text-white transition-all duration-200"
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '10px',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        background: 'rgba(255,255,255,0.03)',
+                        color: 'var(--text-secondary)',
+                        cursor: contextEditorSaving ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        opacity: contextEditorSaving ? 0.6 : 1,
+                      }}
+                      aria-label="Close editor"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                      </svg>
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={closeContextEditor}
+
+                  <input
+                    type="text"
+                    value={contextEditorQuery}
+                    onChange={(e) => setContextEditorQuery(e.target.value)}
                     disabled={contextEditorSaving}
+                    placeholder={`Type to search ${activeContextEditor.toLowerCase()}...`}
+                    className="focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent outline-none transition-shadow duration-300"
                     style={{
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '8px',
-                      border: '1px solid var(--bento-outline)',
-                      background: 'var(--bg-panel)',
-                      color: 'var(--text-secondary)',
-                      cursor: contextEditorSaving ? 'not-allowed' : 'pointer',
-                      opacity: contextEditorSaving ? 0.6 : 1,
+                      width: '100%',
+                      borderRadius: '12px',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      background: 'rgba(0,0,0,0.2)',
+                      color: 'var(--text-primary)',
+                      fontSize: '14.5px',
+                      padding: '12px 16px',
+                      boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)'
                     }}
-                    aria-label="Close editor"
-                  >
-                    ×
-                  </button>
+                    autoFocus
+                  />
+
+                  {contextEditorError ? (
+                    <div className="animate-in fade-in slide-in-from-top-2" style={{ fontSize: '13px', color: '#ff6b6b', marginTop: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                      {contextEditorError}
+                    </div>
+                  ) : null}
                 </div>
 
-                <input
-                  type="text"
-                  value={contextEditorQuery}
-                  onChange={(e) => setContextEditorQuery(e.target.value)}
-                  disabled={contextEditorSaving}
-                  placeholder={`Search ${activeContextEditor.toLowerCase()} in Autotask`}
+                {/* List Section (Smooth CSS Grid Slide-Down) */}
+                <div
                   style={{
-                    width: '100%',
-                    borderRadius: '10px',
-                    border: '1px solid var(--bento-outline)',
-                    background: 'var(--bg-panel)',
-                    color: 'var(--text-primary)',
-                    fontSize: '12px',
-                    padding: '9px 10px',
-                    marginBottom: '10px',
+                    display: 'grid',
+                    // The magic trick to slide down auto-height elements smoothly without JS math
+                    gridTemplateRows: contextEditorLoading || contextEditorOptions.length > 0 || contextEditorSaving ? '1fr' : '0fr',
+                    transition: 'grid-template-rows 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+                    background: 'var(--bg-panel)'
                   }}
-                />
-
-                {contextEditorError ? (
-                  <div style={{ fontSize: '11.5px', color: '#ef4444', marginBottom: '8px' }}>
-                    {contextEditorError}
+                >
+                  <div style={{ overflow: 'hidden' }}>
+                    <div
+                      className="animate-in fade-in duration-500"
+                      style={{
+                        padding: contextEditorLoading || contextEditorOptions.length > 0 || contextEditorSaving ? '16px 24px 24px 24px' : '0 24px',
+                        maxHeight: 'min(50vh, 500px)',
+                        overflowY: 'auto',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px'
+                      }}
+                    >
+                      {contextEditorSaving ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-secondary)', padding: '12px 0' }}>
+                          <div style={{ width: '18px', height: '18px', borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', animation: 'spin 1s linear infinite' }} />
+                          <span style={{ fontSize: '13px' }}>Saving your selection...</span>
+                        </div>
+                      ) : contextEditorLoading ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-secondary)', padding: '12px 0' }}>
+                          <div style={{ width: '18px', height: '18px', borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 1s linear infinite' }} />
+                          <span style={{ fontSize: '13px' }}>Searching Autotask...</span>
+                        </div>
+                      ) : contextEditorOptions.length === 0 ? (
+                        <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ margin: '0 auto 8px', opacity: 0.5 }}><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
+                          <span style={{ fontSize: '13px' }}>No records returned.</span>
+                        </div>
+                      ) : (
+                        <div className="animate-in fade-in slide-in-from-top-4 duration-500" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {contextEditorOptions.map((option) => (
+                            <button
+                              key={`${activeContextEditor}-${option.id}`}
+                              type="button"
+                              onClick={() => { void handleSelectContextOption(option); }}
+                              disabled={contextEditorSaving}
+                              className="group flex flex-col items-start w-full text-left transition-all duration-200 hover:scale-[1.01]"
+                              style={{
+                                padding: '14px 18px',
+                                borderRadius: '12px',
+                                border: '1px solid rgba(255,255,255,0.04)',
+                                background: 'rgba(255,255,255,0.015)',
+                                cursor: contextEditorSaving ? 'not-allowed' : 'pointer',
+                                opacity: contextEditorSaving ? 0.65 : 1,
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!contextEditorSaving) {
+                                  e.currentTarget.style.background = 'rgba(110,134,201,0.08)';
+                                  e.currentTarget.style.borderColor = 'rgba(110,134,201,0.2)';
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!contextEditorSaving) {
+                                  e.currentTarget.style.background = 'rgba(255,255,255,0.015)';
+                                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.04)';
+                                }
+                              }}
+                            >
+                              <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '3px', transition: 'color 0.2s' }} className="group-hover:text-[var(--accent)]">
+                                {option.label}
+                              </div>
+                              {option.sublabel ? (
+                                <div style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>{option.sublabel}</div>
+                              ) : null}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                ) : null}
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {contextEditorSaving ? (
-                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>Saving update...</div>
-                  ) : contextEditorLoading ? (
-                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>Loading options...</div>
-                  ) : contextEditorOptions.length === 0 ? (
-                    <div style={{ fontSize: '11.5px', color: 'var(--text-secondary)' }}>No options found.</div>
-                  ) : (
-                    contextEditorOptions.map((option) => (
-                      <button
-                        key={`${activeContextEditor}-${option.id}`}
-                        type="button"
-                        onClick={() => { void handleSelectContextOption(option); }}
-                        disabled={contextEditorSaving}
-                        style={{
-                          width: '100%',
-                          textAlign: 'left',
-                          borderRadius: '10px',
-                          border: '1px solid var(--bento-outline)',
-                          background: 'var(--bg-panel)',
-                          color: 'var(--text-primary)',
-                          padding: '9px 10px',
-                          cursor: contextEditorSaving ? 'not-allowed' : 'pointer',
-                          opacity: contextEditorSaving ? 0.65 : 1,
-                        }}
-                      >
-                        <div style={{ fontSize: '12px', fontWeight: 600 }}>{option.label}</div>
-                        {option.sublabel ? (
-                          <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px' }}>{option.sublabel}</div>
-                        ) : null}
-                      </button>
-                    ))
-                  )}
                 </div>
               </div>
             </div>

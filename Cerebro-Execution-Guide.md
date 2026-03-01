@@ -55,6 +55,10 @@ Goal: translate strategy into an executable backlog by workflow and by integrati
 ##### P0-GRAPH Blueprint (Neo4j + GDS Adaptation)
 Goal: add a mature graph analytics layer for cross-referencing while preserving current `PrepareContext` safety controls.
 
+Reference model:
+- Use `BR/ACC Open Graph` ([World Open Graph / br-acc](https://github.com/World-Open-Graph/br-acc)) as a conceptual reference for graph-first cross-referencing, bounded traversal, pattern detection, and probabilistic signals.
+- This is an algorithmic reference only; do not adopt the `br-acc` codebase, schema, public-data assumptions, or runtime directly into Cerebro.
+
 1) Scope and boundaries
 - Keep `Postgres` as source of truth for ticket/workflow state.
 - Build a tenant-scoped graph projection in `Neo4j` for read-optimized traversal and analytics.
@@ -64,6 +68,8 @@ Goal: add a mature graph analytics layer for cross-referencing while preserving 
 - Nodes: `Tenant`, `Ticket`, `Person`, `UserAccount`, `Device`, `Organization`, `Software`, `Alert`, `IntegrationEvent`.
 - Relationships: `REQUESTED_BY`, `AFFECTS`, `LOGGED_IN_ON`, `BELONGS_TO_ORG`, `MENTIONS_SOFTWARE`, `OBSERVED_IN_ALERT`, `HAS_EVENT`.
 - Every node/edge must carry `tenant_id`, `source_system`, `source_ref`, `observed_at`, `confidence`, `provenance_version`.
+- Preserve operational weighting inputs on relevant edges/nodes (`severity`, `recency_weight`, `frequency_weight`, `relation_role`) so topology and incident context can be ranked together.
+- Include deterministic identity stitching keys for cross-source entity resolution (`canonical_user_key`, `canonical_device_key`, `canonical_org_key`) before graph writes.
 
 3) Projection pipeline
 - Trigger projection job after SSOT persistence and after major enrichment updates (`round 7/8/9` outputs).
@@ -71,17 +77,30 @@ Goal: add a mature graph analytics layer for cross-referencing while preserving 
 - Keep checkpoint cursor per tenant (`last_projected_ticket_ssot_version`) for replay-safe backfills.
 - DLQ failed projection batches with correlation IDs and explicit retry metadata.
 
-4) Algorithm pack (initial)
+4) Algorithm pack and analytical primitives (initial)
+- `Neighborhood Expansion` (bounded traversal) to surface hidden dependencies around ticket, requester, device, software, and recent alerts without unbounded graph explosion.
+- `Pattern Rules` to detect recurring operational motifs:
+  - same user + same device + same software + recent alert
+  - multiple tickets converging on the same endpoint or software node
+  - repeated failures clustered by org/site/time window
+- `Composite Relevance Score` to rank graph hints using topology + operational context together (`centrality`, `community density`, `recency`, `severity`, `frequency`, `cross-source corroboration`).
+- `Entity Resolution` before and during projection to reconcile aliases across `Autotask`, `Ninja`, and `IT Glue` into stable graph entities.
 - `Louvain` for community clustering (entity/device/software co-occurrence clusters).
 - `PageRank` for centrality/risk amplification in tenant-local interaction graph.
 - `Shortest Path` (weighted) for causal hint chains between actor/device/alert/software.
 - `Node Similarity` for candidate historical analogs beyond lexical ticket matching.
+- Treat algorithm output as probabilistic troubleshooting evidence, never as autonomous action authority.
 
 5) Result integration into Cerebro
 - Persist graph outputs into `ticket_context_appendix.graph_hints` and `fusion_audit.graph_support`.
 - Output contract per hint:
   - `hint_type` (`community_risk|centrality_risk|causal_path|similar_case_graph`)
   - `score` (0-1), `confidence` (0-1), `evidence_refs`, `path_entities`, `algorithm`, `algorithm_version`, `projection_version`.
+- Initial user-facing hint classes should explicitly target:
+  - hidden dependency
+  - blast radius
+  - repeated incident cluster
+  - similar resolved incident beyond lexical match
 - Graph hints are advisory only; policy gates continue to govern any actionable workflow decisions.
 
 6) Safety and policy guards (mandatory)
@@ -106,6 +125,62 @@ Goal: add a mature graph analytics layer for cross-referencing while preserving 
 - Projection latency P95, query latency P95, graph hint generation success rate.
 - Graph hint adoption/override rates in HITL review.
 - False-positive and unsupported-hint rates with weekly QA sampling.
+
+10) Implementation seed (define now to reduce ambiguity)
+- Versioned seed artifacts for this implementation layer:
+  - `docs/graph/p0/schema_init.cypher`
+  - `docs/graph/p0/query_templates.cypher`
+  - `docs/graph/p0/projection_worker_spec.md`
+- Minimum node identity contract:
+  - `Tenant`: `tenant_id`
+  - `Ticket`: `tenant_id`, `ticket_id`, `source_ref`, `status`, `queue_id`, `created_at`
+  - `Person`: `tenant_id`, `canonical_user_key`, `email`, `display_name`
+  - `UserAccount`: `tenant_id`, `canonical_user_key`, `upn`, `account_status`
+  - `Device`: `tenant_id`, `canonical_device_key`, `device_name`, `os_name`, `last_check_in`
+  - `Organization`: `tenant_id`, `canonical_org_key`, `org_name`, `source_ref`
+  - `Software`: `tenant_id`, `software_key`, `name`, `version`
+  - `Alert`: `tenant_id`, `alert_key`, `severity`, `alert_type`, `observed_at`
+  - `IntegrationEvent`: `tenant_id`, `event_key`, `source_system`, `event_type`, `observed_at`
+- Minimum relationship contract:
+  - `(:Ticket)-[:REQUESTED_BY]->(:Person)`
+  - `(:Ticket)-[:AFFECTS]->(:Device)`
+  - `(:Person)-[:USES_ACCOUNT]->(:UserAccount)`
+  - `(:UserAccount)-[:LOGGED_IN_ON]->(:Device)`
+  - `(:Device)-[:BELONGS_TO_ORG]->(:Organization)`
+  - `(:Ticket)-[:MENTIONS_SOFTWARE]->(:Software)`
+  - `(:Alert)-[:OBSERVED_IN_ALERT]->(:Device|:Software)`
+  - `(:Ticket)-[:HAS_EVENT]->(:IntegrationEvent)`
+- Required property envelope on every relationship:
+  - `tenant_id`, `source_system`, `source_ref`, `observed_at`, `confidence`, `provenance_version`
+  - optional ranking fields: `severity`, `recency_weight`, `frequency_weight`, `relation_role`
+- Projection write contract:
+  - projection input = latest persisted SSOT snapshot + relevant enrichment deltas
+  - projection key = deterministic tuple (`tenant_id`, `entity_type`, canonical key)
+  - write mode = idempotent `MERGE`/upsert only; no destructive delete during P0 except explicit replay rebuild jobs
+  - failed projection records must include `tenant_id`, `ticket_id`, `ssot_version`, `trace_id`, retry count
+- Query surface to define before implementation:
+  - `graph.expandContext(tenant_id, ticket_id, depth=2, max_nodes=80)` -> bounded neighborhood for troubleshooting context
+  - `graph.findSimilarIncidents(tenant_id, ticket_id, top_k=5)` -> graph-based analogs beyond lexical history search
+  - `graph.findBlastRadius(tenant_id, anchor_type, anchor_key)` -> impacted tickets/devices/users around a node
+  - `graph.generateHints(tenant_id, ticket_id)` -> normalized `graph_hints` payload for `ticket_context_appendix`
+- Hint generation contract (first concrete version):
+  - `hint_type`
+  - `score`
+  - `confidence`
+  - `summary`
+  - `evidence_refs`
+  - `path_entities`
+  - `algorithm`
+  - `algorithm_version`
+  - `projection_version`
+  - `generated_at`
+- Initial deterministic pattern rules to implement first:
+  - ticket requester and affected device already linked to a recent high-severity alert
+  - same device appears in multiple open tickets within a bounded time window
+  - same software node is mentioned across multiple active tickets in one tenant
+  - same user/device pair matches a previously resolved incident with high graph similarity
+- Rollout-safe fallback rule:
+  - if projection or query generation fails, return no `graph_hints` and continue standard `PrepareContext` / history-only correlation path without blocking.
 
 #### P1 (Should Ship, Immediate Post-Launch Expansion)
 

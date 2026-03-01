@@ -1,3 +1,123 @@
+# Task: Materializar artefatos P0-GRAPH alinhados às APIs dos produtos
+**Status**: completed
+**Started**: 2026-03-01T13:24:00-05:00
+
+## Plan
+- [x] Step 1: Mapear os clients e contratos locais de `Autotask`, `NinjaOne` e `IT Glue` já usados pelo Cerebro.
+- [x] Step 2: Criar artefatos concretos de implementação (`schema_init.cypher`, `query_templates.cypher`, `projection_worker_spec.md`) alinhados a essas superfícies.
+- [x] Step 3: Referenciar os novos artefatos no `Cerebro-Execution-Guide.md`.
+- [x] Step 4: Registrar a mudança na wiki local e validar o diff final.
+
+## Open Questions
+- Assumindo que “executar agora” significa produzir artefatos de implementação concretos e versionados, sem ainda ligar Neo4j ao runtime.
+
+## Progress Notes
+- Clients e contratos locais já mapeados: `Autotask` (`tickets`, `contacts`, `companies`, `resources`, `configurationItems`), `NinjaOne` (`devices`, `checks`, `activities`, `last-logged-on-user`, `network-interfaces`) e `IT Glue` (`organizations`, `configurations`, `contacts`, `passwords`, `locations`, `domains`, `documents`).
+- Artefatos concretos adicionados em `docs/graph/p0/` e o guide agora aponta explicitamente para eles.
+- A spec do worker fixa o mapeamento de source->graph sem introduzir nenhum write novo nas integrações externas.
+
+## Review
+- Verificação executada:
+- Leitura final de `docs/graph/p0/schema_init.cypher`.
+- Leitura final de `docs/graph/p0/query_templates.cypher`.
+- Leitura final de `docs/graph/p0/projection_worker_spec.md`.
+- Revisão manual do diff consolidado em `Cerebro-Execution-Guide.md`, `docs/graph/p0/*` e wiki.
+- Evidências usadas:
+- `apps/api/src/clients/autotask.ts`
+- `apps/api/src/clients/ninjaone.ts`
+- `apps/api/src/clients/itglue.ts`
+- `docs/contracts/autotask-phase1-full-api-capability-matrix.md`
+- Documentação oficial referenciada nos próprios clients/spec:
+  - Autotask REST auth / zone discovery
+  - NinjaOne API docs / OAuth
+  - IT Glue developer API
+
+---
+
+# Task: Mitigar P0-GRAPH com implementation seed concreto
+**Status**: completed
+**Started**: 2026-03-01T13:12:00-05:00
+
+## Plan
+- [x] Step 1: Revisar o blueprint atual para identificar as lacunas de concretude em schema, projeção e queries.
+- [x] Step 2: Adicionar um `implementation seed` no `Cerebro-Execution-Guide.md` com contratos mínimos e fallback explícito.
+- [x] Step 3: Registrar a mitigação na wiki local.
+- [x] Step 4: Validar a redação final.
+
+## Open Questions
+- Assumindo que a mitigação pedida é arquitetural/documental, sem implementação de runtime nesta etapa.
+
+## Progress Notes
+- O blueprint agora já define schema mínimo, projection write contract, query surface e hint contract.
+- Isso reduz o risco de divergência quando a implementação começar.
+
+## Review
+- Verificação executada:
+- Revisão manual do trecho `Implementation seed` adicionado ao `P0-GRAPH Blueprint`.
+- Leitura final da nova entrada em `wiki/architecture`.
+- Evidências usadas:
+- O próprio blueprint revisado e a lacuna apontada pelo usuário (`schema`, `projeção`, `queries concretas`) foram usados como base para a mitigação.
+
+---
+
+# Task: Refinar P0-GRAPH Blueprint com referências algorítmicas do br-acc
+**Status**: completed
+**Started**: 2026-03-01T13:05:00-05:00
+
+## Plan
+- [x] Step 1: Revisar o trecho atual do `P0-GRAPH Blueprint` e confirmar o padrão de documentação da wiki.
+- [x] Step 2: Incorporar no `Cerebro-Execution-Guide.md` as primitives algorítmicas sugeridas (graph-first cross-reference, bounded traversal, pattern rules, scoring composto, entity resolution).
+- [x] Step 3: Registrar `br-acc` como referência conceitual explícita, deixando claro que a referência é algorítmica e não adoção direta da engine.
+- [x] Step 4: Criar/atualizar documentação na wiki local e validar o diff final.
+
+## Open Questions
+- Assumindo que a mudança é documental/arquitetural; não haverá alteração de runtime nesta etapa.
+
+## Progress Notes
+- O `P0-GRAPH Blueprint` foi refinado com referência explícita ao `br-acc` como modelo algorítmico, sem sugerir adoção direta de código/schema.
+- O blueprint agora inclui primitives de `Neighborhood Expansion`, `Pattern Rules`, `Composite Relevance Score` e `Entity Resolution` para o contexto MSP do Cerebro.
+- A mudança foi registrada na wiki de arquitetura com foco na revisão do blueprint.
+
+## Review
+- Verificação executada:
+- Revisão manual do diff em `Cerebro-Execution-Guide.md`.
+- Leitura final do trecho atualizado do blueprint para confirmar a redação e a preservação dos guardrails existentes.
+- Leitura final da nova entrada em `wiki/architecture`.
+- Evidências usadas:
+- Context7 (`/neo4j/graph-data-science`) para confirmar a caracterização de `Louvain`, `PageRank`, `Node Similarity` e shortest path como categorias corretas de community detection, centrality, similarity e pathfinding.
+- Repositório `br-acc` como referência conceitual de graph-first cross-referencing, bounded traversal e pattern-driven signals.
+
+---
+
+# Task: Avaliar aderência do br-acc graph engine ao Cerebro
+**Status**: completed
+**Started**: 2026-03-01T12:40:00-05:00
+
+## Plan
+- [ ] Step 1: Inspecionar a arquitetura e o runtime do repositório `br-acc`, com foco na graph engine e no modelo de dados.
+- [ ] Step 2: Revisar os requisitos atuais de graph analytics do Cerebro e os fluxos de análise/enriquecimento (`PrepareContext`, Autotask, Ninja, IT Glue).
+- [ ] Step 3: Comparar aderência técnica, gaps de segurança/tenant/operabilidade e esforço de integração.
+- [ ] Step 4: Validar a análise com evidências de código/doc e consolidar recomendação objetiva.
+
+## Open Questions
+- Assumindo que o pedido é apenas análise técnica e recomendação; não haverá mudança de código nesta etapa.
+
+## Progress Notes
+- Repositório `br-acc` inspecionado no `HEAD` `440f192fac423f50a5673d17d69ebf5043557666` (2026-03-01).
+- Confirmado que o `br-acc` opera como stack investigativa pública em Neo4j Community + APOC, com expansão de subgrafo e heurísticas, mas sem sinais de multitenancy forte ou pack GDS operacional equivalente ao blueprint do Cerebro.
+- Comparação concluída contra o P0-GRAPH blueprint e contra o fluxo atual de `PrepareContext`.
+
+## Review
+- Verificação executada:
+- `git ls-remote https://github.com/World-Open-Graph/br-acc.git` para validar o `HEAD` remoto.
+- Leitura direta do código e docs principais do `br-acc` (`README`, `config`, `dependencies`, `routers/graph`, `services/score_service`, `services/intelligence_provider`, `infra/docker-compose`, `docs/release/public_endpoint_matrix`).
+- Leitura do blueprint P0-GRAPH e do fluxo atual de enriquecimento/related cases do Cerebro.
+- Evidências usadas:
+- `br-acc`: arquitetura em Neo4j 5 Community, defaults de modo público, single database `neo4j`, APOC subgraph traversal, pattern engine público desabilitado por default, scoring heurístico.
+- `Cerebro`: blueprint exige projeção tenant-scoped, algoritmos Louvain/PageRank/Shortest Path/Node Similarity, hints auditáveis e degraded mode; `PrepareContext` atual ainda usa enriquecimento por integração + busca lexical de casos relacionados.
+
+---
+
 # Task: Exibir e editar status real do ticket na sidebar
 **Status**: completed
 **Started**: 2026-03-01T12:02:00-05:00

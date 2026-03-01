@@ -1406,7 +1406,7 @@ export class PrepareContextService {
       inferredPhoneProvider,
     });
 
-    let sections = this.buildIterativeEnrichmentProfile({
+    const iterativeEnrichment = buildIterativeEnrichmentProfile({
       ticket,
       ticketNarrative,
       companyName,
@@ -1426,7 +1426,9 @@ export class PrepareContextService {
       docs: scopedDocs,
       ninjaChecks: scopedSignals.filter((signal) => signal.source === 'ninja'),
       missingData,
-    }).sections;
+      enrichmentEngine: this.enrichmentEngine,
+    });
+    let sections = iterativeEnrichment.sections;
 
     const fusionResult = await this.fusionEngine.runCrossSourceFusion({
       sections,
@@ -5319,160 +5321,66 @@ Output schema:
     return 'Low';
   }
 
-  if(/\s/.test(raw)) return false;
-if (!/^[A-Za-z0-9._&-]+$/.test(raw)) return false;
-
-const compact = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
-if (compact.length < 8) return false;
-
-if (compact.includes('andcompany') || compact.includes('andco')) return true;
-if (/(company|corp|corporation|management|services|solutions|technologies|technology|holdings|consulting)$/.test(compact)) {
-  return true;
-}
-
-return false;
+  private detectFacetContext(ticketText: string): FacetContext {
+    const normalized = ticketText.toLowerCase();
+    const symptom = Object.entries(FACET_TERMS.symptom)
+      .filter(([, terms]) => terms.some((term) => normalized.includes(term)))
+      .map(([facet]) => facet);
+    const technology = Object.entries(FACET_TERMS.technology)
+      .filter(([, terms]) => terms.some((term) => normalized.includes(term)))
+      .map(([facet]) => facet);
+    const entityCandidates = extractEmailDomains(ticketText).concat(
+      (ticketText.match(/[A-Z]{2,}-\d{2,}/g) || []).map((v) => v.toLowerCase())
+    );
+    return {
+      symptom,
+      technology,
+      entities: [...new Set(entityCandidates)].slice(0, 8),
+      requiresCapabilityVerification:
+        symptom.includes('hardware') &&
+        /(monitor|usb-c|thunderbolt|display|dock|adapter)/i.test(ticketText),
+    };
   }
 
-  private shouldPreferCompanyCandidateOverIntake(intakeCompany: string, candidateCompany: string): boolean {
-  const intake = normalizeName(String(intakeCompany || ''));
-  const candidate = normalizeName(String(candidateCompany || ''));
-  if (!intake || !candidate) return false;
-  if (!isLikelyDomainDerivedCompanyLabel(intake)) return false;
-  if (isLikelyDomainDerivedCompanyLabel(candidate)) return false;
-
-  const candidateLooksDisplayReady =
-    /[\s&.,()'-]/.test(candidate) || /\b(inc|llc|ltd|corp|corporation|co)\b/i.test(candidate);
-  if (!candidateLooksDisplayReady) return false;
-
-  return true;
-}
-
-  private selectPreferredCompanyName(input: { intakeCompany: string; inferredCompany: string }): string {
-  const intake = normalizeName(String(input.intakeCompany || ''));
-  const inferred = normalizeName(String(input.inferredCompany || ''));
-  if (shouldPreferCompanyCandidateOverIntake(intake, inferred)) {
-    return inferred;
-  }
-  return normalizeName(intake || inferred || '');
-}
-
-  private capitalize(value: string): string {
-  if (!value) return value;
-  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
-}
-
-  private inferCompanyNameFromTicketText(text: string): string {
-  const raw = String(text || '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'");
-  const bodyPatterns = [
-    /\bhas been created for\s+([A-Z][A-Za-z0-9&.,'()\-\s]{2,80}?)\s*\.\s*we will attend/i,
-    /\bcreated for\s+([A-Z][A-Za-z0-9&.,'()\-\s]{2,80}?)\s*\.\s*/i,
-    /\bfor\s+([A-Z][A-Za-z0-9&.,'()\-\s]{2,80}?,\s*(?:LLC|Inc\.?|Corp\.?|Corporation|Ltd\.?|Co\.?))\b/i,
-  ];
-  for (const pattern of bodyPatterns) {
-    const match = raw.match(pattern);
-    const candidate = normalizeName(String(match?.[1] || ''))
-      .replace(/\s+/g, ' ')
-      .replace(/\b(we will attend|the details of the ticket are listed below)\b[\s\S]*$/i, '')
-      .trim()
-      .replace(/[.,;:\s]+$/g, '');
-    if (candidate && candidate.length >= 3 && !/^unknown$/i.test(candidate)) {
-      return candidate;
+  private getFacetBoostTerms(facets: FacetContext): string[] {
+    const boosts: string[] = [];
+    if (facets.technology.includes('fortinet')) {
+      boosts.push('fortinet firewall configuration', 'fortinet vpn credentials');
     }
-  }
-
-  const domains = extractEmailDomains(text || '');
-  if (!domains.length) return '';
-
-  const domain = String(domains[0] || '').toLowerCase();
-  const root = domain.split('.')[0] || '';
-  if (!root) return '';
-
-  // Split common business suffixes when domain is concatenated (e.g. stintinomanagement)
-  const suffixes = [
-    'management',
-    'homes',
-    'technologies',
-    'technology',
-    'solutions',
-    'support',
-    'services',
-    'group',
-    'partners',
-    'consulting',
-    'systems',
-    'security',
-    'health',
-    'care',
-    'logistics',
-    'holdings',
-    'capital',
-  ];
-
-  let normalized = root.replace(/[-_]+/g, ' ');
-  for (const suffix of suffixes) {
-    const idx = normalized.indexOf(suffix);
-    if (idx > 0) {
-      normalized = `${normalized.slice(0, idx)} ${suffix}`;
-      break;
+    if (facets.technology.includes('goto') || facets.symptom.includes('telephony')) {
+      boosts.push('goto voip troubleshooting', 'telephony runbook');
     }
+    if (facets.symptom.includes('vpn') || facets.technology.includes('vpn')) {
+      boosts.push('vpn identity endpoint troubleshooting', 'firewall vpn tunnel checks');
+    }
+    if (facets.requiresCapabilityVerification) {
+      boosts.push('multi monitor support', 'usb-c alt mode', 'thunderbolt compatibility');
+    }
+    return [...new Set(boosts)];
   }
 
-  normalized = normalized.replace(/\s+/g, ' ').trim();
-  if (!normalized) return '';
+  private async normalizeTicketForPipeline(ticket: TicketLike): Promise<{
+    title: string;
+    descriptionCanonical: string;
+    descriptionUi: string;
+    descriptionDisplayMarkdown: string;
+    descriptionDisplayFormat: 'plain' | 'markdown_llm';
+    requesterName: string;
+    requesterEmail: string;
+    affectedUserName: string;
+    affectedUserEmail: string;
+    organizationHint: string;
+    deviceHints: string[];
+    symptoms: string[];
+    technologyFacets: string[];
+    method: 'llm' | 'deterministic_fallback';
+    confidence: number;
+  }> {
+    const narrative = buildTicketNarrative(ticket);
+    const fallback = normalizeTicketDeterministically(ticket.title || '', narrative);
 
-  return normalized
-    .split(' ')
-    .filter(Boolean)
-    .map((part) => capitalize(part))
-    .join(' ');
-}
-
-  private buildTicketNarrative(ticket: TicketLike): string {
-  const updatesText = (ticket.updates || [])
-    .map((u) => String(u?.content || '').trim())
-    .filter(Boolean)
-    .slice(0, 6)
-    .join('\n');
-  return [
-    ticket.title || '',
-    ticket.description || '',
-    ticket.company || '',
-    ticket.requester || '',
-    ticket.rawBody || '',
-    updatesText,
-  ]
-    .filter(Boolean)
-    .join('\n');
-}
-
-  private async normalizeTicketForPipeline(ticket: TicketLike): Promise < {
-  title: string;
-  descriptionCanonical: string;
-  descriptionUi: string;
-  descriptionDisplayMarkdown: string;
-  descriptionDisplayFormat: 'plain' | 'markdown_llm';
-  requesterName: string;
-  requesterEmail: string;
-  affectedUserName: string;
-  affectedUserEmail: string;
-  organizationHint: string;
-  deviceHints: string[];
-  symptoms: string[];
-  technologyFacets: string[];
-  method: 'llm' | 'deterministic_fallback';
-  confidence: number;
-} > {
-  const narrative = buildTicketNarrative(ticket);
-  const fallback = normalizeTicketDeterministically(ticket.title || '', narrative);
-
-  try {
-    const prompt = `Normalize this IT support ticket text and return ONLY valid JSON.
+    try {
+      const prompt = `Normalize this IT support ticket text and return ONLY valid JSON.
 
 Rules:
 1. description_canonical: Keep the original text and intent, but remove signatures, legal disclaimers, external portal boilerplate, and phishing warnings. This field should be plain text suitable for downstream pipeline parsing.
@@ -5500,230 +5408,96 @@ Output JSON schema:
 Ticket text:
 """${narrative.slice(0, 12000)}"""`;
 
-    const llm = await callLLM(prompt);
-    const parsed = extractJsonObject(llm.content);
-    const title = String(parsed?.title || '').trim();
-    const descriptionCanonical = postProcessCanonicalTicketText(String(parsed?.description_canonical || ''));
-    let descriptionUi = postProcessUiTicketText(String(parsed?.description_ui || ''));
-    const requesterName = normalizeName(String(parsed?.requester_name || '').trim());
-    const requesterEmail = String(parsed?.requester_email || '').trim().toLowerCase();
-    const affectedUserName = normalizeName(String(parsed?.affected_user_name || '').trim());
-    const affectedUserEmail = String(parsed?.affected_user_email || '').trim().toLowerCase();
-    const organizationHint = String(parsed?.organization_hint || '').trim();
-    const deviceHints = Array.isArray(parsed?.device_hints) ? parsed.device_hints.map(String) : [];
-    const symptoms = Array.isArray(parsed?.symptoms) ? parsed.symptoms.map(String) : [];
-    const technologyFacets = Array.isArray(parsed?.technology_facets) ? parsed.technology_facets.map(String) : [];
-    const confidenceRaw = Number(parsed?.confidence);
-    const confidence = Number.isFinite(confidenceRaw) ? Math.max(0, Math.min(1, confidenceRaw)) : 0.75;
-    descriptionUi = guardTicketUiRoleAssignment({
-      descriptionUi,
-      requesterName,
-      ticketRequester: ticket.requester || '',
-      canonicalText: descriptionCanonical || fallback.descriptionClean,
-      narrative,
-    });
+      const llm = await callLLM(prompt);
+      const parsed = extractJsonObject(llm.content);
+      const title = String(parsed?.title || '').trim();
+      const descriptionCanonical = postProcessCanonicalTicketText(String(parsed?.description_canonical || ''));
+      let descriptionUi = postProcessUiTicketText(String(parsed?.description_ui || ''));
+      const requesterName = normalizeName(String(parsed?.requester_name || '').trim());
+      const requesterEmail = String(parsed?.requester_email || '').trim().toLowerCase();
+      const affectedUserName = normalizeName(String(parsed?.affected_user_name || '').trim());
+      const affectedUserEmail = String(parsed?.affected_user_email || '').trim().toLowerCase();
+      const organizationHint = String(parsed?.organization_hint || '').trim();
+      const deviceHints = Array.isArray(parsed?.device_hints) ? parsed.device_hints.map(String) : [];
+      const symptoms = Array.isArray(parsed?.symptoms) ? parsed.symptoms.map(String) : [];
+      const technologyFacets = Array.isArray(parsed?.technology_facets) ? parsed.technology_facets.map(String) : [];
+      const confidenceRaw = Number(parsed?.confidence);
+      const confidence = Number.isFinite(confidenceRaw) ? Math.max(0, Math.min(1, confidenceRaw)) : 0.75;
 
-    if(descriptionCanonical.length >= 10 || descriptionUi.length >= 10) {
-  const canonicalRequesterEmail = requesterEmail || extractFirstEmail(ticket.requester || '') || extractFirstEmail(narrative);
-  const canonicalRequesterName = requesterName || normalizeName(ticket.requester || '') || '';
-  const canonicalAffectedName = affectedUserName || canonicalRequesterName || '';
-  const canonicalAffectedEmail = affectedUserEmail || canonicalRequesterEmail || '';
-  const canonicalDisplayText = descriptionCanonical || postProcessCanonicalTicketText(fallback.descriptionClean);
-  let descriptionDisplayMarkdown = '';
-  const strictFormat = await this.formatDisplayMarkdownVerbatimWithLLM(canonicalDisplayText).catch(() => '');
-  if (this.isDisplayMarkdownVerbatimEnough(canonicalDisplayText, strictFormat)) {
-    descriptionDisplayMarkdown = strictFormat;
-  }
-  return {
-    title: title || fallback.title,
-    descriptionCanonical: canonicalDisplayText,
-    descriptionUi:
-      descriptionUi ||
-      guardTicketUiRoleAssignment({
-        descriptionUi: postProcessUiTicketText(fallback.descriptionClean),
-        requesterName: canonicalRequesterName,
+      descriptionUi = guardTicketUiRoleAssignment({
+        descriptionUi,
+        requesterName,
         ticketRequester: ticket.requester || '',
         canonicalText: descriptionCanonical || fallback.descriptionClean,
         narrative,
-      }),
-    descriptionDisplayMarkdown:
-      descriptionDisplayMarkdown ||
-      canonicalDisplayText,
-    descriptionDisplayFormat: descriptionDisplayMarkdown ? 'markdown_llm' : 'plain',
-    requesterName: canonicalRequesterName,
-    requesterEmail: canonicalRequesterEmail,
-    affectedUserName: canonicalAffectedName,
-    affectedUserEmail: canonicalAffectedEmail,
-    organizationHint,
-    deviceHints,
-    symptoms,
-    technologyFacets,
-    method: 'llm',
-    confidence,
-  };
-}
+      });
+
+      const canonicalRequesterEmail = requesterEmail || extractFirstEmail(ticket.requester || '') || extractFirstEmail(narrative);
+      const canonicalRequesterName = requesterName || normalizeName(ticket.requester || '') || '';
+      const canonicalAffectedName = affectedUserName || canonicalRequesterName || '';
+      const canonicalAffectedEmail = affectedUserEmail || canonicalRequesterEmail || '';
+      const canonicalDisplayText = descriptionCanonical || postProcessCanonicalTicketText(fallback.descriptionClean);
+
+      let descriptionDisplayMarkdown = '';
+      const strictFormat = await this.formatDisplayMarkdownVerbatimWithLLM(canonicalDisplayText).catch(() => '');
+      if (this.isDisplayMarkdownVerbatimEnough(canonicalDisplayText, strictFormat)) {
+        descriptionDisplayMarkdown = strictFormat;
+      }
+
+      return {
+        title: title || fallback.title,
+        descriptionCanonical: canonicalDisplayText,
+        descriptionUi:
+          descriptionUi ||
+          guardTicketUiRoleAssignment({
+            descriptionUi: postProcessUiTicketText(fallback.descriptionClean),
+            requesterName: canonicalRequesterName,
+            ticketRequester: ticket.requester || '',
+            canonicalText: descriptionCanonical || fallback.descriptionClean,
+            narrative,
+          }),
+        descriptionDisplayMarkdown:
+          descriptionDisplayMarkdown ||
+          canonicalDisplayText,
+        descriptionDisplayFormat: descriptionDisplayMarkdown ? 'markdown_llm' : 'plain',
+        requesterName: canonicalRequesterName,
+        requesterEmail: canonicalRequesterEmail,
+        affectedUserName: canonicalAffectedName,
+        affectedUserEmail: canonicalAffectedEmail,
+        organizationHint,
+        deviceHints,
+        symptoms,
+        technologyFacets,
+        method: 'llm',
+        confidence,
+      };
     } catch {
-  // deterministic fallback below
-}
-
-return {
-  ...fallback,
-  descriptionCanonical: postProcessCanonicalTicketText(fallback.descriptionClean),
-  descriptionUi: guardTicketUiRoleAssignment({
-    descriptionUi: postProcessUiTicketText(fallback.descriptionClean),
-    requesterName: fallback.requesterName,
-    ticketRequester: ticket.requester || '',
-    canonicalText: fallback.descriptionClean,
-    narrative,
-  }),
-  descriptionDisplayMarkdown: postProcessCanonicalTicketText(fallback.descriptionClean),
-  descriptionDisplayFormat: 'plain',
-  organizationHint: '',
-  deviceHints: [],
-  symptoms: [],
-  technologyFacets: [],
-  method: 'deterministic_fallback',
-  confidence: 0.55,
-};
+      return {
+        ...fallback,
+        descriptionCanonical: postProcessCanonicalTicketText(fallback.descriptionClean),
+        descriptionUi: guardTicketUiRoleAssignment({
+          descriptionUi: postProcessUiTicketText(fallback.descriptionClean),
+          requesterName: fallback.requesterName,
+          ticketRequester: ticket.requester || '',
+          canonicalText: fallback.descriptionClean,
+          narrative,
+        }),
+        descriptionDisplayMarkdown: postProcessCanonicalTicketText(fallback.descriptionClean),
+        descriptionDisplayFormat: 'plain',
+        organizationHint: '',
+        deviceHints: [],
+        symptoms: [],
+        technologyFacets: [],
+        method: 'deterministic_fallback',
+        confidence: 0.55,
+      };
+    }
   }
 
-  private normalizeTicketDeterministically(title: string, narrative: string): {
-  title: string;
-  descriptionClean: string;
-  requesterName: string;
-  requesterEmail: string;
-  affectedUserName: string;
-  affectedUserEmail: string;
-} {
-  const cleaned = String(narrative || '')
-    .replace(/you can access your service ticket[\s\S]*$/i, '')
-    .replace(/sincerely[\s\S]*$/i, '')
-    .replace(/caution[\s\S]*$/i, '')
-    .replace(/do not click any links? or attachments?[\s\S]*$/i, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  const requesterEmail = extractFirstEmail(cleaned) || '';
-  const requesterName = normalizeName(
-    String(cleaned.match(/(?:first\s*name|firstname)\s*[:\-]\s*([a-zA-Z]+)\b/i)?.[1] || '') +
-    ' ' +
-    String(cleaned.match(/(?:last\s*name|lastname)\s*[:\-]\s*([a-zA-Z]+)\b/i)?.[1] || '')
-  ).trim();
-
-  return {
-    title: String(title || '').trim() || 'Support Request',
-    descriptionClean: cleaned || String(narrative || '').trim(),
-    requesterName,
-    requesterEmail,
-    affectedUserName: requesterName,
-    affectedUserEmail: requesterEmail,
-  };
-}
-
-  private postProcessCanonicalTicketText(value: string): string {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  let text = raw;
-
-  // Strip obvious HTML leftovers and encoded noise
-  text = text
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<img\b[^>]*>/gi, ' ')
-    .replace(/<a\b[^>]*>(.*?)<\/a>/gi, '$1')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'");
-
-  // Drop boilerplate and disclaimers (Autotask/email wrappers)
-  text = text
-    .replace(/\*{3}\s*please enter replies above this line\s*\*{3}[\s\S]*$/i, ' ')
-    .replace(/thank you for contacting us[\s\S]*?the details of the ticket are listed below\.?/i, ' ')
-    .replace(/you can access your service ticket via our client portal by clicking the following link:[\s\S]*$/i, ' ')
-    .replace(/if you do not have access to the client portal[\s\S]*$/i, ' ')
-    .replace(/sincerely,\s*refresh support team[\s\S]*$/i, ' ')
-    .replace(/caution[\s\S]*?this email originated outside the organization[\s\S]*$/i, ' ')
-    .replace(/do not click any links? or attachments? unless you know the sender[\s\S]*$/i, ' ');
-
-  // Remove safe links / raw URLs while preserving nearby text
-  text = text
-    .replace(/https?:\/\/nam\d+\.safelinks\.protection\.outlook\.com\/\S+/gi, ' ')
-    .replace(/https?:\/\/\S+/gi, ' ');
-
-  // Keep the likely user request portion if an embedded "Description:" exists
-  const descMatch = text.match(/\bdescription\s*:\s*([\s\S]+)$/i);
-  if (descMatch?.[1]) {
-    text = descMatch[1];
-  }
-
-  // Trim auto-ack ticket metadata that often precedes the real request
-  text = text
-    .replace(/\bticket\s*#?\s*:\s*T\d{8}\.\d+\b/gi, ' ')
-    .replace(/\bcreated on\s+\d{1,2}\/\d{1,2}\/\d{4}[\s\S]*?\bby\s+[A-Za-z .'-]+/gi, ' ')
-    .replace(/\btitle\s*:\s*[^.:\n]+/gi, ' ');
-
-  // Normalize whitespace and cut trailing repeated signatures/disclaimers again after transforms
-  text = text
-    .replace(/\r\n/g, '\n')
-    .replace(/\t+/g, ' ')
-    .replace(/[ \u00A0]+/g, ' ')
-    .replace(/[ ]*\n[ ]*/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/\b(you can access your service ticket|sincerely|caution)\b[\s\S]*$/i, '')
-    .trim();
-
-  return formatCanonicalTicketSignature(text);
-}
-
-  private postProcessDisplayMarkdownTicketText(value: string): string {
-  let text = String(value || '').trim();
-  if (!text) return '';
-
-  text = text
-    .replace(/^```(?:markdown|md)?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .replace(/^cleaned ticket text \(noise removed,\s*meaning preserved\):\s*/i, '')
-    .trim();
-
-  // Strip raw HTML if the model leaked markup; keep markdown intact.
-  text = text
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<img\b[^>]*>/gi, ' ')
-    .replace(/<a\b[^>]*>(.*?)<\/a>/gi, '$1')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'");
-
-  // Remove common wrappers if they slipped through, but preserve signature content.
-  text = text
-    .replace(/\*{3}\s*please enter replies above this line\s*\*{3}[\s\S]*?(?=\n|$)/ig, '')
-    .replace(/you can access your service ticket via our client portal by clicking the following link:[^\n]*/ig, '')
-    .replace(/if you do not have access to the client portal[^\n]*/ig, '')
-    .replace(/\bcaution\b[^\n]*\n?[^\n]*this email originated outside the organization[^\n]*/ig, '')
-    .replace(/this message is directed to and is for the use of the above-noted addressee only[\s\S]*?(?=\n{2,}|$)/ig, '');
-
-  text = text
-    .replace(/\r\n/g, '\n')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-
-  return text;
-}
-
-  private async formatDisplayMarkdownVerbatimWithLLM(sourceText: string): Promise < string > {
-  const text = String(sourceText || '').trim();
-  if(!text) return '';
-  const prompt = `Format the following ticket text as Markdown for readability.
+  private async formatDisplayMarkdownVerbatimWithLLM(sourceText: string): Promise<string> {
+    const text = String(sourceText || '').trim();
+    if (!text) return '';
+    const prompt = `Format the following ticket text as Markdown for readability.
 
 CRITICAL RULES (strict):
 - Preserve the original wording for the ticket content and signature details.
@@ -5740,626 +5514,181 @@ CRITICAL RULES (strict):
 
 Text:
 """${text.slice(0, 12000)}"""`;
-  const llm = await callLLM(prompt);
-  return postProcessDisplayMarkdownTicketText(String(llm.content || ''));
-}
+    const llm = await callLLM(prompt);
+    return postProcessDisplayMarkdownTicketText(String(llm.content || ''));
+  }
 
   private isDisplayMarkdownVerbatimEnough(sourceText: string, markdownText: string): boolean {
-  const source = normalizeDisplayTextForVerbatimGuard(sourceText);
-  const rendered = normalizeDisplayTextForVerbatimGuard(stripMarkdownForDisplayGuard(markdownText));
-  if (!source || !rendered) return false;
+    const source = normalizeDisplayTextForVerbatimGuard(sourceText);
+    const rendered = normalizeDisplayTextForVerbatimGuard(stripMarkdownForDisplayGuard(markdownText));
+    if (!source || !rendered) return false;
 
-  const sourceTokens = source.split(' ').filter(Boolean);
-  const renderedTokens = rendered.split(' ').filter(Boolean);
-  if (!sourceTokens.length || !renderedTokens.length) return false;
+    const sourceTokens = source.split(' ').filter(Boolean);
+    const renderedTokens = rendered.split(' ').filter(Boolean);
+    if (!sourceTokens.length || !renderedTokens.length) return false;
 
-  // Exact match after markdown stripping/whitespace normalization is ideal.
-  if (source === rendered) return true;
+    if (source === rendered) return true;
 
-  // Coverage by subsequence: source wording should still appear in order.
-  let matched = 0;
-  let j = 0;
-  for (let i = 0; i < sourceTokens.length && j < renderedTokens.length; i += 1) {
-    const token = sourceTokens[i];
-    while (j < renderedTokens.length && renderedTokens[j] !== token) j += 1;
-    if (j < renderedTokens.length && renderedTokens[j] === token) {
-      matched += 1;
-      j += 1;
+    let matched = 0;
+    let j = 0;
+    for (let i = 0; i < sourceTokens.length && j < renderedTokens.length; i += 1) {
+      const token = sourceTokens[i];
+      while (j < renderedTokens.length && renderedTokens[j] !== token) j += 1;
+      if (j < renderedTokens.length && renderedTokens[j] === token) {
+        matched += 1;
+        j += 1;
+      }
     }
-  }
 
-  const coverage = matched / Math.max(1, sourceTokens.length);
-  const sourceSet = new Set(sourceTokens);
-  const formattingWords = new Set([
-    'request', 'requests', 'requester', 'signature', 'contact', 'notes', 'goal', 'priority',
-    'users', 'items', 'details', 'name', 'role', 'employment', 'location', 'device',
-  ]);
-  let novel = 0;
-  for (const token of renderedTokens) {
-    if (!sourceSet.has(token) && !formattingWords.has(token)) novel += 1;
-  }
-  const novelRatio = novel / Math.max(1, renderedTokens.length);
-  const lengthRatio = rendered.length / Math.max(1, source.length);
-
-  // Allow formatting headers/table labels, but reject meaningful rewrites.
-  // If the source is short, require tighter length/coverage because a few new words can dominate.
-  if (sourceTokens.length < 12) {
-    return coverage >= 0.9 && novelRatio <= 0.12 && lengthRatio >= 0.75 && lengthRatio <= 1.4;
-  }
-  return coverage >= 0.9 && novelRatio <= 0.08 && lengthRatio >= 0.7 && lengthRatio <= 1.5;
-}
-
-  private stripMarkdownForDisplayGuard(value: string): string {
-  return String(value || '')
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
-    .replace(/^\s*[-*+]\s+/gm, '')
-    .replace(/^\s*\d+\.\s+/gm, '')
-    .replace(/^\s*\|/gm, ' ')
-    .replace(/\|/g, ' ')
-    .replace(/^\s*:?[-]{3,}:?\s*$/gm, ' ')
-    .replace(/[*_~]/g, '')
-    .trim();
-}
-
-  private normalizeDisplayTextForVerbatimGuard(value: string): string {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/\r\n/g, '\n')
-    .replace(/[ \t]+/g, ' ')
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .replace(/[–—]/g, '-')
-    .replace(/\s*\n\s*/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/\s+([,.;:!?])/g, '$1')
-    .trim();
-}
-
-  private formatCanonicalTicketSignature(value: string): string {
-  const text = String(value || '').trim();
-  if (!text) return '';
-
-  const signatureStart = detectLikelySignatureStart(text);
-  if (signatureStart <= 0 || signatureStart >= text.length) {
-    return text.replace(/\s+/g, ' ').trim();
-  }
-
-  const body = text.slice(0, signatureStart).replace(/\s+/g, ' ').trim();
-  const signature = text.slice(signatureStart).trim();
-  const formattedSignature = formatSignatureBlock(signature);
-  if (!formattedSignature) return body;
-  if (!body) return formattedSignature;
-  return `${body}\n\n${formattedSignature}`;
-}
-
-  private detectLikelySignatureStart(text: string): number {
-  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
-  if (!normalized) return -1;
-
-  const lower = normalized.toLowerCase();
-  const signoffPatterns = [
-    /\bthanks[,!]?\s+/ig,
-    /\bthank you[,!]?\s+/ig,
-    /\bbest regards[,!]?\s+/ig,
-    /\bregards[,!]?\s+/ig,
-    /\bcheers[,!]?\s+/ig,
-  ];
-  for (const pattern of signoffPatterns) {
-    const match = pattern.exec(lower);
-    if (match && signatureSignalCount(normalized.slice(match.index)) >= 2) {
-      return match.index;
+    const coverage = matched / Math.max(1, sourceTokens.length);
+    const sourceSet = new Set(sourceTokens);
+    const formattingWords = new Set([
+      'request', 'requests', 'requester', 'signature', 'contact', 'notes', 'goal', 'priority',
+      'users', 'items', 'details', 'name', 'role', 'employment', 'location', 'device',
+    ]);
+    let novel = 0;
+    for (const token of renderedTokens) {
+      if (!sourceSet.has(token) && !formattingWords.has(token)) novel += 1;
     }
-  }
+    const novelRatio = novel / Math.max(1, renderedTokens.length);
+    const lengthRatio = rendered.length / Math.max(1, source.length);
 
-  // Fallback: detect a trailing contact-card style block around the first contact signal near the tail.
-  const tailStart = Math.floor(normalized.length * 0.45);
-  const contactMatch = normalized
-    .slice(tailStart)
-    .match(/\b(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|(?:Phone|Direct|Email|Website)\s*:|www\.)/i);
-  if (!contactMatch || contactMatch.index == null) return -1;
-
-  const contactIdx = tailStart + contactMatch.index;
-  let start = Math.max(0, contactIdx - 120);
-  const beforeContact = normalized.slice(start, contactIdx);
-
-  const properName = beforeContact.match(/(?:^|\s)([A-Z][a-z]+(?:\s+[A-Z][a-z.'-]+){1,3})\s*$/);
-  const upperName = beforeContact.match(/(?:^|\s)([A-Z]{2,}(?:\s+[A-Z]{2,}){1,4})\s*$/);
-  if (properName?.index != null) {
-    start += properName.index + (properName[0].startsWith(' ') ? 1 : 0);
-  } else if (upperName?.index != null) {
-    start += upperName.index + (upperName[0].startsWith(' ') ? 1 : 0);
-  } else {
-    start = contactIdx;
-  }
-
-  return signatureSignalCount(normalized.slice(start)) >= 2 ? start : -1;
-}
-
-  private signatureSignalCount(text: string): number {
-  const raw = String(text || '');
-  let count = 0;
-  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(raw)) count += 1;
-  if (/\b(?:direct|phone|mobile|cell|office|email|website)\s*:/i.test(raw)) count += 1;
-  if (/\bwww\.[a-z0-9.-]+\.[a-z]{2,}\b/i.test(raw)) count += 1;
-  if (/\b(?:\+?1[\s.-]*)?(?:\(?\d{3}\)?[\s.-]*)\d{3}[\s.-]?\d{4}\b/.test(raw)) count += 1;
-  if (/\b\d{2,6}\s+[A-Za-z0-9.'#-]+(?:\s+[A-Za-z0-9.'#-]+){1,8}\b/.test(raw)) count += 1;
-  return count;
-}
-
-  private formatSignatureBlock(signature: string): string {
-  let sig = String(signature || '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!sig) return '';
-
-  // Sign-off on its own line when present.
-  sig = sig.replace(/^(thanks|thank you|regards|best regards|cheers)[,!]?\s+/i, (_m, word) => `${word.replace(/\b\w/g, (c: string) => c.toUpperCase())},\n`);
-
-  // Put common contact labels on their own lines.
-  sig = sig.replace(/\s+(?=(?:Direct|Phone|Mobile|Cell|Office|Email|Website)\s*:)/g, '\n');
-
-  // Put email / website / phones on their own lines if inline.
-  sig = sig
-    .replace(/\s+(?=[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b)/ig, '\n')
-    .replace(/\s+(?=www\.[a-z0-9.-]+\.[a-z]{2,}\b)/ig, '\n')
-    .replace(/\s+(?=(?:\+?1[\s.-]*)?(?:\(?\d{3}\)?[\s.-]*)\d{3}[\s.-]?\d{4}\b)/g, '\n');
-
-  // Break before common titles and address starts when they were flattened.
-  sig = sig
-    .replace(/\s+(?=(?:Sr\.?\s+)?(?:Project Engineer|Web Director|Comptroller|Director|Manager|Engineer|Administrator|Coordinator|President|Owner)\b)/g, '\n')
-    .replace(/\s+(?=\d{2,6}\s+[A-Za-z])/g, '\n');
-
-  // Handle compact signature markers like "e john@..." / "c 781..." used in some email signatures.
-  sig = sig
-    .replace(/\s+(?=\be\s+[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b)/ig, '\n')
-    .replace(/\s+(?=\bc\s+\d{3}[.\-\s]\d{3}[.\-\s]\d{4}\b)/ig, '\n');
-
-  // Rejoin common label/value pairs and title suffix splits if previous rules over-split.
-  sig = sig
-    .replace(/\b(Direct|Phone|Mobile|Cell|Office|Email|Website):\s*\n\s*/g, '$1: ')
-    .replace(/\n(Sr\.|Jr\.)\s*\n(?=(?:Project Engineer|Web Director|Comptroller|Director|Manager|Engineer|Administrator|Coordinator|President|Owner)\b)/g, '\n$1 ');
-
-  // Keep lines tidy.
-  sig = sig
-    .split('\n')
-    .map((line) => line.replace(/\s+/g, ' ').trim())
-    .filter(Boolean)
-    .join('\n');
-
-  return sig;
-}
-
-  private postProcessUiTicketText(value: string): string {
-  const text = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!text) return '';
-  return text
-    .replace(/^new ticket detected:\s*/i, '')
-    .replace(/^ticket\s*#?\s*T\d{8}\.\d+\s*[:\-]\s*/i, '')
-    .replace(/\s*(from|at)\s+[A-Z][\s\S]*$/i, '')
-    .trim();
-}
-
-  private guardTicketUiRoleAssignment(input: {
-  descriptionUi: string;
-  requesterName: string;
-  ticketRequester: string;
-  canonicalText: string;
-  narrative: string;
-}): string {
-  let ui = String(input.descriptionUi || '').trim();
-  if (!ui) return ui;
-
-  const requesterName = normalizeName(input.requesterName || input.ticketRequester || '').trim();
-  if (!requesterName) return ui;
-
-  const requesterLower = requesterName.toLowerCase();
-  const uiLower = ui.toLowerCase();
-  const canonical = String(input.canonicalText || input.narrative || '').toLowerCase();
-
-  const mentionsNewEmployee = /\b(new|another)\s+(maintenance\s+)?employee\b/.test(canonical);
-  const requesterAsksForThirdParty =
-    /\bwe have a new\b/.test(canonical) ||
-    /\bhe will need\b/.test(canonical) ||
-    /\bshe will need\b/.test(canonical) ||
-    /\bthey will need\b/.test(canonical) ||
-    /\bfor (a|an|our)\s+(new\s+)?(employee|hire|user)\b/.test(canonical) ||
-    /\bon behalf of\b/.test(canonical);
-
-  const uiAssignsRequesterToNewEmployee =
-    uiLower.includes(requesterLower) &&
-    /\bnew\s+(maintenance\s+)?employee\b/.test(uiLower) &&
-    !/\brequests?\b/.test(uiLower);
-
-  if (!(mentionsNewEmployee && requesterAsksForThirdParty && uiAssignsRequesterToNewEmployee)) {
-    return ui;
-  }
-
-  // Rewrite to preserve requester role and keep affected user unnamed unless explicitly present.
-  ui = ui.replace(new RegExp(`\\b${this.escapeRegex(requesterName)}\\b`, 'ig'), '').replace(/\s+/g, ' ').trim();
-  ui = ui.replace(/\bfor\s+new\s+(maintenance\s+)?employee\b/gi, 'for a new $1employee (name not provided)');
-  ui = ui.replace(/\bnew\s+(maintenance\s+)?employee\b/i, 'new $1employee (name not provided)');
-  ui = ui.replace(/\s+/g, ' ').trim();
-  ui = ui.replace(/^[,.;:\-\s]+|[,.;:\-\s]+$/g, '');
-
-  const requesterLead = `${requesterName} requests`;
-  if (!ui.toLowerCase().startsWith(requesterLead.toLowerCase())) {
-    ui = `${requesterLead} ${ui.charAt(0).toLowerCase()}${ui.slice(1)}`;
-  }
-  return ui;
-}
-
-  private escapeRegex(value: string): string {
-  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-  private extractJsonObject(raw: string): Record < string, unknown > {
-  const text = String(raw || '').trim();
-  if(!text) return {};
-  try {
-    return JSON.parse(text) as Record<string, unknown>;
-  } catch {
-    const match = text.match(/\{[\s\S]*\}/);
-    if(!match) return {};
-    try {
-      return JSON.parse(match[0]) as Record<string, unknown>;
-    } catch {
-      return {};
+    if (sourceTokens.length < 12) {
+      return coverage >= 0.9 && novelRatio <= 0.12 && lengthRatio >= 0.75 && lengthRatio <= 1.4;
     }
+    return coverage >= 0.9 && novelRatio <= 0.08 && lengthRatio >= 0.7 && lengthRatio <= 1.5;
   }
-}
 
   private inferPhoneProvider(input: {
-  ticketText: string;
-  docs: Doc[];
-  itglueConfigs: any[];
-  itgluePasswords: any[];
-  signals: Signal[];
-}): string | null {
-  const sourceText = [
-    input.ticketText,
-    ...input.docs.map((d) => `${d.title} ${d.snippet}`),
-    ...input.itglueConfigs.map((c: any) => JSON.stringify(c?.attributes || {})),
-    ...input.itgluePasswords.map((p: any) => JSON.stringify(p?.attributes || {})),
-    ...input.signals.map((s) => `${s.source} ${s.type} ${s.summary}`),
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
+    ticketText: string;
+    docs: Doc[];
+    itglueConfigs: any[];
+    itgluePasswords: any[];
+    signals: Signal[];
+  }): string | null {
+    const sourceText = [
+      input.ticketText,
+      ...input.docs.map((d) => `${d.title} ${d.snippet}`),
+      ...input.itglueConfigs.map((c: any) => JSON.stringify(c?.attributes || {})),
+      ...input.itgluePasswords.map((p: any) => JSON.stringify(p?.attributes || {})),
+      ...input.signals.map((s) => `${s.source} ${s.type} ${s.summary}`),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
 
-  const providerMatchers: Array<{ name: string; pattern: RegExp }> = [
-    { name: 'GoTo Connect', pattern: /\bgoto(\s?connect)?\b|\bgotoconnect\b/ },
-    { name: 'RingCentral', pattern: /\bring\s?central\b/ },
-    { name: '8x8', pattern: /\b8x8\b/ },
-    { name: 'Zoom Phone', pattern: /\bzoom\s?phone\b/ },
-    { name: 'Microsoft Teams Phone', pattern: /\bteams\s?phone\b|\bmicrosoft\s?teams\b/ },
-    { name: 'Vonage', pattern: /\bvonage\b/ },
-    { name: 'Dialpad', pattern: /\bdialpad\b/ },
-  ];
-  const found = providerMatchers.find((m) => m.pattern.test(sourceText));
-  return found ? found.name : null;
-}
-
-  private buildRequesterTokens(value: string): string[] {
-  const normalized = normalizeName(value).toLowerCase();
-  if (!normalized) return [];
-  return normalized
-    .split(/[\s@._-]+/)
-    .map((t) => t.trim())
-    .filter((t) => t.length >= 3)
-    .slice(0, 4);
-}
-
-  private extractLoggedInUser(deviceDetails: any): string | null {
-  if (!deviceDetails || typeof deviceDetails !== 'object') return null;
-  const directKeys = ['loggedInUser', 'currentUser', 'lastLoggedInUser', 'consoleUser', 'username', 'userName'];
-  for (const key of directKeys) {
-    const value = deviceDetails[key];
-    if (typeof value === 'string' && value.trim()) return value.trim();
+    const providerMatchers: Array<{ name: string; pattern: RegExp }> = [
+      { name: 'GoTo Connect', pattern: /\bgoto(\s?connect)?\b|\bgotoconnect\b/ },
+      { name: 'RingCentral', pattern: /\bring\s?central\b/ },
+      { name: '8x8', pattern: /\b8x8\b/ },
+      { name: 'Zoom Phone', pattern: /\bzoom\s?phone\b/ },
+      { name: 'Microsoft Teams Phone', pattern: /\bteams\s?phone\b|\bmicrosoft\s?teams\b/ },
+      { name: 'Vonage', pattern: /\bvonage\b/ },
+      { name: 'Dialpad', pattern: /\bdialpad\b/ },
+    ];
+    const found = providerMatchers.find((m) => m.pattern.test(sourceText));
+    return found ? found.name : null;
   }
-  const props = deviceDetails.properties;
-  if (props && typeof props === 'object') {
-    for (const [key, value] of Object.entries(props)) {
-      if (!/user|login|logon|account/i.test(String(key))) continue;
-      if (typeof value === 'string' && value.trim()) return value.trim();
-    }
-  }
-  return null;
-}
 
   private async resolveLastLoggedInContext(
-  ninjaoneClient: NinjaOneClient,
-  deviceId: string
-): Promise < { userName: string; logonTime: string } > {
-  const direct = await ninjaoneClient.getDeviceLastLoggedOnUser(deviceId).catch(() => null);
-  const directUser = String(direct?.userName || '').trim();
-  const directTime = this.enrichmentEngine.normalizeTimeValue(direct?.logonTime || '');
-  if(directUser) return { userName: directUser, logonTime: directTime };
+    ninjaoneClient: NinjaOneClient,
+    deviceId: string
+  ): Promise<{ userName: string; logonTime: string }> {
+    const direct = await ninjaoneClient.getDeviceLastLoggedOnUser(deviceId).catch(() => null);
+    const directUser = String(direct?.userName || '').trim();
+    const directTime = this.enrichmentEngine.normalizeTimeValue(direct?.logonTime || '');
+    if (directUser) return { userName: directUser, logonTime: directTime };
 
-  const report = await ninjaoneClient.listLastLoggedOnUsers({ pageSize: 1000 }).catch(() => null);
-  const rows = Array.isArray(report?.results) ? report.results : [];
-  const match = rows.find((row) => String(row.deviceId) === String(deviceId));
-  const reportUser = String(match?.userName || '').trim();
-  const reportTime = this.enrichmentEngine.normalizeTimeValue(match?.logonTime || '');
-  if(reportUser) return { userName: reportUser, logonTime: reportTime };
+    const report = await ninjaoneClient.listLastLoggedOnUsers({ pageSize: 1000 }).catch(() => null);
+    const rows = Array.isArray(report?.results) ? report.results : [];
+    const match = rows.find((row) => String(row.deviceId) === String(deviceId));
+    const reportUser = String(match?.userName || '').trim();
+    const reportTime = this.enrichmentEngine.normalizeTimeValue(match?.logonTime || '');
+    if (reportUser) return { userName: reportUser, logonTime: reportTime };
 
-  return { userName: '', logonTime: '' };
-}
+    return { userName: '', logonTime: '' };
+  }
 
   private resolveDeviceOsLabel(device: any, details: any): string {
-  const name = String(device?.osName || details?.osName || details?.os?.name || '').trim();
-  const version = String(
-    device?.osVersion ||
-    details?.osVersion ||
-    [details?.os?.buildNumber, details?.os?.releaseId].filter(Boolean).join(' / ') ||
-    ''
-  ).trim();
-  const combined = [name, version].filter(Boolean).join(' ');
-  return combined || 'Unknown';
-}
+    const name = String(device?.osName || details?.osName || details?.os?.name || '').trim();
+    const version = String(
+      device?.osVersion ||
+      details?.osVersion ||
+      [details?.os?.buildNumber, details?.os?.releaseId].filter(Boolean).join(' / ') ||
+      ''
+    ).trim();
+    const combined = [name, version].filter(Boolean).join(' ');
+    return combined || 'Unknown';
+  }
 
   private async buildNinjaContextSignals(input: {
-  ninjaoneClient: NinjaOneClient;
-  deviceId: string;
-  orgId: string | null;
-  tenantId: string | null;
-  sourceWorkspace: string;
-}): Promise < Signal[] > {
-  const signals: Signal[] = [];
-  const [activities, interfaces, softwareRows] = await Promise.all([
-    input.ninjaoneClient.getDeviceActivities(input.deviceId, { pageSize: 30 }).catch(() => []),
-    input.ninjaoneClient.getDeviceNetworkInterfaces(input.deviceId).catch(() => []),
-    input.ninjaoneClient.querySoftware({ pageSize: 200, df: `deviceId = ${input.deviceId}` }).catch(() => []),
-  ]);
+    ninjaoneClient: NinjaOneClient;
+    deviceId: string;
+    orgId: string | null;
+    tenantId: string | null;
+    sourceWorkspace: string;
+  }): Promise<Signal[]> {
+    const signals: Signal[] = [];
+    const [activities, interfaces, softwareRows] = await Promise.all([
+      input.ninjaoneClient.getDeviceActivities(input.deviceId, { pageSize: 30 }).catch(() => []),
+      input.ninjaoneClient.getDeviceNetworkInterfaces(input.deviceId).catch(() => []),
+      input.ninjaoneClient.querySoftware({ pageSize: 200, df: `deviceId = ${input.deviceId}` }).catch(() => []),
+    ]);
 
-  for(const activity of activities.slice(0, 8)) {
-  const summary = String(
-    activity.message ||
-    activity.activity ||
-    activity.activityType ||
-    activity.activityClass ||
-    'device activity'
-  ).trim();
-  signals.push({
-    id: `ninja-activity-${input.deviceId}-${String(activity.id || summary).slice(0, 48)}`,
-    source: 'ninja',
-    timestamp: this.enrichmentEngine.normalizeTimeValue(activity.createTime || activity.timestamp || '') || new Date().toISOString(),
-    type: 'ticket_note',
-    summary: `Activity: ${summary}`,
-    raw_ref: activity,
-    tenant_id: input.tenantId,
-    org_id: input.orgId,
-    source_workspace: input.sourceWorkspace,
-  });
-}
+    (activities as any[]).forEach((act) => {
+      signals.push({
+        id: `ninja-act-${act.id}`,
+        source: 'ninja',
+        timestamp: act.activityTime,
+        type: 'device_activity',
+        summary: `${act.activityType}: ${act.activityName}`,
+        raw_ref: act,
+        tenant_id: input.tenantId,
+        org_id: input.orgId,
+        source_workspace: input.sourceWorkspace,
+      });
+    });
 
-for (const iface of interfaces.slice(0, 4)) {
-  const name = String(iface.adapterName || iface.interfaceName || 'interface').trim();
-  const ips = Array.isArray(iface.ipAddress) ? iface.ipAddress : [iface.ipAddress];
-  const ip = ips.map((v) => String(v || '').trim()).filter(Boolean)[0] || 'no-ip';
-  signals.push({
-    id: `ninja-iface-${input.deviceId}-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-    source: 'ninja',
-    timestamp: new Date().toISOString(),
-    type: 'health_ok',
-    summary: `Interface ${name}: ${ip}`,
-    raw_ref: iface,
-    tenant_id: input.tenantId,
-    org_id: input.orgId,
-    source_workspace: input.sourceWorkspace,
-  });
-}
+    (interfaces as any[]).forEach((iface, idx) => {
+      if (iface.ipAddress && this.enrichmentEngine.isPublicIPv4(iface.ipAddress)) {
+        signals.push({
+          id: `ninja-iface-${idx}`,
+          source: 'ninja',
+          timestamp: new Date().toISOString(),
+          type: 'network_anchor',
+          summary: `Public Interface: ${iface.ipAddress} (${iface.adapterName || 'NIC'})`,
+          raw_ref: iface,
+          tenant_id: input.tenantId,
+          org_id: input.orgId,
+          source_workspace: input.sourceWorkspace,
+        });
+      }
+    });
 
-for (const sw of softwareRows.slice(0, 10)) {
-  const swName = String(sw.name || '').trim();
-  if (!swName) continue;
-  const version = String(sw.version || '').trim();
-  const publisher = String(sw.publisher || '').trim();
-  signals.push({
-    id: `ninja-sw-${input.deviceId}-${swName.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 48)}`,
-    source: 'ninja',
-    timestamp: this.enrichmentEngine.normalizeTimeValue(sw.timestamp || '') || new Date().toISOString(),
-    type: 'ticket_note',
-    summary: `Software: ${swName}${version ? ` ${version}` : ''}${publisher ? ` (${publisher})` : ''}`,
-    raw_ref: sw,
-    tenant_id: input.tenantId,
-    org_id: input.orgId,
-    source_workspace: input.sourceWorkspace,
-  });
-}
+    const softwareHints = extractSoftwareHintsFromTicket(buildTicketNarrative({} as any)); // Mock ticket for hints
+    (softwareRows as any[]).forEach((sw) => {
+      const swName = String(sw.name || '').toLowerCase();
+      if (softwareHints.some(hint => swName.includes(hint))) {
+        signals.push({
+          id: `ninja-sw-${sw.id}`,
+          source: 'ninja',
+          timestamp: new Date().toISOString(),
+          type: 'software_inventory',
+          summary: `Relevant Software: ${sw.name} ${sw.version || ''}`,
+          raw_ref: sw,
+          tenant_id: input.tenantId,
+          org_id: input.orgId,
+          source_workspace: input.sourceWorkspace,
+        });
+      }
+    });
 
-return signals;
+    return signals;
   }
 
-  private normalizeOrgNameForMatch(value: string): string {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[.,()[\]{}'"/\\_-]+/g, ' ')
-    .replace(
-      /\b(incorporated|corporation|corp|company|co|limited|ltd|llc|llp|pllc|inc)\b/g,
-      ' '
-    )
-    .replace(/\s+/g, ' ')
-    .trim();
 }
 
-  private scoreOrgNameMatch(name: string, candidate: string, candidateShortName ?: string): number {
-  const rawN = normalizeName(name).toLowerCase();
-  const variants = [candidate, candidateShortName || '']
-    .map((v) => normalizeName(String(v || '')))
-    .filter(Boolean);
-  if (!rawN || variants.length === 0) return 0;
 
-  const genericTokens = new Set([
-    'resource',
-    'resources',
-    'technology',
-    'technologies',
-    'solution',
-    'solutions',
-    'service',
-    'services',
-    'system',
-    'systems',
-    'group',
-    'global',
-    'international',
-    'management',
-    'consulting',
-    'support',
-    'partners',
-    'network',
-    'networks',
-    'communications',
-    'communication',
-    'company',
-    'companies',
-    'holdings',
-  ]);
-
-  let best = 0;
-  for (const variant of variants) {
-    const rawC = variant.toLowerCase();
-    if (!rawC) continue;
-    if (rawC === rawN) return 1;
-
-    const n = normalizeOrgNameForMatch(rawN);
-    const c = normalizeOrgNameForMatch(rawC);
-    if (!n || !c) continue;
-    if (c === n) return 0.99;
-    if (c.includes(n) || n.includes(c)) {
-      best = Math.max(best, 0.95);
-    }
-
-    const nTokens = [...new Set(n.split(' ').filter((t) => t.length >= 2))];
-    const cTokens = [...new Set(c.split(' ').filter((t) => t.length >= 2))];
-    if (nTokens.length === 0 || cTokens.length === 0) continue;
-
-    const overlap = nTokens.filter((t) => cTokens.includes(t));
-    if (overlap.length === 0) continue;
-
-    const nDistinct = nTokens.filter((t) => !genericTokens.has(t));
-    const cDistinct = cTokens.filter((t) => !genericTokens.has(t));
-    const distinctOverlap = nDistinct.filter((t) => cDistinct.includes(t));
-
-    // Prevent false positives like "CAT Resources" -> "Composite Resources" (shared generic token only).
-    if (nDistinct.length > 0 && cDistinct.length > 0 && distinctOverlap.length === 0) {
-      continue;
-    }
-
-    const coverageMin = overlap.length / Math.max(Math.min(nTokens.length, cTokens.length), 1);
-    const coverageMax = overlap.length / Math.max(Math.max(nTokens.length, cTokens.length), 1);
-    const distinctCoverage =
-      distinctOverlap.length / Math.max(Math.min(Math.max(nDistinct.length, 1), Math.max(cDistinct.length, 1)), 1);
-
-    let score = 0.35 * coverageMin + 0.25 * coverageMax + 0.4 * distinctCoverage;
-
-    const acronym = nDistinct.map((t) => t[0]).join('');
-    if (acronym && (c.includes(acronym) || rawC.includes(acronym))) {
-      score = Math.max(score, 0.72);
-    }
-
-    best = Math.max(best, score);
-  }
-
-  return best;
-}
-
-  private fuzzyMatch(name: string, candidate: string): boolean {
-  return scoreOrgNameMatch(name, candidate) >= 0.8;
-}
-
-  private extractEmailDomains(text: string): string[] {
-  const source = String(text || '').toLowerCase();
-  const matches = source.match(/[a-z0-9._%+-]+@([a-z0-9.-]+\.[a-z]{2,})/g) || [];
-  const domains = matches
-    .map((m) => m.split('@')[1] || '')
-    .map((d) => d.trim())
-    .filter(Boolean);
-  return [...new Set(domains)].slice(0, 3);
-}
-
-  private async resolveNinjaOrg(
-  ninjaoneClient: NinjaOneClient,
-  companyName: string
-): Promise < { id: number; name: string } | null > {
-  const orgs = await ninjaoneClient.listOrganizations();
-  const ranked = orgs
-    .map((o: any) => ({
-      org: o,
-      score: scoreOrgNameMatch(companyName, String(o?.name || '')),
-    }))
-    .filter((r) => r.score >= 0.8)
-    .sort((a, b) => b.score - a.score);
-  const found = ranked[0]?.org || null;
-  return found ? { id: Number(found.id), name: String(found.name) } : null;
-}
-
-  private async resolveITGlueOrg(
-  itglueClient: ITGlueClient,
-  companyName: string,
-  hintText ?: string
-): Promise < { id: string; name: string } | null > {
-  const orgs = await itglueClient.getOrganizations(1000);
-  const rankedByName = orgs
-    .map((o: any) => ({
-      org: o,
-      score: scoreOrgNameMatch(
-        companyName,
-        String(itgAttr(o?.attributes || {}, 'name') || ''),
-        String(itgAttr(o?.attributes || {}, 'short_name') || '')
-      ),
-    }))
-    .filter((r) => r.score >= 0.8)
-    .sort((a, b) => b.score - a.score);
-  const byName = rankedByName[0]?.org;
-  if(byName) {
-    return { id: String(byName.id), name: String(itgAttr(byName?.attributes || {}, 'name') || companyName) };
-  }
-
-    const ignoreDomainSuffixes = [
-    'outlook.com',
-    'office.com',
-    'microsoft.com',
-    'autotask.net',
-    'itclientportal.com',
-    'safelinks.protection.outlook.com',
-    'protection.outlook.com',
-    'refreshtech.com',
-  ];
-  const domains = extractEmailDomains(hintText || '').filter(
-    (d) => !ignoreDomainSuffixes.some((suffix) => d === suffix || d.endsWith(`.${suffix}`))
-  );
-  if(domains.length === 0) return null;
-
-  const rankedByDomain = orgs
-    .map((o: any) => {
-      const primaryDomain = String(itgAttr(o?.attributes || {}, 'primary_domain') || '').toLowerCase();
-      const domainScore =
-        primaryDomain && domains.some((d) => d === primaryDomain)
-          ? 1
-          : primaryDomain && domains.some((d) => d.endsWith(`.${primaryDomain}`) || primaryDomain.endsWith(`.${d}`))
-            ? 0.8
-            : 0;
-      const nameScore = scoreOrgNameMatch(
-        companyName,
-        String(itgAttr(o?.attributes || {}, 'name') || ''),
-        String(itgAttr(o?.attributes || {}, 'short_name') || '')
-      );
-      return { org: o, score: domainScore > 0 ? domainScore * 0.75 + nameScore * 0.25 : 0 };
-    })
-    .filter((r) => r.score >= 0.75)
-    .sort((a, b) => b.score - a.score);
-
-  const byDomain = rankedByDomain[0]?.org;
-  return byDomain ? { id: String(byDomain.id), name: String(itgAttr(byDomain?.attributes || {}, 'name') || companyName) } : null;
-}
-}
 
 /**
  * Persist EvidencePack ao banco

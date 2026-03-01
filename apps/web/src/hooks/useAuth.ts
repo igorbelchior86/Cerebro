@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API = process.env.NEXT_PUBLIC_API_URL || '/api';
 
 export interface AuthUser {
   id: string;

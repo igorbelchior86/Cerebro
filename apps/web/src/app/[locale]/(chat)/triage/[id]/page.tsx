@@ -793,7 +793,7 @@ export default function SessionDetail({
       inFlight = true;
       const reqSeq = ++flowRequestSeqRef.current;
       try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
         const res = await axios.get(`${apiUrl}/playbook/full-flow`, {
           params: { sessionId: selectedTicketId, _ts: Date.now() },
           withCredentials: true,
@@ -828,6 +828,7 @@ export default function SessionDetail({
           ticket_notes: Array.isArray(flowData.ticket_notes) ? flowData.ticket_notes : [],
         };
 
+        setError('');
         setData(newData);
         const pack = newData.evidence_pack || {};
         const ssot = newData.ssot || {};
@@ -1313,7 +1314,7 @@ export default function SessionDetail({
     ]);
 
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
       await axios.get(`${apiUrl}/playbook/full-flow`, {
         params: { sessionId: ticket, refresh: 1, _ts: Date.now() },
         withCredentials: true,
@@ -2049,6 +2050,7 @@ export default function SessionDetail({
   const draftModeLayer = (
     <NewTicketWorkspaceBridgeProvider
       value={{
+        isActive: isDraftMode,
         onDismissDraft: () => setIsDraftMode(false),
         onSelectTicket: (id) => switchTicketInPlace(id),
         onDraftCreated: (id) => switchTicketInPlace(id),

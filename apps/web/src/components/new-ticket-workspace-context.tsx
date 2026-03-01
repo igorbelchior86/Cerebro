@@ -3,6 +3,7 @@
 import { createContext, useContext, type ReactNode } from 'react';
 
 export interface NewTicketWorkspaceBridgeValue {
+  isActive?: boolean;
   onDismissDraft?: () => void;
   onSelectTicket?: (ticketId: string) => void;
   onDraftCreated?: (ticketId: string) => void;

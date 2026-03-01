@@ -95,7 +95,7 @@ const FILTERS = [
 ];
 const FILTER_IDS = new Set(FILTERS.map((f) => f.id));
 const GLOBAL_QUEUE_FALLBACKS = ['Service Desk', 'Escalations', 'Projects'];
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API = process.env.NEXT_PUBLIC_API_URL || '/api';
 
 const STATUS_LABEL: Record<ActiveTicket['status'], string> = {
   completed: 'DONE',

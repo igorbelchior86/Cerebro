@@ -81,7 +81,7 @@ const ALL_NAV = [...USER_NAV, ...WORKSPACE_NAV];
 interface TeamMember { id: string; email: string; name?: string; role: string; created_at: string; }
 
 function SectionTeam({ canInvite }: { canInvite: boolean }) {
-  const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  const API = process.env.NEXT_PUBLIC_API_URL || '/api';
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invEmail, setInvEmail] = useState('');
   const [invRole, setInvRole] = useState<'member' | 'admin'>('member');
@@ -262,7 +262,7 @@ function ServiceLogo({ id, size = 40 }: { id: ServiceId; size?: number }) {
 // ─── Connections (workspace-level) ────────────────────────────
 
 function SectionConnections() {
-  const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  const API = process.env.NEXT_PUBLIC_API_URL || '/api';
 
   type ServiceStatus = 'connected' | 'misconfigured' | 'error' | 'unknown';
   interface HealthResult { name: string; service: string; status: ServiceStatus; detail: string; latencyMs?: number; }
@@ -528,7 +528,7 @@ function SectionConnections() {
 // ─── LLM (workspace-level) ────────────────────────────────────
 
 function SectionLLM() {
-  const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  const API = process.env.NEXT_PUBLIC_API_URL || '/api';
   const { user } = useAuth();
   const canEdit = user?.role === 'owner' || user?.role === 'admin';
 

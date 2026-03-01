@@ -7,6 +7,7 @@ import { AutotaskClient } from '../clients/index.js';
 import { query, queryOne } from '../db/index.js';
 import { pgStore } from '../services/email/pg-store.js';
 import { triageOrchestrator } from '../services/triage-orchestrator.js';
+import { classifyQueueError } from '../platform/errors.js';
 import type { AutotaskTicket } from '@playbook-brain/types';
 
 const router: ExpressRouter = Router();
@@ -36,6 +37,20 @@ type SidebarTicketRow = {
   queue_name?: string;
   queue_id?: number;
 };
+
+const ticketFieldKeys = [
+  'queue',
+  'priority',
+  'status',
+  'issueType',
+  'subIssueType',
+  'serviceLevelAgreement',
+] as const;
+
+type TicketFieldKey = (typeof ticketFieldKeys)[number];
+
+const ticketFieldOptionCache: Partial<Record<TicketFieldKey, unknown[]>> = {};
+let ticketDraftDefaultsCache: unknown = null;
 
 // Lazy client — only created when a request arrives; avoids startup crash if env vars are absent.
 function getClient() {
@@ -80,6 +95,27 @@ function parseIntParam(value: unknown, fallback: number, { min, max }: { min: nu
 
 function sanitizeSearchTerm(value: unknown): string {
   return String(value ?? '').trim().replace(/'/g, "''");
+}
+
+function classifyAutotaskReadDegradedReason(error: unknown): 'rate_limited' | 'provider_error' {
+  return classifyQueueError(error).code === 'RATE_LIMIT' ? 'rate_limited' : 'provider_error';
+}
+
+async function loadCachedReadOnlyArray(
+  key: TicketFieldKey,
+  loader: () => Promise<unknown[]>
+): Promise<{ data: unknown[]; degradedReason?: 'rate_limited' | 'provider_error' }> {
+  try {
+    const data = await loader();
+    ticketFieldOptionCache[key] = data;
+    return { data };
+  } catch (error) {
+    const cached = ticketFieldOptionCache[key];
+    return {
+      data: Array.isArray(cached) ? cached : [],
+      degradedReason: classifyAutotaskReadDegradedReason(error),
+    };
+  }
 }
 
 const MAX_ATTACHMENT_BYTES = 7 * 1024 * 1024;
@@ -368,37 +404,53 @@ router.get('/ticket-field-options', async (req, res, next) => {
         res.status(400).json({ error: 'Unsupported ticket field options request' });
         return;
       }
-      const loader = fieldLoaders[requestedField as keyof typeof fieldLoaders];
-      const data = await loader();
+      const loader = fieldLoaders[requestedField as TicketFieldKey];
+      const result = await loadCachedReadOnlyArray(requestedField as TicketFieldKey, loader);
       res.json({
         success: true,
-        data,
-        count: data.length,
+        data: result.data,
+        count: result.data.length,
         field: requestedField,
+        ...(result.degradedReason
+          ? { degraded: { provider: 'Autotask', reason: result.degradedReason } }
+          : {}),
         timestamp: new Date().toISOString(),
       });
       return;
     }
 
-    const [queue, priority, status, issueType, subIssueType, serviceLevelAgreement] = await Promise.all([
-      fieldLoaders.queue().catch(() => []),
-      fieldLoaders.priority().catch(() => []),
-      fieldLoaders.status().catch(() => []),
-      fieldLoaders.issueType().catch(() => []),
-      fieldLoaders.subIssueType().catch(() => []),
-      fieldLoaders.serviceLevelAgreement().catch(() => []),
-    ]);
+    const queueResult = await loadCachedReadOnlyArray('queue', fieldLoaders.queue);
+    const priorityResult = await loadCachedReadOnlyArray('priority', fieldLoaders.priority);
+    const statusResult = await loadCachedReadOnlyArray('status', fieldLoaders.status);
+    const issueTypeResult = await loadCachedReadOnlyArray('issueType', fieldLoaders.issueType);
+    const subIssueTypeResult = await loadCachedReadOnlyArray('subIssueType', fieldLoaders.subIssueType);
+    const serviceLevelAgreementResult = await loadCachedReadOnlyArray(
+      'serviceLevelAgreement',
+      fieldLoaders.serviceLevelAgreement
+    );
+
+    const degraded = [
+      queueResult,
+      priorityResult,
+      statusResult,
+      issueTypeResult,
+      subIssueTypeResult,
+      serviceLevelAgreementResult,
+    ].some((result) => Boolean(result.degradedReason));
 
     res.json({
       success: true,
       data: {
-        queue,
-        priority,
-        status,
-        issueType,
-        subIssueType,
-        serviceLevelAgreement,
+        queue: queueResult.data,
+        priority: priorityResult.data,
+        status: statusResult.data,
+        issueType: issueTypeResult.data,
+        subIssueType: subIssueTypeResult.data,
+        serviceLevelAgreement: serviceLevelAgreementResult.data,
       },
+      ...(degraded
+        ? { degraded: { provider: 'Autotask', reason: 'read_only_provider_unavailable_or_rate_limited' } }
+        : {}),
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -414,10 +466,21 @@ router.get('/ticket-draft-defaults', async (_req, res, next) => {
       return;
     }
 
-    const data = await client.getTicketDraftDefaults();
+    let data: unknown;
+    let degradedReason: 'rate_limited' | 'provider_error' | undefined;
+    try {
+      data = await client.getTicketDraftDefaults();
+      ticketDraftDefaultsCache = data;
+    } catch (error) {
+      data = ticketDraftDefaultsCache;
+      degradedReason = classifyAutotaskReadDegradedReason(error);
+    }
     res.json({
       success: true,
       data,
+      ...(degradedReason
+        ? { degraded: { provider: 'Autotask', reason: degradedReason } }
+        : {}),
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -462,31 +525,37 @@ router.get('/companies/search', async (req, res, next) => {
 
     const q = sanitizeSearchTerm(req.query.q);
     const limit = parseIntParam(req.query.limit, 25, { min: 1, max: 100 });
-    const rows = q
-      ? await client.searchCompanies(
-        stringifyStructuredSearch([{ op: 'contains', field: 'companyName', value: q }], limit),
-        limit
-      )
-      : (() => {
-        const activeSearch = client.searchCompanies(
-          stringifyStructuredSearch([{ op: 'eq', field: 'isActive', value: true }], limit),
+    let rows: Array<Record<string, unknown>> = [];
+    let degradedReason: 'rate_limited' | 'provider_error' | undefined;
+    try {
+      rows = await (q
+        ? client.searchCompanies(
+          stringifyStructuredSearch([{ op: 'contains', field: 'companyName', value: q }], limit),
           limit
-        );
-        const refreshSearch = client.searchCompanies(
-          stringifyStructuredSearch([{ op: 'contains', field: 'companyName', value: 'refresh' }], limit),
-          limit
-        );
-        return Promise.all([activeSearch, refreshSearch]).then(([activeRows, refreshRows]) => {
-          const merged = new Map<number, Record<string, unknown>>();
-          for (const row of [...activeRows, ...refreshRows]) {
-            const id = Number((row as any)?.id);
-            if (Number.isFinite(id) && !merged.has(id)) merged.set(id, row);
-          }
-          return Array.from(merged.values());
-        });
-      })();
+        )
+        : (() => {
+          const activeSearch = client.searchCompanies(
+            stringifyStructuredSearch([{ op: 'eq', field: 'isActive', value: true }], limit),
+            limit
+          );
+          const refreshSearch = client.searchCompanies(
+            stringifyStructuredSearch([{ op: 'contains', field: 'companyName', value: 'refresh' }], limit),
+            limit
+          );
+          return Promise.all([activeSearch, refreshSearch]).then(([activeRows, refreshRows]) => {
+            const merged = new Map<number, Record<string, unknown>>();
+            for (const row of [...activeRows, ...refreshRows]) {
+              const id = Number((row as any)?.id);
+              if (Number.isFinite(id) && !merged.has(id)) merged.set(id, row);
+            }
+            return Array.from(merged.values());
+          });
+        })());
+    } catch (error) {
+      degradedReason = classifyAutotaskReadDegradedReason(error);
+    }
 
-    const data = (await rows)
+    const data = rows
       .map((row) => {
         const id = Number((row as any)?.id);
         const name = String((row as any)?.companyName || '').trim();
@@ -513,6 +582,9 @@ router.get('/companies/search', async (req, res, next) => {
       success: true,
       data,
       count: data.length,
+      ...(degradedReason
+        ? { degraded: { provider: 'Autotask', reason: degradedReason } }
+        : {}),
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -538,7 +610,13 @@ router.get('/contacts/search', async (req, res, next) => {
     const companyId = Number.isFinite(maybeCompanyId) ? maybeCompanyId : null;
     const filter: Array<Record<string, unknown>> = [];
     if (companyId !== null) filter.push({ op: 'eq', field: 'companyID', value: companyId });
-    const rows = await client.searchContacts(stringifyStructuredSearch(filter, limit), limit);
+    let rows: Array<Record<string, unknown>> = [];
+    let degradedReason: 'rate_limited' | 'provider_error' | undefined;
+    try {
+      rows = await client.searchContacts(stringifyStructuredSearch(filter, limit), limit);
+    } catch (error) {
+      degradedReason = classifyAutotaskReadDegradedReason(error);
+    }
     const data = rows
       .map((row) => {
         const id = Number((row as any)?.id);
@@ -567,6 +645,9 @@ router.get('/contacts/search', async (req, res, next) => {
       success: true,
       data,
       count: data.length,
+      ...(degradedReason
+        ? { degraded: { provider: 'Autotask', reason: degradedReason } }
+        : {}),
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -589,7 +670,13 @@ router.get('/resources/search', async (req, res, next) => {
     const q = sanitizeSearchTerm(req.query.q);
     const limit = parseIntParam(req.query.limit, 25, { min: 1, max: 100 });
     const filter: Array<Record<string, unknown>> = [{ op: 'eq', field: 'isActive', value: true }];
-    const rows = await client.searchResources(stringifyStructuredSearch(filter, limit), limit);
+    let rows: Array<Record<string, unknown>> = [];
+    let degradedReason: 'rate_limited' | 'provider_error' | undefined;
+    try {
+      rows = await client.searchResources(stringifyStructuredSearch(filter, limit), limit);
+    } catch (error) {
+      degradedReason = classifyAutotaskReadDegradedReason(error);
+    }
     const data = rows
       .map((row) => {
         const id = Number((row as any)?.id);
@@ -618,6 +705,9 @@ router.get('/resources/search', async (req, res, next) => {
       success: true,
       data,
       count: data.length,
+      ...(degradedReason
+        ? { degraded: { provider: 'Autotask', reason: degradedReason } }
+        : {}),
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

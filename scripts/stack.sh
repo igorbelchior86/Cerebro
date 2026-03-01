@@ -97,6 +97,9 @@ cmd_up() {
   stop_sessions
   kill_ports
 
+  # Avoid stale Next.js dev artifacts causing missing server vendor chunks.
+  rm -rf "$PROJECT_ROOT/apps/web/.next"
+
   : > "$LOG_DIR/api.log"
   : > "$LOG_DIR/web.log"
 

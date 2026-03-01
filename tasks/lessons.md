@@ -1,3 +1,27 @@
+## Lesson: 2026-03-01 (missing Next vendor chunks should be treated as stale .next artifacts first)
+**Mistake**: Eu tratei o novo `Server Error` como possível regressão de código da aplicação antes de validar o artefato de build do `next dev`.
+**Root cause**: O runtime estava tentando carregar um arquivo inexistente dentro de `apps/web/.next/server/vendor-chunks`, o que aponta para cache dev corrompido e não para bug semântico em página/rota.
+**Rule**: Se o erro mencionar `Cannot find module` para arquivos gerados dentro de `.next`, limpar `apps/web/.next` e regenerar o runtime antes de alterar código de feature.
+**Pattern**: Stack trace saindo de `.next/server/webpack-runtime.js` com `vendor-chunks` ausente = tratar primeiro como artefato stale de `next dev`.
+
+## Lesson: 2026-03-01 (a broken Next dev runtime can mimic app regressions even when build and typecheck are clean)
+**Mistake**: Eu continuei assumindo falha de código enquanto o `next dev` já estava num estado ruim.
+**Root cause**: O processo do Next em `:3000` ficou corrompido após ciclos de hot reload; até `/_next` assets estavam retornando `500`, o que aponta para runtime quebrado, não para uma rota específica.
+**Rule**: Se `/_next` ou `/en/login` também retornarem `500` enquanto `build` e `typecheck` passam, tratar primeiro como incidente de runtime e reciclar a stack antes de seguir alterando código.
+**Pattern**: Página preta de `Internal Server Error` no root inteiro + assets internos falhando = reiniciar `next dev` antes de investigar lógica de aplicação.
+
+## Lesson: 2026-03-01 (provider rate limits must degrade read-only selectors instead of bubbling generic 500s)
+**Mistake**: Eu deixei rotas read-only do Autotask propagarem `500` quando o provider respondeu `429`.
+**Root cause**: Tratei erro de quota do provider como falha interna da aplicação, então o proxy do Next acabou mostrando `Internal Server Error`.
+**Rule**: Em superfícies read-only de integração usadas por dropdowns e metadata, `429` do provider deve virar modo degradado com cache ou lista vazia, não erro genérico de servidor.
+**Pattern**: Se a UI de seleção quebra com `Internal Server Error` durante throttling do provider, o bug é de política de degradação da API, não só de transporte.
+
+## Lesson: 2026-03-01 (browser transport errors can hide a separate provider-throttling root cause)
+**Mistake**: Eu tratei o problema como se a origem fosse apenas a base URL do frontend.
+**Root cause**: Corrigi a camada de transporte do browser, mas não validei o runtime do provider; o Autotask continuava devolvendo `429` por excesso de concorrência e a UI também mantinha um banner de erro antigo após sucessos posteriores.
+**Rule**: Quando o usuário reportar “não resolveu”, validar imediatamente os logs do runtime real antes de concluir que a causa original era única.
+**Pattern**: Em fluxos com integrações externas, um `Network Error` visual pode coexistir com throttling do provider e com estado de erro stale no frontend.
+
 ## Lesson: 2026-03-01 (preserving state is not enough when the UX bug is caused by route remount)
 **Mistake**: Eu tratei a perda de contexto do `New Ticket` como problema de persistência de estado, mas mantive a navegação para outra rota.
 **Root cause**: Foquei no sintoma secundário (sidebar resetando) e não no mecanismo principal que o usuário rejeitou: o remount completo da shell ao trocar de página.

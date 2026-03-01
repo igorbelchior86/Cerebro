@@ -32,6 +32,7 @@ type SyncRetryEntry = {
 export class AutotaskPollingService {
   private intervalId: NodeJS.Timeout | null = null;
   private isPolling = false;
+  private rateLimitCooldownUntil: number | null = null;
   private pollIntervalMs = 60 * 1000;
   private readonly advisoryLockNamespace = 41023;
   private readonly advisoryLockKey = 1;
@@ -158,6 +159,14 @@ export class AutotaskPollingService {
 
     this.isPolling = true;
     try {
+      const now = this.nowFn();
+      if (this.rateLimitCooldownUntil && now < this.rateLimitCooldownUntil) {
+        console.warn(
+          `[AutotaskPolling] Rate limit cooldown active until ${new Date(this.rateLimitCooldownUntil).toISOString()}. Skipping poll.`
+        );
+        return;
+      }
+
       const lock = await this.runWithLockFn(async () => {
         await this.processPendingSyncRetries();
         const context = await this.buildPollContextFn();
@@ -188,6 +197,13 @@ export class AutotaskPollingService {
         console.log('[AutotaskPolling] Another instance holds the polling lock. Skipping this iteration.');
       }
     } catch (error) {
+      const classified = classifyQueueError(error);
+      if (classified.code === 'RATE_LIMIT') {
+        this.rateLimitCooldownUntil = this.nowFn() + (15 * 60 * 1000);
+        console.warn(
+          `[AutotaskPolling] Entering rate limit cooldown until ${new Date(this.rateLimitCooldownUntil).toISOString()}.`
+        );
+      }
       console.error('[AutotaskPolling] Polling failed:', error);
     } finally {
       this.isPolling = false;

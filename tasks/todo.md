@@ -1,3 +1,128 @@
+# Task: Eliminar chunks stale do Next dev antes de subir a stack
+**Status**: completed
+**Started**: 2026-03-01T16:18:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar que o `Server Error` atual vinha de artefato corrompido em `apps/web/.next`.
+- [x] Step 2: Corrigir o fluxo oficial de start para limpar `.next` antes de subir `next dev`.
+- [x] Step 3: Reiniciar a stack, validar `3000`/`3001` e documentar a mudança.
+
+## Open Questions
+- Assumindo que a origem era artefato stale de desenvolvimento, não dependência ausente em `node_modules`; o chunk ausente precisava ser regenerado, não instalado.
+
+## Progress Notes
+- O erro mostrava `Cannot find module './vendor-chunks/@opentelemetry+api@1.9.0.js'` vindo de `apps/web/.next/server/webpack-runtime.js`.
+- O diretório `apps/web/.next/server/vendor-chunks` existia, mas o arquivo `@opentelemetry+api@1.9.0.js` realmente não estava presente.
+- `scripts/stack.sh` iniciava `npx next dev -p 3000` sem limpar `apps/web/.next`, permitindo reutilizar artefatos quebrados após ciclos de hot reload.
+
+## Review
+- Verificação executada:
+- `./scripts/stack.sh restart` ✅
+- `curl -I http://localhost:3000/` -> `307` ✅
+- `curl -I http://localhost:3000/en/login` -> `200` ✅
+- `curl http://localhost:3001/health` ✅
+- Documentação criada:
+- `wiki/changelog/2026-03-01-web-dev-clears-stale-next-cache-before-start.md`
+
+# Task: Recuperar runtime quebrado do Next dev em localhost:3000
+**Status**: completed
+**Started**: 2026-03-01T16:10:00-05:00
+
+## Plan
+- [x] Step 1: Reproduzir o `Internal Server Error` no root e distinguir falha de rota vs runtime do Next.
+- [x] Step 2: Confirmar se o código estava saudável (`typecheck`/`build`) e se o problema era o processo de desenvolvimento.
+- [x] Step 3: Reciclar a stack com o script oficial do projeto e validar `3000`/`3001`.
+
+## Open Questions
+- Assumindo incidente de runtime, não de código: nenhuma correção de source era necessária nesta rodada se o restart restaurasse `/` e `/en/login`.
+
+## Progress Notes
+- Antes do restart, `http://localhost:3000/`, `http://localhost:3000/en` e até assets de `/_next` retornavam `500`.
+- O `web.log` mostrava `ETIMEDOUT: connection timed out, write`, consistente com `next dev` preso em estado ruim.
+- Após `./scripts/stack.sh restart`, o root voltou a responder `307` para `/en/login` e `/en/login` voltou a responder `200`.
+
+## Review
+- Verificação executada:
+- `./scripts/stack.sh restart` ✅
+- `curl http://localhost:3000/` -> `307 /en/login?next=%2F` ✅
+- `curl http://localhost:3000/en/login` -> `200` ✅
+- `curl http://localhost:3001/health` ✅
+- Documentação criada:
+- none (no code change)
+
+# Task: Degradar rate limit do Autotask sem 500 genérico na UI
+**Status**: completed
+**Started**: 2026-03-01T16:05:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar a causa do `Internal Server Error` atual no runtime.
+- [x] Step 2: Fazer endpoints read-only do Autotask responderem em modo degradado durante `429`, usando cache quando disponível.
+- [x] Step 3: Colocar o poller em cooldown ao detectar rate limit, validar e documentar.
+
+## Open Questions
+- Assumindo que a quota do provider já está estourada neste momento; portanto a correção precisa priorizar degradação segura e redução de pressão, não apenas novas tentativas.
+
+## Progress Notes
+- O `web.log` mostrou `Failed to proxy ... ECONNREFUSED`, mas isso era transitório durante restart do backend.
+- No estado atual, `localhost:3001/health` responde `200`.
+- O erro real persistente é `Autotask API error: 429`, incluindo o limite interno de `10000 requests per 60 minutes`, e essas respostas estavam virando `500` nas rotas de seleção.
+
+## Review
+- Verificação executada:
+- `pnpm --filter @playbook-brain/api typecheck` ✅
+- `pnpm --filter @playbook-brain/web typecheck` ✅
+- `curl http://localhost:3001/health` ✅
+- Documentação criada:
+- `wiki/changelog/2026-03-01-autotask-rate-limit-degraded-readonly-mode.md`
+
+# Task: Reduzir throttling do Autotask e limpar erro stale no ticket
+**Status**: completed
+**Started**: 2026-03-01T15:58:00-05:00
+
+## Plan
+- [x] Step 1: Revalidar o runtime real e identificar por que o problema persistiu após o patch de base URL.
+- [x] Step 2: Reduzir a concorrência do prefetch de metadados/picklists para respeitar o limite de threads do Autotask.
+- [x] Step 3: Limpar o banner de erro do ticket assim que `/playbook/full-flow` voltar a responder com sucesso, validar e documentar.
+
+## Open Questions
+- Assumindo que o banner vermelho na tela é, em parte, estado stale de frontend: o backend está retornando `200` para `/playbook/full-flow` enquanto a UI continua mostrando `Network Error`.
+
+## Progress Notes
+- O proxy `/api` está ativo em `localhost:3000` e responde normalmente.
+- Os logs da API mostram `GET /full-flow` com `200` repetido, então o banner persistente não é falha contínua desse endpoint.
+- Os logs também mostram explosão de `429` do Autotask (`thread threshold of 3 threads`) causada por carga concorrente de `ticket-field-options`.
+
+## Review
+- Verificação executada:
+- `pnpm --filter @playbook-brain/web typecheck` ✅
+- `pnpm --filter @playbook-brain/api typecheck` ✅
+- `pnpm --filter @playbook-brain/web build` ✅
+- Documentação criada:
+- `wiki/changelog/2026-03-01-autotask-throttle-reduction-and-ticket-error-reset.md`
+
+# Task: Eliminar network errors do frontend por fallback incorreto de API base
+**Status**: completed
+**Started**: 2026-03-01T17:05:00-05:00
+
+## Plan
+- [x] Step 1: Auditar os fluxos do ticket e do New Ticket para identificar a causa compartilhada de `Network Error` / `Failed to fetch`.
+- [x] Step 2: Corrigir a configuração de API base no frontend para usar proxy same-origin por padrão, sem depender de `localhost` no browser.
+- [x] Step 3: Validar com checks do web app e documentar a mudança na wiki.
+
+## Open Questions
+- Assumindo que o ambiente problemático não roda o frontend no mesmo `localhost` do navegador do usuário; por isso o fallback hardcoded para `http://localhost:3001` quebra os requests no cliente.
+
+## Progress Notes
+- A causa compartilhada encontrada foi de configuração: vários pontos do frontend usam `process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'`.
+- Quando `NEXT_PUBLIC_API_URL` não está corretamente setado para o ambiente do browser, o bundle cai para `localhost`, e o navegador tenta falar com a máquina local do usuário em vez do backend real.
+
+## Review
+- Verificação executada:
+- `pnpm --filter @playbook-brain/web typecheck` ✅
+- `pnpm --filter @playbook-brain/web build` ✅
+- Documentação criada:
+- `wiki/changelog/2026-03-01-web-api-proxy-default-for-ui-calls.md`
+
 # Task: Eliminar remount visual mantendo ticket e draft montados
 **Status**: completed
 **Started**: 2026-03-01T16:43:00-05:00

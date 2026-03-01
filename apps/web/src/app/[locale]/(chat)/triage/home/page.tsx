@@ -339,6 +339,7 @@ export default function HomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const bridge = useNewTicketWorkspaceBridge();
+  const isActive = bridge?.isActive ?? true;
   const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT);
   const [sidebarTickets, setSidebarTickets] = useState<ActiveTicket[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(true);
@@ -378,6 +379,8 @@ export default function HomePage() {
   const secondaryTech = draft.secondaryTech?.name || 'Unassigned';
 
   useEffect(() => {
+    if (!isActive) return;
+
     const applyDraftDefaults = (
       source: TicketFieldOptionsCache,
       defaults?: AutotaskTicketDraftDefaults | null
@@ -450,33 +453,14 @@ export default function HomePage() {
     let ignore = false;
     void (async () => {
       try {
-        const [all, defaults, queue, status, priority, issueType, subIssueType, serviceLevelAgreement] = await Promise.all([
+        const [all, defaults] = await Promise.all([
           listAutotaskTicketFieldOptions().catch(() => null),
           getAutotaskTicketDraftDefaults().catch(() => null),
-          listAutotaskTicketFieldOptionsByField('queue').catch(() => null),
-          listAutotaskTicketFieldOptionsByField('status').catch(() => null),
-          listAutotaskTicketFieldOptionsByField('priority').catch(() => null),
-          listAutotaskTicketFieldOptionsByField('issueType').catch(() => null),
-          listAutotaskTicketFieldOptionsByField('subIssueType').catch(() => null),
-          listAutotaskTicketFieldOptionsByField('serviceLevelAgreement').catch(() => null),
         ]);
         if (ignore) return;
 
         const nextCache: TicketFieldOptionsCache = {};
         if (all) Object.assign(nextCache, all);
-        if (Array.isArray(queue) && (queue.length > 0 || !Array.isArray(nextCache.queue))) nextCache.queue = queue;
-        if (Array.isArray(status) && (status.length > 0 || !Array.isArray(nextCache.status))) nextCache.status = status;
-        if (Array.isArray(priority) && (priority.length > 0 || !Array.isArray(nextCache.priority))) nextCache.priority = priority;
-        if (Array.isArray(issueType) && (issueType.length > 0 || !Array.isArray(nextCache.issueType))) nextCache.issueType = issueType;
-        if (Array.isArray(subIssueType) && (subIssueType.length > 0 || !Array.isArray(nextCache.subIssueType))) {
-          nextCache.subIssueType = subIssueType;
-        }
-        if (
-          Array.isArray(serviceLevelAgreement) &&
-          (serviceLevelAgreement.length > 0 || !Array.isArray(nextCache.serviceLevelAgreement))
-        ) {
-          nextCache.serviceLevelAgreement = serviceLevelAgreement;
-        }
 
         const hasAnyCatalog = Object.values(nextCache).some((rows) => Array.isArray(rows) && rows.length > 0);
         if (hasAnyCatalog) {
@@ -506,6 +490,7 @@ export default function HomePage() {
     draft.queue,
     draft.serviceLevelAgreement,
     draft.status,
+    isActive,
     ticketDraftDefaults,
     ticketFieldOptionsCache,
   ]);

@@ -1866,3 +1866,97 @@
 - Balancear consistência de write com UX operacional contínua.
 - Time taken:
 - Um ciclo de correção pragmática focada no caso real reportado.
+
+---
+
+# Task: Mitigar latência das sugestões Autotask para campos de contexto
+**Status**: completed
+**Started**: 2026-03-01T17:20:00-05:00
+
+## Plan
+- [x] Step 1: Auditar os fluxos de sugestão para Org, Contact, Additional contacts, Primary/Secondary, Priority, Issue Type, Sub-Issue Type e SLA.
+- [x] Step 2: Confirmar a estratégia contra a API oficial via Context7 e cruzar com o comportamento atual do projeto.
+- [x] Step 3: Implementar mitigação mínima para reduzir round-trips e aquecer caches antes da abertura dos editores.
+- [x] Step 4: Validar typecheck da superfície alterada e documentar na wiki.
+
+## Open Questions
+- O índice Context7 não retornou uma biblioteca confiável do `igorbelchior` para Autotask; se continuar assim, vou usar a documentação do próprio repositório como fonte local complementar.
+
+## Progress Notes
+- Skill aplicada: `workflow-orchestrator`.
+- Context7 consultado para a API oficial via `/kelvintegelaar/autotaskapi`; a orientação útil é manter queries estruturadas e limitar o escopo de busca, o que reforça aquecimento de cache e evitar refetch desnecessário.
+- O índice Context7 não trouxe uma biblioteca confiável do `igorbelchior` para essa superfície; usei a documentação local do repositório (`tasks/lessons.md` + fluxo atual do código) como fonte complementar para evitar regressão já conhecida.
+- `Contact` e `Additional contacts` abriam dependendo de round-trip remoto mesmo com org já conhecida; agora o frontend aquece e reutiliza sugestões locais por company.
+- O ticket existente hidratava `Priority`, `Issue Type`, `Sub-Issue Type` e `SLA` em sequência quando o cache estava frio; agora usa um único fetch agregado.
+- As rotas read-only `/autotask/companies/search`, `/autotask/contacts/search` e `/autotask/resources/search` agora reutilizam resultados recentes idênticos por 30 segundos para reduzir latência em aberturas repetidas e buscas com prefixos repetidos.
+
+## Review
+- What worked:
+- A combinação de cache curto no backend + prefetch local no frontend reduz o tempo percebido sem alterar contratos de write nem o escopo da integração.
+- What was tricky:
+- O `igorbelchior` não apareceu como biblioteca confiável no Context7, então foi necessário manter a parte “project-specific” ancorada no comportamento já documentado do próprio repo.
+- Verification:
+- `pnpm --filter @playbook-brain/web typecheck` ✅
+- `pnpm --filter @playbook-brain/api typecheck` ✅
+- Wiki atualizada: `wiki/changelog/2026-03-01-autotask-suggestion-latency-mitigation.md`
+
+---
+
+# Task: Restaurar lista inicial de sugestões nos seletores tipados do Autotask
+**Status**: completed
+**Started**: 2026-03-01T17:35:00-05:00
+
+## Plan
+- [x] Step 1: Usar o commit `ddd3a5c6847f877d4af6cf35944a34117cd8ff4d` como baseline do comportamento funcional.
+- [x] Step 2: Reintroduzir sugestões iniciais para `Org`/`Primary`/`Secondary`/`Tech` com fetch barato e cache local.
+- [x] Step 3: Validar `typecheck` e documentar a correção na wiki.
+
+## Open Questions
+- O commit de baseline não tocou esses arquivos, então a referência útil é o snapshot funcional daquele ponto e não um diff direto da mesma superfície.
+
+## Progress Notes
+- O commit de baseline confirma a semântica antiga: `resources/search` retornava lista mesmo com query vazia, e o frontend não bloqueava o fluxo por limiar artificial antes de tentar preencher a lista.
+- A regressão atual veio de duas mudanças combinadas: bloqueio frontend em `query < 2` e backend devolvendo vazio para query vazia em `companies`/`resources`.
+- A correção reintroduziu prefetch barato de listas default (`Org` e resources) no frontend, adicionou suporte a query vazia barata no backend e removeu o estado de espera artificial de “2 caracteres”.
+- `Contact` e os catálogos de picklist permanecem no modelo de low-latency da rodada anterior; a mudança aqui foi focada em restaurar a lista inicial dos seletores tipados.
+
+## Review
+- What worked:
+- Usar o commit bom como baseline funcional reduziu a incerteza: ele mostrou que o comportamento desejado era “abrir já com lista”, não “esperar digitação”.
+- What was tricky:
+- O commit não tinha diff nessa superfície, então foi necessário comparar o snapshot funcional daquele ponto com o estado atual e isolar a regressão de blank-state.
+- Verification:
+- `pnpm --filter @playbook-brain/web typecheck` ✅
+- `pnpm --filter @playbook-brain/api typecheck` ✅
+- `curl http://localhost:3001/health` ✅
+- `curl /autotask/resources/search` e `curl /autotask/companies/search` sem sessão autenticada retornaram `Authentication required`, então a verificação visual final do modal depende do browser autenticado.
+- Wiki atualizada: `wiki/changelog/2026-03-01-restore-autotask-default-suggestion-lists.md`
+
+---
+
+# Task: Expandir o prewarm para a lista completa de campos exigida
+**Status**: completed
+**Started**: 2026-03-01T17:45:00-05:00
+
+## Plan
+- [x] Step 1: Revalidar a lista exata exigida pelo usuário item a item.
+- [x] Step 2: Garantir prewarm explícito também para `Issue Type`, `Sub-Issue Type`, `Priority` e `SLA` no ticket detail.
+- [x] Step 3: Validar `typecheck` e atualizar a wiki com a cobertura completa.
+
+## Open Questions
+- Nenhuma. A superfície exigida está explicitamente delimitada pelo usuário.
+
+## Progress Notes
+- `Contact` e `Additional contacts` já estavam cobertos por cache por `companyId`; a lacuna real era o prewarm explícito dos quatro picklists editáveis no detalhe do ticket.
+- Adicionado preload proativo de `priority`, `issueType`, `subIssueType` e `serviceLevelAgreement` via `listAutotaskTicketFieldOptions()` no ticket detail.
+- A documentação foi corrigida para refletir a lista completa, não só os seletores tipados.
+
+## Review
+- What worked:
+- O ajuste foi pequeno e direto: bastou aquecer os catálogos restantes no detalhe do ticket, sem mudar contratos nem write paths.
+- What was tricky:
+- A regressão não era mais de funcionalidade pura, e sim de cobertura incompleta em relação à lista fechada de campos exigida.
+- Verification:
+- `pnpm --filter @playbook-brain/web typecheck` ✅
+- `pnpm --filter @playbook-brain/api typecheck` ✅
+- Wiki atualizada: `wiki/changelog/2026-03-01-restore-autotask-default-suggestion-lists.md`

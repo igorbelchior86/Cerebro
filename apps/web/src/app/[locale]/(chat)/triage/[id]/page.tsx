@@ -21,6 +21,7 @@ import {
   type AutotaskResourceOption,
   getWorkflowCommandStatus,
   isRetryableCommandStatus,
+  listAutotaskTicketFieldOptions,
   listAutotaskTicketFieldOptionsByField,
   listManagerOpsAiDecisions,
   listManagerOpsAudit,
@@ -385,6 +386,7 @@ export default function SessionDetail({
   const [contextEditorError, setContextEditorError] = useState('');
   const [contextEditorOptions, setContextEditorOptions] = useState<ContextEditorOption[]>([]);
   const [searchSuggestionCache, setSearchSuggestionCache] = useState<Partial<Record<EditableContextKey, ContextEditorOption[]>>>({});
+  const [contactSuggestionCacheByCompany, setContactSuggestionCacheByCompany] = useState<Record<number, ContextEditorOption[]>>({});
   const [ticketFieldOptionsCache, setTicketFieldOptionsCache] = useState<TicketFieldOptionsCache>({});
   const [resolvedOrgIdFallback, setResolvedOrgIdFallback] = useState<number | null>(null);
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
@@ -1436,11 +1438,7 @@ export default function SessionDetail({
   const ticketLabel = `${ticketNumber} — ${ticketTitle}`;
   const primaryTech = contextOverrides.tech?.name || data?.ticket?.assigned_resource_name || selectedTicketView?.assigned_resource_name || 'Unassigned';
   const secondaryTech = contextOverrides.secondary_tech?.name || data?.ticket?.secondary_resource_name?.trim() || 'Unassigned';
-  const isAwaitingSearchInput = Boolean(
-    activeContextEditor &&
-    requiresTypedAutotaskSearch(activeContextEditor) &&
-    contextEditorQuery.trim().length < 2
-  );
+  const isAwaitingSearchInput = false;
   const localContextEditorSuggestions = (() => {
     if (!activeContextEditor || !requiresTypedAutotaskSearch(activeContextEditor)) return [];
     const seeded: ContextEditorOption[] = [];
@@ -1469,6 +1467,144 @@ export default function SessionDetail({
     }
     return mergeUniqueContextOptions(seeded, searchSuggestionCache[activeContextEditor] || []).slice(0, 8);
   })();
+
+  useEffect(() => {
+    const needsOrg = !searchSuggestionCache.Org?.length;
+    const needsTech = !searchSuggestionCache.Tech?.length;
+    if (!needsOrg && !needsTech) return;
+
+    let ignore = false;
+    void (async () => {
+      const [orgRows, techRows] = await Promise.all([
+        needsOrg ? searchAutotaskCompanies('', 8).catch(() => []) : Promise.resolve([] as AutotaskCompanyOption[]),
+        needsTech ? searchAutotaskResources('', 8).catch(() => []) : Promise.resolve([] as AutotaskResourceOption[]),
+      ]);
+      if (ignore) return;
+
+      const orgOptions = orgRows.map((row) => ({ id: row.id, label: row.name }));
+      const techOptions = techRows.map((row) => ({
+        id: row.id,
+        label: row.name,
+        ...(row.email ? { sublabel: row.email } : {}),
+      }));
+
+      if (orgOptions.length === 0 && techOptions.length === 0) return;
+
+      setSearchSuggestionCache((prev) => ({
+        ...prev,
+        ...(orgOptions.length > 0 && needsOrg
+          ? { Org: mergeUniqueContextOptions(orgOptions, prev.Org || []).slice(0, 8) }
+          : {}),
+        ...(techOptions.length > 0 && needsTech
+          ? { Tech: mergeUniqueContextOptions(techOptions, prev.Tech || []).slice(0, 8) }
+          : {}),
+      }));
+    })();
+
+    return () => {
+      ignore = true;
+    };
+  }, [searchSuggestionCache]);
+
+  const localContactEditorSuggestions = (() => {
+    if (!activeContextEditor || (activeContextEditor !== 'Contact' && activeContextEditor !== 'Additional contacts')) return [];
+    const seeded: ContextEditorOption[] = [];
+    const contactId = toAutotaskId(contextOverrides.user?.id ?? data?.ticket?.contact_id);
+    const contactName = String(
+      contextOverrides.user?.name ||
+      canonicalRequesterUi ||
+      ''
+    ).trim();
+    if (contactId !== null && contactName) {
+      seeded.push({ id: contactId, label: contactName });
+    }
+    const additionalId = toAutotaskId(contextOverrides.additional_contact?.id);
+    const additionalName = String(contextOverrides.additional_contact?.name || '').trim();
+    if (additionalId !== null && additionalName) {
+      seeded.push({ id: additionalId, label: additionalName });
+    }
+    const activeCompanyId = (() => {
+      const overrideOrgId = toAutotaskId(contextOverrides.org?.id);
+      if (overrideOrgId !== null) return overrideOrgId;
+      const ticketCompanyId = toAutotaskId(data?.ticket?.company_id);
+      if (ticketCompanyId !== null) return ticketCompanyId;
+      const resolvedFallback = toAutotaskId(resolvedOrgIdFallback);
+      if (resolvedFallback !== null) return resolvedFallback;
+      return toAutotaskId(contextOverrides.user?.companyId);
+    })();
+    const cached = activeCompanyId === null ? [] : (contactSuggestionCacheByCompany[activeCompanyId] || []);
+    return mergeUniqueContextOptions(seeded, cached).slice(0, 12);
+  })();
+
+  useEffect(() => {
+    const companyId = (() => {
+      const overrideOrgId = toAutotaskId(contextOverrides.org?.id);
+      if (overrideOrgId !== null) return overrideOrgId;
+      const ticketCompanyId = toAutotaskId(data?.ticket?.company_id);
+      if (ticketCompanyId !== null) return ticketCompanyId;
+      const resolvedFallback = toAutotaskId(resolvedOrgIdFallback);
+      if (resolvedFallback !== null) return resolvedFallback;
+      return toAutotaskId(contextOverrides.user?.companyId);
+    })();
+    if (companyId === null || contactSuggestionCacheByCompany[companyId]) return;
+
+    let ignore = false;
+    void (async () => {
+      try {
+        const rows = await searchAutotaskContacts('', companyId, 50);
+        if (ignore) return;
+        const options = rows.map((row: AutotaskContactOption) => ({
+          id: row.id,
+          label: row.name,
+          ...(row.email ? { sublabel: row.email } : {}),
+        }));
+        if (options.length === 0) return;
+        setContactSuggestionCacheByCompany((prev) => (prev[companyId] ? prev : { ...prev, [companyId]: options }));
+      } catch {
+        if (ignore) return;
+      }
+    })();
+
+    return () => {
+      ignore = true;
+    };
+  }, [contactSuggestionCacheByCompany, contextOverrides.org?.id, contextOverrides.user?.companyId, data?.ticket?.company_id, resolvedOrgIdFallback]);
+
+  useEffect(() => {
+    const hasPriority = Array.isArray(ticketFieldOptionsCache.priority) && ticketFieldOptionsCache.priority.length > 0;
+    const hasIssueType = Array.isArray(ticketFieldOptionsCache.issueType) && ticketFieldOptionsCache.issueType.length > 0;
+    const hasSubIssueType = Array.isArray(ticketFieldOptionsCache.subIssueType) && ticketFieldOptionsCache.subIssueType.length > 0;
+    const hasSla = Array.isArray(ticketFieldOptionsCache.serviceLevelAgreement) && ticketFieldOptionsCache.serviceLevelAgreement.length > 0;
+    if (hasPriority && hasIssueType && hasSubIssueType && hasSla) return;
+
+    let ignore = false;
+    void (async () => {
+      try {
+        const options = await listAutotaskTicketFieldOptions();
+        if (ignore) return;
+        setTicketFieldOptionsCache((prev) => ({
+          ...prev,
+          ...(!hasPriority && Array.isArray(options.priority) && options.priority.length > 0 ? { priority: options.priority } : {}),
+          ...(!hasIssueType && Array.isArray(options.issueType) && options.issueType.length > 0 ? { issueType: options.issueType } : {}),
+          ...(!hasSubIssueType && Array.isArray(options.subIssueType) && options.subIssueType.length > 0 ? { subIssueType: options.subIssueType } : {}),
+          ...(!hasSla && Array.isArray(options.serviceLevelAgreement) && options.serviceLevelAgreement.length > 0
+            ? { serviceLevelAgreement: options.serviceLevelAgreement }
+            : {}),
+        }));
+      } catch {
+        if (ignore) return;
+      }
+    })();
+
+    return () => {
+      ignore = true;
+    };
+  }, [
+    ticketFieldOptionsCache.issueType,
+    ticketFieldOptionsCache.priority,
+    ticketFieldOptionsCache.serviceLevelAgreement,
+    ticketFieldOptionsCache.subIssueType,
+  ]);
 
   const ticketMetaLabel = `Primary: ${primaryTech} · Secondary: ${secondaryTech}`;
 
@@ -1835,9 +1971,23 @@ export default function SessionDetail({
     let ignore = false;
     setContextEditorError('');
 
-    if (requiresTypedAutotaskSearch(activeContextEditor) && contextEditorQuery.trim().length < 2) {
+    if (
+      requiresTypedAutotaskSearch(activeContextEditor) &&
+      !contextEditorQuery.trim() &&
+      localContextEditorSuggestions.length > 0
+    ) {
       setContextEditorLoading(false);
       setContextEditorOptions(localContextEditorSuggestions);
+      return;
+    }
+
+    if (
+      (activeContextEditor === 'Contact' || activeContextEditor === 'Additional contacts') &&
+      !contextEditorQuery.trim() &&
+      localContactEditorSuggestions.length > 0
+    ) {
+      setContextEditorLoading(false);
+      setContextEditorOptions(localContactEditorSuggestions);
       return;
     }
 
@@ -1862,12 +2012,19 @@ export default function SessionDetail({
         }
         if ((activeContextEditor === 'Contact' || activeContextEditor === 'Additional contacts') && activeOrgId !== null) {
           const rows = await searchAutotaskContacts(contextEditorQuery, activeOrgId, 30);
+          const options = rows.map((row: AutotaskContactOption) => ({
+            id: row.id,
+            label: row.name,
+            ...(row.email ? { sublabel: row.email } : {}),
+          }));
           if (!ignore) {
-            setContextEditorOptions(rows.map((row: AutotaskContactOption) => ({
-              id: row.id,
-              label: row.name,
-              ...(row.email ? { sublabel: row.email } : {}),
-            })));
+            setContextEditorOptions(options);
+            if (options.length > 0) {
+              setContactSuggestionCacheByCompany((prev) => ({
+                ...prev,
+                [activeOrgId]: mergeUniqueContextOptions(options, prev[activeOrgId] || []).slice(0, 50),
+              }));
+            }
           }
           return;
         }
@@ -1915,7 +2072,7 @@ export default function SessionDetail({
     return () => {
       ignore = true;
     };
-  }, [activeContextEditor, activeOrgId, contextEditorQuery, ticketFieldOptionsCache, contextOverrides.org?.name, data?.ssot?.company, data?.ticket?.company, selectedTicketView?.company, selectedTicketView?.org]);
+  }, [activeContextEditor, activeOrgId, contactSuggestionCacheByCompany, contextEditorQuery, searchSuggestionCache, ticketFieldOptionsCache, contextOverrides.org?.name, data?.ssot?.company, data?.ticket?.company, selectedTicketView?.company, selectedTicketView?.org]);
 
   const digestFacts = Array.isArray(data?.evidence_pack?.evidence_digest?.facts_confirmed)
     ? data?.evidence_pack?.evidence_digest?.facts_confirmed
@@ -1949,14 +2106,21 @@ export default function SessionDetail({
 
     let ignore = false;
     void (async () => {
-      for (const field of missingFields) {
-        try {
-          const options = await listAutotaskTicketFieldOptionsByField(field);
-          if (ignore) return;
-          setTicketFieldOptionsCache((prev) => (prev[field]?.length ? prev : { ...prev, [field]: options }));
-        } catch {
-          if (ignore) return;
-        }
+      try {
+        const options = await listAutotaskTicketFieldOptions();
+        if (ignore) return;
+        setTicketFieldOptionsCache((prev) => {
+          const next = { ...prev };
+          for (const field of missingFields) {
+            const rows = options[field];
+            if (!next[field]?.length && Array.isArray(rows) && rows.length > 0) {
+              next[field] = rows;
+            }
+          }
+          return next;
+        });
+      } catch {
+        if (ignore) return;
       }
     })();
 

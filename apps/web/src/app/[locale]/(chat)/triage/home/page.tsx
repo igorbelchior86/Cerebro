@@ -367,6 +367,7 @@ export default function HomePage() {
   const [contextEditorError, setContextEditorError] = useState('');
   const [contextEditorOptions, setContextEditorOptions] = useState<ContextEditorOption[]>([]);
   const [searchSuggestionCache, setSearchSuggestionCache] = useState<Partial<Record<EditableContextKey, ContextEditorOption[]>>>({});
+  const [contactSuggestionCacheByCompany, setContactSuggestionCacheByCompany] = useState<Record<number, ContextEditorOption[]>>({});
   const [ticketFieldOptionsCache, setTicketFieldOptionsCache] = useState<TicketFieldOptionsCache>({});
   const [ticketDraftDefaults, setTicketDraftDefaults] = useState<AutotaskTicketDraftDefaults | null>(null);
   const [isCreatingDraft, setIsCreatingDraft] = useState(false);
@@ -395,11 +396,7 @@ export default function HomePage() {
   const ticketTitle = draft.title.trim() || 'New Ticket';
   const primaryTech = draft.primaryTech?.name || 'Unassigned';
   const secondaryTech = draft.secondaryTech?.name || 'Unassigned';
-  const isAwaitingSearchInput = Boolean(
-    activeContextEditor &&
-    requiresTypedAutotaskSearch(activeContextEditor) &&
-    contextEditorQuery.trim().length < 2
-  );
+  const isAwaitingSearchInput = false;
   const localContextEditorSuggestions = (() => {
     if (!activeContextEditor || !requiresTypedAutotaskSearch(activeContextEditor)) return [];
     const seeded: ContextEditorOption[] = [];
@@ -414,6 +411,88 @@ export default function HomePage() {
     }
     return mergeUniqueContextOptions(seeded, searchSuggestionCache[activeContextEditor] || []).slice(0, 8);
   })();
+
+  useEffect(() => {
+    if (!isActive) return;
+    const needsOrg = !searchSuggestionCache.Org?.length;
+    const needsPrimary = !searchSuggestionCache.Primary?.length;
+    const needsSecondary = !searchSuggestionCache.Secondary?.length;
+    if (!needsOrg && !needsPrimary && !needsSecondary) return;
+
+    let ignore = false;
+    void (async () => {
+      const [orgRows, techRows] = await Promise.all([
+        needsOrg ? searchAutotaskCompanies('', 8).catch(() => []) : Promise.resolve([] as AutotaskCompanyOption[]),
+        needsPrimary || needsSecondary
+          ? searchAutotaskResources('', 8).catch(() => []) : Promise.resolve([] as AutotaskResourceOption[]),
+      ]);
+      if (ignore) return;
+
+      const orgOptions = orgRows.map((row) => ({ id: row.id, label: row.name }));
+      const techOptions = techRows.map((row) => ({
+        id: row.id,
+        label: row.name,
+        ...(row.email ? { sublabel: row.email } : {}),
+      }));
+
+      if (orgOptions.length === 0 && techOptions.length === 0) return;
+
+      setSearchSuggestionCache((prev) => ({
+        ...prev,
+        ...(orgOptions.length > 0 && needsOrg
+          ? { Org: mergeUniqueContextOptions(orgOptions, prev.Org || []).slice(0, 8) }
+          : {}),
+        ...(techOptions.length > 0 && needsPrimary
+          ? { Primary: mergeUniqueContextOptions(techOptions, prev.Primary || []).slice(0, 8) }
+          : {}),
+        ...(techOptions.length > 0 && needsSecondary
+          ? { Secondary: mergeUniqueContextOptions(techOptions, prev.Secondary || []).slice(0, 8) }
+          : {}),
+      }));
+    })();
+
+    return () => {
+      ignore = true;
+    };
+  }, [isActive, searchSuggestionCache]);
+
+  const localContactEditorSuggestions = (() => {
+    if (!activeContextEditor || (activeContextEditor !== 'Contact' && activeContextEditor !== 'Additional contacts')) return [];
+    const seeded: ContextEditorOption[] = [];
+    if (typeof draft.contact?.id === 'number') {
+      seeded.push({ id: draft.contact.id, label: draft.contact.name });
+    }
+    if (typeof draft.additionalContact?.id === 'number') {
+      seeded.push({ id: draft.additionalContact.id, label: draft.additionalContact.name });
+    }
+    const cached = activeOrgId === null ? [] : (contactSuggestionCacheByCompany[activeOrgId] || []);
+    return mergeUniqueContextOptions(seeded, cached).slice(0, 12);
+  })();
+
+  useEffect(() => {
+    if (!isActive || activeOrgId === null || contactSuggestionCacheByCompany[activeOrgId]) return;
+
+    let ignore = false;
+    void (async () => {
+      try {
+        const rows = await searchAutotaskContacts('', activeOrgId, 50);
+        if (ignore) return;
+        const options = rows.map((row: AutotaskContactOption) => ({
+          id: row.id,
+          label: row.name,
+          ...(row.email ? { sublabel: row.email } : {}),
+        }));
+        if (options.length === 0) return;
+        setContactSuggestionCacheByCompany((prev) => (prev[activeOrgId] ? prev : { ...prev, [activeOrgId]: options }));
+      } catch {
+        if (ignore) return;
+      }
+    })();
+
+    return () => {
+      ignore = true;
+    };
+  }, [activeOrgId, contactSuggestionCacheByCompany, isActive]);
 
   useEffect(() => {
     if (!isActive) return;
@@ -768,9 +847,23 @@ export default function HomePage() {
 
     setContextEditorError('');
 
-    if (requiresTypedAutotaskSearch(activeContextEditor) && contextEditorQuery.trim().length < 2) {
+    if (
+      requiresTypedAutotaskSearch(activeContextEditor) &&
+      !contextEditorQuery.trim() &&
+      localContextEditorSuggestions.length > 0
+    ) {
       setContextEditorLoading(false);
       setContextEditorOptions(localContextEditorSuggestions);
+      return;
+    }
+
+    if (
+      (activeContextEditor === 'Contact' || activeContextEditor === 'Additional contacts') &&
+      !contextEditorQuery.trim() &&
+      localContactEditorSuggestions.length > 0
+    ) {
+      setContextEditorLoading(false);
+      setContextEditorOptions(localContactEditorSuggestions);
       return;
     }
 
@@ -796,12 +889,19 @@ export default function HomePage() {
 
         if ((activeContextEditor === 'Contact' || activeContextEditor === 'Additional contacts') && activeOrgId !== null) {
           const rows = await searchAutotaskContacts(contextEditorQuery, activeOrgId, 30);
+          const options = rows.map((row: AutotaskContactOption) => ({
+            id: row.id,
+            label: row.name,
+            ...(row.email ? { sublabel: row.email } : {}),
+          }));
           if (!ignore) {
-            setContextEditorOptions(rows.map((row: AutotaskContactOption) => ({
-              id: row.id,
-              label: row.name,
-              ...(row.email ? { sublabel: row.email } : {}),
-            })));
+            setContextEditorOptions(options);
+            if (options.length > 0) {
+              setContactSuggestionCacheByCompany((prev) => ({
+                ...prev,
+                [activeOrgId]: mergeUniqueContextOptions(options, prev[activeOrgId] || []).slice(0, 50),
+              }));
+            }
           }
           return;
         }
@@ -855,7 +955,7 @@ export default function HomePage() {
       ignore = true;
       if (timer) clearTimeout(timer);
     };
-  }, [activeContextEditor, activeOrgId, contextEditorQuery, isActive, ticketFieldOptionsCache]);
+  }, [activeContextEditor, activeOrgId, contactSuggestionCacheByCompany, contextEditorQuery, isActive, searchSuggestionCache, ticketFieldOptionsCache]);
 
   const handleSelectContextOption = (option: ContextEditorOption) => {
     if (!activeContextEditor) return;

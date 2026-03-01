@@ -929,3 +929,13 @@
 **Root cause**: O parser só olhava flags booleanas por item (`isDefault`, etc.) e ignorava `defaultValue`/equivalentes no próprio field metadata.
 **Rule**: Em metadados de picklist de providers, validar tanto o nível do item quanto o nível do campo para detectar defaults reais.
 **Pattern**: Se a UI recebe as opções corretas mas o default não aparece, revisar primeiro se o provider publica o default como `field.defaultValue` em vez de `option.isDefault`.
+## Lesson: 2026-03-01 (typed Autotask selectors must never render an empty blank-state when suggestions are required)
+**Mistake**: Eu deixei `Org`/`Primary`/`Secondary` continuarem devolvendo lista vazia ao abrir em estado frio.
+**Root cause**: O frontend fazia short-circuit em `query < 2` para usar apenas cache local, mas esse cache nasce vazio antes do primeiro preload/search bem-sucedido.
+**Rule**: Em seletores tipados que precisam mostrar sugestões ao abrir, o estado vazio deve usar sugestões default pré-carregadas ou um fetch barato de fallback; nunca retornar vazio apenas porque a query está em branco.
+**Pattern**: Modal com input renderizado e sem lista logo na abertura indica que o blank-state foi tratado como “aguardar digitação”, não como “mostrar catálogo inicial”.
+## Lesson: 2026-03-01 (do not claim full selector coverage when only a subset was pre-warmed)
+**Mistake**: Eu reportei a melhoria como se cobrisse toda a lista de campos solicitada, mas a parte de pre-warm imediato ainda estava parcial no ticket detail.
+**Root cause**: Eu tratei a redução de latência dos seletores tipados como suficiente e não revalidei explicitamente todos os campos enumerados pelo usuário.
+**Rule**: Quando o usuário fornecer uma lista fechada de superfícies, confirmar cobertura item a item antes de declarar a tarefa completa.
+**Pattern**: Se a resposta fala “X agora faz preload” mas o requisito original é uma lista extensa, revisar a cobertura completa em vez de inferir equivalência.

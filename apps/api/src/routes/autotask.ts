@@ -51,6 +51,8 @@ type TicketFieldKey = (typeof ticketFieldKeys)[number];
 
 const ticketFieldOptionCache: Partial<Record<TicketFieldKey, unknown[]>> = {};
 let ticketDraftDefaultsCache: unknown = null;
+const READ_ONLY_SEARCH_CACHE_TTL_MS = 30_000;
+const readOnlySearchCache = new Map<string, { expiresAt: number; data: unknown[] }>();
 
 // Lazy client — only created when a request arrives; avoids startup crash if env vars are absent.
 function getClient() {
@@ -137,6 +139,27 @@ function stringifyStructuredSearch(filter: Array<Record<string, unknown>>, maxRe
   return JSON.stringify({
     MaxRecords: maxRecords,
     filter,
+  });
+}
+
+function buildReadOnlySearchCacheKey(scope: 'companies' | 'contacts' | 'resources', parts: Array<string | number | null>) {
+  return `${scope}:${parts.map((part) => String(part ?? '')).join(':').toLowerCase()}`;
+}
+
+function readCachedReadOnlySearch(key: string): unknown[] | null {
+  const cached = readOnlySearchCache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    readOnlySearchCache.delete(key);
+    return null;
+  }
+  return cached.data;
+}
+
+function writeCachedReadOnlySearch(key: string, data: unknown[]) {
+  readOnlySearchCache.set(key, {
+    expiresAt: Date.now() + READ_ONLY_SEARCH_CACHE_TTL_MS,
+    data,
   });
 }
 
@@ -525,11 +548,13 @@ router.get('/companies/search', async (req, res, next) => {
 
     const q = sanitizeSearchTerm(req.query.q);
     const limit = parseIntParam(req.query.limit, 25, { min: 1, max: 100 });
-    if (q.length < 2) {
+    const cacheKey = buildReadOnlySearchCacheKey('companies', [q, limit]);
+    const cached = readCachedReadOnlySearch(cacheKey);
+    if (cached) {
       res.json({
         success: true,
-        data: [],
-        count: 0,
+        data: cached,
+        count: cached.length,
         timestamp: new Date().toISOString(),
       });
       return;
@@ -537,8 +562,11 @@ router.get('/companies/search', async (req, res, next) => {
     let rows: Array<Record<string, unknown>> = [];
     let degradedReason: 'rate_limited' | 'provider_error' | undefined;
     try {
+      const filter = q
+        ? [{ op: 'contains', field: 'companyName', value: q }]
+        : [{ op: 'eq', field: 'isActive', value: true }];
       rows = await client.searchCompanies(
-        stringifyStructuredSearch([{ op: 'contains', field: 'companyName', value: q }], limit),
+        stringifyStructuredSearch(filter, limit),
         limit
       );
     } catch (error) {
@@ -567,11 +595,16 @@ router.get('/companies/search', async (req, res, next) => {
       .map((item) => item ? ({ id: item.id, name: item.name }) : null)
       .filter((item): item is { id: number; name: string } => Boolean(item))
       .slice(0, limit);
+    const fallbackData = degradedReason ? readCachedReadOnlySearch(cacheKey) : null;
+    const finalData = Array.isArray(fallbackData) ? fallbackData : data;
+    if (!degradedReason || Array.isArray(fallbackData)) {
+      writeCachedReadOnlySearch(cacheKey, finalData);
+    }
 
     res.json({
       success: true,
-      data,
-      count: data.length,
+      data: finalData,
+      count: finalData.length,
       ...(degradedReason
         ? { degraded: { provider: 'Autotask', reason: degradedReason } }
         : {}),
@@ -598,6 +631,17 @@ router.get('/contacts/search', async (req, res, next) => {
     const limit = parseIntParam(req.query.limit, 25, { min: 1, max: 100 });
     const maybeCompanyId = Number.parseInt(String(req.query.companyId ?? ''), 10);
     const companyId = Number.isFinite(maybeCompanyId) ? maybeCompanyId : null;
+    const cacheKey = buildReadOnlySearchCacheKey('contacts', [companyId, q, limit]);
+    const cached = readCachedReadOnlySearch(cacheKey);
+    if (cached) {
+      res.json({
+        success: true,
+        data: cached,
+        count: cached.length,
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
     const filter: Array<Record<string, unknown>> = [];
     if (companyId !== null) filter.push({ op: 'eq', field: 'companyID', value: companyId });
     let rows: Array<Record<string, unknown>> = [];
@@ -630,11 +674,16 @@ router.get('/contacts/search', async (req, res, next) => {
         return item.name.toLowerCase().includes(needle) || String(item.email || '').toLowerCase().includes(needle);
       })
       .filter((item): item is { id: number; name: string; companyId?: number; email?: string } => Boolean(item));
+    const fallbackData = degradedReason ? readCachedReadOnlySearch(cacheKey) : null;
+    const finalData = Array.isArray(fallbackData) ? fallbackData : data;
+    if (!degradedReason || Array.isArray(fallbackData)) {
+      writeCachedReadOnlySearch(cacheKey, finalData);
+    }
 
     res.json({
       success: true,
-      data,
-      count: data.length,
+      data: finalData,
+      count: finalData.length,
       ...(degradedReason
         ? { degraded: { provider: 'Autotask', reason: degradedReason } }
         : {}),
@@ -659,11 +708,13 @@ router.get('/resources/search', async (req, res, next) => {
 
     const q = sanitizeSearchTerm(req.query.q);
     const limit = parseIntParam(req.query.limit, 25, { min: 1, max: 100 });
-    if (q.length < 2) {
+    const cacheKey = buildReadOnlySearchCacheKey('resources', [q, limit]);
+    const cached = readCachedReadOnlySearch(cacheKey);
+    if (cached) {
       res.json({
         success: true,
-        data: [],
-        count: 0,
+        data: cached,
+        count: cached.length,
         timestamp: new Date().toISOString(),
       });
       return;
@@ -699,11 +750,16 @@ router.get('/resources/search', async (req, res, next) => {
         return item.name.toLowerCase().includes(needle) || String(item.email || '').toLowerCase().includes(needle);
       })
       .filter((item): item is { id: number; name: string; email?: string } => Boolean(item));
+    const fallbackData = degradedReason ? readCachedReadOnlySearch(cacheKey) : null;
+    const finalData = Array.isArray(fallbackData) ? fallbackData : data;
+    if (!degradedReason || Array.isArray(fallbackData)) {
+      writeCachedReadOnlySearch(cacheKey, finalData);
+    }
 
     res.json({
       success: true,
-      data,
-      count: data.length,
+      data: finalData,
+      count: finalData.length,
       ...(degradedReason
         ? { degraded: { provider: 'Autotask', reason: degradedReason } }
         : {}),

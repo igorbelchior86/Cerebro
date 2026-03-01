@@ -1,3 +1,15 @@
+## Lesson: 2026-03-01 (performance fixes must preserve the existing UX contract when the user depends on suggestions)
+**Mistake**: Eu eliminei as sugestões iniciais do modal ao bloquear a busca vazia, melhorando custo mas quebrando um comportamento útil já existente.
+**Root cause**: Foquei só no custo do provider e não tratei “lista de sugestões ao abrir” como parte do contrato de UX do fluxo.
+**Rule**: Se um fix de performance remove uma affordance existente relevante (como sugestões iniciais), a correção precisa substituir a origem da sugestão por uma fonte mais barata, não simplesmente apagar a affordance.
+**Pattern**: “corrigir lentidão” não autoriza transformar preload útil em tela vazia sem acordo explícito do usuário.
+
+## Lesson: 2026-03-01 (remote search selectors must never open with a provider-wide blank query)
+**Mistake**: Eu deixei os modais de busca de Org/Tech iniciarem uma busca remota com query vazia assim que abrem.
+**Root cause**: O frontend tratava o modal como “preload de sugestões”, mas o backend implementava isso como busca global cara no Autotask, o que aumenta latência e pode reacender throttling/falhas de fetch.
+**Rule**: Endpoints de search remota para seletores globais devem exigir pelo menos 2 caracteres e o frontend deve esperar input mínimo antes de chamar o provider.
+**Pattern**: Modal abre já com spinner antes da primeira tecla em integração externa = risco de request caro e desnecessário.
+
 ## Lesson: 2026-03-01 (startup cleanup is not enough when the Next dev runtime corrupts chunks after hot reload)
 **Mistake**: Eu assumi que limpar `.next` só no restart resolveria definitivamente a perda de `vendor-chunks`.
 **Root cause**: O runtime continuou falhando em chunks diferentes após novas recompilações, mostrando que a corrupção acontecia também durante o ciclo de HMR/cache, não apenas no boot.

@@ -525,32 +525,22 @@ router.get('/companies/search', async (req, res, next) => {
 
     const q = sanitizeSearchTerm(req.query.q);
     const limit = parseIntParam(req.query.limit, 25, { min: 1, max: 100 });
+    if (q.length < 2) {
+      res.json({
+        success: true,
+        data: [],
+        count: 0,
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
     let rows: Array<Record<string, unknown>> = [];
     let degradedReason: 'rate_limited' | 'provider_error' | undefined;
     try {
-      rows = await (q
-        ? client.searchCompanies(
-          stringifyStructuredSearch([{ op: 'contains', field: 'companyName', value: q }], limit),
-          limit
-        )
-        : (() => {
-          const activeSearch = client.searchCompanies(
-            stringifyStructuredSearch([{ op: 'eq', field: 'isActive', value: true }], limit),
-            limit
-          );
-          const refreshSearch = client.searchCompanies(
-            stringifyStructuredSearch([{ op: 'contains', field: 'companyName', value: 'refresh' }], limit),
-            limit
-          );
-          return Promise.all([activeSearch, refreshSearch]).then(([activeRows, refreshRows]) => {
-            const merged = new Map<number, Record<string, unknown>>();
-            for (const row of [...activeRows, ...refreshRows]) {
-              const id = Number((row as any)?.id);
-              if (Number.isFinite(id) && !merged.has(id)) merged.set(id, row);
-            }
-            return Array.from(merged.values());
-          });
-        })());
+      rows = await client.searchCompanies(
+        stringifyStructuredSearch([{ op: 'contains', field: 'companyName', value: q }], limit),
+        limit
+      );
     } catch (error) {
       degradedReason = classifyAutotaskReadDegradedReason(error);
     }
@@ -669,6 +659,15 @@ router.get('/resources/search', async (req, res, next) => {
 
     const q = sanitizeSearchTerm(req.query.q);
     const limit = parseIntParam(req.query.limit, 25, { min: 1, max: 100 });
+    if (q.length < 2) {
+      res.json({
+        success: true,
+        data: [],
+        count: 0,
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
     const filter: Array<Record<string, unknown>> = [{ op: 'eq', field: 'isActive', value: true }];
     let rows: Array<Record<string, unknown>> = [];
     let degradedReason: 'rate_limited' | 'provider_error' | undefined;

@@ -42,6 +42,23 @@ type EditableContextKey =
 type ContextEditorOption = { id: number; label: string; sublabel?: string };
 type TicketFieldOptionsCache = Partial<Record<AutotaskTicketFieldKey, AutotaskPicklistOption[]>>;
 
+function requiresTypedAutotaskSearch(key: EditableContextKey): boolean {
+  return key === 'Org' || key === 'Primary' || key === 'Secondary';
+}
+
+function mergeUniqueContextOptions(...groups: ContextEditorOption[][]): ContextEditorOption[] {
+  const seen = new Set<number>();
+  const merged: ContextEditorOption[] = [];
+  for (const group of groups) {
+    for (const option of group) {
+      if (seen.has(option.id)) continue;
+      seen.add(option.id);
+      merged.push(option);
+    }
+  }
+  return merged;
+}
+
 interface DraftReference {
   id: number;
   name: string;
@@ -349,6 +366,7 @@ export default function HomePage() {
   const [contextEditorSaving, setContextEditorSaving] = useState(false);
   const [contextEditorError, setContextEditorError] = useState('');
   const [contextEditorOptions, setContextEditorOptions] = useState<ContextEditorOption[]>([]);
+  const [searchSuggestionCache, setSearchSuggestionCache] = useState<Partial<Record<EditableContextKey, ContextEditorOption[]>>>({});
   const [ticketFieldOptionsCache, setTicketFieldOptionsCache] = useState<TicketFieldOptionsCache>({});
   const [ticketDraftDefaults, setTicketDraftDefaults] = useState<AutotaskTicketDraftDefaults | null>(null);
   const [isCreatingDraft, setIsCreatingDraft] = useState(false);
@@ -377,6 +395,25 @@ export default function HomePage() {
   const ticketTitle = draft.title.trim() || 'New Ticket';
   const primaryTech = draft.primaryTech?.name || 'Unassigned';
   const secondaryTech = draft.secondaryTech?.name || 'Unassigned';
+  const isAwaitingSearchInput = Boolean(
+    activeContextEditor &&
+    requiresTypedAutotaskSearch(activeContextEditor) &&
+    contextEditorQuery.trim().length < 2
+  );
+  const localContextEditorSuggestions = (() => {
+    if (!activeContextEditor || !requiresTypedAutotaskSearch(activeContextEditor)) return [];
+    const seeded: ContextEditorOption[] = [];
+    if (activeContextEditor === 'Org' && typeof draft.org?.id === 'number') {
+      seeded.push({ id: draft.org.id, label: draft.org.name });
+    }
+    if (activeContextEditor === 'Primary' && typeof draft.primaryTech?.id === 'number') {
+      seeded.push({ id: draft.primaryTech.id, label: draft.primaryTech.name });
+    }
+    if (activeContextEditor === 'Secondary' && typeof draft.secondaryTech?.id === 'number') {
+      seeded.push({ id: draft.secondaryTech.id, label: draft.secondaryTech.name });
+    }
+    return mergeUniqueContextOptions(seeded, searchSuggestionCache[activeContextEditor] || []).slice(0, 8);
+  })();
 
   useEffect(() => {
     if (!isActive) return;
@@ -729,18 +766,30 @@ export default function HomePage() {
       }
     }
 
-    setContextEditorLoading(true);
     setContextEditorError('');
+
+    if (requiresTypedAutotaskSearch(activeContextEditor) && contextEditorQuery.trim().length < 2) {
+      setContextEditorLoading(false);
+      setContextEditorOptions(localContextEditorSuggestions);
+      return;
+    }
+
+    setContextEditorLoading(true);
 
     const run = async () => {
       try {
         if (activeContextEditor === 'Org') {
           const rows = await searchAutotaskCompanies(contextEditorQuery, 30);
+          const options = rows.map((row: AutotaskCompanyOption) => ({
+            id: row.id,
+            label: row.name,
+          }));
           if (!ignore) {
-            setContextEditorOptions(rows.map((row: AutotaskCompanyOption) => ({
-              id: row.id,
-              label: row.name,
-            })));
+            setContextEditorOptions(options);
+            setSearchSuggestionCache((prev) => ({
+              ...prev,
+              Org: mergeUniqueContextOptions(options, prev.Org || []).slice(0, 8),
+            }));
           }
           return;
         }
@@ -769,12 +818,17 @@ export default function HomePage() {
         }
 
         const rows = await searchAutotaskResources(contextEditorQuery, 30);
+        const options = rows.map((row: AutotaskResourceOption) => ({
+          id: row.id,
+          label: row.name,
+          ...(row.email ? { sublabel: row.email } : {}),
+        }));
         if (!ignore) {
-          setContextEditorOptions(rows.map((row: AutotaskResourceOption) => ({
-            id: row.id,
-            label: row.name,
-            ...(row.email ? { sublabel: row.email } : {}),
-          })));
+          setContextEditorOptions(options);
+          setSearchSuggestionCache((prev) => ({
+            ...prev,
+            [activeContextEditor]: mergeUniqueContextOptions(options, prev[activeContextEditor] || []).slice(0, 8),
+          }));
         }
       } catch (err: any) {
         if (!ignore) {
@@ -1226,7 +1280,9 @@ export default function HomePage() {
                           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ margin: '0 auto 8px', opacity: 0.5 }}>
                             <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
                           </svg>
-                          <span style={{ fontSize: '13px' }}>No records returned.</span>
+                          <span style={{ fontSize: '13px' }}>
+                            {isAwaitingSearchInput ? 'Type at least 2 characters to search.' : 'No records returned.'}
+                          </span>
                         </div>
                       ) : (
                         <div className="animate-in fade-in slide-in-from-top-4 duration-500" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

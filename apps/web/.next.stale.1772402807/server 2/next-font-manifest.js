@@ -1,0 +1,1 @@
+self.__NEXT_FONT_MANIFEST='{"pages":{},"app":{"/Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/app/layout":["static/media/13971731025ec697-s.p.woff2","static/media/bb3ef058b751a6ad-s.p.woff2","static/media/78fec81b34c4a365.p.woff2","static/media/27834908180db20f-s.p.woff2"]},"appUsingSizeAdjust":true,"pagesUsingSizeAdjust":false}';

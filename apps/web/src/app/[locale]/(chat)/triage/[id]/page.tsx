@@ -183,6 +183,23 @@ interface ContextOverrideState {
 type ContextEditorOption = { id: number; label: string; sublabel?: string };
 type TicketFieldOptionsCache = Partial<Record<AutotaskTicketFieldKey, AutotaskPicklistOption[]>>;
 
+function requiresTypedAutotaskSearch(key: EditableContextKey): boolean {
+  return key === 'Org' || key === 'Tech';
+}
+
+function mergeUniqueContextOptions(...groups: ContextEditorOption[][]): ContextEditorOption[] {
+  const seen = new Set<number>();
+  const merged: ContextEditorOption[] = [];
+  for (const group of groups) {
+    for (const option of group) {
+      if (seen.has(option.id)) continue;
+      seen.add(option.id);
+      merged.push(option);
+    }
+  }
+  return merged;
+}
+
 function mapTicketFieldEditorToOptions(
   options: AutotaskPicklistOption[],
   query: string
@@ -367,6 +384,7 @@ export default function SessionDetail({
   const [contextEditorSaving, setContextEditorSaving] = useState(false);
   const [contextEditorError, setContextEditorError] = useState('');
   const [contextEditorOptions, setContextEditorOptions] = useState<ContextEditorOption[]>([]);
+  const [searchSuggestionCache, setSearchSuggestionCache] = useState<Partial<Record<EditableContextKey, ContextEditorOption[]>>>({});
   const [ticketFieldOptionsCache, setTicketFieldOptionsCache] = useState<TicketFieldOptionsCache>({});
   const [resolvedOrgIdFallback, setResolvedOrgIdFallback] = useState<number | null>(null);
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
@@ -1418,6 +1436,39 @@ export default function SessionDetail({
   const ticketLabel = `${ticketNumber} — ${ticketTitle}`;
   const primaryTech = contextOverrides.tech?.name || data?.ticket?.assigned_resource_name || selectedTicketView?.assigned_resource_name || 'Unassigned';
   const secondaryTech = contextOverrides.secondary_tech?.name || data?.ticket?.secondary_resource_name?.trim() || 'Unassigned';
+  const isAwaitingSearchInput = Boolean(
+    activeContextEditor &&
+    requiresTypedAutotaskSearch(activeContextEditor) &&
+    contextEditorQuery.trim().length < 2
+  );
+  const localContextEditorSuggestions = (() => {
+    if (!activeContextEditor || !requiresTypedAutotaskSearch(activeContextEditor)) return [];
+    const seeded: ContextEditorOption[] = [];
+    if (activeContextEditor === 'Org') {
+      const orgId = toAutotaskId(contextOverrides.org?.id ?? data?.ticket?.company_id);
+      const orgName = String(
+        contextOverrides.org?.name ||
+        data?.ticket?.company ||
+        selectedTicketView?.company ||
+        selectedTicketView?.org ||
+        ''
+      ).trim();
+      if (orgId !== null && orgName) {
+        seeded.push({ id: orgId, label: orgName });
+      }
+    }
+    if (activeContextEditor === 'Tech') {
+      const primaryId = toAutotaskId(contextOverrides.tech?.id ?? data?.ticket?.assigned_resource_id);
+      if (primaryId !== null && primaryTech) {
+        seeded.push({ id: primaryId, label: primaryTech });
+      }
+      const secondaryId = toAutotaskId(contextOverrides.secondary_tech?.id ?? data?.ticket?.secondary_resource_id);
+      if (secondaryId !== null && secondaryTech && secondaryTech !== 'Unassigned') {
+        seeded.push({ id: secondaryId, label: secondaryTech });
+      }
+    }
+    return mergeUniqueContextOptions(seeded, searchSuggestionCache[activeContextEditor] || []).slice(0, 8);
+  })();
 
   const ticketMetaLabel = `Primary: ${primaryTech} · Secondary: ${secondaryTech}`;
 
@@ -1782,18 +1833,30 @@ export default function SessionDetail({
     }
 
     let ignore = false;
-    setContextEditorLoading(true);
     setContextEditorError('');
+
+    if (requiresTypedAutotaskSearch(activeContextEditor) && contextEditorQuery.trim().length < 2) {
+      setContextEditorLoading(false);
+      setContextEditorOptions(localContextEditorSuggestions);
+      return;
+    }
+
+    setContextEditorLoading(true);
 
     const run = async () => {
       try {
         if (activeContextEditor === 'Org') {
           const rows = await searchAutotaskCompanies(contextEditorQuery, 30);
+          const options = rows.map((row: AutotaskCompanyOption) => ({
+            id: row.id,
+            label: row.name,
+          }));
           if (!ignore) {
-            setContextEditorOptions(rows.map((row: AutotaskCompanyOption) => ({
-              id: row.id,
-              label: row.name,
-            })));
+            setContextEditorOptions(options);
+            setSearchSuggestionCache((prev) => ({
+              ...prev,
+              Org: mergeUniqueContextOptions(options, prev.Org || []).slice(0, 8),
+            }));
           }
           return;
         }
@@ -1824,12 +1887,17 @@ export default function SessionDetail({
           return;
         }
         const rows = await searchAutotaskResources(contextEditorQuery, 30);
+        const options = rows.map((row: AutotaskResourceOption) => ({
+          id: row.id,
+          label: row.name,
+          ...(row.email ? { sublabel: row.email } : {}),
+        }));
         if (!ignore) {
-          setContextEditorOptions(rows.map((row: AutotaskResourceOption) => ({
-            id: row.id,
-            label: row.name,
-            ...(row.email ? { sublabel: row.email } : {}),
-          })));
+          setContextEditorOptions(options);
+          setSearchSuggestionCache((prev) => ({
+            ...prev,
+            Tech: mergeUniqueContextOptions(options, prev.Tech || []).slice(0, 8),
+          }));
         }
       } catch (err: any) {
         if (!ignore) {
@@ -2520,7 +2588,9 @@ export default function SessionDetail({
                       ) : contextEditorOptions.length === 0 ? (
                         <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
                           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ margin: '0 auto 8px', opacity: 0.5 }}><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
-                          <span style={{ fontSize: '13px' }}>No records returned.</span>
+                          <span style={{ fontSize: '13px' }}>
+                            {isAwaitingSearchInput ? 'Type at least 2 characters to search.' : 'No records returned.'}
+                          </span>
                         </div>
                       ) : (
                         <div className="animate-in fade-in slide-in-from-top-4 duration-500" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

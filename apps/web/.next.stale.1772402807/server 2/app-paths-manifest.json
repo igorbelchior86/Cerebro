@@ -1,0 +1,14 @@
+{
+  "/_not-found/page": "app/_not-found/page.js",
+  "/[locale]/register/page": "app/[locale]/register/page.js",
+  "/[locale]/test-env/page": "app/[locale]/test-env/page.js",
+  "/[locale]/accept-invite/page": "app/[locale]/accept-invite/page.js",
+  "/[locale]/login/page": "app/[locale]/login/page.js",
+  "/[locale]/(chat)/triage/home/page": "app/[locale]/(chat)/triage/home/page.js",
+  "/[locale]/(chat)/triage/[id]/page": "app/[locale]/(chat)/triage/[id]/page.js",
+  "/[locale]/(main)/manager-ops/p0/page": "app/[locale]/(main)/manager-ops/p0/page.js",
+  "/[locale]/(main)/page": "app/[locale]/(main)/page.js",
+  "/[locale]/(main)/triage/new/page": "app/[locale]/(main)/triage/new/page.js",
+  "/[locale]/(main)/workflow/p0/page": "app/[locale]/(main)/workflow/p0/page.js",
+  "/[locale]/(main)/workflow/p0/[ticketId]/page": "app/[locale]/(main)/workflow/p0/[ticketId]/page.js"
+}

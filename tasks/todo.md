@@ -1,3 +1,44 @@
+# Task: Corrigir lentidão/falha nos modais de busca Autotask (Org / Primary)
+**Status**: completed
+**Started**: 2026-03-01T16:56:00-05:00
+
+## Plan
+- [x] Step 1: Reproduzir a lentidão/falha e identificar o request exato nos modais de busca.
+- [x] Step 2: Encontrar a causa raiz no frontend/backend e aplicar a correção mínima.
+- [x] Step 3: Validar o fluxo dos modais e documentar a mudança.
+
+## Open Questions
+- Replanejado após correção do usuário: manter sugestões ao abrir sem voltar à busca global cara no provider.
+
+## Progress Notes
+- Revisão inicial de `tasks/lessons.md` confirma histórico recente de dois padrões relevantes: modais de busca remota sem debounce/cancelamento e degradação insuficiente quando o Autotask throttla.
+- A superfície afetada está em `triage/home` e `triage/[id]`, nos modais "Edit Org" e "Edit Primary".
+- A causa raiz encontrada foi dupla e coerente com os screenshots: os modais disparavam busca remota antes da primeira tecla, e o backend tratava busca vazia em `/autotask/companies/search` e `/autotask/resources/search` como consulta global cara ao Autotask.
+- Isso fazia o modal abrir já em `Searching Autotask...` e, sob carga/throttling, podia terminar em `Failed to fetch`.
+- A correção aplicada exige pelo menos 2 caracteres tanto no frontend quanto no backend para essas buscas globais, eliminando o preload vazio que saturava o provider.
+- Correção do usuário: essa versão removeu as sugestões iniciais, o que piorou o UX esperado. Próximo ajuste: restaurar sugestões a partir de fonte barata/local, sem regressar à busca global vazia no Autotask.
+- Ajuste final aplicado: os modais agora continuam sem bater no provider com query vazia, mas mostram sugestões locais imediatas usando o valor atual do contexto e um cache em memória dos últimos resultados válidos da própria sessão.
+
+## Review
+- What worked:
+- O gargalo estava claramente alinhado com o comportamento observado: spinner antes de digitar e rotas de search global sem guarda para query vazia.
+- A solução correta ficou em duas camadas: manter a guarda de custo no backend e restaurar a affordance de sugestões no frontend a partir de fonte local/barata.
+- Verification:
+- `pnpm --filter @playbook-brain/api typecheck` ✅
+- `pnpm --filter @playbook-brain/web typecheck` ✅
+- `mv apps/web/.next apps/web/.next.stale.<timestamp>` e `mv apps/web/tsconfig.tsbuildinfo apps/web/tsconfig.tsbuildinfo.stale.<timestamp>` ✅
+- `pnpm --filter @playbook-brain/web build` ✅
+- runtime reiniciado com backend em `nodemon` e frontend em `npx next start -p 3000` ✅
+- `pnpm run dev:status` ✅
+- `curl -I http://localhost:3000/en/login` -> `200` ✅
+- `curl http://localhost:3001/health` ✅
+- Documentação criada:
+- `wiki/changelog/2026-03-01-autotask-search-modal-minimum-query-guard.md`
+- `wiki/changelog/2026-03-01-autotask-search-suggestions-restored-with-local-cache.md`
+- Final note:
+- O terminal não autentica no browser para abrir o modal, então a confirmação visual final depende do teste no seu navegador; o código agora volta a popular sugestões locais no estado vazio sem reativar a busca global cara.
+
+
 # Task: Restaurar o frontend local via build estável e runtime de produção
 **Status**: completed
 **Started**: 2026-03-01T16:42:00-05:00

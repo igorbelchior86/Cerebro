@@ -205,6 +205,16 @@ async function getExistingTicketCoverageMap(ticketIds: string[]) {
   }]));
 }
 
+function resolvePicklistLabel(options: Array<{ id: number; label: string }>, rawValue: unknown): string | null {
+  const numeric = Number(rawValue);
+  if (Number.isFinite(numeric)) {
+    const match = options.find((option) => option.id === numeric);
+    if (match) return match.label;
+  }
+  const text = String(rawValue ?? '').trim();
+  return text || null;
+}
+
 /**
  * GET /autotask/ticket/:id
  * Get ticket by ID (read-only)
@@ -325,6 +335,59 @@ router.get('/ticket/:id/notes', async (req, res, next) => {
       ticket_lookup: {
         requested_ref: requestedRef,
         resolved_ticket_id: ticketId,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/ticket-field-options', async (req, res, next) => {
+  try {
+    const client = await getTenantScopedClient();
+    if (!client) {
+      res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
+      return;
+    }
+
+    const requestedField = String(req.query.field || '').trim();
+    const fieldLoaders = {
+      priority: () => client.getTicketPriorityOptions(),
+      issueType: () => client.getTicketIssueTypeOptions(),
+      subIssueType: () => client.getTicketSubIssueTypeOptions(),
+      serviceLevelAgreement: () => client.getTicketServiceLevelAgreementOptions(),
+    } as const;
+
+    if (requestedField) {
+      if (!(requestedField in fieldLoaders)) {
+        res.status(400).json({ error: 'Unsupported ticket field options request' });
+        return;
+      }
+      const loader = fieldLoaders[requestedField as keyof typeof fieldLoaders];
+      const data = await loader();
+      res.json({
+        success: true,
+        data,
+        count: data.length,
+        field: requestedField,
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    const priority = await fieldLoaders.priority();
+    const issueType = await fieldLoaders.issueType();
+    const subIssueType = await fieldLoaders.subIssueType();
+    const serviceLevelAgreement = await fieldLoaders.serviceLevelAgreement();
+
+    res.json({
+      success: true,
+      data: {
+        priority,
+        issueType,
+        subIssueType,
+        serviceLevelAgreement,
       },
       timestamp: new Date().toISOString(),
     });
@@ -692,7 +755,7 @@ router.post('/backfill-recent', async (req, res, next) => {
 
 /**
  * PATCH /autotask/ticket/:ticketId/context
- * Write-safe ticket context update (company/contact) + local SSOT persistence.
+ * Write-safe ticket context update (company/contact + optional ticket metadata) + local SSOT persistence.
  */
 router.patch('/ticket/:ticketId/context', async (req, res, next) => {
   try {
@@ -710,10 +773,25 @@ router.patch('/ticket/:ticketId/context', async (req, res, next) => {
 
     const maybeCompanyId = Number.parseInt(String(req.body?.companyId ?? req.body?.companyID ?? ''), 10);
     const maybeContactId = Number.parseInt(String(req.body?.contactId ?? req.body?.contactID ?? ''), 10);
+    const maybePriorityId = Number.parseInt(String(req.body?.priorityId ?? req.body?.priorityID ?? req.body?.priority ?? ''), 10);
+    const maybeIssueTypeId = Number.parseInt(String(req.body?.issueTypeId ?? req.body?.issueType ?? ''), 10);
+    const maybeSubIssueTypeId = Number.parseInt(String(req.body?.subIssueTypeId ?? req.body?.subIssueType ?? ''), 10);
+    const maybeServiceLevelAgreementId = Number.parseInt(String(req.body?.serviceLevelAgreementId ?? req.body?.serviceLevelAgreementID ?? req.body?.sla ?? ''), 10);
     const companyId = Number.isFinite(maybeCompanyId) ? maybeCompanyId : null;
     const contactId = Number.isFinite(maybeContactId) ? maybeContactId : null;
-    if (companyId === null && contactId === null) {
-      res.status(400).json({ error: 'companyId or contactId is required' });
+    const priorityId = Number.isFinite(maybePriorityId) ? maybePriorityId : null;
+    const issueTypeId = Number.isFinite(maybeIssueTypeId) ? maybeIssueTypeId : null;
+    const subIssueTypeId = Number.isFinite(maybeSubIssueTypeId) ? maybeSubIssueTypeId : null;
+    const serviceLevelAgreementId = Number.isFinite(maybeServiceLevelAgreementId) ? maybeServiceLevelAgreementId : null;
+    if (
+      companyId === null &&
+      contactId === null &&
+      priorityId === null &&
+      issueTypeId === null &&
+      subIssueTypeId === null &&
+      serviceLevelAgreementId === null
+    ) {
+      res.status(400).json({ error: 'At least one supported field is required' });
       return;
     }
 
@@ -727,6 +805,10 @@ router.patch('/ticket/:ticketId/context', async (req, res, next) => {
       }
     }
     if (contactId !== null) patch.contactID = contactId;
+    if (priorityId !== null) patch.priority = priorityId;
+    if (issueTypeId !== null) patch.issueType = issueTypeId;
+    if (subIssueTypeId !== null) patch.subIssueType = subIssueTypeId;
+    if (serviceLevelAgreementId !== null) patch.serviceLevelAgreementID = serviceLevelAgreementId;
     await client.updateTicket(ticketId, patch);
 
     const ticket = /^\d+$/.test(ticketId)
@@ -741,6 +823,22 @@ router.patch('/ticket/:ticketId/context', async (req, res, next) => {
     const contact = Number.isFinite(authoritativeContactId)
       ? await client.getContact(authoritativeContactId).catch(() => null)
       : null;
+    const authoritativePriorityId = Number((ticket as any)?.priority);
+    const authoritativeIssueTypeId = Number((ticket as any)?.issueType);
+    const authoritativeSubIssueTypeId = Number((ticket as any)?.subIssueType);
+    const authoritativeServiceLevelAgreementId = Number((ticket as any)?.serviceLevelAgreementID);
+
+    const [priorityOptions, issueTypeOptions, subIssueTypeOptions, serviceLevelAgreementOptions] = await Promise.all([
+      client.getTicketPriorityOptions().catch(() => []),
+      client.getTicketIssueTypeOptions().catch(() => []),
+      client.getTicketSubIssueTypeOptions().catch(() => []),
+      client.getTicketServiceLevelAgreementOptions().catch(() => []),
+    ]);
+
+    const authoritativePriorityLabel = resolvePicklistLabel(priorityOptions, (ticket as any)?.priority);
+    const authoritativeIssueTypeLabel = resolvePicklistLabel(issueTypeOptions, (ticket as any)?.issueType);
+    const authoritativeSubIssueTypeLabel = resolvePicklistLabel(subIssueTypeOptions, (ticket as any)?.subIssueType);
+    const authoritativeServiceLevelAgreementLabel = resolvePicklistLabel(serviceLevelAgreementOptions, (ticket as any)?.serviceLevelAgreementID);
 
     const ticketKey = String((ticket as any)?.ticketNumber || ticketId).trim();
     const existingSsot = await queryOne<{ payload: any }>(
@@ -769,6 +867,14 @@ router.patch('/ticket/:ticketId/context', async (req, res, next) => {
         contact_id: Number.isFinite(authoritativeContactId) ? authoritativeContactId : null,
         contact_name: `${String((contact as any)?.firstName || '').trim()} ${String((contact as any)?.lastName || '').trim()}`.trim() || null,
         contact_email: String((contact as any)?.emailAddress || '').trim() || null,
+        priority_id: Number.isFinite(authoritativePriorityId) ? authoritativePriorityId : null,
+        priority_label: authoritativePriorityLabel,
+        issue_type_id: Number.isFinite(authoritativeIssueTypeId) ? authoritativeIssueTypeId : null,
+        issue_type_label: authoritativeIssueTypeLabel,
+        sub_issue_type_id: Number.isFinite(authoritativeSubIssueTypeId) ? authoritativeSubIssueTypeId : null,
+        sub_issue_type_label: authoritativeSubIssueTypeLabel,
+        service_level_agreement_id: Number.isFinite(authoritativeServiceLevelAgreementId) ? authoritativeServiceLevelAgreementId : null,
+        service_level_agreement_label: authoritativeServiceLevelAgreementLabel,
       },
     };
 
@@ -792,6 +898,14 @@ router.patch('/ticket/:ticketId/context', async (req, res, next) => {
         contactId: Number.isFinite(authoritativeContactId) ? authoritativeContactId : null,
         contactName: `${String((contact as any)?.firstName || '').trim()} ${String((contact as any)?.lastName || '').trim()}`.trim() || null,
         contactEmail: String((contact as any)?.emailAddress || '').trim() || null,
+        priorityId: Number.isFinite(authoritativePriorityId) ? authoritativePriorityId : null,
+        priorityLabel: authoritativePriorityLabel,
+        issueTypeId: Number.isFinite(authoritativeIssueTypeId) ? authoritativeIssueTypeId : null,
+        issueTypeLabel: authoritativeIssueTypeLabel,
+        subIssueTypeId: Number.isFinite(authoritativeSubIssueTypeId) ? authoritativeSubIssueTypeId : null,
+        subIssueTypeLabel: authoritativeSubIssueTypeLabel,
+        serviceLevelAgreementId: Number.isFinite(authoritativeServiceLevelAgreementId) ? authoritativeServiceLevelAgreementId : null,
+        serviceLevelAgreementLabel: authoritativeServiceLevelAgreementLabel,
       },
       timestamp: new Date().toISOString(),
     });

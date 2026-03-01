@@ -1,3 +1,157 @@
+# Task: Alinhar direção da animação do toggle secundário de contexto
+**Status**: completed
+**Started**: 2026-03-01T11:08:00-05:00
+
+## Plan
+- [x] Step 1: Inspecionar a diferença de comportamento entre o toggle de `Context` e o toggle secundário do card.
+- [x] Step 2: Ajustar o `CollapseToggleButton` para suportar direção semântica consistente com a área expandida.
+- [x] Step 3: Validar com typecheck do frontend.
+- [x] Step 4: Documentar a mudança na wiki local.
+
+## Open Questions
+- Assumindo a menor mudança correta: manter a mesma animação-base e mudar apenas a direção semântica do toggle inferior, porque ele expande conteúdo para cima.
+
+## Progress Notes
+- O toggle principal expande para baixo; o toggle secundário fica ancorado no canto inferior direito e expande conteúdo acima dele.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-03-01-context-secondary-toggle-direction-fix.md`
+
+---
+
+# Task: Reordenar campos opcionais no card de contexto
+**Status**: completed
+**Started**: 2026-03-01T11:02:00-05:00
+
+## Plan
+- [x] Step 1: Localizar a ordem atual dos quatro campos opcionais em `triage/home` e `triage/[id]`.
+- [x] Step 2: Reordenar para `Issue Type`, `Sub-Issue Type`, `Priority`, `Service Level Agreement`.
+- [x] Step 3: Validar com typecheck do frontend.
+- [x] Step 4: Documentar a mudança na wiki local.
+
+## Open Questions
+- Sem perguntas abertas; a mudança é apenas de ordem visual.
+
+## Progress Notes
+- A ordem atual está consistente entre os dois fluxos, mas começa com `Priority`.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-03-01-context-optional-field-order-adjustment.md`
+
+---
+
+# Task: Corrigir labels históricos ausentes nos campos opcionais do contexto
+**Status**: completed
+**Started**: 2026-03-01T10:48:00-05:00
+
+## Plan
+- [x] Step 1: Inspecionar o payload real do ticket afetado e confirmar por que os labels continuam ausentes.
+- [x] Step 2: Corrigir a fonte autoritativa para tickets antigos que ainda só têm IDs.
+- [x] Step 3: Garantir que a UI derive labels corretamente sem duplicar estado.
+- [x] Step 4: Validar com typecheck web+api e documentar a correção na wiki local.
+
+## Open Questions
+- Assumindo a menor mudança segura: se o SSOT não tiver labels para tickets antigos, a UI pode resolvê-los localmente a partir dos catálogos já cacheáveis, sem introduzir novo write automático no provider.
+
+## Progress Notes
+- A correção anterior cobre tickets cujo SSOT já possui labels persistidos.
+- O ticket `T20260226.0033` indica um caso histórico em que o payload ainda chega apenas com IDs, então preciso tratar o cenário de ausência de label no runtime atual.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-03-01-context-historical-picklist-label-derivation-fix.md`
+
+---
+
+# Task: Corrigir labels dos campos opcionais no card de contexto
+**Status**: completed
+**Started**: 2026-03-01T10:40:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar por que `triage/[id]` renderiza IDs numéricos em vez de labels.
+- [x] Step 2: Projetar os labels já persistidos no read-model de `playbook/full-flow`.
+- [x] Step 3: Ajustar o render da UI para priorizar os labels autoritativos.
+- [x] Step 4: Validar com typecheck web+api e documentar a correção na wiki local.
+
+## Open Questions
+- Assumindo a correção mínima: usar os labels já persistidos em `ticket_ssot.autotask_authoritative`, sem adicionar novas leituras de picklist no polling de `full-flow`.
+
+## Progress Notes
+- O write-path já devolve e persiste `priorityLabel`, `issueTypeLabel`, `subIssueTypeLabel` e `serviceLevelAgreementLabel`.
+- O bug está no read-path principal: `playbook/full-flow` expõe os IDs no objeto `ticket`, e `triage/[id]` usa esses IDs como fallback visual.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-03-01-context-ticket-picklist-label-render-fix.md`
+
+---
+
+# Task: Remover 429 dos editores opcionais de metadata do ticket
+**Status**: completed
+**Started**: 2026-03-01T10:28:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar no código por que os 4 editores estão repetindo o mesmo 429 do Autotask.
+- [x] Step 2: Reduzir a superfície backend para buscar apenas o picklist solicitado e sem paralelismo desnecessário.
+- [x] Step 3: Fazer cache local dos catálogos no frontend e filtrar pelo texto digitado sem novo fetch a cada tecla.
+- [x] Step 4: Validar com typecheck web+api e documentar a correção na wiki local.
+
+## Open Questions
+- Assumindo que os catálogos podem ser tratados como quasi-estáticos durante a sessão do modal; não haverá refresh forçado por digitação.
+
+## Progress Notes
+- A regressão é estrutural: os editores opcionais usavam metadata remota como se fosse autocomplete remoto, quando na prática são picklists.
+- O erro 429 é consistente com excesso de leituras simultâneas/repetidas no Autotask, não com falha específica de um campo.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-03-01-ticket-field-editor-429-rate-limit-fix.md`
+
+---
+
+# Task: Expandir card de contexto com metadados opcionais de ticket
+**Status**: completed
+**Started**: 2026-03-01T10:05:00-05:00
+
+## Plan
+- [x] Step 1: Mapear a animação atual de expand/collapse e verificar se já existe superfície Autotask para `Priority`, `Issue Type`, `Sub-Issue Type` e `Service Level Agreement`.
+- [x] Step 2: Adicionar o botão secundário no primeiro card da seção `Context` e expandir os 4 campos com a mesma linguagem de animação.
+- [x] Step 3: Expor catálogo de dropdowns no backend/frontend e ligar os novos campos ao mesmo fluxo de edição em `triage/home` e `triage/[id]`.
+- [x] Step 4: Validar com typecheck do frontend e da API e documentar na wiki local.
+
+## Open Questions
+- Assumindo o menor impacto: os novos campos reutilizam o modal de edição existente, sem criar uma UI nova de dropdown inline.
+
+## Progress Notes
+- `PlaybookPanel` já usa `gridTemplateRows + opacity + translateY` para expand/collapse, então vou reaproveitar exatamente esse padrão no subbloco do card de identidade.
+- O client Autotask já tem leitura genérica de picklists (`getTicketFieldPicklist`), então a implementação pode expor só uma superfície fina para esses quatro catálogos.
+- O primeiro card da seção `Context` agora tem um segundo toggle no canto inferior direito que revela `Priority`, `Issue Type`, `Sub-Issue Type` e `Service Level Agreement` dentro do mesmo card.
+- O mesmo modal de edição foi reaproveitado para esses campos, com catálogo vindo de `ticket-field-options`; em `triage/[id]` a seleção faz write-through para Autotask e em `triage/home` a seleção fica no draft local.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-03-01-context-optional-ticket-metadata-expansion.md`
+
+---
+
 # Task: Recolocar New Ticket na shell canônica com wiring local de draft
 **Status**: completed
 **Started**: 2026-03-01T09:20:00-05:00

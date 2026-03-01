@@ -562,6 +562,13 @@ router.get('/full-flow', async (req, res) => {
       assigned_resource_email: ssot?.autotask_authoritative?.assigned_resource_email ?? null,
       created_at: ssot?.created_at ?? dbTicket.created_at ?? sessionRow?.created_at ?? null,
       priority: dbTicket.priority ?? 'P3',
+      priority_label: ssot?.autotask_authoritative?.priority_label ?? null,
+      issue_type: ssot?.autotask_authoritative?.issue_type_id ?? null,
+      issue_type_label: ssot?.autotask_authoritative?.issue_type_label ?? null,
+      sub_issue_type: ssot?.autotask_authoritative?.sub_issue_type_id ?? null,
+      sub_issue_type_label: ssot?.autotask_authoritative?.sub_issue_type_label ?? null,
+      sla: ssot?.autotask_authoritative?.service_level_agreement_id ?? null,
+      sla_label: ssot?.autotask_authoritative?.service_level_agreement_label ?? null,
       normalization_audit: {
         round: round0Finding ? 0 : null,
         method: normalizationMethod || null,

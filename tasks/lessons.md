@@ -1,3 +1,21 @@
+## Lesson: 2026-03-01 (verify the live payload before declaring a label-projection bug fixed)
+**Mistake**: Eu corrigi a projeção de labels assumindo que isso bastaria, sem confirmar se o payload real do ticket antigo já continha esses labels.
+**Root cause**: Foquei no caminho de código alterado, mas não validei o estado real do dado histórico para um ticket específico antes de fechar.
+**Rule**: Em bugs de display baseados em read-model, validar o payload ao vivo do item afetado antes de considerar a correção concluída.
+**Pattern**: Se o usuário diz “continua igual após hard refresh”, tratar primeiro como evidência de dado ausente no payload/runtime, não como problema de cache do browser.
+
+## Lesson: 2026-03-01 (editable picklist displays must project labels from the authoritative read model)
+**Mistake**: Eu liguei os campos opcionais para editar corretamente, mas deixei a tela principal renderizar os IDs numéricos quando o ticket era recarregado.
+**Root cause**: Corrigi o write-path e o modal, mas não completei o read-model principal (`playbook/full-flow`) com os labels já persistidos no SSOT.
+**Rule**: Quando um campo editável usa picklist `{id,label}`, o read-model principal da tela deve expor explicitamente o label e a UI deve priorizá-lo no render.
+**Pattern**: Se um patch retorna `...Label`, revisar imediatamente se o payload principal de leitura da mesma tela também carrega esse mesmo label.
+
+## Lesson: 2026-03-01 (metadata editors must not re-hit Autotask on every keystroke)
+**Mistake**: Eu liguei os quatro editores opcionais para buscar metadata do Autotask repetidamente conforme o modal abria e o texto de busca mudava.
+**Root cause**: O fluxo combinava requests desnecessariamente amplos (picklists múltiplos) com refetch por `contextEditorQuery`, estourando o limite de threads do Autotask.
+**Rule**: Para dropdowns baseados em catálogo, carregar apenas o conjunto necessário uma vez e filtrar localmente no frontend; nunca usar a digitação do usuário para repetir reads caros no provider.
+**Pattern**: Se um modal de seleção usa catálogo estático/picklist, tratar o input como filtro local, não como gatilho de nova chamada externa.
+
 ## Lesson: 2026-03-01 (new-ticket draft must reuse the canonical shell, not a parallel intake form)
 **Mistake**: Eu deixei `triage/home` com um formulário próprio, mesmo depois de o requisito apontar que a criação deve continuar na mesma estrutura visual do ticket.
 **Root cause**: Modelei os campos como “nova tela” em vez de mapear os dados de draft para os slots já existentes da shell canônica (`header`, `tech pills`, `context panel`, `chat bar`).

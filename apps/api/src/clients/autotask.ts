@@ -329,6 +329,22 @@ export class AutotaskClient {
     return this.getTicketFieldPicklist('status');
   }
 
+  async getTicketPriorityOptions(): Promise<AutotaskPicklistOption[]> {
+    return this.getTicketFieldPicklist('priority');
+  }
+
+  async getTicketIssueTypeOptions(): Promise<AutotaskPicklistOption[]> {
+    return this.getTicketFieldPicklist('issueType');
+  }
+
+  async getTicketSubIssueTypeOptions(): Promise<AutotaskPicklistOption[]> {
+    return this.getTicketFieldPicklist('subIssueType');
+  }
+
+  async getTicketServiceLevelAgreementOptions(): Promise<AutotaskPicklistOption[]> {
+    return this.getTicketFieldPicklist('serviceLevelAgreementID');
+  }
+
   private async getTicketNoteFieldPicklist(fieldName: string): Promise<AutotaskPicklistOption[]> {
     const response = await this.request<any>('/ticketNotes/entityInformation/fields');
     const fields = Array.isArray(response)

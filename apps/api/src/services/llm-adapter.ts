@@ -34,6 +34,12 @@ export interface LLMProvider {
   complete(prompt: string, messages?: Message[], options?: LLMOptions): Promise<LLMResponse>;
 }
 
+export interface RateLimiter {
+  acquire(estimatedTokens?: number, limits?: any): Promise<void>;
+  update?(headers: Headers): void;
+  release?(): void;
+}
+
 interface RateLimitState {
   remainingTokens: number;
   resetTokensAt: number;
@@ -41,7 +47,7 @@ interface RateLimitState {
   resetRequestsAt: number;
 }
 
-class GroqRateLimiter {
+class GroqRateLimiter implements RateLimiter {
   private inFlight = 0;
   private lastStart = 0;
   private readonly maxConcurrent = 1;
@@ -226,50 +232,45 @@ class GroqProvider implements LLMProvider {
     const temperature = options?.temperature ?? parseFloat(process.env.LLM_TEMPERATURE || '0.2');
 
     const estimatedTokens = (JSON.stringify(messageList).length / 4) + maxTokens;
-    await groqLimiter.acquire(estimatedTokens);
-    try {
-      return await this.withRetry(async () => {
-        const response = await fetch(`${this.baseUrl}/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: this.model,
-            messages: messageList,
-            temperature,
-            max_tokens: maxTokens,
-          }),
-        });
-
-        // Always update limiter state if headers are present
-        groqLimiter.update(response.headers);
-
-        if (!response.ok) {
-          const error = await response.text();
-          throw new Error(`Groq API error: ${response.status} - ${error}`);
-        }
-
-        const data = (await response.json()) as {
-          choices?: Array<{ message?: { content: string } }>;
-          usage?: { prompt_tokens: number; completion_tokens: number };
-        };
-
-        if (!data.choices?.[0] || !data.usage) {
-          throw new Error('Invalid response format from Groq');
-        }
-
-        return {
-          content: data.choices[0].message?.content ?? '',
-          inputTokens: data.usage.prompt_tokens,
-          outputTokens: data.usage.completion_tokens,
-          costUsd: 0,
-        };
+    return await this.withRetry(async () => {
+      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: messageList,
+          temperature,
+          max_tokens: maxTokens,
+        }),
       });
-    } finally {
-      groqLimiter.release();
-    }
+
+      // Always update limiter state if headers are present
+      groqLimiter.update(response.headers);
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Groq API error: ${response.status} - ${error}`);
+      }
+
+      const data = (await response.json()) as {
+        choices?: Array<{ message?: { content: string } }>;
+        usage?: { prompt_tokens: number; completion_tokens: number };
+      };
+
+      if (!data.choices?.[0] || !data.usage) {
+        throw new Error('Invalid response format from Groq');
+      }
+
+      return {
+        content: data.choices[0].message?.content ?? '',
+        inputTokens: data.usage.prompt_tokens,
+        outputTokens: data.usage.completion_tokens,
+        costUsd: 0,
+      };
+    });
   }
 }
 
@@ -405,7 +406,7 @@ class AnthropicProvider implements LLMProvider {
 }
 
 // ─── Gemini Provider ─────────────────────────────────────────
-class GeminiRateLimiter {
+class GeminiRateLimiter implements RateLimiter {
   private minuteRequestTimestamps: number[] = [];
   private dayRequestTimestamps: number[] = [];
   private minuteTokenSamples: Array<{ ts: number; tokens: number }> = [];
@@ -495,8 +496,6 @@ class GeminiProvider implements LLMProvider {
     const retryMax = parseInt(process.env.GEMINI_RETRY_MAX || '2', 10);
     const estimatedInputTokens = Math.max(500, Math.ceil(JSON.stringify(contents).length / 4));
 
-    await geminiLimiter.acquire(estimatedInputTokens, { rpm, rpd, tpm });
-
     let response: Response | null = null;
     let lastError = '';
     for (let attempt = 0; attempt <= retryMax; attempt++) {
@@ -561,6 +560,51 @@ class GeminiProvider implements LLMProvider {
   }
 }
 
+// ─── Decorator ───────────────────────────────────────────────
+export class RateLimitedProvider implements LLMProvider {
+  name: string;
+  private provider: LLMProvider;
+  private limiter: RateLimiter | null;
+
+  constructor(provider: LLMProvider, limiter: RateLimiter | null) {
+    this.provider = provider;
+    this.limiter = limiter;
+    this.name = provider.name;
+  }
+
+  async complete(prompt: string, messages?: Message[], options?: LLMOptions): Promise<LLMResponse> {
+    if (!this.limiter) {
+      return this.provider.complete(prompt, messages, options);
+    }
+
+    const messageList = messages ?? [{ role: 'user', content: prompt }];
+    const maxTokens = options?.maxTokens ?? 1200;
+
+    // Estimate tokens according to provider if needed, here we use a general estimate
+    const estimatedTokens = Math.max(500, Math.ceil(JSON.stringify(messageList).length / 4)) + maxTokens;
+
+    // For gemini, limits must be passed.
+    let limits;
+    if (this.name === 'gemini') {
+      limits = {
+        rpm: parseInt(process.env.GEMINI_LIMIT_RPM || '15', 10),
+        rpd: parseInt(process.env.GEMINI_LIMIT_RPD || '1500', 10),
+        tpm: parseInt(process.env.GEMINI_LIMIT_TPM || '250000', 10),
+      };
+    }
+
+    await this.limiter.acquire(estimatedTokens, limits);
+
+    try {
+      return await this.provider.complete(prompt, messages, options);
+    } finally {
+      if (this.limiter.release) {
+        this.limiter.release();
+      }
+    }
+  }
+}
+
 // ─── Factory ─────────────────────────────────────────────────
 export function createLLMProvider(provider?: string): LLMProvider {
   const selectedProvider =
@@ -568,9 +612,9 @@ export function createLLMProvider(provider?: string): LLMProvider {
 
   switch (selectedProvider.toLowerCase()) {
     case 'groq':
-      return new GroqProvider();
+      return new RateLimitedProvider(new GroqProvider(), groqLimiter);
     case 'gemini':
-      return new GeminiProvider();
+      return new RateLimitedProvider(new GeminiProvider(), geminiLimiter);
     case 'minimax':
       return new MinimaxProvider();
     case 'anthropic':

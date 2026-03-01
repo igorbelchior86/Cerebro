@@ -67,6 +67,74 @@ function confColor(c: number): string {
   return 'rgba(228,234,248,0.28)';
 }
 
+function CollapseToggleButton({
+  isOpen,
+  onToggle,
+  expandedDirection = 'down',
+}: {
+  isOpen: boolean;
+  onToggle: () => void;
+  expandedDirection?: 'down' | 'up';
+}) {
+  const openRotation = expandedDirection === 'down' ? 'rotate(0deg)' : 'rotate(-180deg)';
+  const closedRotation = expandedDirection === 'down' ? 'rotate(-180deg)' : 'rotate(0deg)';
+
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--bento-outline)',
+        color: 'var(--accent)',
+        cursor: 'pointer',
+        padding: '4px 6px',
+        borderRadius: '6px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transition: 'all 0.3s cubic-bezier(0.23, 1, 0.32, 1)',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = 'var(--accent)';
+        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
+        e.currentTarget.style.boxShadow = '0 0 0 2px rgba(91, 127, 255, 0.15), 0 4px 12px rgba(91, 127, 255, 0.15)';
+        e.currentTarget.style.transform = 'translateY(-1px)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = 'var(--bento-outline)';
+        e.currentTarget.style.background = 'var(--bg-card)';
+        e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.03)';
+        e.currentTarget.style.transform = 'translateY(0)';
+      }}
+      title={isOpen ? 'Collapse' : 'Expand'}
+    >
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'radial-gradient(circle at center, rgba(91,127,255,0.12) 0%, transparent 80%)',
+        opacity: 0,
+        transition: 'opacity 0.3s ease',
+        pointerEvents: 'none',
+      }} />
+      <svg
+        width="10"
+        height="10"
+        viewBox="0 0 12 12"
+        fill="none"
+        style={{
+          transform: isOpen ? openRotation : closedRotation,
+          transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+      >
+        <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
+  );
+}
+
 function SectionLabel({ children, onToggle, isOpen }: { children: ReactNode; onToggle?: () => void; isOpen?: boolean }) {
   return (
     <div style={{
@@ -86,65 +154,7 @@ function SectionLabel({ children, onToggle, isOpen }: { children: ReactNode; onT
       zIndex: 10,
     }}>
       {children}
-      {onToggle && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onToggle(); }}
-          style={{
-            background: 'var(--bg-card)',
-            border: '1px solid var(--bento-outline)',
-            color: 'var(--accent)',
-            cursor: 'pointer',
-            padding: '4px 6px',
-            borderRadius: '6px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'all 0.3s cubic-bezier(0.23, 1, 0.32, 1)',
-            boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-            position: 'relative',
-            overflow: 'hidden'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = 'var(--accent)';
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-            e.currentTarget.style.boxShadow = '0 0 0 2px rgba(91, 127, 255, 0.15), 0 4px 12px rgba(91, 127, 255, 0.15)';
-            e.currentTarget.style.transform = 'translateY(-1px)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = 'var(--bento-outline)';
-            e.currentTarget.style.background = 'var(--bg-card)';
-            e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.03)';
-            e.currentTarget.style.transform = 'translateY(0)';
-          }}
-          title={isOpen ? 'Collapse' : 'Expand'}
-        >
-          {/* Subtle inner radial gradient for a premium "glow" look */}
-          <div style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'radial-gradient(circle at center, rgba(91,127,255,0.12) 0%, transparent 80%)',
-            opacity: 0,
-            transition: 'opacity 0.3s ease',
-            pointerEvents: 'none'
-          }}
-          // Standard CSS can't access parent hover directly from inline styles here easily without classes, 
-          // but the parent's background color shift + outer glow is enough for the effect. 
-          // This div could be wired to a state variable, but the parent scale/shadow does most of the heavy lifting.
-          />
-          <svg
-            width="10"
-            height="10"
-            viewBox="0 0 12 12"
-            fill="none"
-            style={{
-              transform: isOpen ? 'rotate(0deg)' : 'rotate(-180deg)',
-              transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)'
-            }}
-          >
-            <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      )}
+      {onToggle && typeof isOpen === 'boolean' ? <CollapseToggleButton isOpen={isOpen} onToggle={onToggle} /> : null}
     </div>
   );
 }
@@ -237,10 +247,15 @@ function cleanTitle(text: string): string {
 
 export default function PlaybookPanel({ content, status = 'ready', data, sessionStatus, children, onEditContextItem }: PlaybookPanelProps) {
   const [isContextOpen, setIsContextOpen] = useState(true);
+  const [isTicketMetadataOpen, setIsTicketMetadataOpen] = useState(false);
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [openEvidenceFor, setOpenEvidenceFor] = useState<number | null>(null);
 
   const ctx = data?.context ?? [];
+  const customerIdentityKeys = ['Org', 'Contact', 'Additional contacts'];
+  const optionalTicketMetadataKeys = ['Priority', 'Issue Type', 'Sub-Issue Type', 'Service Level Agreement'];
+  const customerIdentityItems = ctx.filter((c) => customerIdentityKeys.includes(c.key));
+  const optionalTicketMetadataItems = ctx.filter((c) => optionalTicketMetadataKeys.includes(c.key));
   const hyps = data?.hypotheses ?? [];
   const chk: ChecklistItem[] = data?.checklist?.length
     ? data.checklist.map((item, i) => {
@@ -331,7 +346,7 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
                       e.currentTarget.style.transform = 'translateY(0)';
                       e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
                     }}>
-                    {ctx.filter(c => ['Org', 'Contact', 'Additional contacts'].includes(c.key)).map((c) => (
+                    {customerIdentityItems.map((c) => (
                       <div
                         key={c.key}
                         style={{
@@ -368,6 +383,77 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
                         <div style={{ fontSize: '11.5px', fontWeight: 600, color: c.highlight ?? 'var(--text-primary)', lineHeight: 1.4, wordBreak: 'break-word' }}>{c.val}</div>
                       </div>
                     ))}
+
+                    {optionalTicketMetadataItems.length > 0 ? (
+                      <div style={{ gridColumn: '1 / -1', marginTop: '2px', position: 'relative', paddingBottom: '38px' }}>
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateRows: isTicketMetadataOpen ? '1fr' : '0fr',
+                            transition: 'grid-template-rows 0.4s cubic-bezier(0.23, 1, 0.32, 1)',
+                          }}
+                        >
+                          <div style={{ overflow: 'hidden' }}>
+                            <div
+                              style={{
+                                display: 'grid',
+                                gridTemplateColumns: '1fr 1fr',
+                                gap: '8px',
+                                transition: 'opacity 0.4s cubic-bezier(0.23, 1, 0.32, 1), transform 0.4s cubic-bezier(0.23, 1, 0.32, 1), visibility 0.4s',
+                                opacity: isTicketMetadataOpen ? 1 : 0,
+                                transform: isTicketMetadataOpen ? 'translateY(0)' : 'translateY(-10px)',
+                                visibility: isTicketMetadataOpen ? 'visible' : 'hidden',
+                                paddingTop: isTicketMetadataOpen ? '8px' : '0',
+                              }}
+                            >
+                              {optionalTicketMetadataItems.map((c) => (
+                                <div
+                                  key={c.key}
+                                  style={{
+                                    padding: '10px 12px',
+                                    borderRadius: '10px',
+                                    background: 'var(--bg-card)',
+                                    border: '1px solid var(--border)',
+                                    position: 'relative',
+                                    transition: 'all 0.2s ease',
+                                  }}
+                                >
+                                  {c.editable && onEditContextItem ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); onEditContextItem(c.key); }}
+                                      style={{
+                                        position: 'absolute', top: '8px', right: '8px',
+                                        width: '20px', height: '20px', borderRadius: '6px',
+                                        border: '1px solid var(--bento-outline)',
+                                        background: 'var(--bg-panel)', color: 'var(--accent)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        cursor: 'pointer', transition: 'all 0.2s ease',
+                                      }}
+                                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'rgba(110, 134, 201, 0.08)'; }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--bento-outline)'; e.currentTarget.style.background = 'var(--bg-panel)'; }}
+                                    >
+                                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                        <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                                      </svg>
+                                    </button>
+                                  ) : null}
+                                  <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8.5px', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '4px', fontWeight: 700 }}>{c.key}</div>
+                                  <div style={{ fontSize: '11.5px', fontWeight: 600, color: c.highlight ?? 'var(--text-primary)', lineHeight: 1.4, wordBreak: 'break-word' }}>{c.val}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ position: 'absolute', right: 0, bottom: 0 }}>
+                          <CollapseToggleButton
+                            isOpen={isTicketMetadataOpen}
+                            expandedDirection="up"
+                            onToggle={() => setIsTicketMetadataOpen((prev) => !prev)}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* 2. TECHNICAL SPLIT - Fixed Left/Right columns */}

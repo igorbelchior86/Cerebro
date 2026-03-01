@@ -15,9 +15,12 @@ import { useScrollVelocity } from '@/hooks/useScrollVelocity';
 import {
   type AutotaskCompanyOption,
   type AutotaskContactOption,
+  type AutotaskTicketFieldKey,
+  type AutotaskPicklistOption,
   type AutotaskResourceOption,
   getWorkflowCommandStatus,
   isRetryableCommandStatus,
+  listAutotaskTicketFieldOptionsByField,
   listManagerOpsAiDecisions,
   listManagerOpsAudit,
   listWorkflowAudit,
@@ -67,6 +70,13 @@ interface SessionData {
     secondary_resource_id?: number;
     created_at?: string;
     priority?: string;
+    priority_label?: string | null;
+    issue_type?: string | number | null;
+    issue_type_label?: string | null;
+    sub_issue_type?: string | number | null;
+    sub_issue_type_label?: string | null;
+    sla?: string | number | null;
+    sla_label?: string | null;
     normalization_audit?: {
       round?: number | null;
       method?: string | null;
@@ -147,7 +157,15 @@ interface WorkflowActionFeedback {
   updatedAt: string;
 }
 
-type EditableContextKey = 'Org' | 'Contact' | 'Tech' | 'Additional contacts';
+type EditableContextKey =
+  | 'Org'
+  | 'Contact'
+  | 'Tech'
+  | 'Additional contacts'
+  | 'Priority'
+  | 'Issue Type'
+  | 'Sub-Issue Type'
+  | 'Service Level Agreement';
 
 interface ContextOverrideState {
   org?: { id?: number; name: string };
@@ -155,9 +173,48 @@ interface ContextOverrideState {
   tech?: { id?: number; name: string };
   secondary_tech?: { id?: number; name: string };
   additional_contact?: { id?: number; name: string; companyId?: number };
+  priority?: { id?: number; name: string };
+  issue_type?: { id?: number; name: string };
+  sub_issue_type?: { id?: number; name: string };
+  service_level_agreement?: { id?: number; name: string };
 }
 
 type ContextEditorOption = { id: number; label: string; sublabel?: string };
+type TicketFieldOptionsCache = Partial<Record<AutotaskTicketFieldKey, AutotaskPicklistOption[]>>;
+
+function mapTicketFieldEditorToOptions(
+  options: AutotaskPicklistOption[],
+  query: string
+): ContextEditorOption[] {
+  const needle = query.trim().toLowerCase();
+  return options
+    .filter((row) => !needle || row.label.toLowerCase().includes(needle))
+    .map((row) => ({
+    id: row.id,
+    label: row.label,
+    ...(typeof row.isActive === 'boolean' ? { sublabel: row.isActive ? 'Active' : 'Inactive' } : {}),
+  }));
+}
+
+function mapEditorToTicketFieldKey(
+  key: EditableContextKey
+): AutotaskTicketFieldKey | null {
+  if (key === 'Priority') return 'priority';
+  if (key === 'Issue Type') return 'issueType';
+  if (key === 'Sub-Issue Type') return 'subIssueType';
+  if (key === 'Service Level Agreement') return 'serviceLevelAgreement';
+  return null;
+}
+
+function resolvePicklistLabelFromCache(
+  options: AutotaskPicklistOption[] | undefined,
+  id: string | number | null | undefined
+): string | null {
+  const numericId = Number.parseInt(String(id ?? ''), 10);
+  if (!Number.isFinite(numericId) || !options || options.length === 0) return null;
+  const match = options.find((row) => row.id === numericId);
+  return match?.label || null;
+}
 
 function TechPill({ label, name, type, onEdit, onRemove }: { label: string; name: string; type: 'primary' | 'secondary'; onEdit: () => void; onRemove: () => void }) {
   const isPrimary = type === 'primary';
@@ -309,6 +366,7 @@ export default function SessionDetail({
   const [contextEditorSaving, setContextEditorSaving] = useState(false);
   const [contextEditorError, setContextEditorError] = useState('');
   const [contextEditorOptions, setContextEditorOptions] = useState<ContextEditorOption[]>([]);
+  const [ticketFieldOptionsCache, setTicketFieldOptionsCache] = useState<TicketFieldOptionsCache>({});
   const [resolvedOrgIdFallback, setResolvedOrgIdFallback] = useState<number | null>(null);
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
   const headerMenuRef = useRef<HTMLDivElement>(null);
@@ -1416,6 +1474,10 @@ export default function SessionDetail({
     const serverCompanyId = toAutotaskId(data?.ticket?.company_id);
     const serverContactId = toAutotaskId(data?.ticket?.contact_id);
     const serverTechId = toAutotaskId(data?.ticket?.assigned_resource_id);
+    const serverPriorityId = toAutotaskId(data?.ticket?.priority);
+    const serverIssueTypeId = toAutotaskId(data?.ticket?.issue_type);
+    const serverSubIssueTypeId = toAutotaskId(data?.ticket?.sub_issue_type);
+    const serverSlaId = toAutotaskId(data?.ticket?.sla);
 
     setContextOverrides((prev) => {
       let changed = false;
@@ -1445,9 +1507,41 @@ export default function SessionDetail({
         }
       }
 
+      if (prev.priority) {
+        const localPriorityId = toAutotaskId(prev.priority.id);
+        if (serverPriorityId !== null && localPriorityId !== serverPriorityId) {
+          delete next.priority;
+          changed = true;
+        }
+      }
+
+      if (prev.issue_type) {
+        const localIssueTypeId = toAutotaskId(prev.issue_type.id);
+        if (serverIssueTypeId !== null && localIssueTypeId !== serverIssueTypeId) {
+          delete next.issue_type;
+          changed = true;
+        }
+      }
+
+      if (prev.sub_issue_type) {
+        const localSubIssueTypeId = toAutotaskId(prev.sub_issue_type.id);
+        if (serverSubIssueTypeId !== null && localSubIssueTypeId !== serverSubIssueTypeId) {
+          delete next.sub_issue_type;
+          changed = true;
+        }
+      }
+
+      if (prev.service_level_agreement) {
+        const localSlaId = toAutotaskId(prev.service_level_agreement.id);
+        if (serverSlaId !== null && localSlaId !== serverSlaId) {
+          delete next.service_level_agreement;
+          changed = true;
+        }
+      }
+
       return changed ? next : prev;
     });
-  }, [data?.ticket?.company_id, data?.ticket?.contact_id, data?.ticket?.assigned_resource_id]);
+  }, [data?.ticket?.company_id, data?.ticket?.contact_id, data?.ticket?.assigned_resource_id, data?.ticket?.priority, data?.ticket?.issue_type, data?.ticket?.sub_issue_type, data?.ticket?.sla]);
 
   const activeOrgId = (() => {
     const overrideOrgId = toAutotaskId(contextOverrides.org?.id);
@@ -1462,7 +1556,16 @@ export default function SessionDetail({
   })();
 
   const openContextEditor = (key: string) => {
-    if (key !== 'Org' && key !== 'Contact' && key !== 'Tech' && key !== 'Additional contacts') return;
+    if (
+      key !== 'Org' &&
+      key !== 'Contact' &&
+      key !== 'Tech' &&
+      key !== 'Additional contacts' &&
+      key !== 'Priority' &&
+      key !== 'Issue Type' &&
+      key !== 'Sub-Issue Type' &&
+      key !== 'Service Level Agreement'
+    ) return;
     setActiveContextEditor(key as EditableContextKey);
     setContextEditorQuery('');
     setContextEditorError('');
@@ -1557,6 +1660,44 @@ export default function SessionDetail({
       }
       return;
     }
+
+    if (
+      activeContextEditor === 'Priority' ||
+      activeContextEditor === 'Issue Type' ||
+      activeContextEditor === 'Sub-Issue Type' ||
+      activeContextEditor === 'Service Level Agreement'
+    ) {
+      setContextEditorSaving(true);
+      setContextEditorError('');
+      try {
+        const updated = await updateAutotaskTicketContext(ticketRef, {
+          ...(activeContextEditor === 'Priority' ? { priorityId: option.id } : {}),
+          ...(activeContextEditor === 'Issue Type' ? { issueTypeId: option.id } : {}),
+          ...(activeContextEditor === 'Sub-Issue Type' ? { subIssueTypeId: option.id } : {}),
+          ...(activeContextEditor === 'Service Level Agreement' ? { serviceLevelAgreementId: option.id } : {}),
+        });
+        setContextOverrides((prev) => ({
+          ...prev,
+          ...(activeContextEditor === 'Priority'
+            ? { priority: { id: updated.priorityId ?? option.id, name: updated.priorityLabel || option.label } }
+            : {}),
+          ...(activeContextEditor === 'Issue Type'
+            ? { issue_type: { id: updated.issueTypeId ?? option.id, name: updated.issueTypeLabel || option.label } }
+            : {}),
+          ...(activeContextEditor === 'Sub-Issue Type'
+            ? { sub_issue_type: { id: updated.subIssueTypeId ?? option.id, name: updated.subIssueTypeLabel || option.label } }
+            : {}),
+          ...(activeContextEditor === 'Service Level Agreement'
+            ? { service_level_agreement: { id: updated.serviceLevelAgreementId ?? option.id, name: updated.serviceLevelAgreementLabel || option.label } }
+            : {}),
+        }));
+        closeContextEditor();
+      } catch (err: any) {
+        setContextEditorError(String(err?.message || `Unable to update ${activeContextEditor} in Autotask`));
+        setContextEditorSaving(false);
+      }
+      return;
+    }
     setTechAssignmentDraft(String(option.id));
     const assignment = await submitTechAssignmentById(String(option.id), option.label);
     if (!assignment.ok) {
@@ -1582,6 +1723,7 @@ export default function SessionDetail({
 
   useEffect(() => {
     if (!activeContextEditor) return;
+    const ticketFieldKey = mapEditorToTicketFieldKey(activeContextEditor);
     if ((activeContextEditor === 'Contact' || activeContextEditor === 'Additional contacts') && activeOrgId === null) {
       const orgName = String(
         contextOverrides.org?.name ||
@@ -1627,6 +1769,16 @@ export default function SessionDetail({
       };
     }
 
+    if (ticketFieldKey) {
+      const cached = ticketFieldOptionsCache[ticketFieldKey] || [];
+      if (cached.length > 0) {
+        setContextEditorLoading(false);
+        setContextEditorError('');
+        setContextEditorOptions(mapTicketFieldEditorToOptions(cached, contextEditorQuery));
+        return;
+      }
+    }
+
     let ignore = false;
     setContextEditorLoading(true);
     setContextEditorError('');
@@ -1654,6 +1806,19 @@ export default function SessionDetail({
           }
           return;
         }
+        if (
+          activeContextEditor === 'Priority' ||
+          activeContextEditor === 'Issue Type' ||
+          activeContextEditor === 'Sub-Issue Type' ||
+          activeContextEditor === 'Service Level Agreement'
+        ) {
+          const options = await listAutotaskTicketFieldOptionsByField(ticketFieldKey!);
+          if (!ignore) {
+            setTicketFieldOptionsCache((prev) => ({ ...prev, [ticketFieldKey!]: options }));
+            setContextEditorOptions(mapTicketFieldEditorToOptions(options, contextEditorQuery));
+          }
+          return;
+        }
         const rows = await searchAutotaskResources(contextEditorQuery, 30);
         if (!ignore) {
           setContextEditorOptions(rows.map((row: AutotaskResourceOption) => ({
@@ -1678,7 +1843,7 @@ export default function SessionDetail({
     return () => {
       ignore = true;
     };
-  }, [activeContextEditor, activeOrgId, contextEditorQuery]);
+  }, [activeContextEditor, activeOrgId, contextEditorQuery, ticketFieldOptionsCache, contextOverrides.org?.name, data?.ssot?.company, data?.ticket?.company, selectedTicketView?.company, selectedTicketView?.org]);
 
   const digestFacts = Array.isArray(data?.evidence_pack?.evidence_digest?.facts_confirmed)
     ? data?.evidence_pack?.evidence_digest?.facts_confirmed
@@ -1688,6 +1853,87 @@ export default function SessionDetail({
   );
   const normalizeFact = (value: string) => value.replace(/\s+/g, ' ').trim();
   const parsedPlaybookChecklist = parseChecklistFromPlaybook(data?.playbook?.content_md || undefined);
+
+  useEffect(() => {
+    const missingFields: AutotaskTicketFieldKey[] = [];
+    const priorityId = toAutotaskId(data?.ticket?.priority);
+    const issueTypeId = toAutotaskId(data?.ticket?.issue_type);
+    const subIssueTypeId = toAutotaskId(data?.ticket?.sub_issue_type);
+    const slaId = toAutotaskId(data?.ticket?.sla);
+
+    if (priorityId !== null && !String(data?.ticket?.priority_label || '').trim() && !ticketFieldOptionsCache.priority?.length) {
+      missingFields.push('priority');
+    }
+    if (issueTypeId !== null && !String(data?.ticket?.issue_type_label || '').trim() && !ticketFieldOptionsCache.issueType?.length) {
+      missingFields.push('issueType');
+    }
+    if (subIssueTypeId !== null && !String(data?.ticket?.sub_issue_type_label || '').trim() && !ticketFieldOptionsCache.subIssueType?.length) {
+      missingFields.push('subIssueType');
+    }
+    if (slaId !== null && !String(data?.ticket?.sla_label || '').trim() && !ticketFieldOptionsCache.serviceLevelAgreement?.length) {
+      missingFields.push('serviceLevelAgreement');
+    }
+    if (missingFields.length === 0) return;
+
+    let ignore = false;
+    void (async () => {
+      for (const field of missingFields) {
+        try {
+          const options = await listAutotaskTicketFieldOptionsByField(field);
+          if (ignore) return;
+          setTicketFieldOptionsCache((prev) => (prev[field]?.length ? prev : { ...prev, [field]: options }));
+        } catch {
+          if (ignore) return;
+        }
+      }
+    })();
+
+    return () => {
+      ignore = true;
+    };
+  }, [
+    data?.ticket?.priority,
+    data?.ticket?.priority_label,
+    data?.ticket?.issue_type,
+    data?.ticket?.issue_type_label,
+    data?.ticket?.sub_issue_type,
+    data?.ticket?.sub_issue_type_label,
+    data?.ticket?.sla,
+    data?.ticket?.sla_label,
+    ticketFieldOptionsCache.priority?.length,
+    ticketFieldOptionsCache.issueType?.length,
+    ticketFieldOptionsCache.subIssueType?.length,
+    ticketFieldOptionsCache.serviceLevelAgreement?.length,
+  ]);
+
+  const derivedPriorityLabel = String(
+    contextOverrides.priority?.name ||
+    data?.ticket?.priority_label ||
+    resolvePicklistLabelFromCache(ticketFieldOptionsCache.priority, data?.ticket?.priority) ||
+    data?.ticket?.priority ||
+    'Unknown'
+  );
+  const derivedIssueTypeLabel = String(
+    contextOverrides.issue_type?.name ||
+    data?.ticket?.issue_type_label ||
+    resolvePicklistLabelFromCache(ticketFieldOptionsCache.issueType, data?.ticket?.issue_type) ||
+    data?.ticket?.issue_type ||
+    'Unknown'
+  );
+  const derivedSubIssueTypeLabel = String(
+    contextOverrides.sub_issue_type?.name ||
+    data?.ticket?.sub_issue_type_label ||
+    resolvePicklistLabelFromCache(ticketFieldOptionsCache.subIssueType, data?.ticket?.sub_issue_type) ||
+    data?.ticket?.sub_issue_type ||
+    'Unknown'
+  );
+  const derivedSlaLabel = String(
+    contextOverrides.service_level_agreement?.name ||
+    data?.ticket?.sla_label ||
+    resolvePicklistLabelFromCache(ticketFieldOptionsCache.serviceLevelAgreement, data?.ticket?.sla) ||
+    data?.ticket?.sla ||
+    'Unknown'
+  );
   const parsedPlaybookEscalation = parseEscalationFromPlaybook(data?.playbook?.content_md || undefined);
   const playbookPanelData = data
     ? {
@@ -1713,6 +1959,26 @@ export default function SessionDetail({
         {
           key: 'Additional contacts',
           val: contextOverrides.additional_contact?.name || data?.ssot?.additional_contacts || 'Unknown',
+          editable: true,
+        },
+        {
+          key: 'Issue Type',
+          val: derivedIssueTypeLabel,
+          editable: true,
+        },
+        {
+          key: 'Sub-Issue Type',
+          val: derivedSubIssueTypeLabel,
+          editable: true,
+        },
+        {
+          key: 'Priority',
+          val: derivedPriorityLabel,
+          editable: true,
+        },
+        {
+          key: 'Service Level Agreement',
+          val: derivedSlaLabel,
           editable: true,
         },
         {
@@ -2127,7 +2393,9 @@ export default function SessionDetail({
                           ? activeOrgId !== null
                             ? `Listing contacts from selected Org (ID ${activeOrgId})`
                             : 'Select an Org first to list contacts'
-                          : 'Source: Autotask read-only global search'}
+                          : activeContextEditor === 'Priority' || activeContextEditor === 'Issue Type' || activeContextEditor === 'Sub-Issue Type' || activeContextEditor === 'Service Level Agreement'
+                            ? 'Source: Autotask ticket field metadata'
+                            : 'Source: Autotask read-only global search'}
                       </p>
                     </div>
                     <button

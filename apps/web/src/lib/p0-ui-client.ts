@@ -115,6 +115,21 @@ export interface AutotaskResourceOption {
   email?: string;
 }
 
+export interface AutotaskPicklistOption {
+  id: number;
+  label: string;
+  isActive?: boolean;
+}
+
+export interface AutotaskTicketFieldOptions {
+  priority: AutotaskPicklistOption[];
+  issueType: AutotaskPicklistOption[];
+  subIssueType: AutotaskPicklistOption[];
+  serviceLevelAgreement: AutotaskPicklistOption[];
+}
+
+export type AutotaskTicketFieldKey = keyof AutotaskTicketFieldOptions;
+
 export interface AutotaskTicketContextUpdateResult {
   ticketId: string;
   companyId: number | null;
@@ -122,6 +137,14 @@ export interface AutotaskTicketContextUpdateResult {
   contactId: number | null;
   contactName: string | null;
   contactEmail: string | null;
+  priorityId?: number | null;
+  priorityLabel?: string | null;
+  issueTypeId?: number | null;
+  issueTypeLabel?: string | null;
+  subIssueTypeId?: number | null;
+  subIssueTypeLabel?: string | null;
+  serviceLevelAgreementId?: number | null;
+  serviceLevelAgreementLabel?: string | null;
 }
 
 export interface TicketAttachmentUploadInput {
@@ -349,15 +372,35 @@ export function searchAutotaskResources(query: string, limit = 25) {
   return request<AutotaskResourceOption[]>(`/autotask/resources/search?${search.toString()}`);
 }
 
+export function listAutotaskTicketFieldOptions() {
+  return request<AutotaskTicketFieldOptions>('/autotask/ticket-field-options');
+}
+
+export function listAutotaskTicketFieldOptionsByField(field: AutotaskTicketFieldKey) {
+  const search = new URLSearchParams({ field });
+  return request<AutotaskPicklistOption[]>(`/autotask/ticket-field-options?${search.toString()}`);
+}
+
 export function updateAutotaskTicketContext(
   ticketId: string,
-  input: { companyId?: number; contactId?: number }
+  input: {
+    companyId?: number;
+    contactId?: number;
+    priorityId?: number;
+    issueTypeId?: number;
+    subIssueTypeId?: number;
+    serviceLevelAgreementId?: number;
+  }
 ) {
   return request<AutotaskTicketContextUpdateResult>(`/autotask/ticket/${encodeURIComponent(ticketId)}/context`, {
     method: 'PATCH',
     body: JSON.stringify({
       ...(typeof input.companyId === 'number' ? { companyId: input.companyId } : {}),
       ...(typeof input.contactId === 'number' ? { contactId: input.contactId } : {}),
+      ...(typeof input.priorityId === 'number' ? { priorityId: input.priorityId } : {}),
+      ...(typeof input.issueTypeId === 'number' ? { issueTypeId: input.issueTypeId } : {}),
+      ...(typeof input.subIssueTypeId === 'number' ? { subIssueTypeId: input.subIssueTypeId } : {}),
+      ...(typeof input.serviceLevelAgreementId === 'number' ? { serviceLevelAgreementId: input.serviceLevelAgreementId } : {}),
     }),
   });
 }

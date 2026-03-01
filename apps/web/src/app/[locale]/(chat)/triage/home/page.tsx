@@ -8,8 +8,11 @@ import PlaybookPanel from '@/components/PlaybookPanel';
 import ResizableLayout from '@/components/ResizableLayout';
 import {
   type AutotaskCompanyOption,
+  type AutotaskTicketFieldKey,
   type AutotaskContactOption,
+  type AutotaskPicklistOption,
   type AutotaskResourceOption,
+  listAutotaskTicketFieldOptionsByField,
   searchAutotaskCompanies,
   searchAutotaskContacts,
   searchAutotaskResources,
@@ -17,9 +20,19 @@ import {
 import { loadTriPaneSidebarTickets } from '@/lib/workflow-sidebar-adapter';
 import { useRouter } from '@/i18n/routing';
 
-type EditableContextKey = 'Org' | 'Contact' | 'Additional contacts' | 'Primary' | 'Secondary';
+type EditableContextKey =
+  | 'Org'
+  | 'Contact'
+  | 'Additional contacts'
+  | 'Primary'
+  | 'Secondary'
+  | 'Priority'
+  | 'Issue Type'
+  | 'Sub-Issue Type'
+  | 'Service Level Agreement';
 
 type ContextEditorOption = { id: number; label: string; sublabel?: string };
+type TicketFieldOptionsCache = Partial<Record<AutotaskTicketFieldKey, AutotaskPicklistOption[]>>;
 
 interface DraftReference {
   id: number;
@@ -35,6 +48,10 @@ interface DraftState {
   additionalContact?: DraftReference;
   primaryTech?: DraftReference;
   secondaryTech?: DraftReference;
+  priority?: DraftReference;
+  issueType?: DraftReference;
+  subIssueType?: DraftReference;
+  serviceLevelAgreement?: DraftReference;
 }
 
 const EMPTY_DRAFT: DraftState = {
@@ -60,6 +77,30 @@ function normalizeDraftText(input: string): string {
     .replace(/<[^>]+>/g, '')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+function mapTicketFieldEditorToOptions(
+  options: AutotaskPicklistOption[],
+  query: string
+): ContextEditorOption[] {
+  const needle = query.trim().toLowerCase();
+  return options
+    .filter((row) => !needle || row.label.toLowerCase().includes(needle))
+    .map((row) => ({
+    id: row.id,
+    label: row.label,
+    ...(typeof row.isActive === 'boolean' ? { sublabel: row.isActive ? 'Active' : 'Inactive' } : {}),
+  }));
+}
+
+function mapEditorToTicketFieldKey(
+  key: EditableContextKey
+): AutotaskTicketFieldKey | null {
+  if (key === 'Priority') return 'priority';
+  if (key === 'Issue Type') return 'issueType';
+  if (key === 'Sub-Issue Type') return 'subIssueType';
+  if (key === 'Service Level Agreement') return 'serviceLevelAgreement';
+  return null;
 }
 
 function TechPill({
@@ -195,6 +236,7 @@ export default function HomePage() {
   const [contextEditorSaving, setContextEditorSaving] = useState(false);
   const [contextEditorError, setContextEditorError] = useState('');
   const [contextEditorOptions, setContextEditorOptions] = useState<ContextEditorOption[]>([]);
+  const [ticketFieldOptionsCache, setTicketFieldOptionsCache] = useState<TicketFieldOptionsCache>({});
 
   useEffect(() => {
     const fetchTickets = async () => {
@@ -226,6 +268,10 @@ export default function HomePage() {
       { key: 'Org', val: draft.org?.name || '-', editable: true },
       { key: 'Contact', val: draft.contact?.name || '-', editable: true },
       { key: 'Additional contacts', val: draft.additionalContact?.name || '-', editable: true },
+      { key: 'Issue Type', val: draft.issueType?.name || '-', editable: true },
+      { key: 'Sub-Issue Type', val: draft.subIssueType?.name || '-', editable: true },
+      { key: 'Priority', val: draft.priority?.name || '-', editable: true },
+      { key: 'Service Level Agreement', val: draft.serviceLevelAgreement?.name || '-', editable: true },
       { key: 'User Device', val: '-' },
       { key: 'ISP', val: '-' },
       { key: 'Phone Provider', val: '-' },
@@ -270,7 +316,17 @@ export default function HomePage() {
   };
 
   const openContextEditor = (key: string) => {
-    if (key !== 'Org' && key !== 'Contact' && key !== 'Additional contacts' && key !== 'Primary' && key !== 'Secondary') return;
+    if (
+      key !== 'Org' &&
+      key !== 'Contact' &&
+      key !== 'Additional contacts' &&
+      key !== 'Primary' &&
+      key !== 'Secondary' &&
+      key !== 'Priority' &&
+      key !== 'Issue Type' &&
+      key !== 'Sub-Issue Type' &&
+      key !== 'Service Level Agreement'
+    ) return;
     setActiveContextEditor(key);
     setContextEditorQuery('');
     setContextEditorLoading(false);
@@ -298,6 +354,17 @@ export default function HomePage() {
       setContextEditorLoading(false);
       setContextEditorError('Select an Org first to list contacts.');
       return;
+    }
+
+    const ticketFieldKey = mapEditorToTicketFieldKey(activeContextEditor);
+    if (ticketFieldKey) {
+      const cached = ticketFieldOptionsCache[ticketFieldKey] || [];
+      if (cached.length > 0) {
+        setContextEditorLoading(false);
+        setContextEditorError('');
+        setContextEditorOptions(mapTicketFieldEditorToOptions(cached, contextEditorQuery));
+        return;
+      }
     }
 
     setContextEditorLoading(true);
@@ -328,6 +395,15 @@ export default function HomePage() {
           return;
         }
 
+        if (ticketFieldKey) {
+          const options = await listAutotaskTicketFieldOptionsByField(ticketFieldKey);
+          if (!ignore) {
+            setTicketFieldOptionsCache((prev) => ({ ...prev, [ticketFieldKey]: options }));
+            setContextEditorOptions(mapTicketFieldEditorToOptions(options, contextEditorQuery));
+          }
+          return;
+        }
+
         const rows = await searchAutotaskResources(contextEditorQuery, 30);
         if (!ignore) {
           setContextEditorOptions(rows.map((row: AutotaskResourceOption) => ({
@@ -353,7 +429,7 @@ export default function HomePage() {
     return () => {
       ignore = true;
     };
-  }, [activeContextEditor, activeOrgId, contextEditorQuery]);
+  }, [activeContextEditor, activeOrgId, contextEditorQuery, ticketFieldOptionsCache]);
 
   const handleSelectContextOption = (option: ContextEditorOption) => {
     if (!activeContextEditor) return;
@@ -387,6 +463,34 @@ export default function HomePage() {
         return {
           ...prev,
           primaryTech: createDraftReference(option.id, option.label),
+        };
+      }
+
+      if (activeContextEditor === 'Priority') {
+        return {
+          ...prev,
+          priority: createDraftReference(option.id, option.label),
+        };
+      }
+
+      if (activeContextEditor === 'Issue Type') {
+        return {
+          ...prev,
+          issueType: createDraftReference(option.id, option.label),
+        };
+      }
+
+      if (activeContextEditor === 'Sub-Issue Type') {
+        return {
+          ...prev,
+          subIssueType: createDraftReference(option.id, option.label),
+        };
+      }
+
+      if (activeContextEditor === 'Service Level Agreement') {
+        return {
+          ...prev,
+          serviceLevelAgreement: createDraftReference(option.id, option.label),
         };
       }
 
@@ -603,6 +707,8 @@ export default function HomePage() {
                             : 'Select an Org first to list contacts'
                           : activeContextEditor === 'Org'
                             ? 'Source: Autotask company search'
+                            : activeContextEditor === 'Priority' || activeContextEditor === 'Issue Type' || activeContextEditor === 'Sub-Issue Type' || activeContextEditor === 'Service Level Agreement'
+                              ? 'Source: Autotask ticket field metadata'
                             : 'Source: Autotask resource search'}
                       </p>
                     </div>

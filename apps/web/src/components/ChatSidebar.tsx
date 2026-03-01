@@ -409,7 +409,7 @@ export default function ChatSidebar({
   useEffect(() => {
     if (restoredRef.current || typeof window === 'undefined') return;
 
-    const urlFilter = searchParams.get('sidebarFilter');
+    const urlFilter = searchParams?.get('sidebarFilter');
     const rawSaved = sessionStorage.getItem(SIDEBAR_STATE_KEY);
     let saved: {
       filter?: string;
@@ -449,9 +449,10 @@ export default function ChatSidebar({
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(searchParams?.toString() ?? '');
     params.set('sidebarFilter', filter);
-    window.history.replaceState(null, '', `${pathname}?${params.toString()}`);
+    const currentPath = pathname ?? window.location.pathname;
+    window.history.replaceState(null, '', `${currentPath}?${params.toString()}`);
     persistSidebarState(filter);
   }, [filter, pathname, searchParams, persistSidebarState]);
 

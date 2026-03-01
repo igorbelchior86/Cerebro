@@ -1,3 +1,9 @@
+## Lesson: 2026-03-01 (startup cleanup is not enough when the Next dev runtime corrupts chunks after hot reload)
+**Mistake**: Eu assumi que limpar `.next` só no restart resolveria definitivamente a perda de `vendor-chunks`.
+**Root cause**: O runtime continuou falhando em chunks diferentes após novas recompilações, mostrando que a corrupção acontecia também durante o ciclo de HMR/cache, não apenas no boot.
+**Rule**: Se o `next dev` continuar perdendo arquivos gerados após o startup, aplicar mitigação de estabilidade suportada pelo runtime de desenvolvimento (reduzir/desligar caches) em vez de depender apenas de limpeza inicial.
+**Pattern**: Nome do chunk ausente muda a cada crash (`@opentelemetry`, `@formatjs`, etc.) = problema estrutural de cache/HMR do dev server.
+
 ## Lesson: 2026-03-01 (process-local in-flight guards are not enough for full-flow background work)
 **Mistake**: Eu aceitei o `fullFlowInFlight` como se ele resolvesse a concorrência do `GET /playbook/full-flow`.
 **Root cause**: O `Set` em memória evita duplicação só dentro do mesmo processo e só entre requests que passam por esse módulo; ele não coordena com o `triageOrchestrator` nem sobrevive a restart.

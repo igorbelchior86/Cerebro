@@ -2045,7 +2045,8 @@ export default function SessionDetail({
     }
     setSelectedTicketId(id);
     setIsDraftMode(false);
-    const nextPath = pathname.replace(/\/triage\/[^/]+$/, `/triage/${id}`);
+    const currentPath = pathname ?? window.location.pathname;
+    const nextPath = currentPath.replace(/\/triage\/[^/]+$/, `/triage/${id}`);
     window.history.replaceState(null, '', `${nextPath}${window.location.search}`);
   };
 
@@ -2076,7 +2077,8 @@ export default function SessionDetail({
           onSelectTicket={(id) => {
             if (id === selectedTicketId) return;
             setSelectedTicketId(id);
-            const nextPath = pathname.replace(/\/triage\/[^/]+$/, `/triage/${id}`);
+            const currentPath = pathname ?? window.location.pathname;
+            const nextPath = currentPath.replace(/\/triage\/[^/]+$/, `/triage/${id}`);
             window.history.replaceState(null, '', `${nextPath}${window.location.search}`);
           }}
         />

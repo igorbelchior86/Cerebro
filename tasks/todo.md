@@ -1,3 +1,59 @@
+# Task: Restaurar o frontend local via build estável e runtime de produção
+**Status**: completed
+**Started**: 2026-03-01T16:42:00-05:00
+
+## Plan
+- [x] Step 1: Reproduzir o estado real da stack e confirmar se `web` e `api` estavam realmente saudáveis.
+- [x] Step 2: Corrigir a estrutura e os fallbacks do frontend para o Next voltar a gerar artifacts válidos.
+- [x] Step 3: Liberar `typecheck`/`build` do web e subir o frontend em runtime de produção local.
+
+## Open Questions
+- O script oficial `dev:detached` continua preso ao `next dev`, que neste ambiente ainda sofre corrupção de artifacts em `.next`; por isso o bootstrap final desta tarefa usou `next start` após build limpo, e não o modo dev.
+
+## Progress Notes
+- A stack subia com `status` verde, mas `http://localhost:3000/en/login` ainda retornava `500`.
+- O `web.log` expôs uma sequência de falhas de geração de artifacts do Next (`_document.js`, `app-paths-manifest.json`, `vendor-chunks`, `pages-manifest.json`), o que indicava problema estrutural de runtime e não só um chunk isolado.
+- O frontend estava com App Router incompleto: faltava `src/app/layout.tsx`, e o layout de locale estava assumindo responsabilidades de root layout.
+- Foi necessário criar o root layout real, completar os fallbacks mínimos do Pages Router (`_app`, `_document`, `_error`, `404`) e corrigir 6 pontos de nulidade que bloqueavam o `typecheck`/`build` após a coexistência `app` + `pages`.
+- Após mover `apps/web/.next` e `apps/web/tsconfig.tsbuildinfo` para arquivos `.stale`, o build de produção passou e o web pôde subir em `next start`.
+
+## Review
+- Verificação executada:
+- `pnpm --filter @playbook-brain/web typecheck` ✅
+- `mv apps/web/.next apps/web/.next.stale.<timestamp>` e `mv apps/web/tsconfig.tsbuildinfo apps/web/tsconfig.tsbuildinfo.stale.<timestamp>` ✅
+- `pnpm --filter @playbook-brain/web build` ✅
+- backend iniciado em `screen` com `nodemon` e frontend iniciado em `screen` com `npx next start -p 3000` ✅
+- `curl -I http://localhost:3000/` -> `307 /en/login?next=%2F` ✅
+- `curl -I http://localhost:3000/en/login` -> `200` ✅
+- `curl http://localhost:3001/health` ✅
+- Documentação criada:
+- `wiki/changelog/2026-03-01-next-dev-explicit-document-fallback.md`
+
+# Task: Endurecer o Next dev contra vendor-chunks corrompidos em hot reload
+**Status**: completed
+**Started**: 2026-03-01T16:36:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar que o erro recorrente trocava apenas o nome do vendor chunk ausente, indicando corrupção de runtime em recompilações.
+- [x] Step 2: Reduzir a superfície de cache/HMR em desenvolvimento no `next.config.js`.
+- [x] Step 3: Reiniciar a stack e validar que o web runtime sobe com a configuração nova.
+
+## Open Questions
+- A reprodução completa do bug depende de ciclos de recompilação/HMR no browser; o terminal consegue validar startup e compilação inicial, mas não provar ausência absoluta de futuros bugs do runtime do Next.
+
+## Progress Notes
+- Após limpar `.next`, o runtime continuava quebrando em novos arquivos ausentes dentro de `vendor-chunks`, o que indica problema estrutural do cache dev e não um único artefato stale.
+- O `next.config.js` ainda não tinha mitigação de estabilidade para dev; apenas rewrites do proxy.
+- A mitigação aplicada desliga o cache do webpack em dev.
+
+## Review
+- Verificação executada:
+- `./scripts/stack.sh restart` ✅
+- `curl -I http://localhost:3000/en/login` ✅
+- `curl -I 'http://localhost:3000/en/triage/T20260226.0033?sidebarFilter=all'` executado após restart para forçar compilação do route chunk ✅
+- Documentação criada:
+- `wiki/changelog/2026-03-01-web-dev-disable-cache-to-stop-vendor-chunk-loss.md`
+
 # Task: Tornar o /playbook/full-flow idempotente contra overlap com orchestrator e polling
 **Status**: completed
 **Started**: 2026-03-01T16:31:00-05:00

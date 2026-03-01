@@ -12,6 +12,12 @@ const apiProxyTarget = process.env.API_PROXY_TARGET
 const config = {
   reactStrictMode: true,
   swcMinify: true,
+  webpack: (webpackConfig, { dev }) => {
+    if (dev) {
+      webpackConfig.cache = false;
+    }
+    return webpackConfig;
+  },
   async rewrites() {
     return [
       {

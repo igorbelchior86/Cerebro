@@ -9,7 +9,7 @@ const API = process.env.NEXT_PUBLIC_API_URL || '/api';
 function AcceptInviteForm() {
     const router = useRouter();
     const params = useSearchParams();
-    const token = params.get('token') ?? '';
+    const token = params?.get('token') ?? '';
 
     const [password, setPassword] = useState('');
     const [confirm, setConfirm] = useState('');

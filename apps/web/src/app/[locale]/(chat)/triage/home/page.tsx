@@ -567,7 +567,7 @@ export default function HomePage() {
       return;
     }
 
-    const returnTicketId = String(searchParams.get('returnTicketId') || '').trim();
+    const returnTicketId = String(searchParams?.get('returnTicketId') || '').trim();
     if (returnTicketId) {
       router.push(`/triage/${returnTicketId}`, { scroll: false });
     }

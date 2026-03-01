@@ -728,11 +728,12 @@ router.get('/resources/search', async (req, res, next) => {
       });
       return;
     }
+    const providerLimit = q ? Math.max(limit, 100) : limit;
     const filter: Array<Record<string, unknown>> = [{ op: 'eq', field: 'isActive', value: true }];
     let rows: Array<Record<string, unknown>> = [];
     let degradedReason: 'rate_limited' | 'provider_error' | undefined;
     try {
-      rows = await client.searchResources(stringifyStructuredSearch(filter, limit), limit);
+      rows = await client.searchResources(stringifyStructuredSearch(filter, providerLimit), providerLimit);
     } catch (error) {
       degradedReason = classifyAutotaskReadDegradedReason(error);
     }
@@ -759,8 +760,9 @@ router.get('/resources/search', async (req, res, next) => {
         return item.name.toLowerCase().includes(needle) || String(item.email || '').toLowerCase().includes(needle);
       })
       .filter((item): item is { id: number; name: string; email?: string } => Boolean(item));
+    const limitedData = data.slice(0, limit);
     const fallbackData = degradedReason ? readCachedReadOnlySearch(cacheKey) : null;
-    const finalData = Array.isArray(fallbackData) ? fallbackData : data;
+    const finalData = Array.isArray(fallbackData) ? fallbackData : limitedData;
     if (!degradedReason || Array.isArray(fallbackData)) {
       writeCachedReadOnlySearch(cacheKey, finalData);
     }

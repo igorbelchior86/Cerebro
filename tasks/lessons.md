@@ -949,3 +949,8 @@
 **Root cause**: Eu tratei uma hipótese plausível como explicação suficiente sem validá-la contra o contexto operacional fornecido pelo usuário.
 **Rule**: Se o usuário invalida uma premissa operacional crítica ("não existe outro ambiente"), remover essa hipótese e focar apenas em evidência local verificável.
 **Pattern**: Em incidentes de quota/rate limit, evitar atribuir causa a "outro ambiente" sem prova local de credencial compartilhada.
+## Lesson: 2026-03-01
+**Mistake**: Entreguei a correção da lista de techs baseada em análise estática + typecheck sem reproduzir o fluxo HTTP real.
+**Root cause**: Eu assumi que a mudança no handler e no modal era segura porque compilava, mas não validei o endpoint/runtime após alterar a lógica de busca.
+**Rule**: Em bug fixes que tocam rotas usadas pela UI, sempre reproduzir o request HTTP real (ou inspecionar logs ativos) antes de declarar concluído.
+**Pattern**: Alterações em rotas read-only de integração podem compilar e ainda falhar em runtime por payload/limites/comportamento do provider.

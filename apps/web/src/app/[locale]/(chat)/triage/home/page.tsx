@@ -847,14 +847,20 @@ export default function HomePage() {
 
     setContextEditorError('');
 
+    const shouldHydrateFullTechList =
+      (activeContextEditor === 'Primary' || activeContextEditor === 'Secondary') &&
+      !contextEditorQuery.trim();
+
     if (
       requiresTypedAutotaskSearch(activeContextEditor) &&
       !contextEditorQuery.trim() &&
       localContextEditorSuggestions.length > 0
     ) {
-      setContextEditorLoading(false);
       setContextEditorOptions(localContextEditorSuggestions);
-      return;
+      if (!shouldHydrateFullTechList) {
+        setContextEditorLoading(false);
+        return;
+      }
     }
 
     if (
@@ -917,7 +923,7 @@ export default function HomePage() {
           return;
         }
 
-        const rows = await searchAutotaskResources(contextEditorQuery, 30);
+        const rows = await searchAutotaskResources(contextEditorQuery, contextEditorQuery.trim() ? 30 : 100);
         const options = rows.map((row: AutotaskResourceOption) => ({
           id: row.id,
           label: row.name,

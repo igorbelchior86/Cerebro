@@ -2,7 +2,16 @@
 // Database Connection
 // ─────────────────────────────────────────────────────────────
 
+import { config } from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
 import { Pool, type PoolClient } from 'pg';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// This module is imported during bootstrap before the API entrypoint can safely hydrate env.
+config({ path: resolve(__dirname, '../../../../', '.env') });
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://playbook:playbook_dev@localhost:5432/cerebro',

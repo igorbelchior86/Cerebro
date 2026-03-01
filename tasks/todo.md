@@ -1,3 +1,37 @@
+# Task: Corrigir regressão HTTP 500 após ajuste da lista de techs no novo ticket
+**Status**: completed
+**Started**: 2026-03-01T18:40:00-05:00
+
+## Plan
+- [ ] Step 1: Reproduzir o HTTP 500 e localizar a falha real no runtime/logs.
+- [ ] Step 2: Corrigir a causa raiz com a menor mudança possível.
+- [ ] Step 3: Validar o endpoint/fluxo afetado e atualizar a documentação.
+
+## Open Questions
+- O 500 exato pode estar no endpoint `/autotask/resources/search` ou em outro fluxo disparado pelo modal; os logs vão confirmar.
+
+## Progress Notes
+- Tarefa iniciada a partir do relato de que a lista de techs não carrega todos os itens no fluxo de criação de ticket.
+- Causa raiz identificada em duas camadas: o modal de novo ticket parava nas 8 sugestões locais e não hidratava a lista completa ao abrir; no backend, a rota `/autotask/resources/search` consultava só o primeiro lote limitado do provider e filtrava o texto apenas localmente.
+- Replanejado após correção do usuário: surgiu uma regressão HTTP 500 e a entrega anterior precisa ser validada em runtime antes de permanecer.
+- Evidência concreta do runtime: a API caiu na inicialização com `database "cerebro" does not exist`; o pool do Postgres era criado antes do `.env` ser carregado e caía no fallback incorreto hardcoded.
+
+## Review
+- What worked:
+- A regressão foi isolada rapidamente pelos logs: o problema real era bootstrap da API, não o selector de techs.
+- Carregar `.env` dentro do módulo de banco corrige a ordem de inicialização de forma mínima e robusta para qualquer import estático.
+- What was tricky:
+- Havia um falso alvo inicial no fluxo de resources, mas os logs mostraram claramente `database "cerebro" does not exist`; além disso, o primeiro patch em `db/pool.ts` não afetou o módulo realmente usado, que era `db/index.ts`.
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `./scripts/stack.sh restart` ✅
+- `./scripts/stack.sh status` ✅ (`api` e `web` healthy)
+- `curl -i -s http://localhost:3001/health` ✅ (`200`)
+- `curl -i -s 'http://localhost:3001/autotask/resources/search?q=&limit=100'` ✅ sem `500` (retorna `401` esperado sem autenticação)
+- `curl -i -s 'http://localhost:3000/api/autotask/resources/search?q=&limit=100'` ✅ sem `500` (retorna `401` esperado sem autenticação)
+- Documentation:
+- `wiki/changelog/2026-03-01-api-bootstrap-load-env-before-db-pool.md`
+
 # Task: Eliminar o Server Error recorrente do Next por vendor chunk ausente
 **Status**: completed
 **Started**: 2026-03-01T18:30:00-05:00

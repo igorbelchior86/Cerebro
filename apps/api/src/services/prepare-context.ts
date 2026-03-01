@@ -74,7 +74,15 @@ import {
   generateNameAliases,
   extractSoftwareHintsFromTicket,
   normalizeHistoryTerms,
-  scoreHistoryCandidate
+  scoreHistoryCandidate,
+  normalizeFusionResolutionValue,
+  isFusionUnknownValue,
+  isLikelyDomainDerivedCompanyLabel,
+  shouldPreferCompanyCandidateOverIntake,
+  capitalize,
+  detectLikelySignatureStart,
+  signatureSignalCount,
+  formatSignatureBlock
 } from './prepare-context-helpers.js';
 
 import {
@@ -170,9 +178,9 @@ export class PrepareContextService {
 
   constructor() {
     this.fusionEngine = new FusionEngine({
-      normalizeName: (n) => this.normalizeName(n),
-      itgAttr: (a, k) => this.itgAttr(a, k),
-      buildField: (i) => this.buildField(i),
+      normalizeName: (n) => normalizeName(n),
+      itgAttr: (a, k) => itgAttr(a, k),
+      buildField: (i) => buildField(i),
       isPublicIPv4: (ip) => this.enrichmentEngine.isPublicIPv4(ip)
     });
   }
@@ -525,7 +533,7 @@ export class PrepareContextService {
     }
     const originalTicketTitle = String(ticket.title || '').trim();
     const originalTicketDescription = String((ticket as any)?.description || '').trim();
-    const originalTicketNarrative = this.buildTicketNarrative(ticket);
+    const originalTicketNarrative = buildTicketNarrative(ticket);
     const autotaskAuthoritativeSeed = (() => {
       const raw = ticket as Record<string, unknown>;
       const numericId = Number(raw.id);
@@ -621,13 +629,13 @@ export class PrepareContextService {
       });
     }
 
-    const ticketNarrative = this.buildTicketNarrative(ticket);
-    const inferredCompany = this.inferCompanyNameFromTicketText(ticketNarrative) || this.inferCompanyNameFromTicketText(originalTicketNarrative);
-    const companyName = this.selectPreferredCompanyName({
+    const ticketNarrative = buildTicketNarrative(ticket);
+    const inferredCompany = inferCompanyNameFromTicketText(ticketNarrative) || inferCompanyNameFromTicketText(originalTicketNarrative);
+    const companyName = selectPreferredCompanyName({
       intakeCompany: String(ticket.company || ''),
       inferredCompany,
     });
-    const requesterName = this.normalizeName(ticket.canonicalRequesterName || ticket.requester || '');
+    const requesterName = normalizeName(ticket.canonicalRequesterName || ticket.requester || '');
     const facetContext = this.detectFacetContext(
       ticketNarrative
     );
@@ -745,12 +753,12 @@ export class PrepareContextService {
         docs = itglueDocumentsRaw.slice(0, 8).map((doc: any, idx: number) => {
           const attrs = doc?.attributes || {};
           const title = String(
-            this.itgAttr(attrs, 'name') ||
-            this.itgAttr(attrs, 'cached_resource_name') ||
+            itgAttr(attrs, 'name') ||
+            itgAttr(attrs, 'cached_resource_name') ||
             `IT Glue Document ${idx + 1}`
           );
-          const snippet = String(this.itgAttr(attrs, 'content') || '').replace(/\s+/g, ' ').trim().slice(0, 500);
-          const orgId = String(this.itgAttr(attrs, 'organization_id') || itglueOrgMatch?.id || '');
+          const snippet = String(itgAttr(attrs, 'content') || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+          const orgId = String(itgAttr(attrs, 'organization_id') || itglueOrgMatch?.id || '');
           return {
             id: String(doc?.id || `itg-doc-${idx}`),
             source: 'itglue' as const,
@@ -1469,9 +1477,9 @@ export class PrepareContextService {
         org_id: resolvedOrgId || null,
         source_workspace: sourceWorkspace,
       });
-      const fusedRecords = this.flattenEnrichmentFields(iterativeEnrichment.sections);
-      iterativeEnrichment.coverage = this.computeEnrichmentCoverage(fusedRecords);
-      iterativeEnrichment.rounds = this.buildEnrichmentRounds(fusedRecords, sourceFindings);
+      const fusedRecords = flattenEnrichmentFields(iterativeEnrichment.sections);
+      iterativeEnrichment.coverage = computeEnrichmentCoverage(fusedRecords);
+      iterativeEnrichment.rounds = buildEnrichmentRounds(fusedRecords, sourceFindings);
       iterativeEnrichment.completed_rounds = iterativeEnrichment.rounds.at(-1)?.round ?? iterativeEnrichment.completed_rounds;
     }
 
@@ -1489,7 +1497,7 @@ export class PrepareContextService {
       });
       const broadHistoryOrgId = resolvedOrgId || input.orgId;
       const broadHistoryCompany =
-        this.normalizeName(String(iterativeEnrichment.sections.ticket.company.value || '')) || companyName || '';
+        normalizeName(String(iterativeEnrichment.sections.ticket.company.value || '')) || companyName || '';
       const hasHistoryScope = Boolean(
         broadHistoryOrgId ||
         (broadHistoryCompany && !/^unknown$/i.test(broadHistoryCompany))
@@ -1575,8 +1583,8 @@ export class PrepareContextService {
         inferredPhoneProvider,
       });
 
-      const currentRecords = this.flattenEnrichmentFields(iterativeEnrichment.sections);
-      iterativeEnrichment.rounds = this.buildEnrichmentRounds(currentRecords, sourceFindings);
+      const currentRecords = flattenEnrichmentFields(iterativeEnrichment.sections);
+      iterativeEnrichment.rounds = buildEnrichmentRounds(currentRecords, sourceFindings);
       iterativeEnrichment.completed_rounds = iterativeEnrichment.rounds.at(-1)?.round ?? iterativeEnrichment.completed_rounds;
 
       const calibration = this.applyHistoryConfidenceCalibration({
@@ -1585,9 +1593,9 @@ export class PrepareContextService {
       });
       iterativeEnrichment.sections = calibration.sections;
       historyCalibrationAppendix = calibration.appendix;
-      const calibratedRecords = this.flattenEnrichmentFields(iterativeEnrichment.sections);
-      iterativeEnrichment.coverage = this.computeEnrichmentCoverage(calibratedRecords);
-      iterativeEnrichment.rounds = this.buildEnrichmentRounds(calibratedRecords, sourceFindings);
+      const calibratedRecords = flattenEnrichmentFields(iterativeEnrichment.sections);
+      iterativeEnrichment.coverage = computeEnrichmentCoverage(calibratedRecords);
+      iterativeEnrichment.rounds = buildEnrichmentRounds(calibratedRecords, sourceFindings);
       iterativeEnrichment.completed_rounds = iterativeEnrichment.rounds.at(-1)?.round ?? iterativeEnrichment.completed_rounds;
     } catch (error) {
       sourceFindings.push({
@@ -1816,9 +1824,9 @@ export class PrepareContextService {
         requesterName,
         inferredPhoneProvider,
       });
-      const finalRecords = this.flattenEnrichmentFields(iterativeEnrichment.sections);
-      iterativeEnrichment.coverage = this.computeEnrichmentCoverage(finalRecords);
-      iterativeEnrichment.rounds = this.buildEnrichmentRounds(finalRecords, sourceFindings);
+      const finalRecords = flattenEnrichmentFields(iterativeEnrichment.sections);
+      iterativeEnrichment.coverage = computeEnrichmentCoverage(finalRecords);
+      iterativeEnrichment.rounds = buildEnrichmentRounds(finalRecords, sourceFindings);
       iterativeEnrichment.completed_rounds = iterativeEnrichment.rounds.at(-1)?.round ?? iterativeEnrichment.completed_rounds;
 
       finalRefinementAppendix = {
@@ -1943,7 +1951,7 @@ export class PrepareContextService {
     const technology = Object.entries(FACET_TERMS.technology)
       .filter(([, terms]) => terms.some((term) => normalized.includes(term)))
       .map(([facet]) => facet);
-    const entityCandidates = this.extractEmailDomains(ticketText).concat(
+    const entityCandidates = extractEmailDomains(ticketText).concat(
       (ticketText.match(/[A-Z]{2,}-\d{2,}/g) || []).map((v) => v.toLowerCase())
     );
     return {
@@ -1996,9 +2004,9 @@ export class PrepareContextService {
     }
 
     const normalizedTicket = input.ticketText.toLowerCase();
-    const requesterTokens = this.buildRequesterTokens(input.requesterName);
-    const actorEmails = this.extractEmails(input.ticketText);
-    const actorTokens = [...new Set([...requesterTokens, ...this.buildRequesterTokens(input.ticketText)])];
+    const requesterTokens = buildRequesterTokens(input.requesterName);
+    const actorEmails = extractEmails(input.ticketText);
+    const actorTokens = [...new Set([...requesterTokens, ...buildRequesterTokens(input.ticketText)])];
     const configHints = input.itglueConfigs
       .map((c: any) => String(c?.attributes?.hostname || c?.attributes?.name || '').toLowerCase())
       .filter(Boolean);
@@ -2223,7 +2231,7 @@ export class PrepareContextService {
     const lastNameLabel = text.match(/(?:last\s*name|lastname)\s*[:\-]\s*([a-zA-Z]+)\b/i)?.[1];
     const labeledFullName =
       firstNameLabel && lastNameLabel
-        ? `${this.capitalize(firstNameLabel)} ${this.capitalize(lastNameLabel)}`
+        ? `${capitalize(firstNameLabel)} ${capitalize(lastNameLabel)}`
         : null;
 
     const emailMatches = [
@@ -2258,28 +2266,28 @@ export class PrepareContextService {
       ...new Set([input.companyName].filter((value): value is string => Boolean(value && value.trim()))),
     ];
 
-    const normalizedRequester = this.normalizeName(input.requesterName).toLowerCase();
-    const normalizedCompany = this.normalizeName(input.companyName).toLowerCase();
+    const normalizedRequester = normalizeName(input.requesterName).toLowerCase();
+    const normalizedCompany = normalizeName(input.companyName).toLowerCase();
     const scoredCandidates = input.contacts
       .map((contact: any) => {
         const attrs = contact?.attributes || {};
-        const name = this.normalizeName(
+        const name = normalizeName(
           String(
-            this.itgAttr(attrs, 'name') ||
-            `${String(this.itgAttr(attrs, 'first_name') || '')} ${String(this.itgAttr(attrs, 'last_name') || '')}` ||
+            itgAttr(attrs, 'name') ||
+            `${String(itgAttr(attrs, 'first_name') || '')} ${String(itgAttr(attrs, 'last_name') || '')}` ||
             ''
           ).trim()
         );
-        const email = String(this.itgAttr(attrs, 'primary_email') || '').toLowerCase();
-        const phone = String(this.itgAttr(attrs, 'primary_phone') || '');
-        const normalizedContactCompany = this.normalizeName(
+        const email = String(itgAttr(attrs, 'primary_email') || '').toLowerCase();
+        const phone = String(itgAttr(attrs, 'primary_phone') || '');
+        const normalizedContactCompany = normalizeName(
           String(attrs.organization_name || attrs.company_name || attrs.organization || '')
         ).toLowerCase();
         const exactName = normalizedRequester && name.toLowerCase() === normalizedRequester ? 0.4 : 0;
         const emailScore = emailMatches.includes(email) && email ? 0.3 : 0;
         const phoneScore = phoneMatches.some((p) => phone.includes(p) || p.includes(phone)) && phone ? 0.2 : 0;
         const companyScore =
-          normalizedCompany && normalizedContactCompany && this.fuzzyMatch(normalizedCompany, normalizedContactCompany)
+          normalizedCompany && normalizedContactCompany && fuzzyMatch(normalizedCompany, normalizedContactCompany)
             ? 0.1
             : 0;
         const score = Number((exactName + emailScore + phoneScore + companyScore).toFixed(3));
@@ -2753,9 +2761,9 @@ export class PrepareContextService {
       infra: infraSection,
     };
 
-    const fieldRecords = this.flattenEnrichmentFields(sections);
-    const coverage = this.computeEnrichmentCoverage(fieldRecords);
-    const rounds = this.buildEnrichmentRounds(fieldRecords, input.sourceFindings);
+    const fieldRecords = flattenEnrichmentFields(sections);
+    const coverage = computeEnrichmentCoverage(fieldRecords);
+    const rounds = buildEnrichmentRounds(fieldRecords, input.sourceFindings);
     const lastRound = rounds.at(-1);
     const completedRounds = lastRound?.round ?? 1;
     const lastRoundGain = lastRound?.gain_count ?? 0;
@@ -2787,24 +2795,24 @@ export class PrepareContextService {
     entityResolution: EntityResolution;
   }): IterativeEnrichmentSections['ticket'] {
     const ticketId = String(input.ticket.ticketNumber || input.ticket.id || '').trim();
-    const requesterFromTicket = this.normalizeName(
+    const requesterFromTicket = normalizeName(
       input.ticket.canonicalRequesterName || input.ticket.requester || input.requesterName || ''
     );
     const requesterEmailFromTicket = String(
-      input.ticket.canonicalRequesterEmail || this.extractFirstEmail(input.ticket.requester || '')
+      input.ticket.canonicalRequesterEmail || extractFirstEmail(input.ticket.requester || '')
     ).trim();
     const extractedEmail = input.entityResolution.extracted_entities.email[0] || '';
     const requesterEmail = requesterEmailFromTicket || extractedEmail || '';
 
     const resolvedActor = input.entityResolution.resolved_actor;
-    const affectedName = this.normalizeName(
+    const affectedName = normalizeName(
       input.ticket.canonicalAffectedName || resolvedActor?.name || requesterFromTicket || 'unknown'
     );
     const affectedEmail = String(
       input.ticket.canonicalAffectedEmail || resolvedActor?.email || requesterEmail || 'unknown'
     ).trim();
 
-    const companyFromTicket = this.normalizeName(input.ticket.company || '');
+    const companyFromTicket = normalizeName(input.ticket.company || '');
     const companyValue = companyFromTicket || input.companyName || input.inferredCompany || 'unknown';
     const companyStatus = companyFromTicket
       ? 'confirmed'
@@ -2822,7 +2830,7 @@ export class PrepareContextService {
         : 'unknown';
 
     return {
-      ticket_id: this.buildField({
+      ticket_id: buildField({
         value: ticketId || 'unknown',
         status: ticketId ? 'confirmed' : 'unknown',
         confidence: ticketId ? 1 : 0,
@@ -2830,7 +2838,7 @@ export class PrepareContextService {
         sourceRef: 'ticket.id',
         round: 1,
       }),
-      company: this.buildField({
+      company: buildField({
         value: companyValue,
         status: companyStatus,
         confidence: companyStatus === 'confirmed' ? 1 : companyStatus === 'inferred' ? 0.7 : 0,
@@ -2838,7 +2846,7 @@ export class PrepareContextService {
         sourceRef: companyFromTicket ? 'ticket.company' : companyValue !== 'unknown' ? 'ticket.domain_inference' : undefined,
         round: 1,
       }),
-      requester_name: this.buildField({
+      requester_name: buildField({
         value: requesterFromTicket || 'unknown',
         status: requesterFromTicket ? 'confirmed' : 'unknown',
         confidence: requesterFromTicket ? 0.95 : 0,
@@ -2846,7 +2854,7 @@ export class PrepareContextService {
         sourceRef: input.ticket.canonicalRequesterName ? 'round0.canonical_requester' : requesterFromTicket ? 'ticket.requester' : undefined,
         round: 1,
       }),
-      requester_email: this.buildField({
+      requester_email: buildField({
         value: requesterEmail || 'unknown',
         status: requesterEmailFromTicket ? 'confirmed' : requesterEmail ? 'inferred' : 'unknown',
         confidence: requesterEmailFromTicket ? 0.95 : requesterEmail ? 0.65 : 0,
@@ -2854,7 +2862,7 @@ export class PrepareContextService {
         sourceRef: input.ticket.canonicalRequesterEmail ? 'round0.canonical_requester' : requesterEmailFromTicket ? 'ticket.requester' : requesterEmail ? 'entity_resolution.extracted_entities.email[0]' : undefined,
         round: input.ticket.canonicalRequesterEmail ? 0 : requesterEmailFromTicket ? 1 : requesterEmail ? 2 : 1,
       }),
-      affected_user_name: this.buildField({
+      affected_user_name: buildField({
         value: affectedName,
         status: actorStatus,
         confidence: actorStatus === 'confirmed' ? 0.95 : actorStatus === 'inferred' ? 0.65 : 0,
@@ -2862,7 +2870,7 @@ export class PrepareContextService {
         sourceRef: input.ticket.canonicalAffectedName ? 'round0.canonical_affected' : resolvedActor ? 'entity_resolution.resolved_actor.name' : requesterFromTicket ? 'ticket.requester' : undefined,
         round: input.ticket.canonicalAffectedName ? 0 : actorRound,
       }),
-      affected_user_email: this.buildField({
+      affected_user_email: buildField({
         value: affectedEmail,
         status: resolvedActor?.email
           ? resolvedActor.confidence === 'strong'
@@ -2882,7 +2890,7 @@ export class PrepareContextService {
         sourceRef: input.ticket.canonicalAffectedEmail ? 'round0.canonical_affected' : resolvedActor?.email ? 'entity_resolution.resolved_actor.email' : requesterEmail ? 'ticket.requester' : undefined,
         round: input.ticket.canonicalAffectedEmail ? 0 : resolvedActor?.email ? actorRound : requesterEmail ? 1 : 1,
       }),
-      created_at: this.buildField({
+      created_at: buildField({
         value: String(input.ticket.createDate || '').trim() || 'unknown',
         status: input.ticket.createDate ? 'confirmed' : 'unknown',
         confidence: input.ticket.createDate ? 0.95 : 0,
@@ -2890,7 +2898,7 @@ export class PrepareContextService {
         sourceRef: input.ticket.createDate ? 'ticket.createDate' : undefined,
         round: 1,
       }),
-      title: this.buildField({
+      title: buildField({
         value: String(input.ticket.title || '').trim() || 'unknown',
         status: input.ticket.title ? 'confirmed' : 'unknown',
         confidence: input.ticket.title ? 0.95 : 0,
@@ -2898,7 +2906,7 @@ export class PrepareContextService {
         sourceRef: input.ticket.title ? 'ticket.title' : undefined,
         round: 1,
       }),
-      description_clean: this.buildField({
+      description_clean: buildField({
         value: String(input.ticket.description || '').trim() || 'unknown',
         status: input.ticket.description ? 'confirmed' : 'unknown',
         confidence: input.ticket.description ? 0.9 : 0,
@@ -2919,7 +2927,7 @@ export class PrepareContextService {
       Boolean(resolvedEmail) && entityResolution.resolved_actor?.confidence === 'strong';
 
     return {
-      user_principal_name: this.buildField({
+      user_principal_name: buildField({
         value: principal,
         status: hasStrongResolvedEmail ? 'confirmed' : principal !== 'unknown' ? 'inferred' : 'unknown',
         confidence: hasStrongResolvedEmail ? 0.9 : principal !== 'unknown' ? 0.6 : 0,
@@ -2931,7 +2939,7 @@ export class PrepareContextService {
             : undefined,
         round: resolvedEmail ? 3 : extractedEmail ? 2 : 1,
       }),
-      account_status: this.buildField({
+      account_status: buildField({
         value: 'unknown',
         status: 'unknown',
         confidence: 0,
@@ -2939,7 +2947,7 @@ export class PrepareContextService {
         sourceRef: 'unavailable',
         round: 2,
       }),
-      mfa_state: this.buildField({
+      mfa_state: buildField({
         value: 'unknown',
         status: 'unknown',
         confidence: 0,
@@ -2947,7 +2955,7 @@ export class PrepareContextService {
         sourceRef: 'unavailable',
         round: 2,
       }),
-      licenses_summary: this.buildField({
+      licenses_summary: buildField({
         value: 'Unknown',
         status: 'unknown',
         confidence: 0,
@@ -2955,7 +2963,7 @@ export class PrepareContextService {
         sourceRef: 'unavailable',
         round: 2,
       }),
-      groups_top: this.buildField({
+      groups_top: buildField({
         value: 'unknown',
         status: 'unknown',
         confidence: 0,
@@ -3004,7 +3012,7 @@ export class PrepareContextService {
     const securityAgent = this.enrichmentEngine.inferSecurityAgent(input.ninjaChecks, input.deviceDetails);
 
     return {
-      device_name: this.buildField({
+      device_name: buildField({
         value: deviceName || 'unknown',
         status: deviceName ? 'confirmed' : 'unknown',
         confidence: deviceName ? 0.85 : 0,
@@ -3012,7 +3020,7 @@ export class PrepareContextService {
         sourceRef: deviceName ? 'ninja.device.hostname' : undefined,
         round: 1,
       }),
-      device_type: this.buildField({
+      device_type: buildField({
         value: deviceType,
         status: deviceType !== 'unknown' ? 'inferred' : 'unknown',
         confidence: deviceType !== 'unknown' ? 0.65 : 0,
@@ -3020,7 +3028,7 @@ export class PrepareContextService {
         sourceRef: deviceType !== 'unknown' ? 'ninja.device.os/type_heuristic' : undefined,
         round: 1,
       }),
-      os_name: this.buildField({
+      os_name: buildField({
         value: osName || 'unknown',
         status: osName ? 'confirmed' : 'unknown',
         confidence: osName ? 0.8 : 0,
@@ -3028,7 +3036,7 @@ export class PrepareContextService {
         sourceRef: osName ? 'ninja.device.osName/os.name' : undefined,
         round: 1,
       }),
-      os_version: this.buildField({
+      os_version: buildField({
         value: osVersion || 'unknown',
         status: osVersion ? 'confirmed' : 'unknown',
         confidence: osVersion ? 0.75 : 0,
@@ -3036,7 +3044,7 @@ export class PrepareContextService {
         sourceRef: osVersion ? 'ninja.device.osVersion/os.buildNumber+releaseId' : undefined,
         round: 1,
       }),
-      last_check_in: this.buildField({
+      last_check_in: buildField({
         value: lastCheckIn || 'unknown',
         status: lastCheckIn ? 'confirmed' : 'unknown',
         confidence: lastCheckIn ? 0.85 : 0,
@@ -3044,7 +3052,7 @@ export class PrepareContextService {
         sourceRef: lastCheckIn ? 'ninja.device.lastActivityTime' : undefined,
         round: 1,
       }),
-      security_agent: this.buildField({
+      security_agent: buildField({
         value: securityAgent,
         status: securityAgent.state === 'unknown' ? 'unknown' : 'inferred',
         confidence: securityAgent.state === 'present' ? 0.7 : securityAgent.state === 'absent' ? 0.45 : 0,
@@ -3052,7 +3060,7 @@ export class PrepareContextService {
         sourceRef: securityAgent.state === 'unknown' ? undefined : 'ninja.device.checks',
         round: 1,
       }),
-      user_signed_in: this.buildField({
+      user_signed_in: buildField({
         value: input.loggedInUser || 'unknown',
         status: input.loggedInUser ? 'inferred' : 'unknown',
         confidence: input.loggedInUser ? 0.7 : 0,
@@ -3060,7 +3068,7 @@ export class PrepareContextService {
         sourceRef: input.loggedInUser ? 'ninja.device.last-logged-on-user' : undefined,
         round: input.loggedInUser ? 3 : 1,
       }),
-      user_signed_in_at: this.buildField({
+      user_signed_in_at: buildField({
         value: input.loggedInAt || (input.loggedInUser && lastCheckIn ? lastCheckIn : 'unknown'),
         status: input.loggedInAt || (input.loggedInUser && lastCheckIn) ? 'inferred' : 'unknown',
         confidence: input.loggedInAt || (input.loggedInUser && lastCheckIn) ? 0.7 : 0,
@@ -3106,7 +3114,7 @@ export class PrepareContextService {
     const phoneProviderConnected = Boolean(input.inferredPhoneProvider);
 
     return {
-      location_context: this.buildField({
+      location_context: buildField({
         value: locationContext,
         status: locationContext === 'unknown' ? 'unknown' : 'inferred',
         confidence: locationContext === 'unknown' ? 0 : narrativeLocationContext !== 'unknown' ? 0.65 : 0.75,
@@ -3114,7 +3122,7 @@ export class PrepareContextService {
         sourceRef: locationContext === 'unknown' ? undefined : narrativeLocationContext !== 'unknown' ? 'ticket.text' : wanCandidate?.source_ref,
         round: narrativeLocationContext !== 'unknown' ? 1 : 2,
       }),
-      public_ip: this.buildField({
+      public_ip: buildField({
         value: publicIp || 'unknown',
         status: publicIp ? 'confirmed' : 'unknown',
         confidence: publicIp ? 0.9 : 0,
@@ -3122,7 +3130,7 @@ export class PrepareContextService {
         sourceRef: publicIp ? 'ninja.device.publicIP/ipAddresses' : undefined,
         round: 1,
       }),
-      isp_name: this.buildField({
+      isp_name: buildField({
         value: ispName || 'unknown',
         status: ispName ? 'inferred' : 'unknown',
         confidence: itglueLlmIsp ? 0.75 : wanCandidate?.isp_name ? Math.max(0.65, wanCandidate.confidence) : ispName ? 0.6 : 0,
@@ -3130,7 +3138,7 @@ export class PrepareContextService {
         sourceRef: itglueLlmIsp ? 'itglue_org_snapshot' : wanCandidate?.isp_name ? wanCandidate.source_ref : ispName ? 'ticket/docs/itglue keyword' : undefined,
         round: ispName ? 2 : 1,
       }),
-      vpn_state: this.buildField({
+      vpn_state: buildField({
         value: vpnState,
         status: vpnState === 'unknown' ? 'unknown' : 'inferred',
         confidence: vpnState === 'connected' ? 0.7 : vpnState === 'disconnected' ? 0.6 : 0,
@@ -3138,7 +3146,7 @@ export class PrepareContextService {
         sourceRef: vpnState === 'unknown' ? undefined : 'ninja.checks:vpn',
         round: 1,
       }),
-      phone_provider: this.buildField({
+      phone_provider: buildField({
         value: phoneProviderConnected ? 'connected' : 'unknown',
         status: phoneProviderConnected ? 'inferred' : 'unknown',
         confidence: phoneProviderConnected ? 0.7 : 0,
@@ -3146,7 +3154,7 @@ export class PrepareContextService {
         sourceRef: phoneProviderConnected ? 'ticket/docs/configs/signals' : undefined,
         round: 1,
       }),
-      phone_provider_name: this.buildField({
+      phone_provider_name: buildField({
         value: input.inferredPhoneProvider || 'unknown',
         status: input.inferredPhoneProvider ? 'inferred' : 'unknown',
         confidence: input.inferredPhoneProvider ? 0.75 : 0,
@@ -3192,7 +3200,7 @@ export class PrepareContextService {
       : metadataCandidates.switch || this.extractInfraMakeModel('switch', input.itglueConfigs, input.docs);
 
     return {
-      firewall_make_model: this.buildField({
+      firewall_make_model: buildField({
         value: firewall.value,
         status: firewall.status,
         confidence: firewall.confidence,
@@ -3200,7 +3208,7 @@ export class PrepareContextService {
         sourceRef: firewall.sourceRef,
         round: firewall.round,
       }),
-      wifi_make_model: this.buildField({
+      wifi_make_model: buildField({
         value: wifi.value,
         status: wifi.status,
         confidence: wifi.confidence,
@@ -3208,7 +3216,7 @@ export class PrepareContextService {
         sourceRef: wifi.sourceRef,
         round: wifi.round,
       }),
-      switch_make_model: this.buildField({
+      switch_make_model: buildField({
         value: sw.value,
         status: sw.status,
         confidence: sw.confidence,
@@ -3350,7 +3358,7 @@ export class PrepareContextService {
       const attrs = org?.attributes || {};
       const name = String(itgAttr(attrs, 'name') || '').trim() || id;
       const shortName = String(itgAttr(attrs, 'short_name') || '').trim();
-      const score = companyName ? this.scoreOrgNameMatch(companyName, name, shortName) : 0;
+      const score = companyName ? scoreOrgNameMatch(companyName, name, shortName) : 0;
       familyCandidates.push({ org, score, reason, priority });
     };
 
@@ -3649,7 +3657,7 @@ export class PrepareContextService {
 
     try {
       const llm = await callLLM(prompt);
-      const parsed = this.extractJsonObject(llm.content);
+      const parsed = extractJsonObject(llm.content);
       const fields = (parsed?.fields && typeof parsed.fields === 'object')
         ? (parsed.fields as Record<string, ItglueEnrichedField>)
         : {};
@@ -3713,7 +3721,7 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
 
     try {
       const llm = await callLLM(prompt);
-      const parsed = this.extractJsonObject(llm.content);
+      const parsed = extractJsonObject(llm.content);
       const fields = (parsed?.fields && typeof parsed.fields === 'object')
         ? (parsed.fields as Record<string, NinjaEnrichedField>)
         : {};
@@ -3947,7 +3955,7 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
         inferences,
       });
       const llm = await callLLM(prompt);
-      const parsed = this.extractJsonObject(llm.content);
+      const parsed = extractJsonObject(llm.content);
       llmOutput = this.sanitizeFusionAdjudicationOutput(parsed, supportedPaths);
       usedLlm = true;
     } catch (error) {
@@ -4444,7 +4452,7 @@ Output schema:
         const normalizedValue = normalizeCandidateValue(resolution.value);
         const candidateSet = candidateValuesByPath.get(String(resolution.path || '')) || new Set<string>();
         const hasDeterministicInference = infRefs.length > 0 && infRefs.every((id) => allowedInferenceIds.has(id));
-        const isUnknownLike = this.isFusionUnknownValue(this.normalizeFusionResolutionValue(resolution.path, resolution.value));
+        const isUnknownLike = isFusionUnknownValue(normalizeFusionResolutionValue(resolution.path, resolution.value));
         if (!isUnknownLike && !candidateSet.has(normalizedValue) && !hasDeterministicInference) {
           continue;
         }
@@ -4540,10 +4548,10 @@ Output schema:
     const appliedPaths: string[] = [];
 
     for (const resolution of resolutions) {
-      const current = this.getEnrichmentFieldByPath(next, resolution.path);
+      const current = getEnrichmentFieldByPath(next, resolution.path);
       if (!current) continue;
-      const normalized = this.normalizeFusionResolutionValue(resolution.path, resolution.value);
-      const isUnknown = this.isFusionUnknownValue(normalized);
+      const normalized = normalizeFusionResolutionValue(resolution.path, resolution.value);
+      const isUnknown = isFusionUnknownValue(normalized);
       if (!isUnknown && (!Array.isArray(resolution.evidence_refs) || resolution.evidence_refs.length === 0)) {
         continue;
       }
@@ -4572,7 +4580,7 @@ Output schema:
         sourceRef: sourceRef || undefined,
         round: 7,
       });
-      this.setEnrichmentFieldByPath(next, resolution.path, updated);
+      setEnrichmentFieldByPath(next, resolution.path, updated);
       appliedCount += 1;
       appliedPaths.push(resolution.path);
     }
@@ -4580,152 +4588,7 @@ Output schema:
     return { sections: next, appliedCount, appliedPaths };
   }
 
-  private getEnrichmentFieldByPath(
-    sections: IterativeEnrichmentSections,
-    path: string
-  ): EnrichmentField<unknown> | null {
-    const [section, key] = path.split('.');
-    if (!section || !key) return null;
-    const sec = (sections as any)[section];
-    if (!sec || typeof sec !== 'object') return null;
-    return (sec as any)[key] || null;
-  }
 
-  private setEnrichmentFieldByPath(
-    sections: IterativeEnrichmentSections,
-    path: string,
-    field: EnrichmentField<any>
-  ): void {
-    const [section, key] = path.split('.');
-    if (!section || !key) return;
-    const sec = (sections as any)[section];
-    if (!sec || typeof sec !== 'object') return;
-    (sec as any)[key] = field;
-  }
-
-  private normalizeFusionResolutionValue(path: string, value: unknown): unknown {
-    if (value === null || value === undefined) return 'unknown';
-    const raw = typeof value === 'string' ? value.trim() : value;
-    const str = typeof raw === 'string' ? raw : '';
-    if (!str && typeof raw !== 'string') return raw;
-
-    if (path === 'identity.account_status') {
-      const v = str.toLowerCase();
-      if (['enabled', 'locked', 'disabled', 'unknown'].includes(v)) return v;
-      if (v.includes('disable')) return 'disabled';
-      if (v.includes('lock')) return 'locked';
-      if (v.includes('enable') || v.includes('active')) return 'enabled';
-      return 'unknown';
-    }
-    if (path === 'identity.mfa_state') {
-      const v = str.toLowerCase();
-      if (['enrolled', 'not_enrolled', 'unknown'].includes(v)) return v;
-      if (v.includes('not') || v.includes('disable')) return 'not_enrolled';
-      if (v.includes('enroll') || v.includes('enabled')) return 'enrolled';
-      return 'unknown';
-    }
-    if (path === 'endpoint.device_type') {
-      const v = str.toLowerCase();
-      if (['desktop', 'laptop', 'mobile', 'unknown'].includes(v)) return v;
-      if (/(notebook|laptop)/.test(v)) return 'laptop';
-      if (/(iphone|ipad|android|mobile)/.test(v)) return 'mobile';
-      if (/(desktop|workstation|pc)/.test(v)) return 'desktop';
-      return 'unknown';
-    }
-    if (path === 'network.vpn_state') {
-      const v = str.toLowerCase();
-      if (['connected', 'disconnected', 'unknown'].includes(v)) return v;
-      if (/(connected|up|established)/.test(v)) return 'connected';
-      if (/(disconnected|down|not connected)/.test(v)) return 'disconnected';
-      return 'unknown';
-    }
-    if (path === 'network.location_context') {
-      const v = str.toLowerCase();
-      if (['office', 'remote', 'unknown'].includes(v)) return v;
-      if (/(office|onsite|on-site|site)/.test(v)) return 'office';
-      if (/(remote|home|vpn)/.test(v)) return 'remote';
-      return 'unknown';
-    }
-    return typeof raw === 'string' ? str || 'unknown' : raw;
-  }
-
-  private isFusionUnknownValue(value: unknown): boolean {
-    if (value === null || value === undefined) return true;
-    if (typeof value === 'string') {
-      const v = value.trim().toLowerCase();
-      return !v || v === 'unknown' || v === 'n/a' || v === 'null';
-    }
-    return false;
-  }
-
-  private computeEnrichmentCoverage(
-    records: Array<{ path: string; field: EnrichmentField<unknown> }>
-  ): IterativeEnrichmentProfile['coverage'] {
-    const total = records.length || 1;
-    const confirmed = records.filter((record) => record.field.status === 'confirmed').length;
-    const inferred = records.filter((record) => record.field.status === 'inferred').length;
-    const unknown = records.filter((record) => record.field.status === 'unknown').length;
-    const conflict = records.filter((record) => record.field.status === 'conflict').length;
-    return {
-      total,
-      confirmed,
-      inferred,
-      unknown,
-      conflict,
-      completion_ratio: Number(((confirmed + inferred) / total).toFixed(3)),
-    };
-  }
-
-  private buildEnrichmentRounds(
-    records: Array<{ path: string; field: EnrichmentField<unknown> }>,
-    sourceFindings: SourceFinding[]
-  ): IterativeEnrichmentProfile['rounds'] {
-    const maxRound = Math.max(
-      1,
-      ...records.map((record) => Number(record.field.round || 1)),
-      ...sourceFindings.map((finding) => Number(finding.round || 0))
-    );
-    const rounds: IterativeEnrichmentProfile['rounds'] = [];
-    for (let round = 1; round <= maxRound; round += 1) {
-      const roundRecords = records.filter((record) => Number(record.field.round || 1) === round);
-      const roundFindings = sourceFindings.filter((finding) => Number(finding.round || 0) === round);
-      if (roundRecords.length === 0 && roundFindings.length === 0) {
-        continue;
-      }
-      const confirmed = roundRecords
-        .filter((record) => record.field.status === 'confirmed')
-        .map((record) => record.path);
-      const inferred = roundRecords
-        .filter((record) => record.field.status === 'inferred')
-        .map((record) => record.path);
-      const unknown = roundRecords
-        .filter((record) => record.field.status === 'unknown')
-        .map((record) => record.path);
-      rounds.push({
-        round,
-        label: this.roundLabel(round),
-        sources_consulted: [...new Set(roundFindings.map((finding) => finding.source))],
-        new_fields_confirmed: confirmed,
-        new_fields_inferred: inferred,
-        new_fields_unknown: unknown,
-        gain_count: confirmed.length + inferred.length,
-      });
-    }
-    return rounds;
-  }
-
-  private roundLabel(round: number): string {
-    if (round === 1) return 'intake';
-    if (round === 2) return 'itglue';
-    if (round === 3) return 'ninja';
-    if (round === 4) return 'history_correlation';
-    if (round === 5) return 'itglue_refinement';
-    if (round === 6) return 'ninja_refinement';
-    if (round === 7) return 'cross_source_fusion';
-    if (round === 8) return 'history_correlation_broad';
-    if (round === 9) return 'final_refinement_verify_backfill';
-    return `round_${round}`;
-  }
 
   // ML & Extraction heuristics extracted to EnrichmentEngine
 
@@ -4970,7 +4833,7 @@ Output schema:
     companyName?: string;
     terms: string[];
   }): Promise<RelatedCase[]> {
-    const normalizedTerms = this.normalizeHistoryTerms(input.terms);
+    const normalizedTerms = normalizeHistoryTerms(input.terms);
     if (normalizedTerms.length === 0) return [];
     try {
       const rows = await query<{
@@ -5007,7 +4870,7 @@ Output schema:
       const scored = rows
         .map((row) => {
           const haystack = `${row.ticket_id} ${row.symptom_text} ${row.resolution_text}`.toLowerCase();
-          const match = this.scoreHistoryCandidate(haystack, normalizedTerms);
+          const match = scoreHistoryCandidate(haystack, normalizedTerms);
           return {
             row,
             score: match.score,
@@ -5039,7 +4902,7 @@ Output schema:
       });
       if (broad.length > 0) return broad.slice(0, 3);
 
-      const keyword = this.pickHistoryKeyword(terms);
+      const keyword = pickHistoryKeyword(terms);
       const fallback = await this.findRelatedCasesBroad({
         ...(orgId ? { orgId } : {}),
         ...(!orgId && companyName ? { companyName } : {}),
@@ -5135,7 +4998,7 @@ Output schema:
   }): string[] {
     const updatedPaths: string[] = [];
     const patchIfBetter = (path: string, nextField: EnrichmentField<any>) => {
-      const current = this.getEnrichmentFieldByPath(input.sections, path);
+      const current = getEnrichmentFieldByPath(input.sections, path);
       if (!current) return;
       const nextUnknown = nextField.status === 'unknown' || Number(nextField.confidence || 0) <= 0;
       if (nextUnknown) return;
@@ -5145,7 +5008,7 @@ Output schema:
         Number(current.confidence || 0) < 0.5;
       const improves = currentWeak || Number(nextField.confidence || 0) > Number(current.confidence || 0) + 0.05;
       if (!improves) return;
-      this.setEnrichmentFieldByPath(input.sections, path, nextField);
+      setEnrichmentFieldByPath(input.sections, path, nextField);
       updatedPaths.push(path);
     };
 
@@ -5380,7 +5243,7 @@ Output schema:
         round: Math.max(8, Number(record.field.round || 1)),
         observedAt: record.field.observed_at,
       });
-      this.setEnrichmentFieldByPath(next, record.path, adjustedField);
+      setEnrichmentFieldByPath(next, record.path, adjustedField);
       fieldAdjustments.push({
         path: record.path,
         action,
@@ -5471,11 +5334,11 @@ return false;
   }
 
   private shouldPreferCompanyCandidateOverIntake(intakeCompany: string, candidateCompany: string): boolean {
-  const intake = this.normalizeName(String(intakeCompany || ''));
-  const candidate = this.normalizeName(String(candidateCompany || ''));
+  const intake = normalizeName(String(intakeCompany || ''));
+  const candidate = normalizeName(String(candidateCompany || ''));
   if (!intake || !candidate) return false;
-  if (!this.isLikelyDomainDerivedCompanyLabel(intake)) return false;
-  if (this.isLikelyDomainDerivedCompanyLabel(candidate)) return false;
+  if (!isLikelyDomainDerivedCompanyLabel(intake)) return false;
+  if (isLikelyDomainDerivedCompanyLabel(candidate)) return false;
 
   const candidateLooksDisplayReady =
     /[\s&.,()'-]/.test(candidate) || /\b(inc|llc|ltd|corp|corporation|co)\b/i.test(candidate);
@@ -5485,12 +5348,12 @@ return false;
 }
 
   private selectPreferredCompanyName(input: { intakeCompany: string; inferredCompany: string }): string {
-  const intake = this.normalizeName(String(input.intakeCompany || ''));
-  const inferred = this.normalizeName(String(input.inferredCompany || ''));
-  if (this.shouldPreferCompanyCandidateOverIntake(intake, inferred)) {
+  const intake = normalizeName(String(input.intakeCompany || ''));
+  const inferred = normalizeName(String(input.inferredCompany || ''));
+  if (shouldPreferCompanyCandidateOverIntake(intake, inferred)) {
     return inferred;
   }
-  return this.normalizeName(intake || inferred || '');
+  return normalizeName(intake || inferred || '');
 }
 
   private capitalize(value: string): string {
@@ -5513,7 +5376,7 @@ return false;
   ];
   for (const pattern of bodyPatterns) {
     const match = raw.match(pattern);
-    const candidate = this.normalizeName(String(match?.[1] || ''))
+    const candidate = normalizeName(String(match?.[1] || ''))
       .replace(/\s+/g, ' ')
       .replace(/\b(we will attend|the details of the ticket are listed below)\b[\s\S]*$/i, '')
       .trim()
@@ -5523,7 +5386,7 @@ return false;
     }
   }
 
-  const domains = this.extractEmailDomains(text || '');
+  const domains = extractEmailDomains(text || '');
   if (!domains.length) return '';
 
   const domain = String(domains[0] || '').toLowerCase();
@@ -5566,7 +5429,7 @@ return false;
   return normalized
     .split(' ')
     .filter(Boolean)
-    .map((part) => this.capitalize(part))
+    .map((part) => capitalize(part))
     .join(' ');
 }
 
@@ -5605,8 +5468,8 @@ return false;
   method: 'llm' | 'deterministic_fallback';
   confidence: number;
 } > {
-  const narrative = this.buildTicketNarrative(ticket);
-  const fallback = this.normalizeTicketDeterministically(ticket.title || '', narrative);
+  const narrative = buildTicketNarrative(ticket);
+  const fallback = normalizeTicketDeterministically(ticket.title || '', narrative);
 
   try {
     const prompt = `Normalize this IT support ticket text and return ONLY valid JSON.
@@ -5638,13 +5501,13 @@ Ticket text:
 """${narrative.slice(0, 12000)}"""`;
 
     const llm = await callLLM(prompt);
-    const parsed = this.extractJsonObject(llm.content);
+    const parsed = extractJsonObject(llm.content);
     const title = String(parsed?.title || '').trim();
-    const descriptionCanonical = this.postProcessCanonicalTicketText(String(parsed?.description_canonical || ''));
-    let descriptionUi = this.postProcessUiTicketText(String(parsed?.description_ui || ''));
-    const requesterName = this.normalizeName(String(parsed?.requester_name || '').trim());
+    const descriptionCanonical = postProcessCanonicalTicketText(String(parsed?.description_canonical || ''));
+    let descriptionUi = postProcessUiTicketText(String(parsed?.description_ui || ''));
+    const requesterName = normalizeName(String(parsed?.requester_name || '').trim());
     const requesterEmail = String(parsed?.requester_email || '').trim().toLowerCase();
-    const affectedUserName = this.normalizeName(String(parsed?.affected_user_name || '').trim());
+    const affectedUserName = normalizeName(String(parsed?.affected_user_name || '').trim());
     const affectedUserEmail = String(parsed?.affected_user_email || '').trim().toLowerCase();
     const organizationHint = String(parsed?.organization_hint || '').trim();
     const deviceHints = Array.isArray(parsed?.device_hints) ? parsed.device_hints.map(String) : [];
@@ -5652,7 +5515,7 @@ Ticket text:
     const technologyFacets = Array.isArray(parsed?.technology_facets) ? parsed.technology_facets.map(String) : [];
     const confidenceRaw = Number(parsed?.confidence);
     const confidence = Number.isFinite(confidenceRaw) ? Math.max(0, Math.min(1, confidenceRaw)) : 0.75;
-    descriptionUi = this.guardTicketUiRoleAssignment({
+    descriptionUi = guardTicketUiRoleAssignment({
       descriptionUi,
       requesterName,
       ticketRequester: ticket.requester || '',
@@ -5661,11 +5524,11 @@ Ticket text:
     });
 
     if(descriptionCanonical.length >= 10 || descriptionUi.length >= 10) {
-  const canonicalRequesterEmail = requesterEmail || this.extractFirstEmail(ticket.requester || '') || this.extractFirstEmail(narrative);
-  const canonicalRequesterName = requesterName || this.normalizeName(ticket.requester || '') || '';
+  const canonicalRequesterEmail = requesterEmail || extractFirstEmail(ticket.requester || '') || extractFirstEmail(narrative);
+  const canonicalRequesterName = requesterName || normalizeName(ticket.requester || '') || '';
   const canonicalAffectedName = affectedUserName || canonicalRequesterName || '';
   const canonicalAffectedEmail = affectedUserEmail || canonicalRequesterEmail || '';
-  const canonicalDisplayText = descriptionCanonical || this.postProcessCanonicalTicketText(fallback.descriptionClean);
+  const canonicalDisplayText = descriptionCanonical || postProcessCanonicalTicketText(fallback.descriptionClean);
   let descriptionDisplayMarkdown = '';
   const strictFormat = await this.formatDisplayMarkdownVerbatimWithLLM(canonicalDisplayText).catch(() => '');
   if (this.isDisplayMarkdownVerbatimEnough(canonicalDisplayText, strictFormat)) {
@@ -5676,8 +5539,8 @@ Ticket text:
     descriptionCanonical: canonicalDisplayText,
     descriptionUi:
       descriptionUi ||
-      this.guardTicketUiRoleAssignment({
-        descriptionUi: this.postProcessUiTicketText(fallback.descriptionClean),
+      guardTicketUiRoleAssignment({
+        descriptionUi: postProcessUiTicketText(fallback.descriptionClean),
         requesterName: canonicalRequesterName,
         ticketRequester: ticket.requester || '',
         canonicalText: descriptionCanonical || fallback.descriptionClean,
@@ -5705,15 +5568,15 @@ Ticket text:
 
 return {
   ...fallback,
-  descriptionCanonical: this.postProcessCanonicalTicketText(fallback.descriptionClean),
-  descriptionUi: this.guardTicketUiRoleAssignment({
-    descriptionUi: this.postProcessUiTicketText(fallback.descriptionClean),
+  descriptionCanonical: postProcessCanonicalTicketText(fallback.descriptionClean),
+  descriptionUi: guardTicketUiRoleAssignment({
+    descriptionUi: postProcessUiTicketText(fallback.descriptionClean),
     requesterName: fallback.requesterName,
     ticketRequester: ticket.requester || '',
     canonicalText: fallback.descriptionClean,
     narrative,
   }),
-  descriptionDisplayMarkdown: this.postProcessCanonicalTicketText(fallback.descriptionClean),
+  descriptionDisplayMarkdown: postProcessCanonicalTicketText(fallback.descriptionClean),
   descriptionDisplayFormat: 'plain',
   organizationHint: '',
   deviceHints: [],
@@ -5740,8 +5603,8 @@ return {
     .replace(/\s+/g, ' ')
     .trim();
 
-  const requesterEmail = this.extractFirstEmail(cleaned) || '';
-  const requesterName = this.normalizeName(
+  const requesterEmail = extractFirstEmail(cleaned) || '';
+  const requesterName = normalizeName(
     String(cleaned.match(/(?:first\s*name|firstname)\s*[:\-]\s*([a-zA-Z]+)\b/i)?.[1] || '') +
     ' ' +
     String(cleaned.match(/(?:last\s*name|lastname)\s*[:\-]\s*([a-zA-Z]+)\b/i)?.[1] || '')
@@ -5813,7 +5676,7 @@ return {
     .replace(/\b(you can access your service ticket|sincerely|caution)\b[\s\S]*$/i, '')
     .trim();
 
-  return this.formatCanonicalTicketSignature(text);
+  return formatCanonicalTicketSignature(text);
 }
 
   private postProcessDisplayMarkdownTicketText(value: string): string {
@@ -5878,12 +5741,12 @@ CRITICAL RULES (strict):
 Text:
 """${text.slice(0, 12000)}"""`;
   const llm = await callLLM(prompt);
-  return this.postProcessDisplayMarkdownTicketText(String(llm.content || ''));
+  return postProcessDisplayMarkdownTicketText(String(llm.content || ''));
 }
 
   private isDisplayMarkdownVerbatimEnough(sourceText: string, markdownText: string): boolean {
-  const source = this.normalizeDisplayTextForVerbatimGuard(sourceText);
-  const rendered = this.normalizeDisplayTextForVerbatimGuard(this.stripMarkdownForDisplayGuard(markdownText));
+  const source = normalizeDisplayTextForVerbatimGuard(sourceText);
+  const rendered = normalizeDisplayTextForVerbatimGuard(stripMarkdownForDisplayGuard(markdownText));
   if (!source || !rendered) return false;
 
   const sourceTokens = source.split(' ').filter(Boolean);
@@ -5960,14 +5823,14 @@ Text:
   const text = String(value || '').trim();
   if (!text) return '';
 
-  const signatureStart = this.detectLikelySignatureStart(text);
+  const signatureStart = detectLikelySignatureStart(text);
   if (signatureStart <= 0 || signatureStart >= text.length) {
     return text.replace(/\s+/g, ' ').trim();
   }
 
   const body = text.slice(0, signatureStart).replace(/\s+/g, ' ').trim();
   const signature = text.slice(signatureStart).trim();
-  const formattedSignature = this.formatSignatureBlock(signature);
+  const formattedSignature = formatSignatureBlock(signature);
   if (!formattedSignature) return body;
   if (!body) return formattedSignature;
   return `${body}\n\n${formattedSignature}`;
@@ -5987,7 +5850,7 @@ Text:
   ];
   for (const pattern of signoffPatterns) {
     const match = pattern.exec(lower);
-    if (match && this.signatureSignalCount(normalized.slice(match.index)) >= 2) {
+    if (match && signatureSignalCount(normalized.slice(match.index)) >= 2) {
       return match.index;
     }
   }
@@ -6013,7 +5876,7 @@ Text:
     start = contactIdx;
   }
 
-  return this.signatureSignalCount(normalized.slice(start)) >= 2 ? start : -1;
+  return signatureSignalCount(normalized.slice(start)) >= 2 ? start : -1;
 }
 
   private signatureSignalCount(text: string): number {
@@ -6091,7 +5954,7 @@ Text:
   let ui = String(input.descriptionUi || '').trim();
   if (!ui) return ui;
 
-  const requesterName = this.normalizeName(input.requesterName || input.ticketRequester || '').trim();
+  const requesterName = normalizeName(input.requesterName || input.ticketRequester || '').trim();
   if (!requesterName) return ui;
 
   const requesterLower = requesterName.toLowerCase();
@@ -6182,7 +6045,7 @@ Text:
 }
 
   private buildRequesterTokens(value: string): string[] {
-  const normalized = this.normalizeName(value).toLowerCase();
+  const normalized = normalizeName(value).toLowerCase();
   if (!normalized) return [];
   return normalized
     .split(/[\s@._-]+/)
@@ -6326,9 +6189,9 @@ return signals;
 }
 
   private scoreOrgNameMatch(name: string, candidate: string, candidateShortName ?: string): number {
-  const rawN = this.normalizeName(name).toLowerCase();
+  const rawN = normalizeName(name).toLowerCase();
   const variants = [candidate, candidateShortName || '']
-    .map((v) => this.normalizeName(String(v || '')))
+    .map((v) => normalizeName(String(v || '')))
     .filter(Boolean);
   if (!rawN || variants.length === 0) return 0;
 
@@ -6365,8 +6228,8 @@ return signals;
     if (!rawC) continue;
     if (rawC === rawN) return 1;
 
-    const n = this.normalizeOrgNameForMatch(rawN);
-    const c = this.normalizeOrgNameForMatch(rawC);
+    const n = normalizeOrgNameForMatch(rawN);
+    const c = normalizeOrgNameForMatch(rawC);
     if (!n || !c) continue;
     if (c === n) return 0.99;
     if (c.includes(n) || n.includes(c)) {
@@ -6408,7 +6271,7 @@ return signals;
 }
 
   private fuzzyMatch(name: string, candidate: string): boolean {
-  return this.scoreOrgNameMatch(name, candidate) >= 0.8;
+  return scoreOrgNameMatch(name, candidate) >= 0.8;
 }
 
   private extractEmailDomains(text: string): string[] {
@@ -6429,7 +6292,7 @@ return signals;
   const ranked = orgs
     .map((o: any) => ({
       org: o,
-      score: this.scoreOrgNameMatch(companyName, String(o?.name || '')),
+      score: scoreOrgNameMatch(companyName, String(o?.name || '')),
     }))
     .filter((r) => r.score >= 0.8)
     .sort((a, b) => b.score - a.score);
@@ -6446,17 +6309,17 @@ return signals;
   const rankedByName = orgs
     .map((o: any) => ({
       org: o,
-      score: this.scoreOrgNameMatch(
+      score: scoreOrgNameMatch(
         companyName,
-        String(this.itgAttr(o?.attributes || {}, 'name') || ''),
-        String(this.itgAttr(o?.attributes || {}, 'short_name') || '')
+        String(itgAttr(o?.attributes || {}, 'name') || ''),
+        String(itgAttr(o?.attributes || {}, 'short_name') || '')
       ),
     }))
     .filter((r) => r.score >= 0.8)
     .sort((a, b) => b.score - a.score);
   const byName = rankedByName[0]?.org;
   if(byName) {
-    return { id: String(byName.id), name: String(this.itgAttr(byName?.attributes || {}, 'name') || companyName) };
+    return { id: String(byName.id), name: String(itgAttr(byName?.attributes || {}, 'name') || companyName) };
   }
 
     const ignoreDomainSuffixes = [
@@ -6469,24 +6332,24 @@ return signals;
     'protection.outlook.com',
     'refreshtech.com',
   ];
-  const domains = this.extractEmailDomains(hintText || '').filter(
+  const domains = extractEmailDomains(hintText || '').filter(
     (d) => !ignoreDomainSuffixes.some((suffix) => d === suffix || d.endsWith(`.${suffix}`))
   );
   if(domains.length === 0) return null;
 
   const rankedByDomain = orgs
     .map((o: any) => {
-      const primaryDomain = String(this.itgAttr(o?.attributes || {}, 'primary_domain') || '').toLowerCase();
+      const primaryDomain = String(itgAttr(o?.attributes || {}, 'primary_domain') || '').toLowerCase();
       const domainScore =
         primaryDomain && domains.some((d) => d === primaryDomain)
           ? 1
           : primaryDomain && domains.some((d) => d.endsWith(`.${primaryDomain}`) || primaryDomain.endsWith(`.${d}`))
             ? 0.8
             : 0;
-      const nameScore = this.scoreOrgNameMatch(
+      const nameScore = scoreOrgNameMatch(
         companyName,
-        String(this.itgAttr(o?.attributes || {}, 'name') || ''),
-        String(this.itgAttr(o?.attributes || {}, 'short_name') || '')
+        String(itgAttr(o?.attributes || {}, 'name') || ''),
+        String(itgAttr(o?.attributes || {}, 'short_name') || '')
       );
       return { org: o, score: domainScore > 0 ? domainScore * 0.75 + nameScore * 0.25 : 0 };
     })
@@ -6494,7 +6357,7 @@ return signals;
     .sort((a, b) => b.score - a.score);
 
   const byDomain = rankedByDomain[0]?.org;
-  return byDomain ? { id: String(byDomain.id), name: String(this.itgAttr(byDomain?.attributes || {}, 'name') || companyName) } : null;
+  return byDomain ? { id: String(byDomain.id), name: String(itgAttr(byDomain?.attributes || {}, 'name') || companyName) } : null;
 }
 }
 

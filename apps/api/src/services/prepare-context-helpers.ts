@@ -241,7 +241,7 @@ export function extractEmails(text: string): string[] {
 
 export function extractFirstEmail(text: string): string | null {
     const emails = extractEmails(text);
-    return emails.length > 0 ? emails[0] : null;
+    return emails.length > 0 ? emails[0] || null : null;
 }
 
 export function inferCompanyNameFromTicketText(text: string): string {
@@ -790,6 +790,7 @@ export function generateNameAliases(name: string): string[] {
     if (parts.length < 2) return [raw];
     const first = parts[0];
     const last = parts[parts.length - 1];
+    if (!first || !last) return [raw];
     return [
         raw,
         `${first} ${last}`,
@@ -831,3 +832,59 @@ export function scoreHistoryCandidate(haystack: string, terms: string[]): { scor
     const score = matched.length / terms.length;
     return { score, matchedTerms: matched };
 }
+
+export function normalizeFusionResolutionValue(path: string, value: unknown): unknown {
+    if (value === null || value === undefined) return 'unknown';
+    const raw = typeof value === 'string' ? value.trim() : value;
+    const str = typeof raw === 'string' ? raw : '';
+    if (!str && typeof raw !== 'string') return raw;
+
+    if (path === 'identity.account_status') {
+        const v = str.toLowerCase();
+        if (['enabled', 'locked', 'disabled', 'unknown'].includes(v)) return v;
+        if (v.includes('disable')) return 'disabled';
+        if (v.includes('lock')) return 'locked';
+        if (v.includes('enable') || v.includes('active')) return 'enabled';
+        return 'unknown';
+    }
+    if (path === 'identity.mfa_state') {
+        const v = str.toLowerCase();
+        if (['enrolled', 'not_enrolled', 'unknown'].includes(v)) return v;
+        if (v.includes('not') || v.includes('disable')) return 'not_enrolled';
+        if (v.includes('enroll') || v.includes('enabled')) return 'enrolled';
+        return 'unknown';
+    }
+    if (path === 'endpoint.device_type') {
+        const v = str.toLowerCase();
+        if (['desktop', 'laptop', 'mobile', 'unknown'].includes(v)) return v;
+        if (/(notebook|laptop)/.test(v)) return 'laptop';
+        if (/(iphone|ipad|android|mobile)/.test(v)) return 'mobile';
+        if (/(desktop|workstation|pc)/.test(v)) return 'desktop';
+        return 'unknown';
+    }
+    if (path === 'network.vpn_state') {
+        const v = str.toLowerCase();
+        if (['connected', 'disconnected', 'unknown'].includes(v)) return v;
+        if (/(connected|up|established)/.test(v)) return 'connected';
+        if (/(disconnected|down|not connected)/.test(v)) return 'disconnected';
+        return 'unknown';
+    }
+    if (path === 'network.location_context') {
+        const v = str.toLowerCase();
+        if (['office', 'remote', 'unknown'].includes(v)) return v;
+        if (/(office|onsite|on-site|site)/.test(v)) return 'office';
+        if (/(remote|home|vpn)/.test(v)) return 'remote';
+        return 'unknown';
+    }
+    return typeof raw === 'string' ? str || 'unknown' : raw;
+}
+
+export function isFusionUnknownValue(value: unknown): boolean {
+    if (value === null || value === undefined) return true;
+    if (typeof value === 'string') {
+        const v = value.trim().toLowerCase();
+        return !v || v === 'unknown' || v === 'n/a' || v === 'null';
+    }
+    return false;
+}
+

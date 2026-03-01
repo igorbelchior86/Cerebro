@@ -9,12 +9,21 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTranslations } from 'next-intl';
 import { flushSync } from 'react-dom';
 import { usePathname, useSearchParams } from 'next/navigation';
+import {
+  type AutotaskPicklistOption,
+  getWorkflowCommandStatus,
+  listAutotaskTicketFieldOptionsByField,
+  mapHttpErrorToFrontendState,
+  submitWorkflowCommand,
+} from '@/lib/p0-ui-client';
 
 export interface ActiveTicket {
   id: string;
   ticket_id: string;
   ticket_number?: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
+  ticket_status_value?: string | number;
+  ticket_status_label?: string;
   priority?: 'P1' | 'P2' | 'P3' | 'P4';
   title?: string;
   description?: string;
@@ -36,6 +45,7 @@ export interface ActiveTicket {
   assigned_resource_id?: number | string;
   assigned_resource_name?: string;
   assigned_resource_email?: string;
+  isDraft?: boolean;
 }
 
 interface ChatSidebarProps {
@@ -44,6 +54,8 @@ interface ChatSidebarProps {
   onSelectTicket?: (ticketId: string) => void;
   onCreateTicket?: () => void;
   isLoading?: boolean;
+  draftTicket?: ActiveTicket;
+  onDraftStatusChange?: (status: { id: number; name: string }) => void;
 }
 
 interface AutotaskQueueCatalogItem {
@@ -169,7 +181,15 @@ function formatCreatedAt(createdAt?: string, age?: string, justNowFallback = 'ju
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, onCreateTicket, isLoading }: ChatSidebarProps) {
+export default function ChatSidebar({
+  tickets,
+  currentTicketId,
+  onSelectTicket,
+  onCreateTicket,
+  isLoading,
+  draftTicket,
+  onDraftStatusChange,
+}: ChatSidebarProps) {
   const t = useTranslations('ChatSidebar');
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -186,6 +206,13 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   const [hideSuppressed, setHideSuppressed] = useState(true);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [clock, setClock] = useState('');
+  const [statusCatalog, setStatusCatalog] = useState<AutotaskPicklistOption[]>([]);
+  const [statusEditorTarget, setStatusEditorTarget] = useState<ActiveTicket | null>(null);
+  const [statusEditorQuery, setStatusEditorQuery] = useState('');
+  const [statusEditorLoading, setStatusEditorLoading] = useState(false);
+  const [statusEditorSaving, setStatusEditorSaving] = useState(false);
+  const [statusEditorError, setStatusEditorError] = useState('');
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, { id: number; label: string }>>({});
   const listRef = useRef<HTMLDivElement | null>(null);
   const restoredRef = useRef(false);
 
@@ -271,6 +298,109 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   }, []);
 
   useEffect(() => {
+    if (!statusEditorTarget && tickets.length === 0 && !draftTicket) return;
+    if (statusCatalog.length > 0) return;
+
+    let ignore = false;
+    setStatusEditorLoading(true);
+    setStatusEditorError('');
+
+    void (async () => {
+      try {
+        const rows = await listAutotaskTicketFieldOptionsByField('status');
+        if (!ignore) setStatusCatalog(rows);
+      } catch (err) {
+        if (!ignore) {
+          const mapped = mapHttpErrorToFrontendState(err, 'Unable to load ticket statuses');
+          setStatusEditorError(`${mapped.summary}: ${mapped.detail}`);
+        }
+      } finally {
+        if (!ignore) setStatusEditorLoading(false);
+      }
+    })();
+
+    return () => {
+      ignore = true;
+    };
+  }, [draftTicket, statusCatalog.length, statusEditorTarget, tickets.length]);
+
+  const resolveTicketStatusLabel = useCallback((ticket: ActiveTicket): string => {
+    const override = statusOverrides[ticket.id];
+    if (override?.label) return override.label;
+
+    const explicit = normalizeText(ticket.ticket_status_label, '');
+    if (explicit) return explicit;
+
+    const rawText = String(ticket.ticket_status_value ?? '').trim();
+    if (!rawText) return ticket.isDraft ? 'New' : 'Unknown';
+
+    const numeric = Number.parseInt(rawText, 10);
+    if (Number.isFinite(numeric)) {
+      const matched = statusCatalog.find((option) => option.id === numeric);
+      if (matched?.label) return matched.label;
+    }
+    return rawText;
+  }, [statusCatalog, statusOverrides]);
+
+  const openStatusEditor = (ticket: ActiveTicket) => {
+    setStatusEditorTarget(ticket);
+    setStatusEditorQuery('');
+    setStatusEditorError('');
+  };
+
+  const closeStatusEditor = () => {
+    setStatusEditorTarget(null);
+    setStatusEditorQuery('');
+    setStatusEditorError('');
+    setStatusEditorSaving(false);
+  };
+
+  const handleSelectStatus = async (option: AutotaskPicklistOption) => {
+    if (!statusEditorTarget) return;
+    if (statusEditorTarget.isDraft) {
+      onDraftStatusChange?.({ id: option.id, name: option.label });
+      closeStatusEditor();
+      return;
+    }
+
+    if (statusEditorSaving) return;
+    setStatusEditorSaving(true);
+    setStatusEditorError('');
+    try {
+      const command = await submitWorkflowCommand({
+        command_type: 'update_status',
+        ticket_id: statusEditorTarget.ticket_id,
+        payload: { status: option.id },
+        idempotency_key: `sidebar-status-${statusEditorTarget.ticket_id}-${option.id}-${Date.now()}`,
+        auto_process: true,
+      });
+      const commandId = String((command as any)?.command_id || (command as any)?.command?.command_id || '').trim();
+      if (!commandId) throw new Error('Workflow command id missing');
+
+      let status = await getWorkflowCommandStatus(commandId);
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const normalized = String(status?.status || '').trim().toLowerCase();
+        if (normalized === 'completed' || normalized === 'failed' || normalized === 'dlq' || normalized === 'rejected') break;
+        await new Promise((resolve) => setTimeout(resolve, attempt < 4 ? 250 : 500));
+        status = await getWorkflowCommandStatus(commandId);
+      }
+
+      const normalized = String(status?.status || '').trim().toLowerCase();
+      if (normalized !== 'completed') {
+        const detail = String((status as any)?.last_error || '').trim();
+        throw new Error(detail || 'Status update is still processing or failed in Autotask.');
+      }
+
+      setStatusOverrides((prev) => ({ ...prev, [statusEditorTarget.id]: { id: option.id, label: option.label } }));
+      closeStatusEditor();
+    } catch (err) {
+      const mapped = mapHttpErrorToFrontendState(err, 'Unable to update ticket status');
+      setStatusEditorError(`${mapped.summary}: ${mapped.detail}`);
+      setStatusEditorSaving(false);
+    }
+  };
+
+  useEffect(() => {
     if (restoredRef.current || typeof window === 'undefined') return;
 
     const urlFilter = searchParams.get('sidebarFilter');
@@ -345,6 +475,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
     : null;
   const useDirectGlobalQueueSource = scope === 'global' && Number.isFinite(selectedGlobalQueueId);
   const listTickets = useDirectGlobalQueueSource ? globalQueueTickets : tickets;
+  const listDraftTicket = draftTicket ?? null;
   const listLoading = useDirectGlobalQueueSource ? globalQueueTicketsLoading : Boolean(isLoading);
   const suppressedCount = listTickets.filter((t) => Boolean(t.suppressed)).length;
   const ticketsBySuppression = hideSuppressed ? listTickets.filter((t) => !t.suppressed) : listTickets;
@@ -457,6 +588,8 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
               ticket_id: displayId || internalId,
               ...(row.ticket_number ? { ticket_number: normalizeText(row.ticket_number, displayId || internalId) } : {}),
               status,
+              ...(row.ticket_status_value !== undefined ? { ticket_status_value: row.ticket_status_value } : {}),
+              ...(row.ticket_status_label ? { ticket_status_label: normalizeText(row.ticket_status_label, '') } : {}),
               ...(row.priority ? { priority: row.priority } : {}),
               ...(row.title ? { title: row.title } : {}),
               ...(row.description ? { description: row.description } : {}),
@@ -543,6 +676,11 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
 
     return haystack.includes(normalizedSearch);
   }), [scopedTickets, scope, filter, normalizedSearch]);
+  const visibleTickets = listDraftTicket ? [listDraftTicket, ...visible] : visible;
+  const filteredStatusOptions = useMemo(() => {
+    const needle = statusEditorQuery.trim().toLowerCase();
+    return statusCatalog.filter((option) => !needle || option.label.toLowerCase().includes(needle));
+  }, [statusCatalog, statusEditorQuery]);
 
   return (
     <>
@@ -883,20 +1021,22 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
               onScroll={(e) => persistSidebarState(filter, (e.currentTarget as HTMLDivElement).scrollTop)}
               style={{ flex: 1, overflowY: 'auto', padding: '4px 10px 10px', display: 'flex', flexDirection: 'column', gap: '7px', position: 'relative', zIndex: 1 }}
             >
-              {listLoading && listTickets.length === 0 ? (
+              {listLoading && visibleTickets.length === 0 ? (
                 [1, 2].map((i) => <div key={i} style={{ height: '80px', borderRadius: '9px', background: 'var(--bg-card)', border: '1px solid var(--border)', opacity: 0.6 }} />)
-              ) : visible.length === 0 ? (
+              ) : visibleTickets.length === 0 ? (
                 <p style={{ marginTop: '20px', fontSize: '11px', color: 'var(--text-faint)', textAlign: 'center' }}>{t('noTickets')}</p>
-              ) : visible.map((ticket, idx) => {
+              ) : visibleTickets.map((ticket, idx) => {
                 const cfg = STATUS_CONFIG[ticket.status] ?? STATUS_CONFIG.pending;
                 const priority = ticket.priority ?? 'P3';
                 const isActive = currentTicketId === ticket.id;
+                const canSelectTicket = !ticket.isDraft;
                 const isSuppressed = Boolean(ticket.suppressed);
                 const suppressionLabel = normalizeText(ticket.suppression_reason_label ?? ticket.suppression_reason ?? '', t('suppressedReasonNoise'));
                 const normalized = {
                   priority,
                   id: normalizeText(ticket.ticket_number ?? ticket.ticket_id, ticket.id),
                   status: STATUS_LABEL[ticket.status] ?? 'PENDING',
+                  ticketStatus: resolveTicketStatusLabel(ticket),
                   title: normalizeTicketTitle(ticket.title, t('defaultIssue')),
                   company: normalizeText(ticket.company ?? ticket.org, t('unknownOrg')),
                   requester: normalizeText(ticket.requester ?? ticket.site, 'Unknown requester'),
@@ -905,13 +1045,17 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                 const createdAtLabel = formatCreatedAt(normalized.createdAt, ticket.age, t('justNow'));
 
                 return (
-                  <button type="button" key={ticket.id} onClick={() => { persistSidebarState(filter); onSelectTicket?.(ticket.id); }}
+                  <button type="button" key={ticket.id} onClick={() => {
+                    if (!canSelectTicket) return;
+                    persistSidebarState(filter);
+                    onSelectTicket?.(ticket.id);
+                  }}
                     className="animate-fadeIn"
                     style={{
                       position: 'relative',
                       padding: '12px 12px 12px',
                       borderRadius: '12px',
-                      cursor: 'pointer',
+                      cursor: canSelectTicket ? 'pointer' : 'default',
                       background: isActive ? 'var(--bg-card-active)' : 'var(--bg-card)',
                       border: `1px solid ${isActive ? 'var(--border-accent)' : 'var(--bento-outline)'}`,
                       boxShadow: isActive ? '0 0 0 1px var(--accent-muted), 0 10px 22px rgba(5,7,11,0.18)' : '0 6px 14px rgba(5,7,11,0.08)',
@@ -927,7 +1071,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                       opacity: isSuppressed && !isActive ? 0.88 : 1,
                     }}
                     onMouseEnter={(e) => {
-                      if (!isActive) {
+                      if (!isActive && canSelectTicket) {
                         (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card-hover)';
                         (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-accent)';
                         (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 10px 22px rgba(20,24,38,0.2)';
@@ -935,7 +1079,7 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                       }
                     }}
                     onMouseLeave={(e) => {
-                      if (!isActive) {
+                      if (!isActive && canSelectTicket) {
                         (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card)';
                         (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
                         (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 16px rgba(20,24,38,0.12)';
@@ -960,10 +1104,12 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                             {t('suppressedBadge')}
                           </span>
                         )}
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 8px', borderRadius: '999px', fontSize: '9px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}` }}>
-                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: cfg.dot, flexShrink: 0 }} />
-                          {normalized.status}
-                        </span>
+                        {!ticket.isDraft ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 8px', borderRadius: '999px', fontSize: '9px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: cfg.color, background: cfg.bg, border: `1px solid ${cfg.border}` }}>
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: cfg.dot, flexShrink: 0 }} />
+                            {normalized.status}
+                          </span>
+                        ) : null}
                       </div>
                     </div>
 
@@ -985,7 +1131,50 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
                         <MetaIcon type="company" />
                         {normalized.company}
                       </span>
-                      <span />
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          padding: '4px 8px',
+                          borderRadius: '999px',
+                          background: 'var(--bg-card-hover)',
+                          border: '1px solid var(--bento-outline)',
+                          color: 'var(--text-secondary)',
+                          fontSize: '9px',
+                          fontWeight: 700,
+                          letterSpacing: '0.04em',
+                        }}>
+                          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '92px' }}>{normalized.ticketStatus}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openStatusEditor(ticket);
+                            }}
+                            aria-label="Edit ticket status"
+                            title="Edit ticket status"
+                            style={{
+                              width: '16px',
+                              height: '16px',
+                              borderRadius: '999px',
+                              border: '1px solid var(--bento-outline)',
+                              background: 'var(--bg-panel)',
+                              color: 'var(--accent)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                              <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+                            </svg>
+                          </button>
+                        </span>
+                      </span>
                       <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right', display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
                         <MetaIcon type="user" />
                         {normalized.requester}
@@ -1010,6 +1199,119 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
           </div>
         </div>
       </aside>
+      {statusEditorTarget ? (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(8, 12, 20, 0.34)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 80,
+            padding: '18px',
+          }}
+          onClick={closeStatusEditor}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(560px, 100%)',
+              borderRadius: '22px',
+              border: '1px solid var(--bento-outline)',
+              background: 'var(--bg-bento-panel)',
+              boxShadow: '0 24px 60px rgba(8, 12, 20, 0.26)',
+              padding: '18px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '12px' }}>
+              <div>
+                <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+                  Edit Ticket Status
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Source: Autotask ticket status metadata
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeStatusEditor}
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '999px',
+                  border: '1px solid var(--bento-outline)',
+                  background: 'var(--bg-card)',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M18 6 6 18" />
+                  <path d="m6 6 12 12" />
+                </svg>
+              </button>
+            </div>
+            <input
+              type="text"
+              value={statusEditorQuery}
+              onChange={(e) => setStatusEditorQuery(e.target.value)}
+              placeholder="Type to search status..."
+              style={{
+                width: '100%',
+                height: '42px',
+                borderRadius: '14px',
+                border: '1px solid var(--bento-outline)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+                padding: '0 12px',
+                outline: 'none',
+                fontSize: '12px',
+                marginBottom: '12px',
+              }}
+            />
+            {statusEditorError ? (
+              <div style={{ color: '#EF4444', fontSize: '11px', lineHeight: 1.5, marginBottom: '10px' }}>
+                {statusEditorError}
+              </div>
+            ) : null}
+            <div style={{ maxHeight: '280px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {statusEditorLoading ? (
+                <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Loading ticket statuses...</div>
+              ) : filteredStatusOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => { void handleSelectStatus(option); }}
+                    disabled={statusEditorSaving}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '10px 12px',
+                      borderRadius: '12px',
+                      border: '1px solid var(--bento-outline)',
+                      background: 'var(--bg-card)',
+                      color: 'var(--text-primary)',
+                      cursor: statusEditorSaving ? 'wait' : 'pointer',
+                      fontSize: '11.5px',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              {!statusEditorLoading && filteredStatusOptions.length === 0 ? (
+                <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>No matching statuses.</div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

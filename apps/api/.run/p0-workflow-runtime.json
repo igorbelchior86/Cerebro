@@ -1457,6 +1457,113 @@
           "completed_at": "2026-02-27T18:24:52.427Z"
         }
       }
+    ],
+    [
+      "b5ce4fe5-a8de-4af4-a015-3e27a5dde3ae",
+      {
+        "command": {
+          "command_id": "b5ce4fe5-a8de-4af4-a015-3e27a5dde3ae",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "create",
+          "payload": {
+            "title": "New Test",
+            "description": "Testing Cerebro",
+            "company_id": 0,
+            "contact_id": 30684494,
+            "assignee_resource_id": 30684582
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "ui-draft-create-0-1772381071689",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "6c965e7c-565b-413b-b95e-76de7464b99a",
+            "command_id": "b5ce4fe5-a8de-4af4-a015-3e27a5dde3ae"
+          },
+          "requested_at": "2026-03-01T16:04:31.705Z"
+        },
+        "status": "processing",
+        "attempts": 0,
+        "max_attempts": 3,
+        "created_at": "2026-03-01T16:04:31.706Z",
+        "updated_at": "2026-03-01T16:04:31.713Z"
+      }
+    ],
+    [
+      "8d736bf7-8e78-4b35-aa6e-df214932eee2",
+      {
+        "command": {
+          "command_id": "8d736bf7-8e78-4b35-aa6e-df214932eee2",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "create",
+          "payload": {
+            "title": "Test ticket",
+            "description": "Testing Cerebro",
+            "company_id": 0,
+            "contact_id": 30684494,
+            "assignee_resource_id": 30684582
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "ui-draft-create-0-1772381105605",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "5791a8f6-9872-420c-a3a2-08c464f89a80",
+            "command_id": "8d736bf7-8e78-4b35-aa6e-df214932eee2"
+          },
+          "requested_at": "2026-03-01T16:05:05.621Z"
+        },
+        "status": "failed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-03-01T16:05:05.622Z",
+        "updated_at": "2026-03-01T16:05:06.612Z",
+        "last_error": "Autotask API error: 500 Internal Server Error - {\"errors\":[\"Missing Required Field: status. ; on record number [1].\"]}"
+      }
+    ],
+    [
+      "fbe69ad5-1294-482d-8dc0-1dbb66893449",
+      {
+        "command": {
+          "command_id": "fbe69ad5-1294-482d-8dc0-1dbb66893449",
+          "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+          "target_integration": "Autotask",
+          "command_type": "create",
+          "payload": {
+            "title": "Test ticket",
+            "description": "Testing Cerebro",
+            "company_id": 0,
+            "contact_id": 30684494,
+            "assignee_resource_id": 30684582
+          },
+          "actor": {
+            "kind": "user",
+            "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+            "origin": "api"
+          },
+          "idempotency_key": "ui-draft-create-0-1772381297105",
+          "audit_metadata": {},
+          "correlation": {
+            "trace_id": "9af5ceda-7921-4a01-aaa5-afbd2e610fb2",
+            "command_id": "fbe69ad5-1294-482d-8dc0-1dbb66893449"
+          },
+          "requested_at": "2026-03-01T16:08:17.119Z"
+        },
+        "status": "failed",
+        "attempts": 1,
+        "max_attempts": 3,
+        "created_at": "2026-03-01T16:08:17.119Z",
+        "updated_at": "2026-03-01T16:08:19.171Z",
+        "last_error": "Autotask API error: 500 Internal Server Error - {\"errors\":[\"Missing Required Field: status. ; on record number [1].\"]}"
+      }
     ]
   ],
   "commandsByIdempotency": [
@@ -1591,6 +1698,18 @@
     [
       "5b5f7e25-2396-4bec-a584-41352be7e876::ui-tech-T20260226.0033-30684582-1772216687284",
       "ec89857c-e48e-4d5a-b972-b651bbe5d3c6"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::ui-draft-create-0-1772381071689",
+      "b5ce4fe5-a8de-4af4-a015-3e27a5dde3ae"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::ui-draft-create-0-1772381105605",
+      "8d736bf7-8e78-4b35-aa6e-df214932eee2"
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::ui-draft-create-0-1772381297105",
+      "fbe69ad5-1294-482d-8dc0-1dbb66893449"
     ]
   ],
   "audits": [
@@ -6515,6 +6634,150 @@
           "correlates.ticket_metadata",
           "correlates.ticket_note_metadata"
         ]
+      }
+    },
+    {
+      "audit_id": "5d7426a7-49d6-4333-a3b4-a904bd17dad6",
+      "timestamp": "2026-03-01T16:04:31.709Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "6c965e7c-565b-413b-b95e-76de7464b99a",
+        "command_id": "b5ce4fe5-a8de-4af4-a015-3e27a5dde3ae"
+      },
+      "metadata": {
+        "command_type": "create",
+        "autotask_operation": "tickets.create",
+        "autotask_handler": "create",
+        "autotask_audit_action": "autotask.command.tickets.create",
+        "idempotency_key": "ui-draft-create-0-1772381071689",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "ec8289b0-b037-48fc-a924-5a128adfb5c7",
+      "timestamp": "2026-03-01T16:05:05.626Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "5791a8f6-9872-420c-a3a2-08c464f89a80",
+        "command_id": "8d736bf7-8e78-4b35-aa6e-df214932eee2"
+      },
+      "metadata": {
+        "command_type": "create",
+        "autotask_operation": "tickets.create",
+        "autotask_handler": "create",
+        "autotask_audit_action": "autotask.command.tickets.create",
+        "idempotency_key": "ui-draft-create-0-1772381105605",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "a4a85052-e53c-43c0-bb90-8ba74c5dbc54",
+      "timestamp": "2026-03-01T16:05:06.617Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.failed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket"
+      },
+      "result": "failure",
+      "reason": "Autotask API error: 500 Internal Server Error - {\"errors\":[\"Missing Required Field: status. ; on record number [1].\"]}",
+      "correlation": {
+        "trace_id": "5791a8f6-9872-420c-a3a2-08c464f89a80",
+        "command_id": "8d736bf7-8e78-4b35-aa6e-df214932eee2"
+      },
+      "metadata": {
+        "command_type": "create",
+        "autotask_operation": "tickets.create",
+        "autotask_handler": "create",
+        "autotask_audit_action": "autotask.command.tickets.create",
+        "failure_class": "terminal",
+        "attempts": 1,
+        "status": "failed"
+      }
+    },
+    {
+      "audit_id": "1cef2b0f-c8c2-4ba5-b1b4-5a4a140de339",
+      "timestamp": "2026-03-01T16:08:17.124Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.accepted",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "9af5ceda-7921-4a01-aaa5-afbd2e610fb2",
+        "command_id": "fbe69ad5-1294-482d-8dc0-1dbb66893449"
+      },
+      "metadata": {
+        "command_type": "create",
+        "autotask_operation": "tickets.create",
+        "autotask_handler": "create",
+        "autotask_audit_action": "autotask.command.tickets.create",
+        "idempotency_key": "ui-draft-create-0-1772381297105",
+        "audit_metadata": {}
+      }
+    },
+    {
+      "audit_id": "75f59793-3aba-4f9a-b1da-809075e82858",
+      "timestamp": "2026-03-01T16:08:19.178Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "user",
+        "id": "606d9dcc-624f-42bd-95fe-5bac5f8fc2ed",
+        "origin": "api"
+      },
+      "action": "workflow.command.failed",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket"
+      },
+      "result": "failure",
+      "reason": "Autotask API error: 500 Internal Server Error - {\"errors\":[\"Missing Required Field: status. ; on record number [1].\"]}",
+      "correlation": {
+        "trace_id": "9af5ceda-7921-4a01-aaa5-afbd2e610fb2",
+        "command_id": "fbe69ad5-1294-482d-8dc0-1dbb66893449"
+      },
+      "metadata": {
+        "command_type": "create",
+        "autotask_operation": "tickets.create",
+        "autotask_handler": "create",
+        "autotask_audit_action": "autotask.command.tickets.create",
+        "failure_class": "terminal",
+        "attempts": 1,
+        "status": "failed"
       }
     }
   ],

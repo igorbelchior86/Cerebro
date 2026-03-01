@@ -55,7 +55,12 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
         companyID: payload.company_id ?? payload.companyID,
         contactID: payload.contact_id ?? payload.contactID,
         queueID: payload.queue_id ?? payload.queueID,
+        assignedResourceID: payload.assignee_resource_id ?? payload.assignedResourceID,
+        secondaryResourceID: payload.secondary_resource_id ?? payload.secondaryResourceID,
         priority: payload.priority,
+        issueType: payload.issue_type ?? payload.issueType,
+        subIssueType: payload.sub_issue_type ?? payload.subIssueType,
+        serviceLevelAgreementID: payload.sla ?? payload.serviceLevelAgreementID,
         status: payload.status,
       });
       return {

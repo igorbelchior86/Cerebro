@@ -23,6 +23,7 @@ type SidebarTicketRow = {
   ticket_id: string;
   ticket_number?: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
+  ticket_status_value?: string | number;
   priority?: 'P1' | 'P2' | 'P3' | 'P4';
   title?: string;
   description?: string;
@@ -155,6 +156,7 @@ function toSidebarTicketFromAutotask(ticket: AutotaskTicket, queueLabelMap: Map<
     ticket_id: displayId,
     ...(ticketNumber ? { ticket_number: ticketNumber } : {}),
     status: mapAutotaskStatusToSidebar(raw.status),
+    ...(raw.status !== undefined && raw.status !== null ? { ticket_status_value: raw.status } : {}),
     priority: mapAutotaskPriority(raw.priority),
     ...(raw.title ? { title: String(raw.title) } : {}),
     ...(raw.description ? { description: String(raw.description) } : {}),
@@ -354,6 +356,7 @@ router.get('/ticket-field-options', async (req, res, next) => {
     const requestedField = String(req.query.field || '').trim();
     const fieldLoaders = {
       priority: () => client.getTicketPriorityOptions(),
+      status: () => client.getTicketStatusOptions(),
       issueType: () => client.getTicketIssueTypeOptions(),
       subIssueType: () => client.getTicketSubIssueTypeOptions(),
       serviceLevelAgreement: () => client.getTicketServiceLevelAgreementOptions(),
@@ -377,6 +380,7 @@ router.get('/ticket-field-options', async (req, res, next) => {
     }
 
     const priority = await fieldLoaders.priority();
+    const status = await fieldLoaders.status();
     const issueType = await fieldLoaders.issueType();
     const subIssueType = await fieldLoaders.subIssueType();
     const serviceLevelAgreement = await fieldLoaders.serviceLevelAgreement();
@@ -385,6 +389,7 @@ router.get('/ticket-field-options', async (req, res, next) => {
       success: true,
       data: {
         priority,
+        status,
         issueType,
         subIssueType,
         serviceLevelAgreement,

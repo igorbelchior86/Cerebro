@@ -5,6 +5,9 @@ export interface DataSourceContext {
     ticketId: string;
     orgId?: string;
     tenantId?: string;
+    orgNameHint?: string;
+    ticketText?: string;
+    deviceHints?: string[];
     // External system overrides
     organizationIds?: {
         autotask?: string;

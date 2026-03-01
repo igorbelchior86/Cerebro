@@ -1,3 +1,156 @@
+# Task: Exibir e editar status real do ticket na sidebar
+**Status**: completed
+**Started**: 2026-03-01T12:02:00-05:00
+
+## Plan
+- [x] Step 1: Mapear a sidebar, o card do draft e as superfícies já existentes de status no Autotask.
+- [x] Step 2: Expor o catálogo de `status` do Autotask e preservar o status real do ticket nos dados da sidebar.
+- [x] Step 3: Renderizar a pílula de status com pencil na sidebar para tickets reais e para o draft de `New Ticket`, com status default `New` no draft.
+- [x] Step 4: Ligar a edição do status ao draft local e ao update real no Autotask para tickets existentes.
+- [x] Step 5: Validar com typecheck web+api e documentar a mudança na wiki local.
+
+## Open Questions
+- Assumindo o menor impacto: o badge atual no topo do card continua representando o estado operacional/workflow da sidebar; a nova pílula passa a representar o status real do ticket no Autotask.
+
+## Progress Notes
+- Hoje a sidebar já tem um badge no topo, mas ele representa o status operacional interno e ocupa outro slot visual.
+- O espaço vazio abaixo do timestamp é o melhor ponto para a nova pílula de status do ticket.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ⚠️ bloqueado por erros preexistentes e não relacionados em `apps/api/src/services/prepare-context.ts` (`iterativeEnrichment` fora de escopo)
+- Documentação criada:
+  - `wiki/features/2026-03-01-sidebar-ticket-status-pill-and-draft-status-editor.md`
+
+---
+
+# Task: Corrigir falso erro enquanto create do draft ainda está processando
+**Status**: completed
+**Started**: 2026-03-01T11:46:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar que o botão verde está desistindo cedo demais do polling do comando de create.
+- [x] Step 2: Aumentar a janela de polling e tratar `accepted/processing` como estado pendente normal.
+- [x] Step 3: Validar com typecheck do frontend.
+- [x] Step 4: Documentar a mudança na wiki local.
+
+## Open Questions
+- Sem perguntas abertas; a correção é local ao polling do create no frontend.
+
+## Progress Notes
+- O create usa `workflow/commands` com `202 accepted`, então a UI precisa acompanhar o job assíncrono por mais tempo antes de falhar.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-03-01-new-ticket-create-polling-window-fix.md`
+
+---
+
+# Task: Permitir create com org 0 no new ticket
+**Status**: completed
+**Started**: 2026-03-01T11:40:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar que a validação do botão verde trata `org 0` como falsy.
+- [x] Step 2: Ajustar a checagem para aceitar `0` como company id válido.
+- [x] Step 3: Validar com typecheck do frontend.
+- [x] Step 4: Documentar a mudança na wiki local.
+
+## Open Questions
+- Sem perguntas abertas; a correção é local à validação do draft.
+
+## Progress Notes
+- O erro mostrado é coerente com `if (!companyId)` em `acceptDraft`, que rejeita `0`.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-03-01-new-ticket-org-zero-validation-fix.md`
+
+---
+
+# Task: Corrigir race de busca no draft e ligar create real ao botão verde
+**Status**: completed
+**Started**: 2026-03-01T11:32:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar a causa do 429 no modal de busca do `New Ticket` e localizar o write-path existente para criação de ticket.
+- [x] Step 2: Debounce/cancelar a busca remota inicial do draft para evitar concorrência com a digitação.
+- [x] Step 3: Ligar o botão verde ao pipeline auditado de `workflow/commands` para criar o ticket de fato no Autotask.
+- [x] Step 4: Validar com typecheck web+api e documentar a mudança na wiki local.
+
+## Open Questions
+- Assumindo o menor risco: a criação real do ticket deve reutilizar o pipeline de workflow já auditado (`command_type: create`), sem criar endpoint novo de write fora da camada existente.
+
+## Progress Notes
+- O 429 em `Edit Org` vem de concorrência entre o fetch vazio inicial e a busca digitada no mesmo modal.
+- O backend já possui `tickets.create` via `workflow/commands`, então o check verde pode reutilizar essa superfície auditada.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-03-01-new-ticket-search-debounce-and-create-action.md`
+
+---
+
+# Task: Adicionar ações de aceitar/rejeitar no header do new ticket
+**Status**: completed
+**Started**: 2026-03-01T11:22:00-05:00
+
+## Plan
+- [x] Step 1: Localizar a row de `Primary` / `Secondary` em `triage/home`.
+- [x] Step 2: Adicionar botões redondos de check e X no lado direito da mesma row, preservando o layout atual.
+- [x] Step 3: Validar com typecheck do frontend.
+- [x] Step 4: Documentar a mudança na wiki local.
+
+## Open Questions
+- Assumindo escopo estritamente de UI: `X` descarta o draft local; o check permanece como aceite local do draft, sem criar ticket no Autotask nesta etapa.
+
+## Progress Notes
+- O fluxo `New Ticket` ainda não possui create backend, então esta mudança fica restrita à shell do draft.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-03-01-new-ticket-draft-decision-buttons.md`
+
+---
+
+# Task: Pesquisar defaults do Autotask em novo ticket
+**Status**: completed
+**Started**: 2026-03-01T11:14:00-05:00
+
+## Plan
+- [x] Step 1: Revisar rapidamente como o draft de `New Ticket` inicializa `Priority` e `SLA` hoje.
+- [x] Step 2: Pesquisar documentação oficial do Autotask/Kaseya sobre campos pré-populados em novos tickets.
+- [x] Step 3: Consolidar o porquê técnico desses defaults e o impacto para a nossa skin.
+- [x] Step 4: Registrar a investigação no Review.
+
+## Open Questions
+- Sem alteração de código nesta etapa; objetivo é entendimento do comportamento fonte antes de decidir implementação.
+
+## Progress Notes
+- O draft local atual só popula esses campos após seleção manual; não existe default equivalente ao Autotask ainda.
+
+## Review
+- Evidência oficial encontrada:
+  - `Tickets` REST entity: se `ticketCategory` não é enviado, o Autotask usa a categoria default do resource logado; se não houver, usa a categoria default da empresa. Os default values da categoria são aplicados, a menos que outro valor seja enviado.
+  - `Tickets` REST entity: `serviceLevelAgreementID` é defaultado por cadeia de precedência: Asset SLA -> Contract Service/Bundle SLA -> Contract SLA -> Ticket Category SLA.
+  - `TicketCategories` possui child collection `TicketCategoryFieldDefaults`.
+  - `TicketCategoryFieldDefaults` lista explicitamente `priority`, `issueTypeID`, `subIssueTypeID`, `serviceLevelAgreementID`, `queueID`, `status`, `sourceID` etc. como defaults da categoria.
+- Conclusão:
+  - O Autotask pré-popula `Priority`, `Issue/Sub-Issue` e, em muitos cenários, `SLA` porque o `New Ticket` nasce já sob uma `ticketCategory` efetiva e essa categoria tem defaults próprios; no caso do `SLA`, ainda existe uma lógica adicional de herança por asset/contrato antes de cair para a categoria.
+  - Nossa skin hoje não replica isso porque o draft local começa vazio e só preenche esses campos por escolha manual.
+
+---
+
 # Task: Alinhar direção da animação do toggle secundário de contexto
 **Status**: completed
 **Started**: 2026-03-01T11:08:00-05:00

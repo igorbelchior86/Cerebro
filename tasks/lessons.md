@@ -1,3 +1,15 @@
+## Lesson: 2026-03-01 (async create commands must not be treated as failures just because they are still processing)
+**Mistake**: Eu tratei a criação de ticket como se precisasse completar quase instantaneamente no frontend.
+**Root cause**: O polling do botão verde esperava só duas checagens curtas e convertia um estado normal de `accepted/processing` em erro.
+**Rule**: Em comandos assíncronos auditados (`workflow/commands`), estados intermediários devem continuar em polling até timeout razoável; erro só em estado terminal real.
+**Pattern**: Se a API de comando responde `202 accepted`, o frontend deve assumir processamento assíncrono por padrão, não sucesso/falha imediatos.
+
+## Lesson: 2026-03-01 (new-ticket search modals must not race the initial suggestion fetch)
+**Mistake**: Eu deixei o modal de busca do draft disparar imediatamente uma busca vazia e, ao mesmo tempo, aceitar buscas por digitação sem amortecimento.
+**Root cause**: O efeito de carregamento reagia a `activeContextEditor` e `contextEditorQuery` sem debounce para campos de busca remota, então o preload e a digitação competiam no Autotask.
+**Rule**: Em modais com preload remoto e input livre, o preload inicial precisa ser cancelável e a busca digitada deve ser debounced para evitar concorrência contra o provider.
+**Pattern**: Se um modal abre com sugestões automáticas e também busca ao digitar, tratar a primeira carga como uma busca agendada que pode ser cancelada pela primeira tecla.
+
 ## Lesson: 2026-03-01 (verify the live payload before declaring a label-projection bug fixed)
 **Mistake**: Eu corrigi a projeção de labels assumindo que isso bastaria, sem confirmar se o payload real do ticket antigo já continha esses labels.
 **Root cause**: Foquei no caminho de código alterado, mas não validei o estado real do dado histórico para um ticket específico antes de fechar.

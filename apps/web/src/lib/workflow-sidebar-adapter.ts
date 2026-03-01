@@ -26,6 +26,11 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
     ticket_id: row.ticket_id,
     ticket_number: row.ticket_id,
     status: mapWorkflowStatusToSidebarStatus(row.status),
+    ...(row.status ? { ticket_status_value: row.status } : {}),
+    ...((() => {
+      const label = String(row.domain_snapshots?.['correlates.ticket_metadata']?.status_label || '').trim();
+      return label ? { ticket_status_label: label } : {};
+    })()),
     priority: fallbackPriority(row.status),
     title,
     ...(description ? { description } : {}),

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import ChatInput, { type ChatInputSubmitPayload } from '@/components/ChatInput';
 import ChatMessage, { type Message } from '@/components/ChatMessage';
 import ChatSidebar, { type ActiveTicket } from '@/components/ChatSidebar';
@@ -12,10 +12,13 @@ import {
   type AutotaskContactOption,
   type AutotaskPicklistOption,
   type AutotaskResourceOption,
+  getWorkflowCommandStatus,
   listAutotaskTicketFieldOptionsByField,
+  mapHttpErrorToFrontendState,
   searchAutotaskCompanies,
   searchAutotaskContacts,
   searchAutotaskResources,
+  submitWorkflowCommand,
 } from '@/lib/p0-ui-client';
 import { loadTriPaneSidebarTickets } from '@/lib/workflow-sidebar-adapter';
 import { useRouter } from '@/i18n/routing';
@@ -43,6 +46,7 @@ interface DraftReference {
 interface DraftState {
   title: string;
   body: string;
+  status?: DraftReference;
   org?: DraftReference;
   contact?: DraftReference;
   additionalContact?: DraftReference;
@@ -225,6 +229,60 @@ function TechPill({
   );
 }
 
+function DraftDecisionButton({
+  tone,
+  label,
+  onClick,
+  children,
+}: {
+  tone: 'accept' | 'reject';
+  label: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  const isAccept = tone === 'accept';
+  const bg = isAccept ? 'rgba(16, 185, 129, 0.14)' : 'rgba(239, 68, 68, 0.14)';
+  const border = isAccept ? 'rgba(16, 185, 129, 0.34)' : 'rgba(239, 68, 68, 0.34)';
+  const glow = isAccept ? 'rgba(16, 185, 129, 0.22)' : 'rgba(239, 68, 68, 0.2)';
+  const color = isAccept ? '#10B981' : '#EF4444';
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      style={{
+        width: '30px',
+        height: '30px',
+        borderRadius: '999px',
+        border: `1px solid ${border}`,
+        background: bg,
+        color,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer',
+        boxShadow: `0 0 0 1px ${glow}, 0 6px 14px rgba(15, 23, 42, 0.08)`,
+        transition: 'transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease',
+        flexShrink: 0,
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.transform = 'translateY(-1px)';
+        e.currentTarget.style.filter = 'brightness(1.02)';
+        e.currentTarget.style.boxShadow = `0 0 0 2px ${glow}, 0 10px 18px rgba(15, 23, 42, 0.12)`;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.transform = 'translateY(0)';
+        e.currentTarget.style.filter = 'brightness(1)';
+        e.currentTarget.style.boxShadow = `0 0 0 1px ${glow}, 0 6px 14px rgba(15, 23, 42, 0.08)`;
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT);
@@ -237,6 +295,8 @@ export default function HomePage() {
   const [contextEditorError, setContextEditorError] = useState('');
   const [contextEditorOptions, setContextEditorOptions] = useState<ContextEditorOption[]>([]);
   const [ticketFieldOptionsCache, setTicketFieldOptionsCache] = useState<TicketFieldOptionsCache>({});
+  const [isCreatingDraft, setIsCreatingDraft] = useState(false);
+  const [draftActionError, setDraftActionError] = useState('');
 
   useEffect(() => {
     const fetchTickets = async () => {
@@ -261,6 +321,39 @@ export default function HomePage() {
   const ticketTitle = draft.title.trim() || 'New Ticket';
   const primaryTech = draft.primaryTech?.name || 'Unassigned';
   const secondaryTech = draft.secondaryTech?.name || 'Unassigned';
+
+  useEffect(() => {
+    if (draft.status) return;
+    const cached = ticketFieldOptionsCache.status;
+    if (cached && cached.length > 0) {
+      const preferred = cached.find((row) => row.label.trim().toLowerCase() === 'new')
+        || cached.find((row) => row.label.trim().toLowerCase().includes('new'))
+        || cached[0];
+      if (!preferred) return;
+      setDraft((prev) => prev.status ? prev : { ...prev, status: createDraftReference(preferred.id, preferred.label) });
+      return;
+    }
+
+    let ignore = false;
+    void (async () => {
+      try {
+        const options = await listAutotaskTicketFieldOptionsByField('status');
+        if (ignore) return;
+        setTicketFieldOptionsCache((prev) => ({ ...prev, status: options }));
+        const preferred = options.find((row) => row.label.trim().toLowerCase() === 'new')
+          || options.find((row) => row.label.trim().toLowerCase().includes('new'))
+          || options[0];
+        if (!preferred) return;
+        setDraft((prev) => prev.status ? prev : { ...prev, status: createDraftReference(preferred.id, preferred.label) });
+      } catch {
+        // Keep draft status editable from sidebar even if prefill fails.
+      }
+    })();
+
+    return () => {
+      ignore = true;
+    };
+  }, [draft.status, ticketFieldOptionsCache.status]);
 
   const playbookDraftData = useMemo(() => ({
     ticketId: 'New Ticket',
@@ -313,6 +406,100 @@ export default function HomePage() {
     setContextEditorSaving(false);
     setContextEditorError('');
     setContextEditorOptions([]);
+    setDraftActionError('');
+  };
+
+  const acceptDraft = async () => {
+    if (isCreatingDraft) return;
+    const title = draft.title.trim();
+    const companyId = draft.org?.id;
+    if (!title) {
+      setDraftActionError('Title is required before creating the ticket.');
+      return;
+    }
+    if (typeof companyId !== 'number') {
+      setDraftActionError('Org is required before creating the ticket.');
+      return;
+    }
+    if (typeof draft.status?.id !== 'number') {
+      setDraftActionError('Status is required before creating the ticket.');
+      return;
+    }
+
+    setIsCreatingDraft(true);
+    setDraftActionError('');
+    setActiveContextEditor(null);
+    setContextEditorQuery('');
+    setContextEditorError('');
+    try {
+      const command = await submitWorkflowCommand({
+        command_type: 'create',
+        payload: {
+          title,
+          description: draft.body.trim() || undefined,
+          company_id: companyId,
+          ...(draft.contact?.id ? { contact_id: draft.contact.id } : {}),
+          ...(draft.primaryTech?.id ? { assignee_resource_id: draft.primaryTech.id } : {}),
+          ...(draft.secondaryTech?.id ? { secondary_resource_id: draft.secondaryTech.id } : {}),
+          ...(draft.priority?.id ? { priority: draft.priority.id } : {}),
+          ...(draft.issueType?.id ? { issue_type: draft.issueType.id } : {}),
+          ...(draft.subIssueType?.id ? { sub_issue_type: draft.subIssueType.id } : {}),
+          ...(draft.serviceLevelAgreement?.id ? { serviceLevelAgreementID: draft.serviceLevelAgreement.id } : {}),
+          status: draft.status.id,
+        },
+        idempotency_key: `ui-draft-create-${companyId}-${Date.now()}`,
+        auto_process: true,
+      });
+      const commandId = String(
+        (command as any)?.command_id ||
+        (command as any)?.command?.command_id ||
+        ''
+      ).trim();
+      if (!commandId) throw new Error('Workflow command id missing');
+
+      let status = await getWorkflowCommandStatus(commandId);
+      for (let attempt = 0; attempt < 16; attempt += 1) {
+        const normalized = String(status?.status || '').trim().toLowerCase();
+        if (
+          normalized === 'completed' ||
+          normalized === 'failed' ||
+          normalized === 'dlq' ||
+          normalized === 'rejected'
+        ) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, attempt < 4 ? 250 : 500));
+        status = await getWorkflowCommandStatus(commandId);
+      }
+
+      const normalizedStatus = String(status?.status || '').trim().toLowerCase();
+      if (normalizedStatus === 'failed' || normalizedStatus === 'dlq' || normalizedStatus === 'rejected') {
+        const detail = String((status as any)?.last_error || '').trim();
+        throw new Error(detail || 'Ticket creation failed in Autotask.');
+      }
+      if (normalizedStatus !== 'completed') {
+        throw new Error('Ticket creation is still processing in Autotask. Wait a little longer and retry if it does not appear.');
+      }
+
+      const result = (status?.result || {}) as Record<string, unknown>;
+      const createdTicketRef = String(
+        result.external_ticket_number ||
+        result.external_ticket_id ||
+        (result.snapshot && typeof result.snapshot === 'object' ? (result.snapshot as Record<string, unknown>).ticket_id : '') ||
+        ''
+      ).trim();
+      if (!createdTicketRef) {
+        throw new Error('Autotask created the ticket, but no ticket identifier was returned.');
+      }
+
+      resetDraft();
+      router.push(`/triage/${createdTicketRef}`, { scroll: false });
+    } catch (err) {
+      const mapped = mapHttpErrorToFrontendState(err, 'Unable to create ticket');
+      setDraftActionError(`${mapped.summary}: ${mapped.detail}`);
+    } finally {
+      setIsCreatingDraft(false);
+    }
   };
 
   const openContextEditor = (key: string) => {
@@ -348,6 +535,7 @@ export default function HomePage() {
     if (!activeContextEditor) return;
 
     let ignore = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
     if ((activeContextEditor === 'Contact' || activeContextEditor === 'Additional contacts') && activeOrgId === null) {
       setContextEditorOptions([]);
@@ -424,10 +612,18 @@ export default function HomePage() {
       }
     };
 
-    void run();
+    if (ticketFieldKey) {
+      void run();
+    } else {
+      const delayMs = contextEditorQuery.trim() ? 220 : 320;
+      timer = setTimeout(() => {
+        void run();
+      }, delayMs);
+    }
 
     return () => {
       ignore = true;
+      if (timer) clearTimeout(timer);
     };
   }, [activeContextEditor, activeOrgId, contextEditorQuery, ticketFieldOptionsCache]);
 
@@ -519,6 +715,22 @@ export default function HomePage() {
       sidebarContent={(
         <ChatSidebar
           tickets={sidebarTickets}
+          draftTicket={{
+            id: '__draft__',
+            ticket_id: 'New Ticket',
+            ticket_number: 'New Ticket',
+            status: 'pending',
+            ...(draft.status?.id !== undefined ? { ticket_status_value: draft.status.id } : {}),
+            ticket_status_label: draft.status?.name || 'New',
+            priority: 'P3',
+            title: ticketTitle,
+            company: draft.org?.name || '-',
+            requester: draft.contact?.name || '-',
+            created_at: new Date().toISOString(),
+            isDraft: true,
+          }}
+          currentTicketId="__draft__"
+          onDraftStatusChange={(status) => setDraft((prev) => ({ ...prev, status: createDraftReference(status.id, status.name) }))}
           isLoading={isLoadingTickets}
           onSelectTicket={(id) => router.push(`/triage/${id}`, { scroll: false })}
           onCreateTicket={resetDraft}
@@ -572,30 +784,57 @@ export default function HomePage() {
                 Triage Draft
               </span>
             </div>
-            <div className="px-4 py-3 flex flex-wrap items-center gap-2.5" style={{ background: 'transparent' }}>
-              <TechPill
-                label="Primary"
-                name={primaryTech}
-                type="primary"
-                onEdit={() => openContextEditor('Primary')}
-                onRemove={() => setDraft((prev) => {
-                  const next = { ...prev };
-                  delete next.primaryTech;
-                  return next;
-                })}
-              />
-              <TechPill
-                label="Secondary"
-                name={secondaryTech}
-                type="secondary"
-                onEdit={() => openContextEditor('Secondary')}
-                onRemove={() => setDraft((prev) => {
-                  const next = { ...prev };
-                  delete next.secondaryTech;
-                  return next;
-                })}
-              />
+            <div className="px-4 py-3 flex items-center gap-2.5" style={{ background: 'transparent' }}>
+              <div className="flex flex-wrap items-center gap-2.5" style={{ minWidth: 0, flex: 1 }}>
+                <TechPill
+                  label="Primary"
+                  name={primaryTech}
+                  type="primary"
+                  onEdit={() => openContextEditor('Primary')}
+                  onRemove={() => setDraft((prev) => {
+                    const next = { ...prev };
+                    delete next.primaryTech;
+                    return next;
+                  })}
+                />
+                <TechPill
+                  label="Secondary"
+                  name={secondaryTech}
+                  type="secondary"
+                  onEdit={() => openContextEditor('Secondary')}
+                  onRemove={() => setDraft((prev) => {
+                    const next = { ...prev };
+                    delete next.secondaryTech;
+                    return next;
+                  })}
+                />
+              </div>
+              <div className="flex items-center gap-2" style={{ marginLeft: 'auto', flexShrink: 0 }}>
+                <DraftDecisionButton tone="accept" label="Accept draft" onClick={() => { void acceptDraft(); }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                </DraftDecisionButton>
+                <DraftDecisionButton tone="reject" label="Discard draft" onClick={resetDraft}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 6 6 18" />
+                    <path d="m6 6 12 12" />
+                  </svg>
+                </DraftDecisionButton>
+              </div>
             </div>
+            {draftActionError ? (
+              <div
+                className="px-4 pb-3"
+                style={{
+                  color: '#EF4444',
+                  fontSize: '10.5px',
+                  lineHeight: 1.5,
+                }}
+              >
+                {draftActionError}
+              </div>
+            ) : null}
           </div>
 
           <div

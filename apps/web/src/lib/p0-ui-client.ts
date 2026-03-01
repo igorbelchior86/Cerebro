@@ -22,6 +22,7 @@ export interface WorkflowInboxTicket {
   title?: string;
   description?: string;
   status?: string;
+  domain_snapshots?: Partial<Record<string, Record<string, unknown>>>;
   assigned_to?: string;
   queue_id?: number;
   queue_name?: string;
@@ -123,6 +124,7 @@ export interface AutotaskPicklistOption {
 
 export interface AutotaskTicketFieldOptions {
   priority: AutotaskPicklistOption[];
+  status: AutotaskPicklistOption[];
   issueType: AutotaskPicklistOption[];
   subIssueType: AutotaskPicklistOption[];
   serviceLevelAgreement: AutotaskPicklistOption[];
@@ -179,6 +181,8 @@ export class HttpError extends Error {
 }
 
 export type WorkflowCommandTypeUi =
+  | 'create'
+  | 'ticket_create'
   | 'assign'
   | 'update_assign'
   | 'status'
@@ -214,7 +218,7 @@ export interface WorkflowCommandStatus {
 
 export interface WorkflowCommandSubmitInput {
   command_type: WorkflowCommandTypeUi;
-  ticket_id: string;
+  ticket_id?: string;
   payload: Record<string, unknown>;
   idempotency_key: string;
   auto_process?: boolean;
@@ -439,7 +443,7 @@ export function submitWorkflowCommand(input: WorkflowCommandSubmitInput) {
         idempotency_key: input.idempotency_key,
         payload: {
           ...input.payload,
-          ticket_id: input.ticket_id,
+          ...(input.ticket_id ? { ticket_id: input.ticket_id } : {}),
         },
         auto_process: input.auto_process ?? true,
       }),

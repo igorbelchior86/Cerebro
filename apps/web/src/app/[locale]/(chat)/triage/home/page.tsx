@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'next/navigation';
 import ChatInput, { type ChatInputSubmitPayload } from '@/components/ChatInput';
 import ChatMessage, { type Message } from '@/components/ChatMessage';
 import ChatSidebar, { type ActiveTicket } from '@/components/ChatSidebar';
@@ -141,7 +142,7 @@ function pickDraftDefaultOption(
     );
   }
 
-  if (field === 'queue') {
+  if (field === 'serviceLevelAgreement' || field === 'queue') {
     return pool[0] || null;
   }
 
@@ -335,6 +336,7 @@ function DraftDecisionButton({
 
 export default function HomePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT);
   const [sidebarTickets, setSidebarTickets] = useState<ActiveTicket[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(true);
@@ -569,6 +571,14 @@ export default function HomePage() {
     setContextEditorError('');
     setContextEditorOptions([]);
     setDraftActionError('');
+  };
+
+  const discardDraft = () => {
+    const returnTicketId = String(searchParams.get('returnTicketId') || '').trim();
+    resetDraft();
+    if (returnTicketId) {
+      router.push(`/triage/${returnTicketId}`, { scroll: false });
+    }
   };
 
   const acceptDraft = async () => {
@@ -979,7 +989,7 @@ export default function HomePage() {
                     <path d="M20 6 9 17l-5-5" />
                   </svg>
                 </DraftDecisionButton>
-                <DraftDecisionButton tone="reject" label="Discard draft" onClick={resetDraft}>
+                <DraftDecisionButton tone="reject" label="Discard draft" onClick={discardDraft}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M18 6 6 18" />
                     <path d="m6 6 12 12" />

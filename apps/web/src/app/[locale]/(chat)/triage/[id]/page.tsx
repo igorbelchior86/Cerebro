@@ -2042,7 +2042,13 @@ export default function SessionDetail({
           tickets={displayTickets}
           currentTicketId={selectedTicketId}
           isLoading={isLoadingTickets || loading}
-          onCreateTicket={() => router.push('/triage/home', { scroll: false })}
+          onCreateTicket={(context) => {
+            const returnTicketId = String(context?.returnTicketId || '').trim();
+            const nextPath = returnTicketId
+              ? `/triage/home?returnTicketId=${encodeURIComponent(returnTicketId)}`
+              : '/triage/home';
+            router.push(nextPath, { scroll: false });
+          }}
           onSelectTicket={(id) => {
             if (id === selectedTicketId) return;
             setSelectedTicketId(id);

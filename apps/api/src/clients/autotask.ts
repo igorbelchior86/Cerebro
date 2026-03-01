@@ -247,6 +247,10 @@ export class AutotaskClient {
       );
     }
 
+    if (fieldName === 'serviceLevelAgreementID') {
+      return pool[0] || null;
+    }
+
     if (fieldName === 'queueID') {
       return pool[0] || null;
     }
@@ -469,7 +473,7 @@ export class AutotaskClient {
     for (const option of options) {
       if (!deduped.has(option.id)) deduped.set(option.id, option);
     }
-    return Array.from(deduped.values()).sort((a, b) => a.label.localeCompare(b.label));
+    return Array.from(deduped.values());
   }
 
   async getTicketQueues(): Promise<AutotaskQueueOption[]> {

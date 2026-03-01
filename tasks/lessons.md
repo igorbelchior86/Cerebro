@@ -1,8 +1,14 @@
-## Lesson: 2026-03-01 (never promote the first picklist option into a fake default for SLA)
-**Mistake**: Eu usei o primeiro SLA ativo como fallback automático quando não havia default confirmado.
-**Root cause**: A lista vem ordenada alfabeticamente, então `pool[0]` virou um valor arbitrário (`Enhanced`), não um default real do Autotask.
-**Rule**: Para campos sensíveis de contexto como SLA, não inferir default por posição da picklist; só preencher automaticamente com fonte autoritativa ou sinal explícito.
-**Pattern**: Se a ordem da lista pode ser lexicográfica, `first item` nunca deve ser tratado como default de negócio.
+## Lesson: 2026-03-01 (never sort provider picklists before deriving provider defaults)
+**Mistake**: Eu ordenei as picklists do Autotask alfabeticamente antes de derivar defaults no draft.
+**Root cause**: A ordenação local apagou o único sinal operacional disponível quando não existe `isDefault` explícito: a ordem original do provider.
+**Rule**: Se um fallback depende da posição da picklist, preservar primeiro a ordem nativa do provider; só ordenar localmente quando o fluxo for puramente de exibição e não de decisão.
+**Pattern**: Em integrações PSA, `sort(label)` pode destruir semântica de negócio embutida na ordem retornada pelo provider.
+
+## Lesson: 2026-03-01 (first-item fallback is only valid if provider order is preserved)
+**Mistake**: Eu descartei completamente o fallback por posição em vez de corrigir a ordem da fonte.
+**Root cause**: O problema não era “usar o primeiro item”, e sim usar o primeiro item de uma lista reordenada localmente.
+**Rule**: Se o provider usa a ordem da picklist como sinal operacional, `pool[0]` só é aceitável quando essa ordem é a ordem nativa do provider.
+**Pattern**: Antes de proibir um fallback por posição, verificar se a posição foi adulterada por ordenação local.
 
 ## Lesson: 2026-03-01 (draft prefill must fail open, not fail silent)
 **Mistake**: Eu deixei o prefill do New Ticket depender de uma busca agregada e engolir qualquer erro sem fallback.

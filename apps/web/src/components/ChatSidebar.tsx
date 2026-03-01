@@ -52,7 +52,7 @@ interface ChatSidebarProps {
   tickets: ActiveTicket[];
   currentTicketId?: string;
   onSelectTicket?: (ticketId: string) => void;
-  onCreateTicket?: () => void;
+  onCreateTicket?: (context?: { returnTicketId?: string }) => void;
   isLoading?: boolean;
   draftTicket?: ActiveTicket;
   onDraftStatusChange?: (status: { id: number; name: string }) => void;
@@ -70,7 +70,7 @@ interface QueueOption {
   queueId?: number;
 }
 
-const SIDEBAR_STATE_KEY = 'chatSidebarState.v1';
+const SIDEBAR_STATE_KEY = 'chatSidebarState.v2';
 const SIDEBAR_HIDE_SUPPRESSED_KEY = 'chatSidebarHideSuppressed.v1';
 
 const PRIORITY_COLOR: Record<string, string> = {
@@ -219,8 +219,14 @@ export default function ChatSidebar({
   const persistSidebarState = useCallback((nextFilter: string, nextScrollTop?: number) => {
     if (typeof window === 'undefined') return;
     const scrollTop = typeof nextScrollTop === 'number' ? nextScrollTop : listRef.current?.scrollTop ?? 0;
-    sessionStorage.setItem(SIDEBAR_STATE_KEY, JSON.stringify({ filter: nextFilter, scrollTop }));
-  }, []);
+    sessionStorage.setItem(SIDEBAR_STATE_KEY, JSON.stringify({
+      filter: nextFilter,
+      scrollTop,
+      scope,
+      searchQuery,
+      selectedGlobalQueue,
+    }));
+  }, [scope, searchQuery, selectedGlobalQueue]);
 
   // Fallback defaults
   const userName = user?.name || "John Technician";
@@ -405,7 +411,13 @@ export default function ChatSidebar({
 
     const urlFilter = searchParams.get('sidebarFilter');
     const rawSaved = sessionStorage.getItem(SIDEBAR_STATE_KEY);
-    let saved: { filter?: string; scrollTop?: number } = {};
+    let saved: {
+      filter?: string;
+      scrollTop?: number;
+      scope?: 'personal' | 'global';
+      searchQuery?: string;
+      selectedGlobalQueue?: string;
+    } = {};
     if (rawSaved) {
       try {
         saved = JSON.parse(rawSaved) as { filter?: string; scrollTop?: number };
@@ -416,6 +428,15 @@ export default function ChatSidebar({
     const candidateFilter = urlFilter || saved.filter || 'all';
     const restoredFilter = FILTER_IDS.has(candidateFilter) ? candidateFilter : 'all';
     setFilter(restoredFilter);
+    if (saved.scope === 'personal' || saved.scope === 'global') {
+      setScope(saved.scope);
+    }
+    if (typeof saved.searchQuery === 'string') {
+      setSearchQuery(saved.searchQuery);
+    }
+    if (typeof saved.selectedGlobalQueue === 'string') {
+      setSelectedGlobalQueue(saved.selectedGlobalQueue);
+    }
 
     requestAnimationFrame(() => {
       if (listRef.current && typeof saved.scrollTop === 'number') {
@@ -811,7 +832,10 @@ export default function ChatSidebar({
               </div>
               <button
                 type="button"
-                onClick={() => onCreateTicket?.()}
+                onClick={() => {
+                  const returnTicketId = visible[0]?.id;
+                  onCreateTicket?.(returnTicketId ? { returnTicketId } : undefined);
+                }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',

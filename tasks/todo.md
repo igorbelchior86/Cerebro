@@ -1,3 +1,54 @@
+# Task: Preservar contexto do sidebar ao abrir/fechar New Ticket
+**Status**: completed
+**Started**: 2026-03-01T16:15:00-05:00
+
+## Plan
+- [x] Step 1: Inspecionar o fluxo atual de `/triage/[id] -> /triage/home` e localizar a causa do reset visual.
+- [x] Step 2: Preservar o estado do sidebar e carregar o `returnTicketId` do topo visível ao abrir o draft.
+- [x] Step 3: Fazer o dismiss do draft voltar para o ticket-alvo, validar com checks e documentar na wiki.
+
+## Open Questions
+- Assumindo correção incremental: nesta rodada vou eliminar a perda de contexto e o dismiss quebrado sem reescrever toda a screen para draft inline.
+
+## Progress Notes
+- O botão `New Ticket` em `ChatSidebar` ainda dispara navegação para `/triage/home`, o que remonta a rota inteira.
+- O sidebar persistia só `filter` e `scrollTop`; `scope`, `queue` global e busca eram perdidos no remount.
+- O botão de discard no draft apenas chamava `resetDraft`, então a tela ficava no draft em vez de retornar ao ticket.
+- O sidebar agora persiste `scope`, busca e queue global junto de `filter`/`scroll`, reduzindo a perda de contexto no remount.
+- O botão `New Ticket` agora carrega o `returnTicketId` do primeiro ticket visível para que o draft saiba para onde voltar.
+- O discard do draft continua limpando o formulário, mas agora também navega de volta para o ticket de retorno quando esse contexto existir.
+
+## Review
+- Verificação executada:
+- `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+- `wiki/changelog/2026-03-01-new-ticket-return-to-queue-context.md`
+
+# Task: Preservar a ordem nativa do Autotask para replicar o default de SLA
+**Status**: completed
+**Started**: 2026-03-01T15:44:00-05:00
+
+## Plan
+- [x] Step 1: Remover qualquer lógica tenant-specific recém-introduzida.
+- [x] Step 2: Corrigir a causa genérica: preservar a ordem original da picklist do Autotask.
+- [x] Step 3: Reaplicar o fallback de SLA usando ordem do provider, validar e documentar.
+
+## Open Questions
+- Assumindo que a ordem de `picklistValues` retornada pelo Autotask carrega o sinal operacional do provider melhor do que a ordenação alfabética local.
+
+## Progress Notes
+- O valor errado `Enhanced` apareceu porque o client ordenava a picklist alfabeticamente e, depois, o fallback escolhia o primeiro item dessa ordem artificial.
+- A ordenação alfabética foi removida de `getTicketFieldPicklist`, preservando a ordem original enviada pelo Autotask.
+- O fallback de SLA voltou a usar o primeiro item ativo, mas agora esse “primeiro” é o do provider, não um valor reordenado localmente.
+- O fallback hardcoded por label (`Standard SLA`) foi descartado para manter a lógica tenant-agnostic.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+- Documentação criada:
+  - `wiki/changelog/2026-03-01-preserve-autotask-picklist-order-for-sla-default.md`
+
 # Task: Remover fallback incorreto de SLA no New Ticket
 **Status**: completed
 **Started**: 2026-03-01T15:36:00-05:00

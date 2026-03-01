@@ -42,6 +42,7 @@
     "statActive": "Active",
     "statDoneToday": "Done today",
     "statAvgTime": "Avg time",
+    "newTicket": "New Ticket",
     "scopeSwitcherAria": "Sidebar ticket view scope",
     "scopePersonal": "Personal",
     "scopeGlobal": "Global",

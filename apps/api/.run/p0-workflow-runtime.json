@@ -6480,6 +6480,42 @@
           "correlates.ticket_note_metadata"
         ]
       }
+    },
+    {
+      "audit_id": "a4e95d02-8745-479a-8055-0066d29183e2",
+      "timestamp": "2026-02-28T17:57:11.214Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260228.0003"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132830",
+        "ticket_id": "T20260228.0003"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132830:ticket.created:2026-02-28T17:44:40.317Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-02-28T17:57:11.195Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
     }
   ],
   "processedSyncEvents": [
@@ -6528,7 +6564,8 @@
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132826:ticket.created:2026-02-28T01:34:19.880Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132827:ticket.created:2026-02-28T02:10:24.007Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132828:ticket.created:2026-02-28T06:20:16.187Z",
-    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132829:ticket.created:2026-02-28T12:10:14.567Z"
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132829:ticket.created:2026-02-28T12:10:14.567Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132830:ticket.created:2026-02-28T17:44:40.317Z"
   ],
   "inbox": [
     [
@@ -7394,6 +7431,40 @@
           "correlates.ticket_note_metadata": {}
         },
         "updated_at": "2026-02-28T12:18:06.553Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260228.0003",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260228.0003",
+        "external_id": "132830",
+        "title": "Undelivered Mail Returned to Sender",
+        "description": "From MAILER-DAEMON@autotask.net (Mail Delivery System): This is the mail system at host phl-p-mail04.autotask.net.\r\n\r\nI'm sorry to have to inform you that your message could not\r\nbe delivered to one or more recipients. It's attached below.\r\n\r\nFor further assistance, please send mail to postmaster.\r\n\r\nIf you do so, please include this problem report. You can\r\ndelete your own text from the attached returned message.\r\n\r\n                   The mail system\r\n\r\n<do-not-reply@portal.checkpoint.com>: delivery temporarily suspended: connect\r\n    to tls2-us.checkpoint.com[209.87.222.180]:25: Connection timed out",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-02-28T17:57:11.204Z",
+        "last_event_occurred_at": "2026-02-28T17:44:40.317Z",
+        "last_event_id": "autotask-poller:132830:ticket.created:2026-02-28T17:44:40.317Z",
+        "source_of_truth": "Autotask",
+        "domain_snapshots": {
+          "tickets": {
+            "external_id": "132830",
+            "ticket_number": "T20260228.0003",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "ticket_notes": {},
+          "correlates.resources": {},
+          "correlates.ticket_metadata": {
+            "ticket_number": "T20260228.0003",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "correlates.ticket_note_metadata": {}
+        },
+        "updated_at": "2026-02-28T17:57:11.205Z"
       }
     ]
   ],

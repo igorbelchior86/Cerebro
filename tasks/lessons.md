@@ -1,3 +1,15 @@
+## Lesson: 2026-03-01 (new-ticket draft must reuse the canonical shell, not a parallel intake form)
+**Mistake**: Eu deixei `triage/home` com um formulário próprio, mesmo depois de o requisito apontar que a criação deve continuar na mesma estrutura visual do ticket.
+**Root cause**: Modelei os campos como “nova tela” em vez de mapear os dados de draft para os slots já existentes da shell canônica (`header`, `tech pills`, `context panel`, `chat bar`).
+**Rule**: Quando o usuário pedir paridade de layout para um fluxo draft, a implementação deve reutilizar os mesmos componentes/superfícies da tela canônica e trocar apenas a origem dos dados.
+**Pattern**: Se `triage/home` começa a introduzir campos/formulários que não existem em `triage/[id]`, revisar e remapear para o mesmo shell antes de entregar.
+
+## Lesson: 2026-02-28 (new-ticket UX must be validated against the source system before implementation)
+**Mistake**: Modelei o botão `New Ticket` como uma tela simplificada separada sem pesquisar o fluxo real do Autotask.
+**Root cause**: Assumi um fluxo de criação genérico em vez de validar a interface e o comportamento do sistema-fonte que estamos espelhando.
+**Rule**: Quando o pedido é “seguir a lógica/fluxo do PSA”, validar primeiro a UX real do PSA e preservar a mesma shell/interface, mudando apenas o estado dos campos.
+**Pattern**: Se o objetivo é “skin do provider”, não inventar uma tela paralela de criação; usar o mesmo workspace em modo draft.
+
 ## Lesson: 2026-02-27 (when UI still shows old behavior, verify the running process before revisiting the patch)
 **Mistake**: Continuar iterando no diagnóstico lógico sem confirmar primeiro se a API local estava servindo a versão nova do código.
 **Root cause**: O processo em `:3001` estava stale e fora de watch mode, então o browser seguia falando com código antigo.

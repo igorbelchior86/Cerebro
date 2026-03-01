@@ -42,6 +42,7 @@ interface ChatSidebarProps {
   tickets: ActiveTicket[];
   currentTicketId?: string;
   onSelectTicket?: (ticketId: string) => void;
+  onCreateTicket?: () => void;
   isLoading?: boolean;
 }
 
@@ -168,7 +169,7 @@ function formatCreatedAt(createdAt?: string, age?: string, justNowFallback = 'ju
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, isLoading }: ChatSidebarProps) {
+export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, onCreateTicket, isLoading }: ChatSidebarProps) {
   const t = useTranslations('ChatSidebar');
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -347,7 +348,6 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
   const listLoading = useDirectGlobalQueueSource ? globalQueueTicketsLoading : Boolean(isLoading);
   const suppressedCount = listTickets.filter((t) => Boolean(t.suppressed)).length;
   const ticketsBySuppression = hideSuppressed ? listTickets.filter((t) => !t.suppressed) : listTickets;
-  const completed = ticketsBySuppression.filter((t) => t.status === 'completed').length;
   const processing = ticketsBySuppression.filter((t) => t.status === 'processing' || t.status === 'pending').length;
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const currentUserEmail = String(user?.email || '').trim().toLowerCase();
@@ -666,17 +666,47 @@ export default function ChatSidebar({ tickets, currentTicketId, onSelectTicket, 
 
           {/* 2. Stats Card */}
           <div style={{ borderRadius: '20px', border: '1px solid var(--bento-outline)', background: 'var(--bg-bento-panel)', boxShadow: 'var(--shadow-card)', overflow: 'hidden', flexShrink: 0 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px', padding: '10px 10px 8px', position: 'relative', zIndex: 1 }}>
-              {[
-                { val: processing, label: t('statActive'), color: 'var(--accent)' },
-                { val: completed, label: t('statDoneToday'), color: 'var(--green)' },
-                { val: tickets.length > 0 ? '4m' : '—', label: t('statAvgTime'), color: 'var(--text-muted)' },
-              ].map((s) => (
-                <div key={s.label} style={{ textAlign: 'center', padding: '6px 5px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--bento-outline)' }}>
-                  <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '13px', fontWeight: 700, letterSpacing: '-0.04em', marginBottom: '2px', color: s.color }}>{s.val}</div>
-                  <div style={{ fontSize: '8px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{s.label}</div>
-                </div>
-              ))}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 0.95fr) minmax(0, 1.55fr)', gap: '6px', padding: '10px 10px 8px', position: 'relative', zIndex: 1 }}>
+              <div style={{ textAlign: 'center', padding: '6px 5px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--bento-outline)' }}>
+                <div style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '13px', fontWeight: 700, letterSpacing: '-0.04em', marginBottom: '2px', color: 'var(--accent)' }}>{processing}</div>
+                <div style={{ fontSize: '8px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{t('statActive')}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onCreateTicket?.()}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  padding: '6px 10px',
+                  borderRadius: '10px',
+                  border: '1px solid var(--border-accent)',
+                  background: 'linear-gradient(135deg, rgba(91,127,255,0.16) 0%, rgba(91,127,255,0.08) 100%)',
+                  color: 'var(--accent)',
+                  cursor: 'pointer',
+                  fontSize: '9px',
+                  fontWeight: 800,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  boxShadow: '0 8px 18px rgba(91,127,255,0.10)',
+                  transition: 'var(--transition)',
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)';
+                  (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 10px 22px rgba(91,127,255,0.16)';
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+                  (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 8px 18px rgba(91,127,255,0.10)';
+                }}
+                aria-label={t('newTicket')}
+              >
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+                <span>{t('newTicket')}</span>
+              </button>
             </div>
             <div style={{ padding: '0 10px 10px', position: 'relative', zIndex: 1 }}>
               <div

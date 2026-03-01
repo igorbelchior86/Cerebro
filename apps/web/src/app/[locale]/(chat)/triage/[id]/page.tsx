@@ -9,6 +9,7 @@ import ChatInput, { type ChatInputSubmitPayload } from '@/components/ChatInput';
 import PlaybookPanel from '@/components/PlaybookPanel';
 import ResizableLayout from '@/components/ResizableLayout';
 import { usePathname } from 'next/navigation';
+import { useRouter } from '@/i18n/routing';
 import { usePollingResource } from '@/hooks/usePollingResource';
 import { useScrollVelocity } from '@/hooks/useScrollVelocity';
 import {
@@ -253,6 +254,7 @@ export default function SessionDetail({
 }) {
   const t = useTranslations('ChatSession');
   const pathname = usePathname();
+  const router = useRouter();
   const [selectedTicketId, setSelectedTicketId] = useState(params.id);
   const [data, setData] = useState<SessionData | null>(null);
   const { scrollRef, style: velocityStyle } = useScrollVelocity();
@@ -1774,6 +1776,7 @@ export default function SessionDetail({
           tickets={displayTickets}
           currentTicketId={selectedTicketId}
           isLoading={isLoadingTickets || loading}
+          onCreateTicket={() => router.push('/triage/home', { scroll: false })}
           onSelectTicket={(id) => {
             if (id === selectedTicketId) return;
             setSelectedTicketId(id);

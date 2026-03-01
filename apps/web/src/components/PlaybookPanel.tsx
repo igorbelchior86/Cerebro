@@ -371,7 +371,7 @@ export default function PlaybookPanel({ content, status = 'ready', data, session
                   </div>
 
                   {/* 2. TECHNICAL SPLIT - Fixed Left/Right columns */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', paddingBottom: '20px', marginBottom: '-20px' }}>
                     {/* Connectivity/Network Cluster */}
                     <div style={{
                       display: 'flex', flexDirection: 'column', gap: '6px',

@@ -1,3 +1,86 @@
+# Task: Recolocar New Ticket na shell canônica com wiring local de draft
+**Status**: completed
+**Started**: 2026-03-01T09:20:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar onde `triage/home` diverge da shell canônica e quais campos já existem no layout atual.
+- [x] Step 2: Substituir o formulário alternativo por um draft local no mesmo layout do ticket (header, pills, feed, chat bar e painel direito).
+- [x] Step 3: Ligar os campos do draft ao wiring correto: `title`, body via `ChatInput`, `Primary`/`Secondary`, `Org`/`Contact`/`Additional contacts`, com fila implícita em `Triage`.
+- [x] Step 4: Validar com typecheck do frontend e documentar a mudança na wiki local.
+
+## Open Questions
+- Assumindo que esta etapa é somente frontend/local draft: ainda não haverá persistência nem criação efetiva do ticket no backend.
+
+## Progress Notes
+- `triage/home` estava usando um formulário customizado que quebra a paridade visual e operacional com `triage/[id]`.
+- O ajuste será local ao frontend, preservando a rota em `Triage` até existir UI explícita de queue.
+- `triage/home` agora reutiliza a shell canônica: header com `title`, pills de tech, feed central para preview do body e `ChatInput` como compositor.
+- O painel direito voltou a ser o ponto de assignment do cliente (`Org`, `Contact`, `Additional contacts`) e usa busca Autotask local para preencher o draft.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-03-01-new-ticket-canonical-draft-wiring.md`
+
+---
+
+# Task: Corrigir New Ticket para espelhar o workspace real do Autotask
+**Status**: completed
+**Started**: 2026-02-28T11:34:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar o comportamento real do “New Ticket” no Autotask e mapear o desvio da implementação atual.
+- [x] Step 2: Reusar a mesma interface do workspace de ticket em andamento, colocando a tela em modo draft com campos vazios/populáveis.
+- [x] Step 3: Remover a tela simplificada incorreta e ligar o botão `New Ticket` ao workspace correto.
+- [x] Step 4: Validar o frontend e atualizar a wiki obrigatória com a correção.
+
+## Open Questions
+- Assumindo que o fluxo correto é “mesma shell do ticket”, sem criar a sessão imediatamente; a criação efetiva continua quando o usuário preencher/salvar.
+
+## Progress Notes
+- O usuário corrigiu explicitamente o requisito: `New Ticket` no Autotask mantém a mesma interface do ticket, em estado vazio.
+- Pesquisa externa e screenshot do usuário serão usados como fonte de confirmação antes da refatoração.
+- Context7 foi chamado por obrigação contratual, mas segue indisponível por limite de quota.
+- A tela `/triage/home` foi reescrita para manter a mesma shell tri-pane do ticket em andamento, agora em modo draft local.
+- O draft central agora expõe campos vazios (`Account`, `Contact`, `Status`, `Priority`, `Title`, `Description`, `Issue Type`, `Sub-Issue Type`) em vez de uma tela separada de intake.
+- O painel direito voltou a usar `PlaybookPanel`, refletindo contexto vazio do draft em vez de um card alternativo.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-02-28-new-ticket-workspace-parity-with-autotask.md`
+
+---
+
+# Task: Sidebar com botão New Ticket e estado tri-pane de criação Autotask
+**Status**: completed
+**Started**: 2026-02-28T11:20:00-05:00
+
+## Plan
+- [x] Step 1: Ajustar `ChatSidebar` para manter apenas o card de `Active` e substituir `Done today`/`Avg time` por um único botão `New Ticket`.
+- [x] Step 2: Reaproveitar o fluxo atual de criação de sessão Autotask em `triage/home`, convertendo a tela para um estado tri-pane com colunas central/direita vazias e prontas para preenchimento.
+- [x] Step 3: Conectar a navegação do botão na sidebar para abrir esse estado de criação a partir das telas de triage.
+- [x] Step 4: Validar com typecheck do frontend e registrar a mudança na wiki local.
+
+## Open Questions
+- Assumindo que o fluxo de “new ticket” deve permanecer no frontend e continuar usando `POST /triage/sessions` (sem mudança de backend).
+
+## Progress Notes
+- Context7 MCP foi invocado por exigência do contrato, mas a cota disponível retornou erro de quota; seguirei com leitura do código local como fonte primária.
+- `ChatSidebar` agora mantém apenas `Active` e um CTA único `New Ticket`.
+- `/triage/home` foi convertido para draft tri-pane de criação de sessão com lógica Autotask existente (`POST /triage/sessions`).
+- `triage/[id]` agora usa o mesmo CTA para retornar ao estado vazio de criação.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/features/2026-02-28-sidebar-new-ticket-autotask-draft.md`
+
+---
+
 # Task: Nota ainda ausente por processo local da API desatualizado
 **Status**: completed
 **Started**: 2026-02-27T21:34:00-03:00

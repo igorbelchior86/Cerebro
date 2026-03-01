@@ -1,6 +1,26 @@
-import type { Signal, Doc, SecurityAgentSummary, EvidencePack, IterativeEnrichmentSections, EnrichmentField, SourceFinding, IterativeEnrichmentProfile } from '@playbook-brain/types';
+import type {
+    Signal,
+    Doc,
+    SecurityAgentSummary,
+    EvidencePack,
+    IterativeEnrichmentSections,
+    EnrichmentField,
+    SourceFinding,
+    IterativeEnrichmentProfile,
+    EntityResolution
+} from '@playbook-brain/types';
 
-export { IterativeEnrichmentSections, EnrichmentField, SourceFinding, IterativeEnrichmentProfile };
+export {
+    IterativeEnrichmentSections,
+    EnrichmentField,
+    SourceFinding,
+    IterativeEnrichmentProfile,
+    Signal,
+    Doc,
+    EvidencePack,
+    SecurityAgentSummary,
+    EntityResolution
+};
 
 export interface PrepareContextInput {
     sessionId: string;

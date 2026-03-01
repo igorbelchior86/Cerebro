@@ -1,937 +1,937 @@
 import type {
-    IterativeEnrichmentSections,
-    EnrichmentField,
-    SourceFinding,
-    IterativeEnrichmentProfile,
-    TicketLike,
-    EntityResolution,
-    ItglueEnrichedPayload,
-    Doc,
-    Signal,
-    TicketEnrichmentSection,
-    ITGlueWanCandidate,
-    ITGlueInfraCandidate
+  IterativeEnrichmentSections,
+  EnrichmentField,
+  SourceFinding,
+  IterativeEnrichmentProfile,
+  TicketLike,
+  EntityResolution,
+  ItglueEnrichedPayload,
+  Doc,
+  Signal,
+  TicketEnrichmentSection,
+  ITGlueWanCandidate,
+  ITGlueInfraCandidate
 } from './prepare-context.types.js';
 
 export function itgAttr(attrs: Record<string, unknown> | null | undefined, key: string): unknown {
-    if (!attrs) return undefined;
-    if (attrs[key] !== undefined) return attrs[key];
-    const toCamel = (s: string) => s.replace(/([-_][a-z])/ig, ($1) => $1.toUpperCase().replace('-', '').replace('_', ''));
-    const toKebab = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
-    const camelKey = toCamel(key);
-    if (attrs[camelKey] !== undefined) return attrs[camelKey];
-    const kebabKey = toKebab(key);
-    if (attrs[kebabKey] !== undefined) return attrs[kebabKey];
-    return undefined;
+  if (!attrs) return undefined;
+  if (attrs[key] !== undefined) return attrs[key];
+  const toCamel = (s: string) => s.replace(/([-_][a-z])/ig, ($1) => $1.toUpperCase().replace('-', '').replace('_', ''));
+  const toKebab = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase();
+  const camelKey = toCamel(key);
+  if (attrs[camelKey] !== undefined) return attrs[camelKey];
+  const kebabKey = toKebab(key);
+  if (attrs[kebabKey] !== undefined) return attrs[kebabKey];
+  return undefined;
 }
 
 export function normalizeName(name: string): string {
-    if (!name) return '';
-    return name.trim().replace(/\s+/g, ' ');
+  if (!name) return '';
+  return name.trim().replace(/\s+/g, ' ');
 }
 
 export function buildField<T>(input: {
-    value: T;
-    status: EnrichmentField<T>['status'];
-    confidence: number;
-    sourceSystem: string;
-    sourceRef?: string | undefined;
-    round: number;
-    observedAt?: string | undefined;
+  value: T;
+  status: EnrichmentField<T>['status'];
+  confidence: number;
+  sourceSystem: string;
+  sourceRef?: string | undefined;
+  round: number;
+  observedAt?: string | undefined;
 }): EnrichmentField<T> {
-    const safeConfidence = Number(Math.max(0, Math.min(1, input.confidence)).toFixed(3));
-    return {
-        value: input.value,
-        status: input.status,
-        confidence: safeConfidence,
-        source_system: input.sourceSystem,
-        ...(input.sourceRef ? { source_ref: input.sourceRef } : {}),
-        observed_at: input.observedAt || new Date().toISOString(),
-        round: input.round,
-    };
+  const safeConfidence = Number(Math.max(0, Math.min(1, input.confidence)).toFixed(3));
+  return {
+    value: input.value,
+    status: input.status,
+    confidence: safeConfidence,
+    source_system: input.sourceSystem,
+    ...(input.sourceRef ? { source_ref: input.sourceRef } : {}),
+    observed_at: input.observedAt || new Date().toISOString(),
+    round: input.round,
+  };
 }
 
 export function buildIterativeEnrichmentProfile(input: {
-    ticket: TicketLike;
-    ticketNarrative: string;
-    companyName: string;
-    inferredCompany: string;
-    requesterName: string;
-    entityResolution: EntityResolution;
-    device: any | null;
-    deviceDetails: any | null;
-    loggedInUser: string;
-    loggedInAt: string;
-    inferredPhoneProvider: string | null;
-    sourceFindings: SourceFinding[];
-    itglueConfigs: any[];
-    itgluePasswords: any[];
-    itglueAssets: any[];
-    itglueEnriched?: ItglueEnrichedPayload | null;
-    docs: Doc[];
-    ninjaChecks: Signal[];
-    missingData: Array<{ field: string; why: string }>;
-    enrichmentEngine: any;
+  ticket: TicketLike;
+  ticketNarrative: string;
+  companyName: string;
+  inferredCompany: string;
+  requesterName: string;
+  entityResolution: EntityResolution;
+  device: any | null;
+  deviceDetails: any | null;
+  loggedInUser: string;
+  loggedInAt: string;
+  inferredPhoneProvider: string | null;
+  sourceFindings: SourceFinding[];
+  itglueConfigs: any[];
+  itgluePasswords: any[];
+  itglueAssets: any[];
+  itglueEnriched?: ItglueEnrichedPayload | null;
+  docs: Doc[];
+  ninjaChecks: Signal[];
+  missingData: Array<{ field: string; why: string }>;
+  enrichmentEngine: any;
 }): IterativeEnrichmentProfile {
-    const ticketSection = buildTicketEnrichmentSection({
-        ticket: input.ticket,
-        companyName: input.companyName,
-        inferredCompany: input.inferredCompany,
-        requesterName: input.requesterName,
-        entityResolution: input.entityResolution,
-    });
-    const identitySection = buildIdentityEnrichmentSection(input.entityResolution);
-    const endpointSection = buildEndpointEnrichmentSection({
-        ticketNarrative: input.ticketNarrative,
-        device: input.device,
-        deviceDetails: input.deviceDetails,
-        loggedInUser: input.loggedInUser,
-        loggedInAt: input.loggedInAt,
-        ninjaChecks: input.ninjaChecks,
-        enrichmentEngine: input.enrichmentEngine,
-    });
-    const networkSection = buildNetworkEnrichmentSection({
-        ticketNarrative: input.ticketNarrative,
-        device: input.device,
-        deviceDetails: input.deviceDetails,
-        docs: input.docs,
-        itglueConfigs: input.itglueConfigs,
-        itgluePasswords: input.itgluePasswords,
-        itglueAssets: input.itglueAssets,
-        itglueEnriched: input.itglueEnriched || null,
-        ninjaChecks: input.ninjaChecks,
-        inferredPhoneProvider: input.inferredPhoneProvider,
-        enrichmentEngine: input.enrichmentEngine,
-    });
-    const infraSection = buildInfraEnrichmentSection({
-        itglueConfigs: input.itglueConfigs,
-        itgluePasswords: input.itgluePasswords,
-        itglueAssets: input.itglueAssets,
-        itglueEnriched: input.itglueEnriched || null,
-        docs: input.docs,
-    });
+  const ticketSection = buildTicketEnrichmentSection({
+    ticket: input.ticket,
+    companyName: input.companyName,
+    inferredCompany: input.inferredCompany,
+    requesterName: input.requesterName,
+    entityResolution: input.entityResolution,
+  });
+  const identitySection = buildIdentityEnrichmentSection(input.entityResolution);
+  const endpointSection = buildEndpointEnrichmentSection({
+    ticketNarrative: input.ticketNarrative,
+    device: input.device,
+    deviceDetails: input.deviceDetails,
+    loggedInUser: input.loggedInUser,
+    loggedInAt: input.loggedInAt,
+    ninjaChecks: input.ninjaChecks,
+    enrichmentEngine: input.enrichmentEngine,
+  });
+  const networkSection = buildNetworkEnrichmentSection({
+    ticketNarrative: input.ticketNarrative,
+    device: input.device,
+    deviceDetails: input.deviceDetails,
+    docs: input.docs,
+    itglueConfigs: input.itglueConfigs,
+    itgluePasswords: input.itgluePasswords,
+    itglueAssets: input.itglueAssets,
+    itglueEnriched: input.itglueEnriched || null,
+    ninjaChecks: input.ninjaChecks,
+    inferredPhoneProvider: input.inferredPhoneProvider,
+    enrichmentEngine: input.enrichmentEngine,
+  });
+  const infraSection = buildInfraEnrichmentSection({
+    itglueConfigs: input.itglueConfigs,
+    itgluePasswords: input.itgluePasswords,
+    itglueAssets: input.itglueAssets,
+    itglueEnriched: input.itglueEnriched || null,
+    docs: input.docs,
+  });
 
-    const sections: IterativeEnrichmentSections = {
-        ticket: ticketSection,
-        identity: identitySection,
-        endpoint: endpointSection,
-        network: networkSection,
-        infra: infraSection,
-    };
+  const sections: IterativeEnrichmentSections = {
+    ticket: ticketSection,
+    identity: identitySection,
+    endpoint: endpointSection,
+    network: networkSection,
+    infra: infraSection,
+  };
 
-    const fieldRecords = flattenEnrichmentFields(sections);
-    const coverage = computeEnrichmentCoverage(fieldRecords);
-    const rounds = buildEnrichmentRounds(fieldRecords, input.sourceFindings);
-    const lastRound = rounds.at(-1);
-    const completedRounds = lastRound?.round ?? 1;
-    const lastRoundGain = lastRound?.gain_count ?? 0;
+  const fieldRecords = flattenEnrichmentFields(sections);
+  const coverage = computeEnrichmentCoverage(fieldRecords);
+  const rounds = buildEnrichmentRounds(fieldRecords, input.sourceFindings);
+  const lastRound = rounds.at(-1);
+  const completedRounds = lastRound?.round ?? 1;
+  const lastRoundGain = lastRound?.gain_count ?? 0;
 
-    let stopReason: IterativeEnrichmentProfile['stop_reason'] = 'source_exhausted';
-    if (completedRounds >= 5) {
-        stopReason = 'max_rounds_reached';
-    } else if (coverage.completion_ratio >= 0.85) {
-        stopReason = 'coverage_target_reached';
-    } else if (lastRoundGain <= 1 || input.missingData.length > 0) {
-        stopReason = 'marginal_gain';
-    }
+  let stopReason: IterativeEnrichmentProfile['stop_reason'] = 'source_exhausted';
+  if (completedRounds >= 5) {
+    stopReason = 'max_rounds_reached';
+  } else if (coverage.completion_ratio >= 0.85) {
+    stopReason = 'coverage_target_reached';
+  } else if (lastRoundGain <= 1 || input.missingData.length > 0) {
+    stopReason = 'marginal_gain';
+  }
 
-    return {
-        schema_version: '1.0.0',
-        completed_rounds: completedRounds,
-        stop_reason: stopReason,
-        rounds,
-        sections,
-        coverage,
-    };
+  return {
+    schema_version: '1.0.0',
+    completed_rounds: completedRounds,
+    stop_reason: stopReason,
+    rounds,
+    sections,
+    coverage,
+  };
 }
 
 export function buildTicketEnrichmentSection(input: {
-    ticket: TicketLike;
-    companyName: string;
-    inferredCompany: string;
-    requesterName: string;
-    entityResolution: EntityResolution;
+  ticket: TicketLike;
+  companyName: string;
+  inferredCompany: string;
+  requesterName: string;
+  entityResolution: EntityResolution;
 }): IterativeEnrichmentSections['ticket'] {
-    const ticketId = String(input.ticket.ticketNumber || input.ticket.id || '').trim();
-    const requesterFromTicket = normalizeName(
-        input.ticket.canonicalRequesterName || input.ticket.requester || input.requesterName || ''
-    );
-    const requesterEmailFromTicket = String(
-        input.ticket.canonicalRequesterEmail || extractFirstEmail(input.ticket.requester || '')
-    ).trim();
-    const extractedEmail = input.entityResolution.extracted_entities.email[0] || '';
-    const requesterEmail = requesterEmailFromTicket || extractedEmail || '';
+  const ticketId = String(input.ticket.ticketNumber || input.ticket.id || '').trim();
+  const requesterFromTicket = normalizeName(
+    input.ticket.canonicalRequesterName || input.ticket.requester || input.requesterName || ''
+  );
+  const requesterEmailFromTicket = String(
+    input.ticket.canonicalRequesterEmail || extractFirstEmail(input.ticket.requester || '')
+  ).trim();
+  const extractedEmail = input.entityResolution.extracted_entities.email[0] || '';
+  const requesterEmail = requesterEmailFromTicket || extractedEmail || '';
 
-    const resolvedActor = input.entityResolution.resolved_actor;
-    const affectedName = normalizeName(
-        input.ticket.canonicalAffectedName || resolvedActor?.name || requesterFromTicket || 'unknown'
-    );
-    const affectedEmail = String(
-        input.ticket.canonicalAffectedEmail || resolvedActor?.email || requesterEmail || 'unknown'
-    ).trim();
+  const resolvedActor = input.entityResolution.resolved_actor;
+  const affectedName = normalizeName(
+    input.ticket.canonicalAffectedName || resolvedActor?.name || requesterFromTicket || 'unknown'
+  );
+  const affectedEmail = String(
+    input.ticket.canonicalAffectedEmail || resolvedActor?.email || requesterEmail || 'unknown'
+  ).trim();
 
-    const companyFromTicket = normalizeName(input.ticket.company || '');
-    const companyValue = companyFromTicket || input.companyName || input.inferredCompany || 'unknown';
-    const companyStatus = companyFromTicket
-        ? 'confirmed'
-        : companyValue !== 'unknown'
-            ? 'inferred'
-            : 'unknown';
+  const companyFromTicket = normalizeName(input.ticket.company || '');
+  const companyValue = companyFromTicket || input.companyName || input.inferredCompany || 'unknown';
+  const companyStatus = companyFromTicket
+    ? 'confirmed'
+    : companyValue !== 'unknown'
+      ? 'inferred'
+      : 'unknown';
 
-    return {
-        ticket_id: buildField({
-            value: ticketId || 'unknown',
-            status: ticketId ? 'confirmed' : 'unknown',
-            confidence: ticketId ? 1 : 0,
-            sourceSystem: 'ticket',
-            sourceRef: 'ticket.id',
-            round: 1,
-        }),
-        company: buildField({
-            value: companyValue,
-            status: companyStatus,
-            confidence: companyStatus === 'confirmed' ? 1 : companyStatus === 'inferred' ? 0.7 : 0,
-            sourceSystem: companyFromTicket ? 'ticket' : companyValue !== 'unknown' ? 'ticket_narrative' : 'unknown',
-            sourceRef: companyFromTicket ? 'ticket.company' : companyValue !== 'unknown' ? 'ticket.domain_inference' : undefined,
-            round: 1,
-        }),
-        requester_name: buildField({
-            value: requesterFromTicket || 'unknown',
-            status: requesterFromTicket ? 'confirmed' : 'unknown',
-            confidence: requesterFromTicket ? 0.9 : 0,
-            sourceSystem: requesterFromTicket ? 'ticket' : 'unknown',
-            sourceRef: requesterFromTicket ? 'ticket.requester' : undefined,
-            round: 1,
-        }),
-        requester_email: buildField({
-            value: requesterEmail || 'unknown',
-            status: requesterEmail ? 'confirmed' : 'unknown',
-            confidence: requesterEmail ? 0.9 : 0,
-            sourceSystem: requesterEmail ? 'ticket' : 'unknown',
-            sourceRef: requesterEmail ? 'ticket.requester.email' : undefined,
-            round: 1,
-        }),
-        affected_user_name: buildField({
-            value: affectedName,
-            status: resolvedActor ? (resolvedActor.confidence === 'strong' ? 'confirmed' : 'inferred') : (requesterFromTicket ? 'inferred' : 'unknown'),
-            confidence: resolvedActor ? (resolvedActor.confidence === 'strong' ? 0.9 : 0.7) : (requesterFromTicket ? 0.6 : 0),
-            sourceSystem: resolvedActor ? 'entity_resolution' : 'ticket',
-            sourceRef: resolvedActor ? 'entity_resolution.resolved_actor' : 'ticket.requester',
-            round: resolvedActor ? 3 : 1,
-        }),
-        affected_user_email: buildField({
-            value: affectedEmail,
-            status: resolvedActor ? (resolvedActor.confidence === 'strong' ? 'confirmed' : 'inferred') : (requesterEmail ? 'inferred' : 'unknown'),
-            confidence: resolvedActor ? (resolvedActor.confidence === 'strong' ? 0.9 : 0.7) : (requesterEmail ? 0.6 : 0),
-            sourceSystem: resolvedActor ? 'entity_resolution' : 'ticket',
-            sourceRef: resolvedActor ? 'entity_resolution.resolved_actor' : 'ticket.requester.email',
-            round: resolvedActor ? 3 : 1,
-        }),
-        title: buildField({
-            value: String(input.ticket.title || '').trim() || 'unknown',
-            status: input.ticket.title ? 'confirmed' : 'unknown',
-            confidence: input.ticket.title ? 0.95 : 0,
-            sourceSystem: input.ticket.title ? 'ticket' : 'unknown',
-            sourceRef: input.ticket.title ? 'ticket.title' : undefined,
-            round: 1,
-        }),
-        description_clean: buildField({
-            value: String(input.ticket.description || '').trim() || 'unknown',
-            status: input.ticket.description ? 'confirmed' : 'unknown',
-            confidence: input.ticket.description ? 0.9 : 0,
-            sourceSystem: input.ticket.description ? 'ticket' : 'unknown',
-            sourceRef: input.ticket.description ? 'ticket.description' : undefined,
-            round: 1,
-        }),
-        created_at: new Date().toISOString(),
-    };
+  return {
+    ticket_id: buildField({
+      value: ticketId || 'unknown',
+      status: ticketId ? 'confirmed' : 'unknown',
+      confidence: ticketId ? 1 : 0,
+      sourceSystem: 'ticket',
+      sourceRef: 'ticket.id',
+      round: 1,
+    }),
+    company: buildField({
+      value: companyValue,
+      status: companyStatus,
+      confidence: companyStatus === 'confirmed' ? 1 : companyStatus === 'inferred' ? 0.7 : 0,
+      sourceSystem: companyFromTicket ? 'ticket' : companyValue !== 'unknown' ? 'ticket_narrative' : 'unknown',
+      sourceRef: companyFromTicket ? 'ticket.company' : companyValue !== 'unknown' ? 'ticket.domain_inference' : undefined,
+      round: 1,
+    }),
+    requester_name: buildField({
+      value: requesterFromTicket || 'unknown',
+      status: requesterFromTicket ? 'confirmed' : 'unknown',
+      confidence: requesterFromTicket ? 0.9 : 0,
+      sourceSystem: requesterFromTicket ? 'ticket' : 'unknown',
+      sourceRef: requesterFromTicket ? 'ticket.requester' : undefined,
+      round: 1,
+    }),
+    requester_email: buildField({
+      value: requesterEmail || 'unknown',
+      status: requesterEmail ? 'confirmed' : 'unknown',
+      confidence: requesterEmail ? 0.9 : 0,
+      sourceSystem: requesterEmail ? 'ticket' : 'unknown',
+      sourceRef: requesterEmail ? 'ticket.requester.email' : undefined,
+      round: 1,
+    }),
+    affected_user_name: buildField({
+      value: affectedName,
+      status: resolvedActor ? (resolvedActor.confidence === 'strong' ? 'confirmed' : 'inferred') : (requesterFromTicket ? 'inferred' : 'unknown'),
+      confidence: resolvedActor ? (resolvedActor.confidence === 'strong' ? 0.9 : 0.7) : (requesterFromTicket ? 0.6 : 0),
+      sourceSystem: resolvedActor ? 'entity_resolution' : 'ticket',
+      sourceRef: resolvedActor ? 'entity_resolution.resolved_actor' : 'ticket.requester',
+      round: resolvedActor ? 3 : 1,
+    }),
+    affected_user_email: buildField({
+      value: affectedEmail,
+      status: resolvedActor ? (resolvedActor.confidence === 'strong' ? 'confirmed' : 'inferred') : (requesterEmail ? 'inferred' : 'unknown'),
+      confidence: resolvedActor ? (resolvedActor.confidence === 'strong' ? 0.9 : 0.7) : (requesterEmail ? 0.6 : 0),
+      sourceSystem: resolvedActor ? 'entity_resolution' : 'ticket',
+      sourceRef: resolvedActor ? 'entity_resolution.resolved_actor' : 'ticket.requester.email',
+      round: resolvedActor ? 3 : 1,
+    }),
+    title: buildField({
+      value: String(input.ticket.title || '').trim() || 'unknown',
+      status: input.ticket.title ? 'confirmed' : 'unknown',
+      confidence: input.ticket.title ? 0.95 : 0,
+      sourceSystem: input.ticket.title ? 'ticket' : 'unknown',
+      sourceRef: input.ticket.title ? 'ticket.title' : undefined,
+      round: 1,
+    }),
+    description_clean: buildField({
+      value: String(input.ticket.description || '').trim() || 'unknown',
+      status: input.ticket.description ? 'confirmed' : 'unknown',
+      confidence: input.ticket.description ? 0.9 : 0,
+      sourceSystem: input.ticket.description ? 'ticket' : 'unknown',
+      sourceRef: input.ticket.description ? 'ticket.description' : undefined,
+      round: 1,
+    }),
+    created_at: new Date().toISOString(),
+  };
 }
 
 export function buildIdentityEnrichmentSection(
-    entityResolution: EntityResolution
+  entityResolution: EntityResolution
 ): IterativeEnrichmentSections['identity'] {
-    const resolvedEmail = entityResolution.resolved_actor?.email || '';
-    const extractedEmail = entityResolution.extracted_entities.email[0] || '';
-    const principal = resolvedEmail || extractedEmail || 'unknown';
-    const hasStrongResolvedEmail =
-        Boolean(resolvedEmail) && entityResolution.resolved_actor?.confidence === 'strong';
+  const resolvedEmail = entityResolution.resolved_actor?.email || '';
+  const extractedEmail = entityResolution.extracted_entities.email[0] || '';
+  const principal = resolvedEmail || extractedEmail || 'unknown';
+  const hasStrongResolvedEmail =
+    Boolean(resolvedEmail) && entityResolution.resolved_actor?.confidence === 'strong';
 
-    return {
-        user_principal_name: buildField({
-            value: principal,
-            status: hasStrongResolvedEmail ? 'confirmed' : principal !== 'unknown' ? 'inferred' : 'unknown',
-            confidence: hasStrongResolvedEmail ? 0.9 : principal !== 'unknown' ? 0.6 : 0,
-            sourceSystem: resolvedEmail ? 'entity_resolution' : extractedEmail ? 'ticket_narrative' : 'unknown',
-            sourceRef: resolvedEmail
-                ? 'entity_resolution.resolved_actor.email'
-                : extractedEmail
-                    ? 'entity_resolution.extracted_entities.email[0]'
-                    : undefined,
-            round: resolvedEmail ? 3 : extractedEmail ? 2 : 1,
-        }),
-        account_status: buildField({
-            value: 'unknown',
-            status: 'unknown',
-            confidence: 0,
-            sourceSystem: 'directory',
-            sourceRef: 'unavailable',
-            round: 2,
-        }),
-        mfa_state: buildField({
-            value: 'unknown',
-            status: 'unknown',
-            confidence: 0,
-            sourceSystem: 'directory',
-            sourceRef: 'unavailable',
-            round: 2,
-        }),
-        licenses_summary: buildField({
-            value: 'Unknown',
-            status: 'unknown',
-            confidence: 0,
-            sourceSystem: 'directory',
-            sourceRef: 'unavailable',
-            round: 2,
-        }),
-        groups_top: buildField({
-            value: 'unknown',
-            status: 'unknown',
-            confidence: 0,
-            sourceSystem: 'directory',
-            sourceRef: 'unavailable',
-            round: 2,
-        }),
-    };
+  return {
+    user_principal_name: buildField({
+      value: principal,
+      status: hasStrongResolvedEmail ? 'confirmed' : principal !== 'unknown' ? 'inferred' : 'unknown',
+      confidence: hasStrongResolvedEmail ? 0.9 : principal !== 'unknown' ? 0.6 : 0,
+      sourceSystem: resolvedEmail ? 'entity_resolution' : extractedEmail ? 'ticket_narrative' : 'unknown',
+      sourceRef: resolvedEmail
+        ? 'entity_resolution.resolved_actor.email'
+        : extractedEmail
+          ? 'entity_resolution.extracted_entities.email[0]'
+          : undefined,
+      round: resolvedEmail ? 3 : extractedEmail ? 2 : 1,
+    }),
+    account_status: buildField({
+      value: 'unknown',
+      status: 'unknown',
+      confidence: 0,
+      sourceSystem: 'directory',
+      sourceRef: 'unavailable',
+      round: 2,
+    }),
+    mfa_state: buildField({
+      value: 'unknown',
+      status: 'unknown',
+      confidence: 0,
+      sourceSystem: 'directory',
+      sourceRef: 'unavailable',
+      round: 2,
+    }),
+    licenses_summary: buildField({
+      value: 'Unknown',
+      status: 'unknown',
+      confidence: 0,
+      sourceSystem: 'directory',
+      sourceRef: 'unavailable',
+      round: 2,
+    }),
+    groups_top: buildField({
+      value: 'unknown',
+      status: 'unknown',
+      confidence: 0,
+      sourceSystem: 'directory',
+      sourceRef: 'unavailable',
+      round: 2,
+    }),
+  };
 }
 
 export function buildEndpointEnrichmentSection(input: {
-    ticketNarrative: string;
-    device: any | null;
-    deviceDetails: any | null;
-    loggedInUser: string;
-    loggedInAt: string;
-    ninjaChecks: Signal[];
-    enrichmentEngine: any;
+  ticketNarrative: string;
+  device: any | null;
+  deviceDetails: any | null;
+  loggedInUser: string;
+  loggedInAt: string;
+  ninjaChecks: Signal[];
+  enrichmentEngine: any;
 }): IterativeEnrichmentSections['endpoint'] {
-    const deviceName = String(
-        input.device?.hostname || input.device?.systemName || input.device?.id || ''
-    ).trim();
-    const deviceType = input.enrichmentEngine.inferDeviceType({
-        ticketNarrative: input.ticketNarrative,
-        device: input.device,
-        deviceDetails: input.deviceDetails,
-    });
-    const osName = String(
-        input.device?.osName ||
-        input.deviceDetails?.osName ||
-        input.deviceDetails?.os?.name ||
-        ''
-    ).trim();
-    const osVersion = String(
-        input.device?.osVersion ||
-        input.deviceDetails?.osVersion ||
-        [input.deviceDetails?.os?.buildNumber, input.deviceDetails?.os?.releaseId].filter(Boolean).join(' / ') ||
-        ''
-    ).trim();
-    const lastCheckIn = input.enrichmentEngine.normalizeTimeValue(
-        input.device?.lastActivityTime ||
-        input.device?.lastContact ||
-        input.deviceDetails?.lastContact ||
-        input.deviceDetails?.lastUpdate ||
-        ''
-    );
-    const securityAgent = input.enrichmentEngine.inferSecurityAgent(input.ninjaChecks, input.deviceDetails);
+  const deviceName = String(
+    input.device?.hostname || input.device?.systemName || input.device?.id || ''
+  ).trim();
+  const deviceType = input.enrichmentEngine.inferDeviceType({
+    ticketNarrative: input.ticketNarrative,
+    device: input.device,
+    deviceDetails: input.deviceDetails,
+  });
+  const osName = String(
+    input.device?.osName ||
+    input.deviceDetails?.osName ||
+    input.deviceDetails?.os?.name ||
+    ''
+  ).trim();
+  const osVersion = String(
+    input.device?.osVersion ||
+    input.deviceDetails?.osVersion ||
+    [input.deviceDetails?.os?.buildNumber, input.deviceDetails?.os?.releaseId].filter(Boolean).join(' / ') ||
+    ''
+  ).trim();
+  const lastCheckIn = input.enrichmentEngine.normalizeTimeValue(
+    input.device?.lastActivityTime ||
+    input.device?.lastContact ||
+    input.deviceDetails?.lastContact ||
+    input.deviceDetails?.lastUpdate ||
+    ''
+  );
+  const securityAgent = input.enrichmentEngine.inferSecurityAgent(input.ninjaChecks, input.deviceDetails);
 
-    return {
-        device_name: buildField({
-            value: deviceName || 'unknown',
-            status: deviceName ? 'confirmed' : 'unknown',
-            confidence: deviceName ? 0.85 : 0,
-            sourceSystem: deviceName ? 'ninjaone' : 'unknown',
-            sourceRef: deviceName ? 'ninja.device.hostname' : undefined,
-            round: 1,
-        }),
-        device_type: buildField({
-            value: deviceType,
-            status: deviceType !== 'unknown' ? 'inferred' : 'unknown',
-            confidence: deviceType !== 'unknown' ? 0.65 : 0,
-            sourceSystem: deviceType !== 'unknown' ? 'ninjaone' : 'unknown',
-            sourceRef: deviceType !== 'unknown' ? 'ninja.device.os/type_heuristic' : undefined,
-            round: 1,
-        }),
-        os_name: buildField({
-            value: osName || 'unknown',
-            status: osName ? 'confirmed' : 'unknown',
-            confidence: osName ? 0.8 : 0,
-            sourceSystem: osName ? 'ninjaone' : 'unknown',
-            sourceRef: osName ? 'ninja.device.osName/os.name' : undefined,
-            round: 1,
-        }),
-        os_version: buildField({
-            value: osVersion || 'unknown',
-            status: osVersion ? 'confirmed' : 'unknown',
-            confidence: osVersion ? 0.75 : 0,
-            sourceSystem: osVersion ? 'ninjaone' : 'unknown',
-            sourceRef: osVersion ? 'ninja.device.osVersion/os.buildNumber+releaseId' : undefined,
-            round: 1,
-        }),
-        last_check_in: buildField({
-            value: lastCheckIn || 'unknown',
-            status: lastCheckIn ? 'confirmed' : 'unknown',
-            confidence: lastCheckIn ? 0.85 : 0,
-            sourceSystem: lastCheckIn ? 'ninjaone' : 'unknown',
-            sourceRef: lastCheckIn ? 'ninja.device.lastActivityTime' : undefined,
-            round: 1,
-        }),
-        security_agent: buildField({
-            value: securityAgent,
-            status: securityAgent.state === 'unknown' ? 'unknown' : 'inferred',
-            confidence: securityAgent.state === 'present' ? 0.7 : securityAgent.state === 'absent' ? 0.45 : 0,
-            sourceSystem: securityAgent.state === 'unknown' ? 'unknown' : 'ninjaone',
-            sourceRef: securityAgent.state === 'unknown' ? undefined : 'ninja.device.checks',
-            round: 1,
-        }),
-        user_signed_in: buildField({
-            value: input.loggedInUser || 'unknown',
-            status: input.loggedInUser ? 'inferred' : 'unknown',
-            confidence: input.loggedInUser ? 0.7 : 0,
-            sourceSystem: input.loggedInUser ? 'ninjaone' : 'unknown',
-            sourceRef: input.loggedInUser ? 'ninja.device.last-logged-on-user' : undefined,
-            round: input.loggedInUser ? 3 : 1,
-        }),
-        user_signed_in_at: buildField({
-            value: input.loggedInAt || (input.loggedInUser && lastCheckIn ? lastCheckIn : 'unknown'),
-            status: input.loggedInAt || (input.loggedInUser && lastCheckIn) ? 'inferred' : 'unknown',
-            confidence: input.loggedInAt || (input.loggedInUser && lastCheckIn) ? 0.7 : 0,
-            sourceSystem: input.loggedInAt || input.loggedInUser ? 'ninjaone' : 'unknown',
-            sourceRef: input.loggedInAt ? 'ninja.device.last-logged-on-user.logonTime' : input.loggedInUser && lastCheckIn ? 'ninja.device.lastActivityTime' : undefined,
-            round: input.loggedInUser ? 3 : 1,
-        }),
-    };
+  return {
+    device_name: buildField({
+      value: deviceName || 'unknown',
+      status: deviceName ? 'confirmed' : 'unknown',
+      confidence: deviceName ? 0.85 : 0,
+      sourceSystem: deviceName ? 'ninjaone' : 'unknown',
+      sourceRef: deviceName ? 'ninja.device.hostname' : undefined,
+      round: 1,
+    }),
+    device_type: buildField({
+      value: deviceType,
+      status: deviceType !== 'unknown' ? 'inferred' : 'unknown',
+      confidence: deviceType !== 'unknown' ? 0.65 : 0,
+      sourceSystem: deviceType !== 'unknown' ? 'ninjaone' : 'unknown',
+      sourceRef: deviceType !== 'unknown' ? 'ninja.device.os/type_heuristic' : undefined,
+      round: 1,
+    }),
+    os_name: buildField({
+      value: osName || 'unknown',
+      status: osName ? 'confirmed' : 'unknown',
+      confidence: osName ? 0.8 : 0,
+      sourceSystem: osName ? 'ninjaone' : 'unknown',
+      sourceRef: osName ? 'ninja.device.osName/os.name' : undefined,
+      round: 1,
+    }),
+    os_version: buildField({
+      value: osVersion || 'unknown',
+      status: osVersion ? 'confirmed' : 'unknown',
+      confidence: osVersion ? 0.75 : 0,
+      sourceSystem: osVersion ? 'ninjaone' : 'unknown',
+      sourceRef: osVersion ? 'ninja.device.osVersion/os.buildNumber+releaseId' : undefined,
+      round: 1,
+    }),
+    last_check_in: buildField({
+      value: lastCheckIn || 'unknown',
+      status: lastCheckIn ? 'confirmed' : 'unknown',
+      confidence: lastCheckIn ? 0.85 : 0,
+      sourceSystem: lastCheckIn ? 'ninjaone' : 'unknown',
+      sourceRef: lastCheckIn ? 'ninja.device.lastActivityTime' : undefined,
+      round: 1,
+    }),
+    security_agent: buildField({
+      value: securityAgent,
+      status: securityAgent.state === 'unknown' ? 'unknown' : 'inferred',
+      confidence: securityAgent.state === 'present' ? 0.7 : securityAgent.state === 'absent' ? 0.45 : 0,
+      sourceSystem: securityAgent.state === 'unknown' ? 'unknown' : 'ninjaone',
+      sourceRef: securityAgent.state === 'unknown' ? undefined : 'ninja.device.checks',
+      round: 1,
+    }),
+    user_signed_in: buildField({
+      value: input.loggedInUser || 'unknown',
+      status: input.loggedInUser ? 'inferred' : 'unknown',
+      confidence: input.loggedInUser ? 0.7 : 0,
+      sourceSystem: input.loggedInUser ? 'ninjaone' : 'unknown',
+      sourceRef: input.loggedInUser ? 'ninja.device.last-logged-on-user' : undefined,
+      round: input.loggedInUser ? 3 : 1,
+    }),
+    user_signed_in_at: buildField({
+      value: input.loggedInAt || (input.loggedInUser && lastCheckIn ? lastCheckIn : 'unknown'),
+      status: input.loggedInAt || (input.loggedInUser && lastCheckIn) ? 'inferred' : 'unknown',
+      confidence: input.loggedInAt || (input.loggedInUser && lastCheckIn) ? 0.7 : 0,
+      sourceSystem: input.loggedInAt || input.loggedInUser ? 'ninjaone' : 'unknown',
+      sourceRef: input.loggedInAt ? 'ninja.device.last-logged-on-user.logonTime' : input.loggedInUser && lastCheckIn ? 'ninja.device.lastActivityTime' : undefined,
+      round: input.loggedInUser ? 3 : 1,
+    }),
+  };
 }
 
 export function buildNetworkEnrichmentSection(input: {
-    ticketNarrative: string;
-    device: any | null;
-    deviceDetails: any | null;
-    docs: Doc[];
-    itglueConfigs: any[];
-    itgluePasswords: any[];
-    itglueAssets: any[];
-    itglueEnriched: ItglueEnrichedPayload | null;
-    ninjaChecks: Signal[];
-    inferredPhoneProvider: string | null;
-    enrichmentEngine: any;
+  ticketNarrative: string;
+  device: any | null;
+  deviceDetails: any | null;
+  docs: Doc[];
+  itglueConfigs: any[];
+  itgluePasswords: any[];
+  itglueAssets: any[];
+  itglueEnriched: ItglueEnrichedPayload | null;
+  ninjaChecks: Signal[];
+  inferredPhoneProvider: string | null;
+  enrichmentEngine: any;
 }): IterativeEnrichmentSections['network'] {
-    const wanCandidate = extractITGlueWanCandidate({
-        ticketNarrative: input.ticketNarrative,
-        itglueAssets: input.itglueAssets,
-        itglueConfigs: input.itglueConfigs,
-        docs: input.docs,
-    });
-    const narrativeLocationContext = input.enrichmentEngine.inferLocationContext(input.ticketNarrative);
-    const locationContext = narrativeLocationContext !== 'unknown'
-        ? narrativeLocationContext
-        : wanCandidate?.location_hint
-            ? 'office'
-            : 'unknown';
-    const publicIp = input.enrichmentEngine.resolvePublicIp(input.device, input.deviceDetails);
-    const itglueLlmIsp = pickEnrichedValue(input.itglueEnriched, 'isp_name');
-    const ispName = itglueLlmIsp || wanCandidate?.isp_name || inferIspName({
-        ticketNarrative: input.ticketNarrative,
-        docs: input.docs,
-        itglueConfigs: input.itglueConfigs,
-    });
-    const vpnState = input.enrichmentEngine.inferVpnState(input.ninjaChecks, input.ticketNarrative);
-    const phoneProviderConnected = Boolean(input.inferredPhoneProvider);
+  const wanCandidate = extractITGlueWanCandidate({
+    ticketNarrative: input.ticketNarrative,
+    itglueAssets: input.itglueAssets,
+    itglueConfigs: input.itglueConfigs,
+    docs: input.docs,
+  });
+  const narrativeLocationContext = input.enrichmentEngine.inferLocationContext(input.ticketNarrative);
+  const locationContext = narrativeLocationContext !== 'unknown'
+    ? narrativeLocationContext
+    : wanCandidate?.location_hint
+      ? 'office'
+      : 'unknown';
+  const publicIp = input.enrichmentEngine.resolvePublicIp(input.device, input.deviceDetails);
+  const itglueLlmIsp = pickEnrichedValue(input.itglueEnriched, 'isp_name');
+  const ispName = itglueLlmIsp || wanCandidate?.isp_name || inferIspName({
+    ticketNarrative: input.ticketNarrative,
+    docs: input.docs,
+    itglueConfigs: input.itglueConfigs,
+  });
+  const vpnState = input.enrichmentEngine.inferVpnState(input.ninjaChecks, input.ticketNarrative);
+  const phoneProviderConnected = Boolean(input.inferredPhoneProvider);
 
-    return {
-        location_context: buildField({
-            value: locationContext,
-            status: locationContext === 'unknown' ? 'unknown' : 'inferred',
-            confidence: locationContext === 'unknown' ? 0 : narrativeLocationContext !== 'unknown' ? 0.65 : 0.75,
-            sourceSystem: locationContext === 'unknown' ? 'unknown' : narrativeLocationContext !== 'unknown' ? 'ticket_narrative' : 'itglue',
-            sourceRef: locationContext === 'unknown' ? undefined : narrativeLocationContext !== 'unknown' ? 'ticket.text' : wanCandidate?.source_ref,
-            round: narrativeLocationContext !== 'unknown' ? 1 : 2,
-        }),
-        public_ip: buildField({
-            value: publicIp || 'unknown',
-            status: publicIp ? 'confirmed' : 'unknown',
-            confidence: publicIp ? 1 : 0,
-            sourceSystem: publicIp ? 'ninjaone' : 'unknown',
-            sourceRef: publicIp ? 'ninja.device.publicIP/ipAddresses' : undefined,
-            round: 1,
-        }),
-        isp_name: buildField({
-            value: ispName || 'unknown',
-            status: ispName ? 'inferred' : 'unknown',
-            confidence: itglueLlmIsp ? 0.75 : wanCandidate?.isp_name ? Math.max(0.65, wanCandidate.confidence) : ispName ? 0.6 : 0,
-            sourceSystem: itglueLlmIsp ? 'itglue_llm' : wanCandidate?.isp_name ? 'itglue' : ispName ? 'cross_correlation' : 'unknown',
-            sourceRef: itglueLlmIsp ? 'itglue_org_snapshot' : wanCandidate?.isp_name ? wanCandidate.source_ref : ispName ? 'ticket/docs/itglue keyword' : undefined,
-            round: ispName ? 2 : 1,
-        }),
-        vpn_state: buildField({
-            value: vpnState,
-            status: vpnState === 'unknown' ? 'unknown' : 'inferred',
-            confidence: vpnState === 'connected' ? 0.7 : vpnState === 'disconnected' ? 0.6 : 0,
-            sourceSystem: vpnState === 'unknown' ? 'unknown' : 'ninjaone',
-            sourceRef: vpnState === 'unknown' ? undefined : 'ninja.checks:vpn',
-            round: 1,
-        }),
-        phone_provider: buildField({
-            value: phoneProviderConnected ? 'connected' : 'unknown',
-            status: phoneProviderConnected ? 'inferred' : 'unknown',
-            confidence: phoneProviderConnected ? 0.7 : 0,
-            sourceSystem: phoneProviderConnected ? 'provider_inference' : 'unknown',
-            sourceRef: phoneProviderConnected ? 'ticket/docs/configs/signals' : undefined,
-            round: 1,
-        }),
-        phone_provider_name: buildField({
-            value: input.inferredPhoneProvider || 'unknown',
-            status: input.inferredPhoneProvider ? 'inferred' : 'unknown',
-            confidence: input.inferredPhoneProvider ? 0.75 : 0,
-            sourceSystem: input.inferredPhoneProvider ? 'provider_inference' : 'unknown',
-            sourceRef: input.inferredPhoneProvider ? 'provider.keyword_match' : undefined,
-            round: 1,
-        }),
-    };
+  return {
+    location_context: buildField({
+      value: locationContext,
+      status: locationContext === 'unknown' ? 'unknown' : 'inferred',
+      confidence: locationContext === 'unknown' ? 0 : narrativeLocationContext !== 'unknown' ? 0.65 : 0.75,
+      sourceSystem: locationContext === 'unknown' ? 'unknown' : narrativeLocationContext !== 'unknown' ? 'ticket_narrative' : 'itglue',
+      sourceRef: locationContext === 'unknown' ? undefined : narrativeLocationContext !== 'unknown' ? 'ticket.text' : wanCandidate?.source_ref,
+      round: narrativeLocationContext !== 'unknown' ? 1 : 2,
+    }),
+    public_ip: buildField({
+      value: publicIp || 'unknown',
+      status: publicIp ? 'confirmed' : 'unknown',
+      confidence: publicIp ? 1 : 0,
+      sourceSystem: publicIp ? 'ninjaone' : 'unknown',
+      sourceRef: publicIp ? 'ninja.device.publicIP/ipAddresses' : undefined,
+      round: 1,
+    }),
+    isp_name: buildField({
+      value: ispName || 'unknown',
+      status: ispName ? 'inferred' : 'unknown',
+      confidence: itglueLlmIsp ? 0.75 : wanCandidate?.isp_name ? Math.max(0.65, wanCandidate.confidence) : ispName ? 0.6 : 0,
+      sourceSystem: itglueLlmIsp ? 'itglue_llm' : wanCandidate?.isp_name ? 'itglue' : ispName ? 'cross_correlation' : 'unknown',
+      sourceRef: itglueLlmIsp ? 'itglue_org_snapshot' : wanCandidate?.isp_name ? wanCandidate.source_ref : ispName ? 'ticket/docs/itglue keyword' : undefined,
+      round: ispName ? 2 : 1,
+    }),
+    vpn_state: buildField({
+      value: vpnState,
+      status: vpnState === 'unknown' ? 'unknown' : 'inferred',
+      confidence: vpnState === 'connected' ? 0.7 : vpnState === 'disconnected' ? 0.6 : 0,
+      sourceSystem: vpnState === 'unknown' ? 'unknown' : 'ninjaone',
+      sourceRef: vpnState === 'unknown' ? undefined : 'ninja.checks:vpn',
+      round: 1,
+    }),
+    phone_provider: buildField({
+      value: phoneProviderConnected ? 'connected' : 'unknown',
+      status: phoneProviderConnected ? 'inferred' : 'unknown',
+      confidence: phoneProviderConnected ? 0.7 : 0,
+      sourceSystem: phoneProviderConnected ? 'provider_inference' : 'unknown',
+      sourceRef: phoneProviderConnected ? 'ticket/docs/configs/signals' : undefined,
+      round: 1,
+    }),
+    phone_provider_name: buildField({
+      value: input.inferredPhoneProvider || 'unknown',
+      status: input.inferredPhoneProvider ? 'inferred' : 'unknown',
+      confidence: input.inferredPhoneProvider ? 0.75 : 0,
+      sourceSystem: input.inferredPhoneProvider ? 'provider_inference' : 'unknown',
+      sourceRef: input.inferredPhoneProvider ? 'provider.keyword_match' : undefined,
+      round: 1,
+    }),
+  };
 }
 
 export function buildInfraEnrichmentSection(input: {
-    itglueConfigs: any[];
-    itgluePasswords: any[];
-    itglueAssets: any[];
-    itglueEnriched: ItglueEnrichedPayload | null;
-    docs: Doc[];
+  itglueConfigs: any[];
+  itgluePasswords: any[];
+  itglueAssets: any[];
+  itglueEnriched: ItglueEnrichedPayload | null;
+  docs: Doc[];
 }): IterativeEnrichmentSections['infra'] {
-    const metadataCandidates = extractITGlueInfraCandidates({
-        itgluePasswords: input.itgluePasswords,
-        itglueConfigs: input.itglueConfigs,
-        itglueAssets: input.itglueAssets,
-        docs: input.docs,
-    });
-    const firewallValue = pickEnrichedValue(input.itglueEnriched, 'firewall_make_model');
-    const wifiValue = pickEnrichedValue(input.itglueEnriched, 'wifi_make_model');
-    const switchValue = pickEnrichedValue(input.itglueEnriched, 'switch_make_model');
-    const makeEnriched = (value: string) => ({
-        value,
-        status: 'inferred' as const,
-        confidence: 0.75,
-        sourceSystem: 'itglue_llm',
-        sourceRef: 'itglue_org_snapshot',
-        round: 2,
-    });
-    const firewall = firewallValue
-        ? makeEnriched(firewallValue)
-        : metadataCandidates.firewall || extractInfraMakeModel('firewall', input.itglueConfigs, input.docs);
-    const wifi = wifiValue
-        ? makeEnriched(wifiValue)
-        : metadataCandidates.wifi || extractInfraMakeModel('wifi', input.itglueConfigs, input.docs);
-    const sw = switchValue
-        ? makeEnriched(switchValue)
-        : metadataCandidates.switch || extractInfraMakeModel('switch', input.itglueConfigs, input.docs);
+  const metadataCandidates = extractITGlueInfraCandidates({
+    itgluePasswords: input.itgluePasswords,
+    itglueConfigs: input.itglueConfigs,
+    itglueAssets: input.itglueAssets,
+    docs: input.docs,
+  });
+  const firewallValue = pickEnrichedValue(input.itglueEnriched, 'firewall_make_model');
+  const wifiValue = pickEnrichedValue(input.itglueEnriched, 'wifi_make_model');
+  const switchValue = pickEnrichedValue(input.itglueEnriched, 'switch_make_model');
+  const makeEnriched = (value: string) => ({
+    value,
+    status: 'inferred' as const,
+    confidence: 0.75,
+    sourceSystem: 'itglue_llm',
+    sourceRef: 'itglue_org_snapshot',
+    round: 2,
+  });
+  const firewall = firewallValue
+    ? makeEnriched(firewallValue)
+    : metadataCandidates.firewall || extractInfraMakeModel('firewall', input.itglueConfigs, input.docs);
+  const wifi = wifiValue
+    ? makeEnriched(wifiValue)
+    : metadataCandidates.wifi || extractInfraMakeModel('wifi', input.itglueConfigs, input.docs);
+  const sw = switchValue
+    ? makeEnriched(switchValue)
+    : metadataCandidates.switch || extractInfraMakeModel('switch', input.itglueConfigs, input.docs);
 
-    return {
-        firewall_make_model: buildField({
-            value: firewall.value,
-            status: firewall.status,
-            confidence: firewall.confidence,
-            sourceSystem: firewall.sourceSystem,
-            sourceRef: firewall.sourceRef,
-            round: firewall.round,
-        }),
-        wifi_make_model: buildField({
-            value: wifi.value,
-            status: wifi.status,
-            confidence: wifi.confidence,
-            sourceSystem: wifi.sourceSystem,
-            sourceRef: wifi.sourceRef,
-            round: wifi.round,
-        }),
-        switch_make_model: buildField({
-            value: sw.value,
-            status: sw.status,
-            confidence: sw.confidence,
-            sourceSystem: sw.sourceSystem,
-            sourceRef: sw.sourceRef,
-            round: sw.round,
-        }),
-    };
+  return {
+    firewall_make_model: buildField({
+      value: firewall.value,
+      status: firewall.status,
+      confidence: firewall.confidence,
+      sourceSystem: firewall.sourceSystem,
+      sourceRef: firewall.sourceRef,
+      round: firewall.round,
+    }),
+    wifi_make_model: buildField({
+      value: wifi.value,
+      status: wifi.status,
+      confidence: wifi.confidence,
+      sourceSystem: wifi.sourceSystem,
+      sourceRef: wifi.sourceRef,
+      round: wifi.round,
+    }),
+    switch_make_model: buildField({
+      value: sw.value,
+      status: sw.status,
+      confidence: sw.confidence,
+      sourceSystem: sw.sourceSystem,
+      sourceRef: sw.sourceRef,
+      round: sw.round,
+    }),
+  };
 }
 
 export function inferIspName(input: {
-    ticketNarrative: string;
-    docs: Doc[];
-    itglueConfigs: any[];
+  ticketNarrative: string;
+  docs: Doc[];
+  itglueConfigs: any[];
 }): string {
-    const sourceText = [
-        input.ticketNarrative,
-        ...input.docs.map((doc) => `${doc.title} ${doc.snippet}`),
-        ...input.itglueConfigs.map((cfg) => JSON.stringify(cfg?.attributes || {})),
-    ]
-        .join(' ')
-        .toLowerCase();
-    const providers: Array<{ name: string; pattern: RegExp }> = [
-        { name: 'Comcast', pattern: /\bcomcast\b|\bxfinity\b/ },
-        { name: 'AT&T', pattern: /\bat&t\b|\batt\b/ },
-        { name: 'Verizon', pattern: /\bverizon\b/ },
-        { name: 'Spectrum', pattern: /\bspectrum\b|\bcharter\b/ },
-        { name: 'Cox', pattern: /\bcox\b/ },
-        { name: 'Frontier', pattern: /\bfrontier\b/ },
-        { name: 'Lumen/CenturyLink', pattern: /\bcenturylink\b|\blumen\b/ },
-        { name: 'Optimum', pattern: /\boptimum\b|\baltice\b/ },
-    ];
-    const found = providers.find((provider) => provider.pattern.test(sourceText));
-    return found ? found.name : '';
+  const sourceText = [
+    input.ticketNarrative,
+    ...input.docs.map((doc) => `${doc.title} ${doc.snippet}`),
+    ...input.itglueConfigs.map((cfg) => JSON.stringify(cfg?.attributes || {})),
+  ]
+    .join(' ')
+    .toLowerCase();
+  const providers: Array<{ name: string; pattern: RegExp }> = [
+    { name: 'Comcast', pattern: /\bcomcast\b|\bxfinity\b/ },
+    { name: 'AT&T', pattern: /\bat&t\b|\batt\b/ },
+    { name: 'Verizon', pattern: /\bverizon\b/ },
+    { name: 'Spectrum', pattern: /\bspectrum\b|\bcharter\b/ },
+    { name: 'Cox', pattern: /\bcox\b/ },
+    { name: 'Frontier', pattern: /\bfrontier\b/ },
+    { name: 'Lumen/CenturyLink', pattern: /\bcenturylink\b|\blumen\b/ },
+    { name: 'Optimum', pattern: /\boptimum\b|\baltice\b/ },
+  ];
+  const found = providers.find((provider) => provider.pattern.test(sourceText));
+  return found ? found.name : '';
 }
 
 export function extractITGlueWanCandidate(input: {
-    ticketNarrative: string;
-    itglueAssets: any[];
-    itglueConfigs: any[];
-    docs: Doc[];
+  ticketNarrative: string;
+  itglueAssets: any[];
+  itglueConfigs: any[];
+  docs: Doc[];
 }): ITGlueWanCandidate | null {
-    const candidates: ITGlueWanCandidate[] = [];
+  const candidates: ITGlueWanCandidate[] = [];
 
-    const scanRecord = (record: any, sourceSystem: ITGlueWanCandidate['source_system'], sourceRef: string) => {
-        const attrs = record?.attributes || record || {};
-        const pairs = collectTextPairs(attrs);
-        const allText = pairs.map((p) => `${p.key}:${p.value}`).join(' | ');
-        if (!/\b(internet|wan|isp|provider|carrier|broadband|fiber|cable|upload speed|download speed|link type)\b/i.test(allText)) {
-            return;
-        }
-
-        let ispName = '';
-        let locationHint = '';
-        let publicIp = '';
-        let score = 0.42;
-
-        for (const pair of pairs) {
-            const key = pair.key.toLowerCase();
-            const value = pair.value.trim();
-            if (!value) continue;
-            if (/(^|[._\s-])(provider|isp|carrier)(name)?$/.test(key) && !/^(yes|no|true|false)$/i.test(value)) {
-                ispName = normalizeVendorPhrase(value) || ispName;
-                score += 0.28;
-            }
-            if (/(^|[._\s-])(location|site|address)(s)?$/.test(key) && value.length >= 4) {
-                locationHint = locationHint || value;
-                score += 0.08;
-            }
-            if ((/(^|[._\s-])(ip|public ip)( address)?(es)?$/.test(key) || isPublicIPv4(value)) && isPublicIPv4(value)) {
-                publicIp = publicIp || value;
-                score += 0.08;
-            }
-        }
-
-        const label = normalizeName(String(attrs.name || attrs.title || attrs.hostname || ''));
-        if (!ispName && label) {
-            const labelMatch = label.match(/^(.+?)\s+(cable|fiber|internet|broadband|communications?|telecom)$/i);
-            if (labelMatch?.[1]) {
-                ispName = normalizeVendorPhrase(labelMatch[1]) || '';
-                score += 0.14;
-            }
-        }
-
-        if (!ispName && label) {
-            const fallbackIsp = inferIspName({
-                ticketNarrative: `${input.ticketNarrative}\n${label}\n${allText}`.slice(0, 2000),
-                docs: [],
-                itglueConfigs: [],
-            });
-            if (fallbackIsp) {
-                ispName = fallbackIsp;
-                score += 0.08;
-            }
-        }
-
-        if (!ispName && !locationHint && !publicIp) return;
-        candidates.push({
-            isp_name: ispName,
-            location_hint: locationHint,
-            public_ip: publicIp,
-            confidence: Number(Math.min(0.92, score).toFixed(3)),
-            source_ref: sourceRef,
-            source_system: sourceSystem,
-        });
-    };
-
-    for (const asset of input.itglueAssets.slice(0, 400)) {
-        scanRecord(asset, 'itglue_asset', `itglue_asset:${String(asset?.id || 'unknown')}`);
-    }
-    for (const cfg of input.itglueConfigs.slice(0, 300)) {
-        scanRecord(cfg, 'itglue_config', `itglue_config:${String(cfg?.id || 'unknown')}`);
-    }
-    for (const doc of input.docs.slice(0, 20)) {
-        const text = `${doc.title} ${doc.snippet}`;
-        const m = text.match(/\b([A-Z][A-Za-z0-9&.' -]{1,40})\s+(cable|fiber|internet)\b/i);
-        const isp = m?.[1] ? normalizeVendorPhrase(m[1]) : '';
-        if (!isp) continue;
-        candidates.push({
-            isp_name: isp,
-            confidence: 0.52,
-            source_ref: `itglue_doc:${String(doc.id)}`,
-            source_system: 'itglue_doc',
-        });
+  const scanRecord = (record: any, sourceSystem: ITGlueWanCandidate['source_system'], sourceRef: string) => {
+    const attrs = record?.attributes || record || {};
+    const pairs = collectTextPairs(attrs);
+    const allText = pairs.map((p) => `${p.key}:${p.value}`).join(' | ');
+    if (!/\b(internet|wan|isp|provider|carrier|broadband|fiber|cable|upload speed|download speed|link type)\b/i.test(allText)) {
+      return;
     }
 
-    return candidates.sort((a, b) => b.confidence - a.confidence)[0] || null;
+    let ispName = '';
+    let locationHint = '';
+    let publicIp = '';
+    let score = 0.42;
+
+    for (const pair of pairs) {
+      const key = pair.key.toLowerCase();
+      const value = pair.value.trim();
+      if (!value) continue;
+      if (/(^|[._\s-])(provider|isp|carrier)(name)?$/.test(key) && !/^(yes|no|true|false)$/i.test(value)) {
+        ispName = normalizeVendorPhrase(value) || ispName;
+        score += 0.28;
+      }
+      if (/(^|[._\s-])(location|site|address)(s)?$/.test(key) && value.length >= 4) {
+        locationHint = locationHint || value;
+        score += 0.08;
+      }
+      if ((/(^|[._\s-])(ip|public ip)( address)?(es)?$/.test(key) || isPublicIPv4(value)) && isPublicIPv4(value)) {
+        publicIp = publicIp || value;
+        score += 0.08;
+      }
+    }
+
+    const label = normalizeName(String(attrs.name || attrs.title || attrs.hostname || ''));
+    if (!ispName && label) {
+      const labelMatch = label.match(/^(.+?)\s+(cable|fiber|internet|broadband|communications?|telecom)$/i);
+      if (labelMatch?.[1]) {
+        ispName = normalizeVendorPhrase(labelMatch[1]) || '';
+        score += 0.14;
+      }
+    }
+
+    if (!ispName && label) {
+      const fallbackIsp = inferIspName({
+        ticketNarrative: `${input.ticketNarrative}\n${label}\n${allText}`.slice(0, 2000),
+        docs: [],
+        itglueConfigs: [],
+      });
+      if (fallbackIsp) {
+        ispName = fallbackIsp;
+        score += 0.08;
+      }
+    }
+
+    if (!ispName && !locationHint && !publicIp) return;
+    candidates.push({
+      isp_name: ispName,
+      location_hint: locationHint,
+      public_ip: publicIp,
+      confidence: Number(Math.min(0.92, score).toFixed(3)),
+      source_ref: sourceRef,
+      source_system: sourceSystem,
+    });
+  };
+
+  for (const asset of input.itglueAssets.slice(0, 400)) {
+    scanRecord(asset, 'itglue_asset', `itglue_asset:${String(asset?.id || 'unknown')}`);
+  }
+  for (const cfg of input.itglueConfigs.slice(0, 300)) {
+    scanRecord(cfg, 'itglue_config', `itglue_config:${String(cfg?.id || 'unknown')}`);
+  }
+  for (const doc of input.docs.slice(0, 20)) {
+    const text = `${doc.title} ${doc.snippet}`;
+    const m = text.match(/\b([A-Z][A-Za-z0-9&.' -]{1,40})\s+(cable|fiber|internet)\b/i);
+    const isp = m?.[1] ? normalizeVendorPhrase(m[1]) : '';
+    if (!isp) continue;
+    candidates.push({
+      isp_name: isp,
+      confidence: 0.52,
+      source_ref: `itglue_doc:${String(doc.id)}`,
+      source_system: 'itglue_doc',
+    });
+  }
+
+  return candidates.sort((a, b) => b.confidence - a.confidence)[0] || null;
 }
 
 export function extractITGlueInfraCandidates(input: {
-    itgluePasswords: any[];
-    itglueConfigs: any[];
-    itglueAssets: any[];
-    docs: Doc[];
+  itgluePasswords: any[];
+  itglueConfigs: any[];
+  itglueAssets: any[];
+  docs: Doc[];
 }): {
-    firewall: {
-        value: string;
-        status: EnrichmentField<string>['status'];
-        confidence: number;
-        sourceSystem: string;
-        sourceRef?: string;
-        round: number;
-    } | null;
-    wifi: {
-        value: string;
-        status: EnrichmentField<string>['status'];
-        confidence: number;
-        sourceSystem: string;
-        sourceRef?: string;
-        round: number;
-    } | null;
-    switch: {
-        value: string;
-        status: EnrichmentField<string>['status'];
-        confidence: number;
-        sourceSystem: string;
-        sourceRef?: string;
-        round: number;
-    } | null;
-} {
-    const candidates: ITGlueInfraCandidate[] = [];
-    const vendorPatterns: Array<{ kind: ITGlueInfraCandidate['kind'] | 'multi'; canonical: string; pattern: RegExp }> = [
-        { kind: 'firewall', canonical: 'Fortinet FortiGate', pattern: /\bfortigate\b|\bfortinet\b|\bfg-\d+[a-z-]*\b/i },
-        { kind: 'firewall', canonical: 'SonicWall', pattern: /\bsonicwall\b/i },
-        { kind: 'firewall', canonical: 'Palo Alto', pattern: /\bpalo\s?alto\b|\bpa-\d+\b/i },
-        { kind: 'firewall', canonical: 'WatchGuard', pattern: /\bwatchguard\b/i },
-        { kind: 'firewall', canonical: 'Sophos', pattern: /\bsophos\b/i },
-        { kind: 'wifi', canonical: 'UniFi', pattern: /\bunifi\b|\ubiquiti\b/i },
-        { kind: 'wifi', canonical: 'Meraki', pattern: /\bmeraki\b/i },
-        { kind: 'wifi', canonical: 'Aruba', pattern: /\baruba\b|\binstant on\b/i },
-        { kind: 'wifi', canonical: 'Ruckus', pattern: /\bruckus\b/i },
-        { kind: 'switch', canonical: 'Cisco', pattern: /\bcisco\b|\bcatalyst\b/i },
-        { kind: 'switch', canonical: 'Aruba', pattern: /\baruba\b|\bprocurve\b/i },
-        { kind: 'switch', canonical: 'Netgear', pattern: /\bnetgear\b/i },
-        { kind: 'switch', canonical: 'UniFi', pattern: /\bunifi\b.*\bswitch\b|\bswitch\b.*\bunifi\b/i },
-        { kind: 'multi', canonical: 'UniFi', pattern: /\bunifi\b/i },
-    ];
-    const inferKind = (text: string): ITGlueInfraCandidate['kind'] | null => {
-        if (/\bfirewall\b|\bfortigate\b|\bsonicwall\b|\bwatchguard\b|\bpalo\s?alto\b/.test(text)) return 'firewall';
-        if (/\bwifi\b|\bwireless\b|\bssid\b|\baccess point\b|\bcontroller\b/.test(text)) return 'wifi';
-        if (/\bswitch\b|\bcatalyst\b|\bprocurve\b|\bstacking\b/.test(text)) return 'switch';
-        return null;
-    };
-    const maybePush = (sourceSystem: ITGlueInfraCandidate['source_system'], sourceRef: string, label: string, contextHint: string, baseScore: number) => {
-        const combined = `${label} ${contextHint}`.toLowerCase();
-        if (!combined.trim()) return;
-        const inferredKind = inferKind(combined);
-        for (const vp of vendorPatterns) {
-            if (!vp.pattern.test(combined)) continue;
-            const kind = vp.kind === 'multi' ? (inferredKind || 'wifi') : vp.kind;
-            if (!kind) continue;
-            let value = vp.canonical;
-            const modelMatch =
-                label.match(/\b(FortiGate\s+[A-Z0-9-]+)\b/i) ||
-                label.match(/\b(FG-\d+[A-Z-]*)\b/i) ||
-                label.match(/\b(CAT-FG-\d+[A-Z-]*)\b/i) ||
-                label.match(/\b(SonicWall(?:\s*\([^)]+\))?)\b/i) ||
-                label.match(/\b(UniFi\s+(Controller|Switch|Cloud Portal|Video))\b/i);
-            if (modelMatch?.[1]) value = normalizeName(modelMatch[1]);
-            let score = baseScore;
-            if (/\b(local access|controller|ssid)\b/.test(combined)) score += 0.08;
-            if (/\bfirewall\b/.test(contextHint.toLowerCase()) && kind === 'firewall') score += 0.1;
-            if (/\bwifi\b/.test(contextHint.toLowerCase()) && kind === 'wifi') score += 0.1;
-            candidates.push({
-                kind,
-                value,
-                confidence: Number(Math.min(0.9, score).toFixed(3)),
-                source_ref: sourceRef,
-                source_system: sourceSystem,
-            });
-        }
-    };
-
-    for (const p of input.itgluePasswords.slice(0, 500)) {
-        const a = p?.attributes || {};
-        const name = normalizeName(String(a.name || a['resource-name'] || a.title || ''));
-        const category = normalizeName(String(
-            a.category || a.password_category || a.passwordCategory || a.password_category_name || a['password-category-name'] || ''
-        ));
-        const username = normalizeName(String(a.username || ''));
-        maybePush('itglue_password_metadata', `itglue_password:${String(p?.id || name || 'unknown')}`, name, `${category} ${username}`, 0.6);
-    }
-    for (const cfg of input.itglueConfigs.slice(0, 300)) {
-        const a = cfg?.attributes || {};
-        const name = normalizeName(String(itgAttr(a, 'name') || itgAttr(a, 'hostname') || ''));
-        const vendor = normalizeName(String(
-            itgAttr(a, 'manufacturer') ||
-            itgAttr(a, 'manufacturer_name') ||
-            itgAttr(a, 'vendor') ||
-            itgAttr(a, 'brand') ||
-            ''
-        ));
-        const model = normalizeName(String(
-            itgAttr(a, 'model') ||
-            itgAttr(a, 'model_name') ||
-            itgAttr(a, 'product_model') ||
-            ''
-        ));
-        const typeName = normalizeName(String(itgAttr(a, 'configuration_type_name') || itgAttr(a, 'type') || ''));
-        maybePush('itglue_config', `itglue_config:${String(cfg?.id || name || 'unknown')}`, [vendor, model, name].filter(Boolean).join(' '), typeName, 0.72);
-    }
-    for (const asset of input.itglueAssets.slice(0, 300)) {
-        const a = asset?.attributes || {};
-        const text = JSON.stringify(a || {}).slice(0, 1000);
-        const name = normalizeName(String(a.name || a.title || ''));
-        const typeName = normalizeName(String(a['flexible-asset-type-name'] || a.type || ''));
-        maybePush('itglue_config', `itglue_asset:${String(asset?.id || name || 'unknown')}`, `${name} ${text}`, typeName, 0.66);
-    }
-    for (const doc of input.docs.slice(0, 20)) {
-        maybePush('itglue_doc', `itglue_doc:${String(doc.id)}`, `${doc.title} ${doc.snippet}`.slice(0, 700), '', 0.46);
-    }
-
-    const pick = (kind: ITGlueInfraCandidate['kind']) => {
-        const best = candidates.filter((c) => c.kind === kind).sort((a, b) => b.confidence - a.confidence)[0];
-        if (!best) return null;
-        return {
-            value: best.value,
-            status: 'inferred' as const,
-            confidence: best.confidence,
-            sourceSystem: best.source_system,
-            sourceRef: best.source_ref,
-            round: 2,
-        };
-    };
-    return { firewall: pick('firewall'), wifi: pick('wifi'), switch: pick('switch') };
-}
-
-export function extractInfraMakeModel(
-    kind: 'firewall' | 'wifi' | 'switch',
-    configs: any[],
-    docs: Doc[]
-): {
+  firewall: {
     value: string;
     status: EnrichmentField<string>['status'];
     confidence: number;
     sourceSystem: string;
     sourceRef?: string;
     round: number;
+  } | null;
+  wifi: {
+    value: string;
+    status: EnrichmentField<string>['status'];
+    confidence: number;
+    sourceSystem: string;
+    sourceRef?: string;
+    round: number;
+  } | null;
+  switch: {
+    value: string;
+    status: EnrichmentField<string>['status'];
+    confidence: number;
+    sourceSystem: string;
+    sourceRef?: string;
+    round: number;
+  } | null;
 } {
-    const configMatchers: Record<'firewall' | 'wifi' | 'switch', RegExp> = {
-        firewall: /\bfirewall\b|\bfortigate\b|\bfortinet\b|\bsonicwall\b|\bpalo\s?alto\b|\bwatchguard\b|\bmx\d+\b/i,
-        wifi: /\bwifi\b|\bwireless\b|\baccess\s?point\b|\bap\b|\bmeraki\s?mr\b|\bunifi\b|\baruba\b|\bruckus\b/i,
-        switch: /\bswitch\b|\bcatalyst\b|\bprocurve\b|\baruba\b|\bnetgear\b|\bunifi\s?switch\b/i,
-    };
-
-    for (const config of configs) {
-        const attrs = config?.attributes || {};
-        const text = JSON.stringify(attrs);
-        if (!configMatchers[kind].test(text)) continue;
-        const vendor = String(
-            itgAttr(attrs, 'manufacturer') ||
-            itgAttr(attrs, 'manufacturer_name') ||
-            itgAttr(attrs, 'vendor') ||
-            itgAttr(attrs, 'brand') ||
-            ''
-        ).trim();
-        const model = String(
-            itgAttr(attrs, 'model') ||
-            itgAttr(attrs, 'model_name') ||
-            itgAttr(attrs, 'product_model') ||
-            ''
-        ).trim();
-        const name = String(itgAttr(attrs, 'name') || itgAttr(attrs, 'hostname') || '').trim();
-        const value = [vendor, model].filter(Boolean).join(' ').trim() || name || 'unknown';
-        if (!value || value === 'unknown') continue;
-        return {
-            value,
-            status: 'confirmed',
-            confidence: 0.8,
-            sourceSystem: 'itglue',
-            sourceRef: `itglue_config:${String(config?.id || name || 'unknown')}`,
-            round: 1,
-        };
+  const candidates: ITGlueInfraCandidate[] = [];
+  const vendorPatterns: Array<{ kind: ITGlueInfraCandidate['kind'] | 'multi'; canonical: string; pattern: RegExp }> = [
+    { kind: 'firewall', canonical: 'Fortinet FortiGate', pattern: /\bfortigate\b|\bfortinet\b|\bfg-\d+[a-z-]*\b/i },
+    { kind: 'firewall', canonical: 'SonicWall', pattern: /\bsonicwall\b/i },
+    { kind: 'firewall', canonical: 'Palo Alto', pattern: /\bpalo\s?alto\b|\bpa-\d+\b/i },
+    { kind: 'firewall', canonical: 'WatchGuard', pattern: /\bwatchguard\b/i },
+    { kind: 'firewall', canonical: 'Sophos', pattern: /\bsophos\b/i },
+    { kind: 'wifi', canonical: 'UniFi', pattern: /\bunifi\b|\ubiquiti\b/i },
+    { kind: 'wifi', canonical: 'Meraki', pattern: /\bmeraki\b/i },
+    { kind: 'wifi', canonical: 'Aruba', pattern: /\baruba\b|\binstant on\b/i },
+    { kind: 'wifi', canonical: 'Ruckus', pattern: /\bruckus\b/i },
+    { kind: 'switch', canonical: 'Cisco', pattern: /\bcisco\b|\bcatalyst\b/i },
+    { kind: 'switch', canonical: 'Aruba', pattern: /\baruba\b|\bprocurve\b/i },
+    { kind: 'switch', canonical: 'Netgear', pattern: /\bnetgear\b/i },
+    { kind: 'switch', canonical: 'UniFi', pattern: /\bunifi\b.*\bswitch\b|\bswitch\b.*\bunifi\b/i },
+    { kind: 'multi', canonical: 'UniFi', pattern: /\bunifi\b/i },
+  ];
+  const inferKind = (text: string): ITGlueInfraCandidate['kind'] | null => {
+    if (/\bfirewall\b|\bfortigate\b|\bsonicwall\b|\bwatchguard\b|\bpalo\s?alto\b/.test(text)) return 'firewall';
+    if (/\bwifi\b|\bwireless\b|\bssid\b|\baccess point\b|\bcontroller\b/.test(text)) return 'wifi';
+    if (/\bswitch\b|\bcatalyst\b|\bprocurve\b|\bstacking\b/.test(text)) return 'switch';
+    return null;
+  };
+  const maybePush = (sourceSystem: ITGlueInfraCandidate['source_system'], sourceRef: string, label: string, contextHint: string, baseScore: number) => {
+    const combined = `${label} ${contextHint}`.toLowerCase();
+    if (!combined.trim()) return;
+    const inferredKind = inferKind(combined);
+    for (const vp of vendorPatterns) {
+      if (!vp.pattern.test(combined)) continue;
+      const kind = vp.kind === 'multi' ? (inferredKind || 'wifi') : vp.kind;
+      if (!kind) continue;
+      let value = vp.canonical;
+      const modelMatch =
+        label.match(/\b(FortiGate\s+[A-Z0-9-]+)\b/i) ||
+        label.match(/\b(FG-\d+[A-Z-]*)\b/i) ||
+        label.match(/\b(CAT-FG-\d+[A-Z-]*)\b/i) ||
+        label.match(/\b(SonicWall(?:\s*\([^)]+\))?)\b/i) ||
+        label.match(/\b(UniFi\s+(Controller|Switch|Cloud Portal|Video))\b/i);
+      if (modelMatch?.[1]) value = normalizeName(modelMatch[1]);
+      let score = baseScore;
+      if (/\b(local access|controller|ssid)\b/.test(combined)) score += 0.08;
+      if (/\bfirewall\b/.test(contextHint.toLowerCase()) && kind === 'firewall') score += 0.1;
+      if (/\bwifi\b/.test(contextHint.toLowerCase()) && kind === 'wifi') score += 0.1;
+      candidates.push({
+        kind,
+        value,
+        confidence: Number(Math.min(0.9, score).toFixed(3)),
+        source_ref: sourceRef,
+        source_system: sourceSystem,
+      });
     }
+  };
 
-    for (const doc of docs) {
-        const text = `${doc.title} ${doc.snippet}`;
-        if (!configMatchers[kind].test(text)) continue;
-        return {
-            value: String(doc.title || 'unknown').trim() || 'unknown',
-            status: 'inferred',
-            confidence: 0.55,
-            sourceSystem: 'itglue',
-            sourceRef: `itglue_doc:${doc.id}`,
-            round: 2,
-        };
-    }
+  for (const p of input.itgluePasswords.slice(0, 500)) {
+    const a = p?.attributes || {};
+    const name = normalizeName(String(a.name || a['resource-name'] || a.title || ''));
+    const category = normalizeName(String(
+      a.category || a.password_category || a.passwordCategory || a.password_category_name || a['password-category-name'] || ''
+    ));
+    const username = normalizeName(String(a.username || ''));
+    maybePush('itglue_password_metadata', `itglue_password:${String(p?.id || name || 'unknown')}`, name, `${category} ${username}`, 0.6);
+  }
+  for (const cfg of input.itglueConfigs.slice(0, 300)) {
+    const a = cfg?.attributes || {};
+    const name = normalizeName(String(itgAttr(a, 'name') || itgAttr(a, 'hostname') || ''));
+    const vendor = normalizeName(String(
+      itgAttr(a, 'manufacturer') ||
+      itgAttr(a, 'manufacturer_name') ||
+      itgAttr(a, 'vendor') ||
+      itgAttr(a, 'brand') ||
+      ''
+    ));
+    const model = normalizeName(String(
+      itgAttr(a, 'model') ||
+      itgAttr(a, 'model_name') ||
+      itgAttr(a, 'product_model') ||
+      ''
+    ));
+    const typeName = normalizeName(String(itgAttr(a, 'configuration_type_name') || itgAttr(a, 'type') || ''));
+    maybePush('itglue_config', `itglue_config:${String(cfg?.id || name || 'unknown')}`, [vendor, model, name].filter(Boolean).join(' '), typeName, 0.72);
+  }
+  for (const asset of input.itglueAssets.slice(0, 300)) {
+    const a = asset?.attributes || {};
+    const text = JSON.stringify(a || {}).slice(0, 1000);
+    const name = normalizeName(String(a.name || a.title || ''));
+    const typeName = normalizeName(String(a['flexible-asset-type-name'] || a.type || ''));
+    maybePush('itglue_config', `itglue_asset:${String(asset?.id || name || 'unknown')}`, `${name} ${text}`, typeName, 0.66);
+  }
+  for (const doc of input.docs.slice(0, 20)) {
+    maybePush('itglue_doc', `itglue_doc:${String(doc.id)}`, `${doc.title} ${doc.snippet}`.slice(0, 700), '', 0.46);
+  }
 
+  const pick = (kind: ITGlueInfraCandidate['kind']) => {
+    const best = candidates.filter((c) => c.kind === kind).sort((a, b) => b.confidence - a.confidence)[0];
+    if (!best) return null;
     return {
-        value: 'unknown',
-        status: 'unknown',
-        confidence: 0,
-        sourceSystem: 'unknown',
-        round: 1,
+      value: best.value,
+      status: 'inferred' as const,
+      confidence: best.confidence,
+      sourceSystem: best.source_system,
+      sourceRef: best.source_ref,
+      round: 2,
     };
+  };
+  return { firewall: pick('firewall'), wifi: pick('wifi'), switch: pick('switch') };
+}
+
+export function extractInfraMakeModel(
+  kind: 'firewall' | 'wifi' | 'switch',
+  configs: any[],
+  docs: Doc[]
+): {
+  value: string;
+  status: EnrichmentField<string>['status'];
+  confidence: number;
+  sourceSystem: string;
+  sourceRef?: string;
+  round: number;
+} {
+  const configMatchers: Record<'firewall' | 'wifi' | 'switch', RegExp> = {
+    firewall: /\bfirewall\b|\bfortigate\b|\bfortinet\b|\bsonicwall\b|\bpalo\s?alto\b|\bwatchguard\b|\bmx\d+\b/i,
+    wifi: /\bwifi\b|\bwireless\b|\baccess\s?point\b|\bap\b|\bmeraki\s?mr\b|\bunifi\b|\baruba\b|\bruckus\b/i,
+    switch: /\bswitch\b|\bcatalyst\b|\bprocurve\b|\baruba\b|\bnetgear\b|\bunifi\s?switch\b/i,
+  };
+
+  for (const config of configs) {
+    const attrs = config?.attributes || {};
+    const text = JSON.stringify(attrs);
+    if (!configMatchers[kind].test(text)) continue;
+    const vendor = String(
+      itgAttr(attrs, 'manufacturer') ||
+      itgAttr(attrs, 'manufacturer_name') ||
+      itgAttr(attrs, 'vendor') ||
+      itgAttr(attrs, 'brand') ||
+      ''
+    ).trim();
+    const model = String(
+      itgAttr(attrs, 'model') ||
+      itgAttr(attrs, 'model_name') ||
+      itgAttr(attrs, 'product_model') ||
+      ''
+    ).trim();
+    const name = String(itgAttr(attrs, 'name') || itgAttr(attrs, 'hostname') || '').trim();
+    const value = [vendor, model].filter(Boolean).join(' ').trim() || name || 'unknown';
+    if (!value || value === 'unknown') continue;
+    return {
+      value,
+      status: 'confirmed',
+      confidence: 0.8,
+      sourceSystem: 'itglue',
+      sourceRef: `itglue_config:${String(config?.id || name || 'unknown')}`,
+      round: 1,
+    };
+  }
+
+  for (const doc of docs) {
+    const text = `${doc.title} ${doc.snippet}`;
+    if (!configMatchers[kind].test(text)) continue;
+    return {
+      value: String(doc.title || 'unknown').trim() || 'unknown',
+      status: 'inferred',
+      confidence: 0.55,
+      sourceSystem: 'itglue',
+      sourceRef: `itglue_doc:${doc.id}`,
+      round: 2,
+    };
+  }
+
+  return {
+    value: 'unknown',
+    status: 'unknown',
+    confidence: 0,
+    sourceSystem: 'unknown',
+    round: 1,
+  };
 }
 
 export function isPublicIPv4(value: string): boolean {
-    const match = /^(\d{1,3}\.){3}\d{1,3}$/.test(value);
-    if (!match) return false;
-    const octets = value.split('.').map((part) => Number(part));
-    const first = octets[0] ?? -1;
-    const second = octets[1] ?? -1;
-    if (octets.some((part) => Number.isNaN(part) || part < 0 || part > 255)) return false;
-    if (first === 10) return false;
-    if (first === 127) return false;
-    if (first === 192 && second === 168) return false;
-    if (first === 172 && second >= 16 && second <= 31) return false;
-    return true;
+  const match = /^(\d{1,3}\.){3}\d{1,3}$/.test(value);
+  if (!match) return false;
+  const octets = value.split('.').map((part) => Number(part));
+  const first = octets[0] ?? -1;
+  const second = octets[1] ?? -1;
+  if (octets.some((part) => Number.isNaN(part) || part < 0 || part > 255)) return false;
+  if (first === 10) return false;
+  if (first === 127) return false;
+  if (first === 192 && second === 168) return false;
+  if (first === 172 && second >= 16 && second <= 31) return false;
+  return true;
 }
 
 export function collectTextPairs(
-    obj: unknown,
-    prefix = '',
-    depth = 0,
-    out: Array<{ key: string; value: string }> = []
+  obj: unknown,
+  prefix = '',
+  depth = 0,
+  out: Array<{ key: string; value: string }> = []
 ): Array<{ key: string; value: string }> {
-    if (obj === null || obj === undefined || depth > 4) return out;
-    if (Array.isArray(obj)) {
-        for (const item of obj.slice(0, 20)) collectTextPairs(item, prefix, depth + 1, out);
-        return out;
-    }
-    if (typeof obj !== 'object') return out;
-    for (const [k, v] of Object.entries(obj as Record<string, unknown>).slice(0, 200)) {
-        const key = prefix ? `${prefix}.${k}` : k;
-        if (v === null || v === undefined) continue;
-        if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
-            const value = String(v).replace(/\s+/g, ' ').trim();
-            if (value) out.push({ key, value });
-        } else {
-            collectTextPairs(v, key, depth + 1, out);
-        }
-    }
+  if (obj === null || obj === undefined || depth > 4) return out;
+  if (Array.isArray(obj)) {
+    for (const item of obj.slice(0, 20)) collectTextPairs(item, prefix, depth + 1, out);
     return out;
+  }
+  if (typeof obj !== 'object') return out;
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>).slice(0, 200)) {
+    const key = prefix ? `${prefix}.${k}` : k;
+    if (v === null || v === undefined) continue;
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      const value = String(v).replace(/\s+/g, ' ').trim();
+      if (value) out.push({ key, value });
+    } else {
+      collectTextPairs(v, key, depth + 1, out);
+    }
+  }
+  return out;
 }
 
 export function normalizeVendorPhrase(value: string): string {
-    const text = normalizeName(String(value || ''))
-        .replace(/\b(primary|secondary|backup)\b/gi, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-    if (!text || text.length > 80) return '';
-    return text;
+  const text = normalizeName(String(value || ''))
+    .replace(/\b(primary|secondary|backup)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text || text.length > 80) return '';
+  return text;
 }
 
 export function pickEnrichedValue(payload: ItglueEnrichedPayload | null, key: string): string | null {
@@ -942,181 +942,181 @@ export function pickEnrichedValue(payload: ItglueEnrichedPayload | null, key: st
 }
 
 export function inferPhoneProvider(input: {
-    ticketText: string;
-    docs: Doc[];
-    itglueConfigs: any[];
-    itgluePasswords: any[];
-    signals: Signal[];
+  ticketText: string;
+  docs: Doc[];
+  itglueConfigs: any[];
+  itgluePasswords: any[];
+  signals: Signal[];
 }): string | null {
-    const sourceText = [
-        input.ticketText,
-        ...input.docs.map((d) => `${d.title} ${d.snippet}`),
-        ...input.itglueConfigs.map((c: any) => JSON.stringify(c?.attributes || {})),
-        ...input.itgluePasswords.map((p: any) => JSON.stringify(p?.attributes || {})),
-        ...input.signals.map((s) => `${s.source} ${s.type} ${s.summary}`),
-    ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
+  const sourceText = [
+    input.ticketText,
+    ...input.docs.map((d) => `${d.title} ${d.snippet}`),
+    ...input.itglueConfigs.map((c: any) => JSON.stringify(c?.attributes || {})),
+    ...input.itgluePasswords.map((p: any) => JSON.stringify(p?.attributes || {})),
+    ...input.signals.map((s) => `${s.source} ${s.type} ${s.summary}`),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
 
-    const providerMatchers: Array<{ name: string; pattern: RegExp }> = [
-        { name: 'GoTo Connect', pattern: /\bgoto(\s?connect)?\b|\bgotoconnect\b/ },
-        { name: 'RingCentral', pattern: /\bring\s?central\b/ },
-        { name: '8x8', pattern: /\b8x8\b/ },
-        { name: 'Zoom Phone', pattern: /\bzoom\s?phone\b/ },
-        { name: 'Microsoft Teams Phone', pattern: /\bteams\s?phone\b|\bmicrosoft\s?teams\b/ },
-        { name: 'Vonage', pattern: /\bvonage\b/ },
-        { name: 'Dialpad', pattern: /\bdialpad\b/ },
-    ];
-    const found = providerMatchers.find((m) => m.pattern.test(sourceText));
-    return found ? found.name : null;
+  const providerMatchers: Array<{ name: string; pattern: RegExp }> = [
+    { name: 'GoTo Connect', pattern: /\bgoto(\s?connect)?\b|\bgotoconnect\b/ },
+    { name: 'RingCentral', pattern: /\bring\s?central\b/ },
+    { name: '8x8', pattern: /\b8x8\b/ },
+    { name: 'Zoom Phone', pattern: /\bzoom\s?phone\b/ },
+    { name: 'Microsoft Teams Phone', pattern: /\bteams\s?phone\b|\bmicrosoft\s?teams\b/ },
+    { name: 'Vonage', pattern: /\bvonage\b/ },
+    { name: 'Dialpad', pattern: /\bdialpad\b/ },
+  ];
+  const found = providerMatchers.find((m) => m.pattern.test(sourceText));
+  return found ? found.name : null;
 }
 
 export function getEnrichmentFieldByPath(
-    sections: IterativeEnrichmentSections,
-    path: string
+  sections: IterativeEnrichmentSections,
+  path: string
 ): EnrichmentField<unknown> | null {
-    const [section, key] = path.split('.');
-    if (!section || !key) return null;
-    const sec = (sections as any)[section];
-    if (!sec || typeof sec !== 'object') return null;
-    return (sec as any)[key] || null;
+  const [section, key] = path.split('.');
+  if (!section || !key) return null;
+  const sec = (sections as any)[section];
+  if (!sec || typeof sec !== 'object') return null;
+  return (sec as any)[key] || null;
 }
 
 export function setEnrichmentFieldByPath(
-    sections: IterativeEnrichmentSections,
-    path: string,
-    field: EnrichmentField<any>
+  sections: IterativeEnrichmentSections,
+  path: string,
+  field: EnrichmentField<any>
 ): void {
-    const [section, key] = path.split('.');
-    if (!section || !key) return;
-    const sec = (sections as any)[section];
-    if (!sec || typeof sec !== 'object') return;
-    (sec as any)[key] = field;
+  const [section, key] = path.split('.');
+  if (!section || !key) return;
+  const sec = (sections as any)[section];
+  if (!sec || typeof sec !== 'object') return;
+  (sec as any)[key] = field;
 }
 
 export function flattenEnrichmentFields(
-    sections: IterativeEnrichmentSections
+  sections: IterativeEnrichmentSections
 ): Array<{ path: string; field: EnrichmentField<unknown> }> {
-    const output: Array<{ path: string; field: EnrichmentField<unknown> }> = [];
-    for (const [sectionKey, sectionValue] of Object.entries(sections) as Array<
-        [string, Record<string, EnrichmentField<unknown>>]
-    >) {
-        for (const [fieldKey, fieldValue] of Object.entries(sectionValue)) {
-            if (fieldKey === 'created_at') continue;
-            output.push({
-                path: `${sectionKey}.${fieldKey}`,
-                field: fieldValue,
-            });
-        }
+  const output: Array<{ path: string; field: EnrichmentField<unknown> }> = [];
+  for (const [sectionKey, sectionValue] of Object.entries(sections) as Array<
+    [string, Record<string, EnrichmentField<unknown>>]
+  >) {
+    for (const [fieldKey, fieldValue] of Object.entries(sectionValue)) {
+      if (fieldKey === 'created_at') continue;
+      output.push({
+        path: `${sectionKey}.${fieldKey}`,
+        field: fieldValue,
+      });
     }
-    return output;
+  }
+  return output;
 }
 
 export function computeEnrichmentCoverage(
-    records: Array<{ path: string; field: EnrichmentField<unknown> }>
+  records: Array<{ path: string; field: EnrichmentField<unknown> }>
 ): IterativeEnrichmentProfile['coverage'] {
-    const total = records.length || 1;
-    const confirmed = records.filter((record) => record.field.status === 'confirmed').length;
-    const inferred = records.filter((record) => record.field.status === 'inferred').length;
-    const unknown = records.filter((record) => record.field.status === 'unknown').length;
-    const conflict = records.filter((record) => record.field.status === 'conflict').length;
-    return {
-        total,
-        confirmed,
-        inferred,
-        unknown,
-        conflict,
-        completion_ratio: Number(((confirmed + inferred) / total).toFixed(3)),
-    };
+  const total = records.length || 1;
+  const confirmed = records.filter((record) => record.field.status === 'confirmed').length;
+  const inferred = records.filter((record) => record.field.status === 'inferred').length;
+  const unknown = records.filter((record) => record.field.status === 'unknown').length;
+  const conflict = records.filter((record) => record.field.status === 'conflict').length;
+  return {
+    total,
+    confirmed,
+    inferred,
+    unknown,
+    conflict,
+    completion_ratio: Number(((confirmed + inferred) / total).toFixed(3)),
+  };
 }
 
 export function roundLabel(round: number): string {
-    if (round === 1) return 'intake';
-    if (round === 2) return 'itglue';
-    if (round === 3) return 'ninja';
-    if (round === 4) return 'history_correlation';
-    if (round === 5) return 'itglue_refinement';
-    if (round === 6) return 'ninja_refinement';
-    if (round === 7) return 'cross_source_fusion';
-    if (round === 8) return 'history_correlation_broad';
-    if (round === 9) return 'final_refinement_verify_backfill';
-    return `round_${round}`;
+  if (round === 1) return 'intake';
+  if (round === 2) return 'itglue';
+  if (round === 3) return 'ninja';
+  if (round === 4) return 'history_correlation';
+  if (round === 5) return 'itglue_refinement';
+  if (round === 6) return 'ninja_refinement';
+  if (round === 7) return 'cross_source_fusion';
+  if (round === 8) return 'history_correlation_broad';
+  if (round === 9) return 'final_refinement_verify_backfill';
+  return `round_${round}`;
 }
 
 export function buildEnrichmentRounds(
-    records: Array<{ path: string; field: EnrichmentField<unknown> }>,
-    sourceFindings: SourceFinding[]
+  records: Array<{ path: string; field: EnrichmentField<unknown> }>,
+  sourceFindings: SourceFinding[]
 ): IterativeEnrichmentProfile['rounds'] {
-    const maxRound = Math.max(
-        1,
-        ...records.map((record) => Number(record.field.round || 1)),
-        ...sourceFindings.map((finding) => Number(finding.round || 0))
-    );
-    const rounds: IterativeEnrichmentProfile['rounds'] = [];
-    for (let round = 1; round <= maxRound; round += 1) {
-        const roundRecords = records.filter((record) => Number(record.field.round || 1) === round);
-        const roundFindings = sourceFindings.filter((finding) => Number(finding.round || 0) === round);
-        if (roundRecords.length === 0 && roundFindings.length === 0) continue;
-        const confirmed = roundRecords.filter((r) => r.field.status === 'confirmed').map((r) => r.path);
-        const inferred = roundRecords.filter((r) => r.field.status === 'inferred').map((r) => r.path);
-        const unknown = roundRecords.filter((r) => r.field.status === 'unknown').map((r) => r.path);
-        rounds.push({
-            round,
-            label: roundLabel(round),
-            sources_consulted: [...new Set(roundFindings.map((f) => f.source))],
-            new_fields_confirmed: confirmed,
-            new_fields_inferred: inferred,
-            new_fields_unknown: unknown,
-            gain_count: confirmed.length + inferred.length,
-        });
-    }
-    return rounds;
+  const maxRound = Math.max(
+    1,
+    ...records.map((record) => Number(record.field.round || 1)),
+    ...sourceFindings.map((finding) => Number(finding.round || 0))
+  );
+  const rounds: IterativeEnrichmentProfile['rounds'] = [];
+  for (let round = 1; round <= maxRound; round += 1) {
+    const roundRecords = records.filter((record) => Number(record.field.round || 1) === round);
+    const roundFindings = sourceFindings.filter((finding) => Number(finding.round || 0) === round);
+    if (roundRecords.length === 0 && roundFindings.length === 0) continue;
+    const confirmed = roundRecords.filter((r) => r.field.status === 'confirmed').map((r) => r.path);
+    const inferred = roundRecords.filter((r) => r.field.status === 'inferred').map((r) => r.path);
+    const unknown = roundRecords.filter((r) => r.field.status === 'unknown').map((r) => r.path);
+    rounds.push({
+      round,
+      label: roundLabel(round),
+      sources_consulted: [...new Set(roundFindings.map((f) => f.source))],
+      new_fields_confirmed: confirmed,
+      new_fields_inferred: inferred,
+      new_fields_unknown: unknown,
+      gain_count: confirmed.length + inferred.length,
+    });
+  }
+  return rounds;
 }
 
 export function isUnknown(value: unknown): boolean {
-    if (value === null || value === undefined) return true;
-    const s = String(value).trim().toLowerCase();
-    return s === '' || s === 'unknown' || s === 'n/a' || s === 'null' || s === 'undefined';
+  if (value === null || value === undefined) return true;
+  const s = String(value).trim().toLowerCase();
+  return s === '' || s === 'unknown' || s === 'n/a' || s === 'null' || s === 'undefined';
 }
 
 export function pickBetter<T>(...values: Array<T | null | undefined>): T {
-    const valid = values.filter((v) => !isUnknown(v));
-    if (valid.length > 0) return valid[0] as T;
-    return values[0] as T;
+  const valid = values.filter((v) => !isUnknown(v));
+  if (valid.length > 0) return valid[0] as T;
+  return values[0] as T;
 }
 
 export function pickHistoryKeyword(terms: string[]): string {
-    const all = terms
-        .flatMap((t) => String(t || '').split(/\s+/))
-        .map((t) => t.trim())
-        .filter((t) => t.length >= 4)
-        .slice(0, 50);
-    if (all.length === 0) return 'ticket';
-    const noise = new Set(['with', 'from', 'that', 'this', 'please', 'ticket', 'setup', 'conference', 'room']);
-    const best = all.find((t) => !noise.has(t.toLowerCase()));
-    return best || all[0] || 'ticket';
+  const all = terms
+    .flatMap((t) => String(t || '').split(/\s+/))
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 4)
+    .slice(0, 50);
+  if (all.length === 0) return 'ticket';
+  const noise = new Set(['with', 'from', 'that', 'this', 'please', 'ticket', 'setup', 'conference', 'room']);
+  const best = all.find((t) => !noise.has(t.toLowerCase()));
+  return best || all[0] || 'ticket';
 }
 
 export function mapAutotaskPriority(
-    priority: number | undefined
+  priority: number | undefined
 ): 'Critical' | 'High' | 'Medium' | 'Low' {
-    if (!priority) return 'Medium';
-    if (priority === 1) return 'Critical';
-    if (priority <= 2) return 'High';
-    if (priority <= 3) return 'Medium';
-    return 'Low';
+  if (!priority) return 'Medium';
+  if (priority === 1) return 'Critical';
+  if (priority <= 2) return 'High';
+  if (priority <= 3) return 'Medium';
+  return 'Low';
 }
 
 export function extractEmails(text: string): string[] {
-    const source = String(text || '').toLowerCase();
-    const matches = source.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g) || [];
-    return [...new Set(matches.map((m) => m.trim()))];
+  const source = String(text || '').toLowerCase();
+  const matches = source.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g) || [];
+  return [...new Set(matches.map((m) => m.trim()))];
 }
 
 export function extractFirstEmail(text: string): string | null {
-    const emails = extractEmails(text);
-    return emails.length > 0 ? emails[0] || null : null;
+  const emails = extractEmails(text);
+  return emails.length > 0 ? emails[0] || null : null;
 }
 // --- RESTORED HELPERS ---
 
@@ -1224,7 +1224,7 @@ export function buildTicketNarrative(ticket: TicketLike): string {
     .join('\n');
 }
 
-export async function normalizeTicketForPipeline(ticket: TicketLike): Promise < {
+export async function normalizeTicketForPipeline(ticket: TicketLike): Promise<{
   title: string;
   descriptionCanonical: string;
   descriptionUi: string;
@@ -1240,7 +1240,7 @@ export async function normalizeTicketForPipeline(ticket: TicketLike): Promise < 
   technologyFacets: string[];
   method: 'llm' | 'deterministic_fallback';
   confidence: number;
-} > {
+}> {
   const narrative = buildTicketNarrative(ticket);
   const fallback = normalizeTicketDeterministically(ticket.title || '', narrative);
 
@@ -1296,69 +1296,69 @@ Ticket text:
       narrative,
     });
 
-    if(descriptionCanonical.length >= 10 || descriptionUi.length >= 10) {
-  const canonicalRequesterEmail = requesterEmail || extractFirstEmail(ticket.requester || '') || extractFirstEmail(narrative);
-  const canonicalRequesterName = requesterName || normalizeName(ticket.requester || '') || '';
-  const canonicalAffectedName = affectedUserName || canonicalRequesterName || '';
-  const canonicalAffectedEmail = affectedUserEmail || canonicalRequesterEmail || '';
-  const canonicalDisplayText = descriptionCanonical || postProcessCanonicalTicketText(fallback.descriptionClean);
-  let descriptionDisplayMarkdown = '';
-  const strictFormat = await this.formatDisplayMarkdownVerbatimWithLLM(canonicalDisplayText).catch(() => '');
-  if (this.isDisplayMarkdownVerbatimEnough(canonicalDisplayText, strictFormat)) {
-    descriptionDisplayMarkdown = strictFormat;
-  }
-  return {
-    title: title || fallback.title,
-    descriptionCanonical: canonicalDisplayText,
-    descriptionUi:
-      descriptionUi ||
-      guardTicketUiRoleAssignment({
-        descriptionUi: postProcessUiTicketText(fallback.descriptionClean),
+    if (descriptionCanonical.length >= 10 || descriptionUi.length >= 10) {
+      const canonicalRequesterEmail = requesterEmail || extractFirstEmail(ticket.requester || '') || extractFirstEmail(narrative);
+      const canonicalRequesterName = requesterName || normalizeName(ticket.requester || '') || '';
+      const canonicalAffectedName = affectedUserName || canonicalRequesterName || '';
+      const canonicalAffectedEmail = affectedUserEmail || canonicalRequesterEmail || '';
+      const canonicalDisplayText = descriptionCanonical || postProcessCanonicalTicketText(fallback.descriptionClean);
+      let descriptionDisplayMarkdown = '';
+      const strictFormat = await this.formatDisplayMarkdownVerbatimWithLLM(canonicalDisplayText).catch(() => '');
+      if (this.isDisplayMarkdownVerbatimEnough(canonicalDisplayText, strictFormat)) {
+        descriptionDisplayMarkdown = strictFormat;
+      }
+      return {
+        title: title || fallback.title,
+        descriptionCanonical: canonicalDisplayText,
+        descriptionUi:
+          descriptionUi ||
+          guardTicketUiRoleAssignment({
+            descriptionUi: postProcessUiTicketText(fallback.descriptionClean),
+            requesterName: canonicalRequesterName,
+            ticketRequester: ticket.requester || '',
+            canonicalText: descriptionCanonical || fallback.descriptionClean,
+            narrative,
+          }),
+        descriptionDisplayMarkdown:
+          descriptionDisplayMarkdown ||
+          canonicalDisplayText,
+        descriptionDisplayFormat: descriptionDisplayMarkdown ? 'markdown_llm' : 'plain',
         requesterName: canonicalRequesterName,
-        ticketRequester: ticket.requester || '',
-        canonicalText: descriptionCanonical || fallback.descriptionClean,
-        narrative,
-      }),
-    descriptionDisplayMarkdown:
-      descriptionDisplayMarkdown ||
-      canonicalDisplayText,
-    descriptionDisplayFormat: descriptionDisplayMarkdown ? 'markdown_llm' : 'plain',
-    requesterName: canonicalRequesterName,
-    requesterEmail: canonicalRequesterEmail,
-    affectedUserName: canonicalAffectedName,
-    affectedUserEmail: canonicalAffectedEmail,
-    organizationHint,
-    deviceHints,
-    symptoms,
-    technologyFacets,
-    method: 'llm',
-    confidence,
+        requesterEmail: canonicalRequesterEmail,
+        affectedUserName: canonicalAffectedName,
+        affectedUserEmail: canonicalAffectedEmail,
+        organizationHint,
+        deviceHints,
+        symptoms,
+        technologyFacets,
+        method: 'llm',
+        confidence,
+      };
+    }
+  } catch {
+    // deterministic fallback below
+  }
+
+  return {
+    ...fallback,
+    descriptionCanonical: postProcessCanonicalTicketText(fallback.descriptionClean),
+    descriptionUi: guardTicketUiRoleAssignment({
+      descriptionUi: postProcessUiTicketText(fallback.descriptionClean),
+      requesterName: fallback.requesterName,
+      ticketRequester: ticket.requester || '',
+      canonicalText: fallback.descriptionClean,
+      narrative,
+    }),
+    descriptionDisplayMarkdown: postProcessCanonicalTicketText(fallback.descriptionClean),
+    descriptionDisplayFormat: 'plain',
+    organizationHint: '',
+    deviceHints: [],
+    symptoms: [],
+    technologyFacets: [],
+    method: 'deterministic_fallback',
+    confidence: 0.55,
   };
 }
-    } catch {
-  // deterministic fallback below
-}
-
-return {
-  ...fallback,
-  descriptionCanonical: postProcessCanonicalTicketText(fallback.descriptionClean),
-  descriptionUi: guardTicketUiRoleAssignment({
-    descriptionUi: postProcessUiTicketText(fallback.descriptionClean),
-    requesterName: fallback.requesterName,
-    ticketRequester: ticket.requester || '',
-    canonicalText: fallback.descriptionClean,
-    narrative,
-  }),
-  descriptionDisplayMarkdown: postProcessCanonicalTicketText(fallback.descriptionClean),
-  descriptionDisplayFormat: 'plain',
-  organizationHint: '',
-  deviceHints: [],
-  symptoms: [],
-  technologyFacets: [],
-  method: 'deterministic_fallback',
-  confidence: 0.55,
-};
-  }
 
 export function normalizeTicketDeterministically(title: string, narrative: string): {
   title: string;
@@ -1493,9 +1493,9 @@ export function postProcessDisplayMarkdownTicketText(value: string): string {
   return text;
 }
 
-export async function formatDisplayMarkdownVerbatimWithLLM(sourceText: string): Promise < string > {
+export async function formatDisplayMarkdownVerbatimWithLLM(sourceText: string): Promise<string> {
   const text = String(sourceText || '').trim();
-  if(!text) return '';
+  if (!text) return '';
   const prompt = `Format the following ticket text as Markdown for readability.
 
 CRITICAL RULES (strict):
@@ -1770,14 +1770,14 @@ export function escapeRegex(value: string): string {
   return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function extractJsonObject(raw: string): Record < string, unknown > {
+export function extractJsonObject(raw: string): Record<string, unknown> {
   const text = String(raw || '').trim();
-  if(!text) return {};
+  if (!text) return {};
   try {
     return JSON.parse(text) as Record<string, unknown>;
   } catch {
     const match = text.match(/\{[\s\S]*\}/);
-    if(!match) return {};
+    if (!match) return {};
     try {
       return JSON.parse(match[0]) as Record<string, unknown>;
     } catch {
@@ -1847,18 +1847,18 @@ export function extractLoggedInUser(deviceDetails: any): string | null {
 export async function resolveLastLoggedInContext(
   ninjaoneClient: NinjaOneClient,
   deviceId: string
-): Promise < { userName: string; logonTime: string } > {
+): Promise<{ userName: string; logonTime: string }> {
   const direct = await ninjaoneClient.getDeviceLastLoggedOnUser(deviceId).catch(() => null);
   const directUser = String(direct?.userName || '').trim();
   const directTime = this.enrichmentEngine.normalizeTimeValue(direct?.logonTime || '');
-  if(directUser) return { userName: directUser, logonTime: directTime };
+  if (directUser) return { userName: directUser, logonTime: directTime };
 
   const report = await ninjaoneClient.listLastLoggedOnUsers({ pageSize: 1000 }).catch(() => null);
   const rows = Array.isArray(report?.results) ? report.results : [];
   const match = rows.find((row) => String(row.deviceId) === String(deviceId));
   const reportUser = String(match?.userName || '').trim();
   const reportTime = this.enrichmentEngine.normalizeTimeValue(match?.logonTime || '');
-  if(reportUser) return { userName: reportUser, logonTime: reportTime };
+  if (reportUser) return { userName: reportUser, logonTime: reportTime };
 
   return { userName: '', logonTime: '' };
 }
@@ -1881,7 +1881,7 @@ export async function buildNinjaContextSignals(input: {
   orgId: string | null;
   tenantId: string | null;
   sourceWorkspace: string;
-}): Promise < Signal[] > {
+}): Promise<Signal[]> {
   const signals: Signal[] = [];
   const [activities, interfaces, softwareRows] = await Promise.all([
     input.ninjaoneClient.getDeviceActivities(input.deviceId, { pageSize: 30 }).catch(() => []),
@@ -1889,64 +1889,64 @@ export async function buildNinjaContextSignals(input: {
     input.ninjaoneClient.querySoftware({ pageSize: 200, df: `deviceId = ${input.deviceId}` }).catch(() => []),
   ]);
 
-  for(const activity of activities.slice(0, 8)) {
-  const summary = String(
-    activity.message ||
-    activity.activity ||
-    activity.activityType ||
-    activity.activityClass ||
-    'device activity'
-  ).trim();
-  signals.push({
-    id: `ninja-activity-${input.deviceId}-${String(activity.id || summary).slice(0, 48)}`,
-    source: 'ninja',
-    timestamp: this.enrichmentEngine.normalizeTimeValue(activity.createTime || activity.timestamp || '') || new Date().toISOString(),
-    type: 'ticket_note',
-    summary: `Activity: ${summary}`,
-    raw_ref: activity,
-    tenant_id: input.tenantId,
-    org_id: input.orgId,
-    source_workspace: input.sourceWorkspace,
-  });
-}
-
-for (const iface of interfaces.slice(0, 4)) {
-  const name = String(iface.adapterName || iface.interfaceName || 'interface').trim();
-  const ips = Array.isArray(iface.ipAddress) ? iface.ipAddress : [iface.ipAddress];
-  const ip = ips.map((v) => String(v || '').trim()).filter(Boolean)[0] || 'no-ip';
-  signals.push({
-    id: `ninja-iface-${input.deviceId}-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-    source: 'ninja',
-    timestamp: new Date().toISOString(),
-    type: 'health_ok',
-    summary: `Interface ${name}: ${ip}`,
-    raw_ref: iface,
-    tenant_id: input.tenantId,
-    org_id: input.orgId,
-    source_workspace: input.sourceWorkspace,
-  });
-}
-
-for (const sw of softwareRows.slice(0, 10)) {
-  const swName = String(sw.name || '').trim();
-  if (!swName) continue;
-  const version = String(sw.version || '').trim();
-  const publisher = String(sw.publisher || '').trim();
-  signals.push({
-    id: `ninja-sw-${input.deviceId}-${swName.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 48)}`,
-    source: 'ninja',
-    timestamp: this.enrichmentEngine.normalizeTimeValue(sw.timestamp || '') || new Date().toISOString(),
-    type: 'ticket_note',
-    summary: `Software: ${swName}${version ? ` ${version}` : ''}${publisher ? ` (${publisher})` : ''}`,
-    raw_ref: sw,
-    tenant_id: input.tenantId,
-    org_id: input.orgId,
-    source_workspace: input.sourceWorkspace,
-  });
-}
-
-return signals;
+  for (const activity of activities.slice(0, 8)) {
+    const summary = String(
+      activity.message ||
+      activity.activity ||
+      activity.activityType ||
+      activity.activityClass ||
+      'device activity'
+    ).trim();
+    signals.push({
+      id: `ninja-activity-${input.deviceId}-${String(activity.id || summary).slice(0, 48)}`,
+      source: 'ninja',
+      timestamp: this.enrichmentEngine.normalizeTimeValue(activity.createTime || activity.timestamp || '') || new Date().toISOString(),
+      type: 'ticket_note',
+      summary: `Activity: ${summary}`,
+      raw_ref: activity,
+      tenant_id: input.tenantId,
+      org_id: input.orgId,
+      source_workspace: input.sourceWorkspace,
+    });
   }
+
+  for (const iface of interfaces.slice(0, 4)) {
+    const name = String(iface.adapterName || iface.interfaceName || 'interface').trim();
+    const ips = Array.isArray(iface.ipAddress) ? iface.ipAddress : [iface.ipAddress];
+    const ip = ips.map((v) => String(v || '').trim()).filter(Boolean)[0] || 'no-ip';
+    signals.push({
+      id: `ninja-iface-${input.deviceId}-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+      source: 'ninja',
+      timestamp: new Date().toISOString(),
+      type: 'health_ok',
+      summary: `Interface ${name}: ${ip}`,
+      raw_ref: iface,
+      tenant_id: input.tenantId,
+      org_id: input.orgId,
+      source_workspace: input.sourceWorkspace,
+    });
+  }
+
+  for (const sw of softwareRows.slice(0, 10)) {
+    const swName = String(sw.name || '').trim();
+    if (!swName) continue;
+    const version = String(sw.version || '').trim();
+    const publisher = String(sw.publisher || '').trim();
+    signals.push({
+      id: `ninja-sw-${input.deviceId}-${swName.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 48)}`,
+      source: 'ninja',
+      timestamp: this.enrichmentEngine.normalizeTimeValue(sw.timestamp || '') || new Date().toISOString(),
+      type: 'ticket_note',
+      summary: `Software: ${swName}${version ? ` ${version}` : ''}${publisher ? ` (${publisher})` : ''}`,
+      raw_ref: sw,
+      tenant_id: input.tenantId,
+      org_id: input.orgId,
+      source_workspace: input.sourceWorkspace,
+    });
+  }
+
+  return signals;
+}
 
 export function normalizeOrgNameForMatch(value: string): string {
   return String(value || '')
@@ -1961,7 +1961,7 @@ export function normalizeOrgNameForMatch(value: string): string {
     .trim();
 }
 
-export function scoreOrgNameMatch(name: string, candidate: string, candidateShortName ?: string): number {
+export function scoreOrgNameMatch(name: string, candidate: string, candidateShortName?: string): number {
   const rawN = normalizeName(name).toLowerCase();
   const variants = [candidate, candidateShortName || '']
     .map((v) => normalizeName(String(v || '')))
@@ -2060,7 +2060,7 @@ export function extractEmailDomains(text: string): string[] {
 export async function resolveNinjaOrg(
   ninjaoneClient: NinjaOneClient,
   companyName: string
-): Promise < { id: number; name: string } | null > {
+): Promise<{ id: number; name: string } | null> {
   const orgs = await ninjaoneClient.listOrganizations();
   const ranked = orgs
     .map((o: any) => ({
@@ -2076,8 +2076,8 @@ export async function resolveNinjaOrg(
 export async function resolveITGlueOrg(
   itglueClient: ITGlueClient,
   companyName: string,
-  hintText ?: string
-): Promise < { id: string; name: string } | null > {
+  hintText?: string
+): Promise<{ id: string; name: string } | null> {
   const orgs = await itglueClient.getOrganizations(1000);
   const rankedByName = orgs
     .map((o: any) => ({
@@ -2091,11 +2091,11 @@ export async function resolveITGlueOrg(
     .filter((r) => r.score >= 0.8)
     .sort((a, b) => b.score - a.score);
   const byName = rankedByName[0]?.org;
-  if(byName) {
+  if (byName) {
     return { id: String(byName.id), name: String(itgAttr(byName?.attributes || {}, 'name') || companyName) };
   }
 
-    const ignoreDomainSuffixes = [
+  const ignoreDomainSuffixes = [
     'outlook.com',
     'office.com',
     'microsoft.com',
@@ -2108,7 +2108,7 @@ export async function resolveITGlueOrg(
   const domains = extractEmailDomains(hintText || '').filter(
     (d) => !ignoreDomainSuffixes.some((suffix) => d === suffix || d.endsWith(`.${suffix}`))
   );
-  if(domains.length === 0) return null;
+  if (domains.length === 0) return null;
 
   const rankedByDomain = orgs
     .map((o: any) => {
@@ -2132,4 +2132,69 @@ export async function resolveITGlueOrg(
   const byDomain = rankedByDomain[0]?.org;
   return byDomain ? { id: String(byDomain.id), name: String(itgAttr(byDomain?.attributes || {}, 'name') || companyName) } : null;
 
+}
+
+export function isLikelyDomainDerivedCompanyLabel(raw: string): boolean {
+  if (!raw) return false;
+  if (/\s/.test(raw)) return false;
+  if (!/^[A-Za-z0-9._&-]+$/.test(raw)) return false;
+
+  const compact = raw.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (compact.length < 8) return false;
+
+  if (compact.includes('andcompany') || compact.includes('andco')) return true;
+  if (/(company|corp|corporation|management|services|solutions|technologies|technology|holdings|consulting)$/.test(compact)) {
+    return true;
+  }
+  return false;
+}
+
+export function shouldPreferCompanyCandidateOverIntake(intakeCompany: string, candidateCompany: string): boolean {
+  const intake = normalizeName(String(intakeCompany || ''));
+  const candidate = normalizeName(String(candidateCompany || ''));
+  if (!intake || !candidate) return false;
+  if (!isLikelyDomainDerivedCompanyLabel(intake)) return false;
+  if (isLikelyDomainDerivedCompanyLabel(candidate)) return false;
+
+  const candidateLooksDisplayReady =
+    /[\s&.,()'-]/.test(candidate) || /\b(inc|llc|ltd|corp|corporation|co)\b/i.test(candidate);
+  if (!candidateLooksDisplayReady) return false;
+
+  return true;
+}
+
+function normalizeSimpleToken(value: string): string {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+export function generateNameAliases(name: string): Set<string> {
+  const aliases = new Set<string>();
+  const normalized = normalizeName(name);
+  const parts = normalized.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return aliases;
+  const first = parts[0];
+  const last = parts[parts.length - 1];
+  aliases.add(normalizeSimpleToken(normalized));
+  if (first) aliases.add(first);
+  if (last) aliases.add(last);
+  if (first && last) {
+    aliases.add(`${first[0]}${last}`);
+    aliases.add(`${first}.${last}`);
+    aliases.add(`${first}_${last}`);
+    aliases.add(`${first}${last[0]}`);
+  }
+  return new Set([...aliases].map((a) => normalizeSimpleToken(a)).filter(Boolean));
+}
+
+export function extractSoftwareHintsFromTicket(text: string): string[] {
+  const lower = String(text || '').toLowerCase();
+  const hints = new Set<string>();
+  const known = ['autocad', 'acad', 'outlook', 'teams', 'excel', 'word', 'quickbooks', 'adobe', 'acrobat', 'forticlient', 'vpn', 'chrome', 'edge', 'zoom', 'gotoconnect', 'goto'];
+  for (const k of known) if (lower.includes(k)) hints.add(k);
+  const quoted = lower.match(/\b[a-z][a-z0-9.+_-]{3,}\b/g) || [];
+  for (const token of quoted.slice(0, 50)) {
+    if (/(ticket|hello|please|thanks|support|issue|internet|office|user)/.test(token)) continue;
+    if (known.some((k) => token.includes(k) || k.includes(token))) hints.add(token);
+  }
+  return [...hints].slice(0, 12);
 }

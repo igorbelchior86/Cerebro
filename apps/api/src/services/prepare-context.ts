@@ -70,13 +70,10 @@ import {
   normalizeOrgNameForMatch,
   scoreOrgNameMatch,
   fuzzyMatch,
-  normalizeCompanyComparable,
   generateNameAliases,
   extractSoftwareHintsFromTicket,
   normalizeHistoryTerms,
   scoreHistoryCandidate,
-  normalizeFusionResolutionValue,
-  isFusionUnknownValue,
   isLikelyDomainDerivedCompanyLabel,
   shouldPreferCompanyCandidateOverIntake,
   capitalize,
@@ -5321,43 +5318,6 @@ Output schema:
     return 'Low';
   }
 
-  private detectFacetContext(ticketText: string): FacetContext {
-    const normalized = ticketText.toLowerCase();
-    const symptom = Object.entries(FACET_TERMS.symptom)
-      .filter(([, terms]) => terms.some((term) => normalized.includes(term)))
-      .map(([facet]) => facet);
-    const technology = Object.entries(FACET_TERMS.technology)
-      .filter(([, terms]) => terms.some((term) => normalized.includes(term)))
-      .map(([facet]) => facet);
-    const entityCandidates = extractEmailDomains(ticketText).concat(
-      (ticketText.match(/[A-Z]{2,}-\d{2,}/g) || []).map((v) => v.toLowerCase())
-    );
-    return {
-      symptom,
-      technology,
-      entities: [...new Set(entityCandidates)].slice(0, 8),
-      requiresCapabilityVerification:
-        symptom.includes('hardware') &&
-        /(monitor|usb-c|thunderbolt|display|dock|adapter)/i.test(ticketText),
-    };
-  }
-
-  private getFacetBoostTerms(facets: FacetContext): string[] {
-    const boosts: string[] = [];
-    if (facets.technology.includes('fortinet')) {
-      boosts.push('fortinet firewall configuration', 'fortinet vpn credentials');
-    }
-    if (facets.technology.includes('goto') || facets.symptom.includes('telephony')) {
-      boosts.push('goto voip troubleshooting', 'telephony runbook');
-    }
-    if (facets.symptom.includes('vpn') || facets.technology.includes('vpn')) {
-      boosts.push('vpn identity endpoint troubleshooting', 'firewall vpn tunnel checks');
-    }
-    if (facets.requiresCapabilityVerification) {
-      boosts.push('multi monitor support', 'usb-c alt mode', 'thunderbolt compatibility');
-    }
-    return [...new Set(boosts)];
-  }
 
   private async normalizeTicketForPipeline(ticket: TicketLike): Promise<{
     title: string;

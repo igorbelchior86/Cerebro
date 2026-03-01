@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import type { CP0QueueDisposition, CP0QueueJobEnvelope } from '@playbook-brain/types';
+import type { CP0QueueDisposition, CP0QueueJobEnvelope } from '@cerebro/types';
 import { classifyQueueError } from './errors.js';
 
 export class IdempotencyKeyStore {

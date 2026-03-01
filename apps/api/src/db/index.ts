@@ -5,7 +5,7 @@
 import { Pool, type PoolClient } from 'pg';
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://playbook:playbook_dev@localhost:5432/playbook_brain',
+  connectionString: process.env.DATABASE_URL || 'postgresql://playbook:playbook_dev@localhost:5432/cerebro',
 });
 
 pool.on('error', (err) => {

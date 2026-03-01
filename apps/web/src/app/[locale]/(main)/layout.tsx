@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import CerebroLogo from '@/components/CerebroLogo';
 
 export default function MainLayout({
   children,
@@ -16,14 +17,9 @@ export default function MainLayout({
         }}
       >
         <div className="flex items-center gap-2.5">
-          <div
-            className="w-7 h-7 rounded-lg flex items-center justify-center text-sm"
-            style={{ background: 'linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)' }}
-          >
-            ⚡
-          </div>
+          <CerebroLogo size={28} priority />
           <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-            Playbook Brain
+            Cerebro
           </span>
         </div>
         <nav className="flex items-center gap-1">

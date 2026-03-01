@@ -1,4 +1,4 @@
-import type { EvidencePack, Signal, Doc, SecurityAgentSummary } from '@playbook-brain/types';
+import type { EvidencePack, Signal, Doc, SecurityAgentSummary } from '@cerebro/types';
 
 export class EnrichmentEngine {
 

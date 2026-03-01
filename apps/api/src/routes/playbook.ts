@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { Router } from 'express';
-import type { PlaybookOutput, ValidationOutput } from '@playbook-brain/types';
+import type { PlaybookOutput, ValidationOutput } from '@cerebro/types';
 import { generatePlaybook } from '../services/playbook-writer.js';
 import {
   getEvidencePack,

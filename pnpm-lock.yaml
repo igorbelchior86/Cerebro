@@ -36,7 +36,7 @@ importers:
       '@microsoft/microsoft-graph-client':
         specifier: ^3.0.7
         version: 3.0.7
-      '@playbook-brain/types':
+      '@cerebro/types':
         specifier: workspace:*
         version: link:../../packages/types
       bcryptjs:
@@ -136,7 +136,7 @@ importers:
 
   apps/web:
     dependencies:
-      '@playbook-brain/types':
+      '@cerebro/types':
         specifier: workspace:*
         version: link:../../packages/types
       axios:

@@ -1,7 +1,7 @@
 import { AutotaskClient } from '../../clients/autotask.js';
 import { queryOne } from '../../db/index.js';
 import type { DataSourceFetcher, DataSourceContext, FetchResult } from './types.js';
-import type { AutotaskTicket } from '@playbook-brain/types';
+import type { AutotaskTicket } from '@cerebro/types';
 export class AutotaskFetcher implements DataSourceFetcher {
     name = 'autotask';
 

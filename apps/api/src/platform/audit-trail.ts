@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import type { CP0ActorRef, CP0AuditRecord } from '@playbook-brain/types';
+import type { CP0ActorRef, CP0AuditRecord } from '@cerebro/types';
 import { getRequestContextSnapshot } from './request-context.js';
 
 export interface AuditSink {

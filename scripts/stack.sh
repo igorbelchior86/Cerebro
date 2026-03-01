@@ -106,8 +106,14 @@ cmd_up() {
   echo "Starting API (detached)..."
   screen -dmS "$API_SESSION" bash -lc "cd '$PROJECT_ROOT/apps/api' && npx --yes nodemon -w src -e ts,tsx --exec 'tsx src/index.ts' >> '$LOG_DIR/api.log' 2>&1"
 
-  echo "Starting WEB (detached)..."
-  screen -dmS "$WEB_SESSION" bash -lc "cd '$PROJECT_ROOT/apps/web' && npx next dev -p 3000 >> '$LOG_DIR/web.log' 2>&1"
+  echo "Building WEB (stable runtime)..."
+  (
+    cd "$PROJECT_ROOT/apps/web"
+    pnpm exec next build >> "$LOG_DIR/web.log" 2>&1
+  )
+
+  echo "Starting WEB (detached, production runtime)..."
+  screen -dmS "$WEB_SESSION" bash -lc "cd '$PROJECT_ROOT/apps/web' && npx next start -p 3000 >> '$LOG_DIR/web.log' 2>&1"
 
   wait_ready || true
   cmd_status

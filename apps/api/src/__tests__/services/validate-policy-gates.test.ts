@@ -1,4 +1,4 @@
-import type { DiagnosisOutput, EvidencePack } from '@playbook-brain/types';
+import type { DiagnosisOutput, EvidencePack } from '@cerebro/types';
 import { ValidatePolicyService } from '../../services/validate-policy.js';
 
 function buildField(value: unknown, status: 'confirmed' | 'inferred' | 'unknown' | 'conflict' = 'confirmed') {

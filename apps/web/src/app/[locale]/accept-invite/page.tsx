@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, FormEvent, Suspense } from 'react';
+import CerebroLogo from '@/components/CerebroLogo';
 import { useSearchParams } from 'next/navigation';
 import { useRouter } from '@/i18n/routing';
 
@@ -103,11 +104,9 @@ export default function AcceptInvitePage() {
             <div style={{ width: '100%', maxWidth: '380px' }}>
                 {/* Logo */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '32px' }}>
-                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0 }}>
-                        ⚡
-                    </div>
+                    <CerebroLogo size={36} priority />
                     <div>
-                        <p style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Playbook Brain</p>
+                        <p style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Cerebro</p>
                         <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>IT Automation Copilot</p>
                     </div>
                 </div>

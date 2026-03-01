@@ -19,7 +19,7 @@
       "@/*": [
         "./src/*"
       ],
-      "@playbook-brain/types": [
+      "@cerebro/types": [
         "../../packages/types/src/index.ts"
       ]
     },

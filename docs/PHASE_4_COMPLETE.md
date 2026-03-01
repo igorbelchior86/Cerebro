@@ -132,7 +132,7 @@ NODE_ENV=development
 PORT=3001
 
 # Database
-DATABASE_URL=postgresql://playbook:playbook_dev@localhost:5432/playbook_brain
+DATABASE_URL=postgresql://playbook:playbook_dev@localhost:5432/cerebro
 
 # Redis
 REDIS_URL=redis://localhost:6379
@@ -291,7 +291,7 @@ Phase 4 is complete! Optional enhancements:
 
 ### "Port 3000 or 3001 already in use"
 - Kill existing processes or change `PORT` env var
-- For web: Use `pnpm --filter @playbook-brain/web dev -- -p 3002`
+- For web: Use `pnpm --filter @cerebro/web dev -- -p 3002`
 
 ### "Node modules out of sync"
 ```bash

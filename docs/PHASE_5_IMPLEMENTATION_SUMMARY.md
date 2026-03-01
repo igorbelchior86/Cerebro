@@ -147,7 +147,7 @@ console.log(stats.hitRate); // 0.92 (92% hit rate)
   - idleTimeoutMillis: 30s
   - connectionTimeoutMillis: 2s
   - statement_timeout: 30s
-  - application_name: 'playbook-brain-api'
+  - application_name: 'cerebro-api'
 
 - **Pool Statistics**:
 
@@ -197,9 +197,9 @@ console.log(stats.hitRate); // 0.92 (92% hit rate)
 ```bash
 $ pnpm --filter api run test
 
- PASS   @playbook-brain/api  src/__tests__/clients/autotask.test.ts
- PASS   @playbook-brain/api  src/__tests__/routes/triage.integration.test.ts
- PASS   @playbook-brain/api  src/__tests__/services/prepare-context.test.ts
+ PASS   @cerebro/api  src/__tests__/clients/autotask.test.ts
+ PASS   @cerebro/api  src/__tests__/routes/triage.integration.test.ts
+ PASS   @cerebro/api  src/__tests__/services/prepare-context.test.ts
 
 Test Suites: 3 passed, 3 total
 Tests:       19 passed, 19 total

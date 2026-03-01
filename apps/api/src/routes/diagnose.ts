@@ -7,7 +7,7 @@ import type {
   DiagnosisOutput,
   ValidationOutput,
   EvidencePack,
-} from '@playbook-brain/types';
+} from '@cerebro/types';
 import { diagnoseEvidencePack } from '../services/diagnose.js';
 import { validateDiagnosis, isSafeToGenerate } from '../services/validate-policy.js';
 import { getEvidencePack } from '../services/prepare-context.js';

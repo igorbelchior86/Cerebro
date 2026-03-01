@@ -1,5 +1,5 @@
 {
-  "name": "@playbook-brain/web",
+  "name": "@cerebro/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@playbook-brain/types": "workspace:*",
+    "@cerebro/types": "workspace:*",
     "axios": "^1.6.0",
     "geist": "^1.7.0",
     "jose": "^5.2.0",

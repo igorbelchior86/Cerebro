@@ -4,7 +4,7 @@ import type {
   ContextEvidenceRecord,
   P0ReadonlyIntegrationSource,
   TicketContextEnvelopeP0,
-} from '@playbook-brain/types';
+} from '@cerebro/types';
 import type { InMemoryP0TrustStore } from './p0-trust-store.js';
 import type { TrustActorRef, TrustAuditRecord, TrustCorrelationRefs } from './p0-trust-contracts.js';
 

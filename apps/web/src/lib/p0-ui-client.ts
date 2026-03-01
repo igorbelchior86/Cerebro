@@ -3,7 +3,7 @@ import type {
   ManagerVisibilitySnapshot,
   P0AuditRecord,
   RecommendedAction,
-} from '@playbook-brain/types';
+} from '@cerebro/types';
 
 const API = process.env.NEXT_PUBLIC_API_URL || '/api';
 

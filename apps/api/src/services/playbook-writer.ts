@@ -8,7 +8,7 @@ import type {
   ValidationOutput,
   PlaybookOutput,
   EvidencePack,
-} from '@playbook-brain/types';
+} from '@cerebro/types';
 import { getDefaultLLMProvider } from './llm-adapter.js';
 import { explainPlaybookGuardBlock, shouldBlockPlaybookOutput } from './evidence-guardrails.js';
 

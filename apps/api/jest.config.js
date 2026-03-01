@@ -1,5 +1,5 @@
 export default {
-  displayName: '@playbook-brain/api',
+  displayName: '@cerebro/api',
   preset: 'ts-jest',
   testEnvironment: 'node',
   rootDir: '.',
@@ -19,7 +19,7 @@ export default {
     '<rootDir>/src/index.ts'
   ],
   moduleNameMapper: {
-    '^@playbook-brain/types$': '<rootDir>/../../packages/types/src/index.ts',
+    '^@cerebro/types$': '<rootDir>/../../packages/types/src/index.ts',
     '^(\\.{1,2}/.*)\\.js$': '$1'
   },
   testTimeout: 30000,

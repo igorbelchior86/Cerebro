@@ -120,7 +120,7 @@ PORT=3000
 
 3. **Iniciar servidor:**
    ```bash
-   pnpm --filter @playbook-brain/api dev
+   pnpm --filter @cerebro/api dev
    ```
 
 4. **Testar conexão:**

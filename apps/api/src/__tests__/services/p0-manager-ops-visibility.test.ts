@@ -1,4 +1,4 @@
-import type { ManagerQueueSnapshotItem } from '@playbook-brain/types';
+import type { ManagerQueueSnapshotItem } from '@cerebro/types';
 import { P0ManagerOpsVisibilityService } from '../../services/p0-manager-ops-visibility.js';
 import type { TrustAIDecisionRecord, TrustAuditRecord } from '../../services/p0-trust-contracts.js';
 

@@ -19,8 +19,13 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Playbook Brain',
-  description: 'Intelligent playbook generation for IT support',
+  title: 'Cerebro',
+  description: 'Intelligent IT operations assistant for MSP engineers',
+  icons: {
+    icon: '/cerebro-logo.png',
+    shortcut: '/cerebro-logo.png',
+    apple: '/cerebro-logo.png',
+  },
 };
 
 export default function AppRootLayout({ children }: { children: ReactNode }) {

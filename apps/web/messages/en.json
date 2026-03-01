@@ -36,7 +36,7 @@
     "roleOwner": "Owner",
     "roleAdmin": "Admin",
     "roleL2": "L2 Engineer",
-    "appName": "Playbook Brain",
+    "appName": "Cerebro",
     "appSubtitle": "Triage Copilot",
     "listeningAutotask": "Listening for Autotask tickets...",
     "statActive": "Active",
@@ -74,7 +74,7 @@
     "logoutFailed": "Logout failed"
   },
   "ChatHome": {
-    "welcome": "Hello! I am Playbook Brain. I can check your integrations, query data from IT Glue, NinjaOne and Autotask, or help diagnose issues. How can I help?",
+    "welcome": "Hello! I am Cerebro. I can check your integrations, query data from IT Glue, NinjaOne and Autotask, or help diagnose issues. How can I help?",
     "hintStatus": "Check integrations status",
     "hintItGlue": "Is IT Glue connected?",
     "hintOrgs": "List IT Glue orgs",

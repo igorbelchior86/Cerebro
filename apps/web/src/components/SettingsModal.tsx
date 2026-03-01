@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
+import CerebroLogo from './CerebroLogo';
 import ThemeToggle from './ThemeToggle';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -658,14 +659,9 @@ function SectionAbout() {
         className="flex items-center gap-3 p-4 rounded-xl"
         style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}
       >
-        <div
-          className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-          style={{ background: 'linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)' }}
-        >
-          ⚡
-        </div>
+        <CerebroLogo size={40} />
         <div>
-          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Playbook Brain</p>
+          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Cerebro</p>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>IT Automation Copilot · v0.1.0</p>
         </div>
       </div>

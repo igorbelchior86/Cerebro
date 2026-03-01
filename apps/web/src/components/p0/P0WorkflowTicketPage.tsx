@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import type { P0AuditRecord } from '@playbook-brain/types';
+import type { P0AuditRecord } from '@cerebro/types';
 import { usePollingResource } from '@/hooks/usePollingResource';
 import {
   ManagerOpsAIDecision,

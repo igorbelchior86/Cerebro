@@ -4,7 +4,7 @@ import type {
   EvidencePack,
   ManagerQueueSnapshotItem,
   ValidationOutput,
-} from '@playbook-brain/types';
+} from '@cerebro/types';
 import type { TrustCorrelationRefs } from '../services/p0-trust-contracts.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { p0TrustStore } from '../services/p0-trust-store.js';

@@ -1,4 +1,4 @@
-import type { CP0QueueJobEnvelope } from '@playbook-brain/types';
+import type { CP0QueueJobEnvelope } from '@cerebro/types';
 import type { InMemoryQueueRuntime, QueueHandler } from './queue-runtime.js';
 import { requireTenantScope } from './tenant-scope.js';
 

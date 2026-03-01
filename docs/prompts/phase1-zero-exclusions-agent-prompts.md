@@ -33,7 +33,7 @@ Acceptance:
 - Every previously excluded row has an implementation contract.
 
 Verification:
-- `pnpm --filter @playbook-brain/types typecheck`
+- `pnpm --filter @cerebro/types typecheck`
 - Contract/schema tests if available.
 
 ---
@@ -57,7 +57,7 @@ Acceptance:
 - No new operation remains in `excluded_*` for implementation reasons.
 
 Verification:
-- `pnpm --filter @playbook-brain/api typecheck`
+- `pnpm --filter @cerebro/api typecheck`
 - Unit tests for new handlers and rejection paths.
 
 ---
@@ -81,7 +81,7 @@ Acceptance:
 - No silent failure path.
 
 Verification:
-- `pnpm --filter @playbook-brain/api typecheck`
+- `pnpm --filter @cerebro/api typecheck`
 - Tests for retryable/non-retryable errors, degraded mode, reconcile classifications.
 
 ---
@@ -110,7 +110,7 @@ Strict acceptance:
 - launch policy regression check passes
 
 Verification command baseline:
-- `pnpm --filter @playbook-brain/api typecheck`
+- `pnpm --filter @cerebro/api typecheck`
 - targeted gate test suites
 - launch policy suite
 

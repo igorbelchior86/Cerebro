@@ -3,7 +3,7 @@
 // Documentation: https://api.itglue.com/developer
 // ─────────────────────────────────────────────────────────────
 
-import type { ITGlueDocument } from '@playbook-brain/types';
+import type { ITGlueDocument } from '@cerebro/types';
 
 export interface ITGlueConfig {
   apiKey: string;

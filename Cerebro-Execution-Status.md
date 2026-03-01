@@ -26,7 +26,7 @@ Batch 1 (first 3 parallel prompts) completion summary:
 - `[x]` Agent B (P0 workflow core): Autotask-only two-way command/sync path + inbox workflow core + tests
 - `[x]` Agent C (P0 trust layer): AI triage/assist + read-only enrichments + manager ops visibility + tests
 - `[x]` Targeted P0 test pack green (`platform + workflow core + trust layer`)
-- `[x]` `@playbook-brain/api` typecheck green after Agent C route strict-typing fix
+- `[x]` `@cerebro/api` typecheck green after Agent C route strict-typing fix
 
 Batch 2 (next 3 parallel prompts) completion summary:
 - `[x]` Agent D (P0 hardening): file-backed local durability for workflow/trust runtime state, Autotask poller -> workflow sync wiring, CP0 trust-contract consolidation, hardening tests

@@ -1,7 +1,7 @@
 import {
   AUTOTASK_PHASE1_EXCLUSION_IMPLEMENTATION_CONTRACTS,
   AUTOTASK_PHASE1_FULL_API_CAPABILITY_MATRIX,
-} from '@playbook-brain/types';
+} from '@cerebro/types';
 
 describe('Autotask Phase 1 exclusion implementation contracts (Wave 0)', () => {
   it('has no remaining excluded rows after Wave B implementation', () => {

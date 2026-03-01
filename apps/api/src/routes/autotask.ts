@@ -8,7 +8,7 @@ import { query, queryOne } from '../db/index.js';
 import { pgStore } from '../services/email/pg-store.js';
 import { triageOrchestrator } from '../services/triage-orchestrator.js';
 import { classifyQueueError } from '../platform/errors.js';
-import type { AutotaskTicket } from '@playbook-brain/types';
+import type { AutotaskTicket } from '@cerebro/types';
 
 const router: ExpressRouter = Router();
 
@@ -49,7 +49,8 @@ const ticketFieldKeys = [
 
 type TicketFieldKey = (typeof ticketFieldKeys)[number];
 
-const ticketFieldOptionCache: Partial<Record<TicketFieldKey, unknown[]>> = {};
+const TICKET_FIELD_OPTIONS_CACHE_TTL_MS = 30_000;
+const ticketFieldOptionCache = new Map<TicketFieldKey, { expiresAt: number; data: unknown[] }>();
 let ticketDraftDefaultsCache: unknown = null;
 const READ_ONLY_SEARCH_CACHE_TTL_MS = 30_000;
 const readOnlySearchCache = new Map<string, { expiresAt: number; data: unknown[] }>();
@@ -107,14 +108,22 @@ async function loadCachedReadOnlyArray(
   key: TicketFieldKey,
   loader: () => Promise<unknown[]>
 ): Promise<{ data: unknown[]; degradedReason?: 'rate_limited' | 'provider_error' }> {
+  const cached = ticketFieldOptionCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) {
+    return { data: cached.data };
+  }
+
   try {
     const data = await loader();
-    ticketFieldOptionCache[key] = data;
+    ticketFieldOptionCache.set(key, {
+      expiresAt: Date.now() + TICKET_FIELD_OPTIONS_CACHE_TTL_MS,
+      data,
+    });
     return { data };
   } catch (error) {
-    const cached = ticketFieldOptionCache[key];
+    const stale = cached?.data;
     return {
-      data: Array.isArray(cached) ? cached : [],
+      data: Array.isArray(stale) ? stale : [],
       degradedReason: classifyAutotaskReadDegradedReason(error),
     };
   }

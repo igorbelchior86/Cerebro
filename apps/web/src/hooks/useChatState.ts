@@ -24,7 +24,7 @@ export function useChatState(sessionId: string) {
       {
         id: '0',
         role: 'assistant',
-        content: `Welcome to Playbook Brain! I've started the analysis for your session. Let me collect evidence and diagnose the issue...`,
+        content: `Welcome to Cerebro! I've started the analysis for your session. Let me collect evidence and diagnose the issue...`,
         timestamp: new Date(),
         type: 'text',
       },

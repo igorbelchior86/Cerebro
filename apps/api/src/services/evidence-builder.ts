@@ -1,4 +1,4 @@
-import type { EvidencePack } from '@playbook-brain/types';
+import type { EvidencePack } from '@cerebro/types';
 
 export class EvidenceBuilder {
     private pack: Partial<EvidencePack> = {};

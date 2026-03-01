@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { ManagerVisibilitySnapshot } from '@playbook-brain/types';
+import type { ManagerVisibilitySnapshot } from '@cerebro/types';
 import { usePollingResource } from '@/hooks/usePollingResource';
 import {
   buildManagerVisibilitySnapshot,

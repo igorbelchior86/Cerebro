@@ -1,4 +1,4 @@
-import type { CP0AiDecisionRecord, DiagnosisOutput, EvidencePack, ValidationOutput } from '@playbook-brain/types';
+import type { CP0AiDecisionRecord, DiagnosisOutput, EvidencePack, ValidationOutput } from '@cerebro/types';
 import { P0AiTriageAssistService } from '../../services/p0-ai-triage-assist.js';
 import { InMemoryP0TrustStore } from '../../services/p0-trust-store.js';
 

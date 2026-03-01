@@ -236,7 +236,7 @@ router.post('/mfa/setup', requireAuth, async (req: Request, res: Response) => {
     // Store secret (not yet enabled — enabled after first successful verify)
     await query('UPDATE users SET totp_secret = $1 WHERE id = $2', [secret, userId]);
 
-    const otpauthUrl = authenticator.keyuri(user.email, 'Playbook Brain', secret);
+    const otpauthUrl = authenticator.keyuri(user.email, 'Cerebro', secret);
     const qrDataUrl = await QRCode.toDataURL(otpauthUrl);
 
     res.json({ secret, qrDataUrl, otpauthUrl });

@@ -1,4 +1,4 @@
-# playbook-brain
+# Cerebro
 
 > Chatbot operacional que gera playbooks de suporte automaticamente a partir de tickets Autotask, usando NinjaOne, IT Glue e LLM.
 

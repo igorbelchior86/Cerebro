@@ -1,4 +1,4 @@
-# Playbook Brain - Implementation Complete ✅
+# Cerebro - Implementation Complete ✅
 
 **Status**: All 4 phases implemented and verified
 **Build Status**: ✅ PASSING (All packages compile)
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-Playbook Brain is a **complete 4-phase AI-powered IT support automation system** that transforms raw helpdesk tickets into executable support playbooks. 
+Cerebro is a **complete 4-phase AI-powered IT support automation system** that transforms raw helpdesk tickets into executable support playbooks. 
 
 ### What It Does
 1. **Collects** evidence from Autotask, NinjaOne, IT Glue
@@ -590,7 +590,7 @@ pnpm typecheck
 pnpm build
 
 # Database connectivity
-psql postgresql://playbook:playbook_dev@localhost:5432/playbook_brain
+psql postgresql://playbook:playbook_dev@localhost:5432/cerebro
 ```
 
 ---
@@ -627,7 +627,7 @@ For issues, questions, or feature requests:
 
 1. Check QUICKSTART.md
 2. Review error logs: `pnpm dev` console output
-3. Verify database: `psql postgresql://playbook:playbook_dev@localhost:5432/playbook_brain`
+3. Verify database: `psql postgresql://playbook:playbook_dev@localhost:5432/cerebro`
 4. Check API health: `curl http://localhost:3001/health`
 5. Validate LLM: `curl http://localhost:3001/diagnose/health`
 
@@ -644,7 +644,7 @@ This project uses:
 
 ## Summary
 
-**Playbook Brain is now a fully functional 4-phase AI-powered IT support automation system.**
+**Cerebro is now a fully functional 4-phase AI-powered IT support automation system.**
 
 - ✅ **100% TypeScript** - Type-safe implementation
 - ✅ **25+ REST APIs** - All connectors, services, and routes working

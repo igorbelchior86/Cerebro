@@ -69,7 +69,7 @@
 - [ ] Capture post-onboarding posture
 
 ## Mock Tenant Dry-Run (Required Before First External Cohort)
-- [ ] Execute `pnpm --filter @playbook-brain/api exec tsx ../../scripts/p0-rollout-dry-run.ts`
+- [ ] Execute `pnpm --filter @cerebro/api exec tsx ../../scripts/p0-rollout-dry-run.ts`
 - [ ] Confirm output includes frozen launch policy snapshot
 - [ ] Confirm feature rollback and tenant rollback both return all flags disabled at end
 

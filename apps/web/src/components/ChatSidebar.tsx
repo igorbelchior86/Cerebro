@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import CerebroLogo from './CerebroLogo';
 import SettingsModal from './SettingsModal';
 import UserProfileDropdown from './UserProfileDropdown';
 import ProfileModal from './ProfileModal';
@@ -125,24 +126,6 @@ function MetaIcon({ type }: { type: 'clock' | 'company' | 'user' }) {
     <svg {...common} aria-hidden="true" role="img" aria-label="User Icon">
       <circle cx="8" cy="5.8" r="2.3" stroke="currentColor" strokeWidth="1.4" />
       <path d="M3.6 13.5c.6-2.1 2.3-3.2 4.4-3.2s3.8 1.1 4.4 3.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function CerebroBrandMark() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true" role="img" aria-label="Cerebro Logo" style={{ display: 'block' }}>
-      <defs>
-        <linearGradient id="cerebro-mark-gradient" x1="3" y1="3" x2="19" y2="19" gradientUnits="userSpaceOnUse">
-          <stop stopColor="var(--accent)" />
-          <stop offset="1" stopColor="#5E79D8" />
-        </linearGradient>
-      </defs>
-      <rect x="1.5" y="1.5" width="19" height="19" rx="7" fill="var(--accent-muted)" stroke="var(--border-accent)" />
-      <path d="M14.8 7.1a4.9 4.9 0 1 0 0 7.8" stroke="url(#cerebro-mark-gradient)" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M13.1 9a2.8 2.8 0 1 0 0 4" stroke="url(#cerebro-mark-gradient)" strokeWidth="1.7" strokeLinecap="round" />
-      <circle cx="14.9" cy="11" r="1.15" fill="var(--accent)" />
-      <path d="M6.2 11h4" stroke="var(--border-accent)" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }
@@ -743,7 +726,7 @@ export default function ChatSidebar({
             <div style={{ padding: '16px 14px 12px', position: 'relative' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
                 <div style={{ width: '34px', height: '34px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01))', border: '1px solid var(--bento-outline)', boxShadow: 'var(--shadow-card)', flexShrink: 0 }}>
-                  <CerebroBrandMark />
+                  <CerebroLogo size={20} />
                 </div>
                 <div style={{ minWidth: 0, marginRight: '4px' }}>
                   <div style={{ fontSize: '14px', lineHeight: 1, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.03em' }}>Cerebro</div>

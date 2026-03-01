@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { WorkflowRealtimeEnvelope } from '@playbook-brain/types';
+import type { WorkflowRealtimeEnvelope } from '@cerebro/types';
 
 export interface PollingResourceState<T> {
   data: T | null;
@@ -40,6 +40,7 @@ export function usePollingResource<T>(
   const [realtimeLastEventAt, setRealtimeLastEventAt] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const dataRef = useRef<T | null>(null);
+  const fetcherRef = useRef(fetcher);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
@@ -63,6 +64,10 @@ export function usePollingResource<T>(
     dataRef.current = data;
   }, [data]);
 
+  useEffect(() => {
+    fetcherRef.current = fetcher;
+  }, [fetcher]);
+
   const run = useCallback(async (isManual = false) => {
     if (!enabled) {
       if (mountedRef.current) {
@@ -79,7 +84,7 @@ export function usePollingResource<T>(
     }
 
     try {
-      const next = await fetcher();
+      const next = await fetcherRef.current();
       if (!mountedRef.current) return;
       setData(next);
       setLastUpdatedAt(new Date().toISOString());
@@ -91,7 +96,7 @@ export function usePollingResource<T>(
       setLoading(false);
       setRefreshing(false);
     }
-  }, [enabled, fetcher]);
+  }, [enabled]);
 
   useEffect(() => {
     if (!enabled) {

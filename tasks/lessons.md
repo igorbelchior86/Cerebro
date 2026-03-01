@@ -939,3 +939,13 @@
 **Root cause**: Eu tratei a redução de latência dos seletores tipados como suficiente e não revalidei explicitamente todos os campos enumerados pelo usuário.
 **Rule**: Quando o usuário fornecer uma lista fechada de superfícies, confirmar cobertura item a item antes de declarar a tarefa completa.
 **Pattern**: Se a resposta fala “X agora faz preload” mas o requisito original é uma lista extensa, revisar a cobertura completa em vez de inferir equivalência.
+## Lesson: 2026-03-01 (operational root-cause answers must trace autonomous backend loops, not just the obvious failing call)
+**Mistake**: Eu respondi ao 429 olhando só o poller imediato e não fui fundo o suficiente no que mais roda sozinho no backend.
+**Root cause**: Eu foquei na chamada que falhou (`searchTickets`) antes de mapear todos os loops automáticos disparados no boot e sem interação da UI.
+**Rule**: Em incidentes de rate limit, sempre mapear explicitamente todos os produtores automáticos de tráfego (pollers, retries, bootstraps, reprocessamentos) antes de concluir a causa.
+**Pattern**: Se o usuário diz “eu não cliquei em nada”, a investigação deve migrar imediatamente da UI para jobs/background services e startup hooks.
+## Lesson: 2026-03-01 (when the user rejects 'shared external usage', drop that branch immediately and prove local callers)
+**Mistake**: Eu continuei insistindo na hipótese de uso externo/ambiente paralelo mesmo após o usuário negar explicitamente essa premissa.
+**Root cause**: Eu tratei uma hipótese plausível como explicação suficiente sem validá-la contra o contexto operacional fornecido pelo usuário.
+**Rule**: Se o usuário invalida uma premissa operacional crítica ("não existe outro ambiente"), remover essa hipótese e focar apenas em evidência local verificável.
+**Pattern**: Em incidentes de quota/rate limit, evitar atribuir causa a "outro ambiente" sem prova local de credencial compartilhada.

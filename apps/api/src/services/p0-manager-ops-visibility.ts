@@ -1,7 +1,7 @@
 import type {
   ManagerQueueSnapshotItem,
   ManagerVisibilitySnapshot,
-} from '@playbook-brain/types';
+} from '@cerebro/types';
 import type { TrustAIDecisionRecord, TrustAuditRecord } from './p0-trust-contracts.js';
 
 export interface BuildManagerVisibilityInput {

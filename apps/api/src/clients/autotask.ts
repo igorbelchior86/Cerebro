@@ -3,7 +3,7 @@
 // Documentation: https://webservices14.autotask.net/help/content/0_home.htm
 // ─────────────────────────────────────────────────────────────
 
-import type { AutotaskTicket, AutotaskDevice } from '@playbook-brain/types';
+import type { AutotaskTicket, AutotaskDevice } from '@cerebro/types';
 
 // Autotask uses 3 custom headers — NOT Bearer token.
 // Reference: https://webservices.autotask.net/help/developerhelp/Content/APIs/REST/General_Topics/REST_API_Authentication.htm
@@ -51,6 +51,7 @@ const DISCOVERY_BASE = 'https://webservices2.autotask.net/atservicesrest/v1.0';
 export class AutotaskClient {
   private config: AutotaskConfig;
   private zoneBase: string | null;
+  private entityFieldsCache = new Map<string, Promise<any[]>>();
 
   constructor(config: AutotaskConfig) {
     this.config = config;
@@ -184,11 +185,21 @@ export class AutotaskClient {
   }
 
   private async getEntityFields(entityPath: string): Promise<any[]> {
-    const response = await this.request<any>(`${entityPath}/entityInformation/fields`);
-    if (Array.isArray(response)) return response;
-    if (Array.isArray(response?.fields)) return response.fields;
-    if (Array.isArray(response?.items)) return response.items;
-    return [];
+    const cached = this.entityFieldsCache.get(entityPath);
+    if (cached) {
+      return cached;
+    }
+
+    const requestPromise = this.request<any>(`${entityPath}/entityInformation/fields`)
+      .then((response) => {
+        if (Array.isArray(response)) return response;
+        if (Array.isArray(response?.fields)) return response.fields;
+        if (Array.isArray(response?.items)) return response.items;
+        return [];
+      });
+
+    this.entityFieldsCache.set(entityPath, requestPromise);
+    return requestPromise;
   }
 
   private collectFieldDefaultCandidates(targetField: any): Set<string> {

@@ -46,7 +46,7 @@ import {
   type WorkflowReconciliationIssue,
 } from '@/lib/p0-ui-client';
 import { loadTriPaneSidebarTickets } from '@/lib/workflow-sidebar-adapter';
-import type { P0AuditRecord } from '@playbook-brain/types';
+import type { P0AuditRecord } from '@cerebro/types';
 
 interface SessionData {
   session: { id: string; ticket_id: string; status: 'pending' | 'processing' | 'approved' | 'failed' | 'needs_more_info' | 'blocked' };

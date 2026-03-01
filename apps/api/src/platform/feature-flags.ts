@@ -1,4 +1,4 @@
-import type { CP0FeatureFlagEvaluation } from '@playbook-brain/types';
+import type { CP0FeatureFlagEvaluation } from '@cerebro/types';
 import { requireTenantScope } from './tenant-scope.js';
 
 export class InMemoryFeatureFlagService {

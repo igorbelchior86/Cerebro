@@ -59,7 +59,7 @@ jobs:
         env:
           POSTGRES_USER: playbook
           POSTGRES_PASSWORD: playbook_dev
-          POSTGRES_DB: playbook_brain
+          POSTGRES_DB: cerebro
         ports:
           - 5432:5432
         options: >-
@@ -79,7 +79,7 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://playbook:playbook_dev@localhost:5432/playbook_brain
+      DATABASE_URL: postgresql://playbook:playbook_dev@localhost:5432/cerebro
       REDIS_URL: redis://localhost:6379
       NODE_ENV: test
 

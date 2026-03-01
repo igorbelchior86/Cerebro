@@ -1,4 +1,4 @@
-import type { CP0RbacRole } from '@playbook-brain/types';
+import type { CP0RbacRole } from '@cerebro/types';
 
 export type RbacEnforcementPoint =
   | 'ticket.read'

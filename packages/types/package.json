@@ -1,5 +1,5 @@
 {
-  "name": "@playbook-brain/types",
+  "name": "@cerebro/types",
   "version": "0.1.0",
   "private": true,
   "type": "module",

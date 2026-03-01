@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Playbook Brain - Complete Startup Script
+# Cerebro - Complete Startup Script
 # Initializes database, starts services, and runs the platform
 
 set -e  # Exit on any error
@@ -63,7 +63,7 @@ fi
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-log_info "Starting Playbook Brain Platform..."
+log_info "Starting Cerebro Platform..."
 log_info "Project Root: $PROJECT_ROOT"
 
 # Check prerequisites

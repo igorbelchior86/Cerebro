@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
+import CerebroLogo from '@/components/CerebroLogo';
 import { useRouter } from '@/i18n/routing';
 
 const API = process.env.NEXT_PUBLIC_API_URL || '/api';
@@ -50,11 +51,9 @@ export default function RegisterPage() {
             <div style={{ width: '100%', maxWidth: '420px' }}>
                 {/* Logo */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '32px' }}>
-                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', flexShrink: 0 }}>
-                        ⚡
-                    </div>
+                    <CerebroLogo size={36} priority />
                     <div>
-                        <p style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Playbook Brain</p>
+                        <p style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Cerebro</p>
                         <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>IT Automation Copilot</p>
                     </div>
                 </div>
@@ -62,7 +61,7 @@ export default function RegisterPage() {
                 {/* Card */}
                 <div style={{ background: 'var(--modal-surface)', border: '1px solid var(--modal-border)', borderRadius: '16px', padding: '32px', backdropFilter: 'blur(24px)' }}>
                     <p style={{ fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '4px' }}>Create your workspace</p>
-                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '24px' }}>Set up your MSP account in Playbook Brain</p>
+                    <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '24px' }}>Set up your MSP account in Cerebro</p>
 
                     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                         <Field

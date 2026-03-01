@@ -7,7 +7,7 @@ import type {
   HitlStatusP0,
   ProvenanceRef,
   RecommendedAction,
-} from '@playbook-brain/types';
+} from '@cerebro/types';
 
 export type TrustCorrelationRefs = Partial<CP0CorrelationIds>;
 export type TrustAuditRecord = CP0AuditRecord;

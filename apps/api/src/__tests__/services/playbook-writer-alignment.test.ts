@@ -1,4 +1,4 @@
-import type { DiagnosisOutput } from '@playbook-brain/types';
+import type { DiagnosisOutput } from '@cerebro/types';
 import { PlaybookWriterService } from '../../services/playbook-writer.js';
 
 describe('PlaybookWriter hypothesis alignment with anchor eligibility', () => {

@@ -6,7 +6,7 @@ import type {
   EvidencePack,
   DiagnosisOutput,
   Hypothesis,
-} from '@playbook-brain/types';
+} from '@cerebro/types';
 import { getDefaultLLMProvider } from './llm-adapter.js';
 import { shouldBlockDiagnosisOutput } from './evidence-guardrails.js';
 

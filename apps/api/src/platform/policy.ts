@@ -3,7 +3,7 @@ import type {
   CP0IntegrationMode,
   CP0IntegrationMutationRequest,
   CP0LaunchIntegrationId,
-} from '@playbook-brain/types';
+} from '@cerebro/types';
 import { ReadOnlyIntegrationMutationError } from './errors.js';
 import type { AuditTrailService } from './audit-trail.js';
 

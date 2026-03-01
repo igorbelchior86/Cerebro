@@ -3,7 +3,7 @@
 // Documentation: https://app.ninjarmm.com/apidocs
 // ─────────────────────────────────────────────────────────────
 
-import type { NinjaOneDevice } from '@playbook-brain/types';
+import type { NinjaOneDevice } from '@cerebro/types';
 
 interface NinjaOneConfig {
   clientId: string;

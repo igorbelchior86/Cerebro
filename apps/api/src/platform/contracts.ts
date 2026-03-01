@@ -1,4 +1,4 @@
-import type { CP0IntegrationAdapterContract, CP0IntegrationMutationRequest } from '@playbook-brain/types';
+import type { CP0IntegrationAdapterContract, CP0IntegrationMutationRequest } from '@cerebro/types';
 import type { AuditTrailService } from './audit-trail.js';
 import { enforceIntegrationMutationPolicy } from './policy.js';
 

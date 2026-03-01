@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, FormEvent } from 'react';
+import CerebroLogo from '@/components/CerebroLogo';
 import { useRouter } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 
@@ -89,19 +90,10 @@ export default function LoginPage() {
       >
         {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '28px' }}>
-          <div
-            style={{
-              width: '36px', height: '36px', borderRadius: '10px',
-              background: 'linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '18px',
-            }}
-          >
-            ⚡
-          </div>
+          <CerebroLogo size={36} priority />
           <div>
             <p style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-              Playbook Brain
+              Cerebro
             </p>
             <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>{t('copilot')}</p>
           </div>

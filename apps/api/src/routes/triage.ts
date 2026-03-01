@@ -4,7 +4,7 @@
 
 import { Router, type Router as ExpressRouter } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import type { TriageSession, SessionStatus } from '@playbook-brain/types';
+import type { TriageSession, SessionStatus } from '@cerebro/types';
 import { query, execute } from '../db/index.js';
 
 const router: ExpressRouter = Router();

@@ -1,6 +1,6 @@
 // ─────────────────────────────────────────────────────────────
-// SHARED TYPES — playbook-brain
-// Importar como: import type { EvidencePack } from '@playbook-brain/types'
+// SHARED TYPES — Cerebro
+// Importar como: import type { EvidencePack } from '@cerebro/types'
 // ─────────────────────────────────────────────────────────────
 
 // ─── Evidence Pack ────────────────────────────────────────────

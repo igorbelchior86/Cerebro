@@ -1,3 +1,71 @@
+# Task: Eliminar o Server Error recorrente do Next por vendor chunk ausente
+**Status**: completed
+**Started**: 2026-03-01T18:30:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar se o erro atual ainda é corrupção de `.next` no runtime do `next dev`.
+- [x] Step 2: Ajustar o bootstrap oficial do web para usar o runtime estável e evitar o ciclo que perde `vendor-chunks`.
+- [x] Step 3: Reiniciar o web, validar o runtime e documentar a mudança.
+
+## Open Questions
+- O runtime estável do web será `build + next start`; isso remove HMR do script oficial, mas neste ambiente o `next dev` permanece instável mesmo com cache desabilitado.
+
+## Progress Notes
+- O `web.log` atual confirma a mesma assinatura estrutural: `Cannot find module './vendor-chunks/@opentelemetry+api@1.9.0.js'` vindo de `.next/server/webpack-runtime.js`.
+- `apps/web/next.config.js` já está com `webpackConfig.cache = false` em `dev`, então a mitigação de cache não foi suficiente para este ambiente.
+- O `scripts/stack.sh` ainda sobe o web com `npx next dev -p 3000`, mantendo exatamente o runtime que continua se corrompendo.
+- O bootstrap oficial do web agora executa `pnpm exec next build` e depois sobe `npx next start -p 3000`, removendo o `next dev` do caminho crítico local.
+- O processo atual do web já foi reciclado manualmente para `next start` e as rotas afetadas responderam `200` sem novo `MODULE_NOT_FOUND`.
+
+## Review
+- What worked:
+- A causa estava toda no runtime e no script de bootstrap, não em código de feature; trocar o web para o runtime estável elimina a classe de erro em vez de só limpar `.next` repetidamente.
+- What was tricky:
+- Era tentador depender só da mitigação de cache em `next.config.js`, mas o próprio log mostrou que o `next dev` seguia quebrando com a mesma assinatura depois disso.
+- Verification:
+- `pnpm exec next build` em `apps/web` ✅
+- web reciclado manualmente em `screen` com `npx next start -p 3000` ✅
+- `curl -I -sf http://localhost:3000/en/login` ✅
+- `curl -I -sf 'http://localhost:3000/en/triage/T20260301.0003?sidebarFilter=all'` ✅
+- `bash -n scripts/stack.sh` ✅
+- `./scripts/stack.sh status` ✅ (`api` e `web` healthy)
+- Documentation:
+- `wiki/changelog/2026-03-01-stack-web-runtime-next-start.md`
+
+# Task: Parar o storm local que estoura o rate limit do Autotask
+**Status**: completed
+**Started**: 2026-03-01T18:05:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar a causa raiz real do 429 com evidência de logs e fan-out no código.
+- [x] Step 2: Aplicar a correção mínima no frontend e backend para cortar o loop e o fan-out.
+- [x] Step 3: Validar redução de chamadas, executar checks e documentar a mudança.
+
+## Open Questions
+- A validação de redução vai usar logs locais da API; a ausência completa de requests depende de a aba problemática continuar aberta durante a medição.
+
+## Progress Notes
+- O `429` foi reproduzido como efeito local: a UI estava chamando `/ticket-field-options` dezenas de vezes por janela curta e cada hit expandia em múltiplas leituras upstream.
+- A correção pedida foi delimitada em três pontos: estabilizar `usePollingResource`, cache real em `loadCachedReadOnlyArray` e memoização de `getEntityFields('/tickets')`.
+- O hook de polling agora usa `fetcherRef`, então o intervalo e os refreshes em tempo real continuam chamando a implementação mais recente sem reiniciar o effect por troca de identidade.
+- O cache de `ticket-field-options` agora é TTL real de 30s por campo e o client Autotask colapsa leituras repetidas de metadata no mesmo request.
+
+## Review
+- What worked:
+- A correção mínima atacou exatamente os dois multiplicadores do incidente: refetch por render no web e fan-out de metadata no backend.
+- What was tricky:
+- A memoização de `getEntityFields()` precisava manter também o erro memoizado dentro do mesmo `AutotaskClient`; se limpasse o cache na falha, o mesmo request ainda repetiria a leitura em série.
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web build` ✅
+- `curl -sf http://localhost:3001/health` ✅
+- `curl -I -sf http://localhost:3000/en/login` ✅
+- `./scripts/stack.sh status` ✅ (`api` e `web` healthy após relançar a API com `DATABASE_URL=.../playbook_brain`)
+- Medição local pós-fix: contagem em `.run/logs/api.log` ficou em `+0` para `/ticket-field-options`, `/audit/T20260301.0003`, `/reconciliation-issues`, `/p0/ai-decisions` e `/p0/audit` durante uma janela de 10s no runtime já corrigido.
+- Documentation:
+- `wiki/changelog/2026-03-01-stop-autotask-ticket-field-options-storm.md`
+
 # Task: Corrigir lentidão/falha nos modais de busca Autotask (Org / Primary)
 **Status**: completed
 **Started**: 2026-03-01T16:56:00-05:00
@@ -1960,3 +2028,79 @@
 - `pnpm --filter @playbook-brain/web typecheck` ✅
 - `pnpm --filter @playbook-brain/api typecheck` ✅
 - Wiki atualizada: `wiki/changelog/2026-03-01-restore-autotask-default-suggestion-lists.md`
+
+---
+
+# Task: Substituir a marca Playbook Brain por Cerebro em código ativo
+**Status**: completed
+**Started**: 2026-03-01T18:00:00-05:00
+
+## Plan
+- [x] Step 1: Mapear referências ativas de `Playbook Brain`/`playbook-brain` e localizar o asset da nova logo.
+- [x] Step 2: Atualizar código, configuração e docs ativas para usar `Cerebro` e aplicar a nova logo na UI web.
+- [x] Step 3: Validar com checks relevantes e registrar a mudança na wiki.
+
+## Open Questions
+- A nova logo não foi enviada no prompt, então vou usar o asset existente em `logo.png` na raiz do repositório como fonte oficial da marca.
+
+## Progress Notes
+- Inventário inicial concluído: há referências visíveis de marca na UI, metadata e docs, além de nomes técnicos de pacote/import alias `@playbook-brain/*`.
+- O rename foi aplicado em código ativo, manifests, imports internos, defaults de ambiente e docs correntes, excluindo históricos de `tasks/`, `wiki/` antiga e artefatos gerados.
+- A UI web passou a usar o novo asset `apps/web/public/cerebro-logo.png` via componente compartilhado `CerebroLogo`.
+- Foi necessário rodar `pnpm install` após trocar o escopo para `@cerebro/*`, porque o workspace local ainda estava linkado com o nome antigo.
+
+## Review
+- What worked:
+- O rename em lote resolveu a maior parte das referências sem mudar comportamento funcional.
+- Centralizar a logo em um componente único evitou divergência visual entre login, registro, invite, sidebar e settings.
+- What was tricky:
+- A troca de escopo de pacote exigiu relink do workspace antes da validação (`pnpm install`).
+- O primeiro build do web mostrou `Unsupported Server Component type` porque o componente de logo precisava ser marcado como client-compatible.
+- Verification:
+- `rg -n --hidden --glob '!.git' --glob '!tasks/**' --glob '!wiki/**' --glob '!.next/**' --glob '!**/.next.stale*/**' --glob '!node_modules/**' --glob '!.codex/**' --glob '!docs/validation/**' --glob '!docs/launch-readiness/runs/**' "Playbook Brain|playbook-brain|playbook_brain|@playbook-brain|PlaybookBrain" .` ✅ sem ocorrências ativas
+- `pnpm install` ✅
+- `pnpm --filter @cerebro/types typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web build` ✅
+- Wiki atualizada: `wiki/changelog/2026-03-01-rebrand-playbook-brain-to-cerebro.md`
+
+---
+
+# Task: Investigar causa do 429 no polling do Autotask
+**Status**: completed
+**Started**: 2026-03-01T18:08:00-05:00
+
+## Plan
+- [x] Step 1: Inspecionar logs e o código do poller/cliente Autotask para mapear frequência e volume de chamadas.
+- [x] Step 2: Determinar a causa mais provável do limite estourado (este processo, múltiplos workers, ou consumo externo compartilhado).
+- [x] Step 3: Responder com evidência técnica e, se necessário, apontar a correção mínima.
+
+## Open Questions
+- Ainda não sei se a credencial do Autotask está sendo usada só por este ambiente local ou também por outros ambientes/processos.
+
+## Progress Notes
+- O log atual mostra erro `429` com mensagem explícita do provider: limite interno do Autotask de `10000 requests per 60 minutes`.
+- O poller local faz `runOnce()` imediatamente no boot e depois a cada `60000ms`; em cada ciclo ele executa um único `client.searchTickets(...)` para `/tickets/query`.
+- Há lock advisory para impedir duplicação entre instâncias que compartilham o mesmo banco, e o processo atual mostra apenas um listener local.
+- Como o `429` acontece já na primeira chamada após subir a API, a cota já estava praticamente esgotada antes deste boot; este poller sozinho não chega perto de `10000/h`.
+- Reabrindo a investigação para mapear também loops autônomos além do poller, já que o usuário explicitou que quase não houve uso de UI e não criou tickets hoje.
+- Premissa corrigida pelo usuário: não existe outro ambiente usando essa credencial; a causa precisa estar em chamadas locais (backend loops e/ou browser local).
+- Evidência local encontrada: `GET /ticket-field-options` está sendo chamado em loop pela própria UI local. Amostra medida: +60 requests em 10s no log atual.
+- Cada `GET /ticket-field-options` sem `field` dispara 6 loaders sequenciais; o helper `loadCachedReadOnlyArray()` está com nome enganoso e sempre chama o provider antes de usar cache.
+- Cada loader (`getTicketQueues`, `getTicketPriorityOptions`, etc.) refaz `getEntityFields('/tickets')`, então um único hit local em `/ticket-field-options` gera 6 chamadas upstream ao mesmo metadata endpoint do Autotask.
+- Com a amostra atual, isso dá ~60 * 6 = 360 requests ao Autotask em 10s (~129.600/h), suficiente para estourar 10k/h em poucos minutos.
+- O gatilho de volume no frontend é um bug de polling: `usePollingResource()` faz `run(false)` sempre que seu `fetcher` muda; em `triage/[id]`, vários callers passam lambdas inline, então toda renderização recria o `fetcher`, reexecuta o hook e dispara fetch imediato.
+- A página de triage re-renderiza continuamente (loops de 3s/10s + estados reativos), e quando `ticket-field-options` volta degradado com arrays vazios, os efeitos que dependem de `ticketFieldOptionsCache` continuam rebatendo o endpoint em toda nova renderização.
+
+## Review
+- What worked:
+- Logs + leitura do código fecharam a cadeia causal com medida local reproduzível, sem depender de hipótese externa.
+- What was tricky:
+- O `429` aparecia no poller, mas a causa dominante não era o poller; o volume explosivo vinha de um endpoint de metadata da UI somado a um hook de polling que refetcha em toda renderização.
+- Verification:
+- Log inspecionado em `.run/logs/api.log` mostrando `429` na primeira chamada de `AutotaskClient.searchTickets`.
+- Código inspecionado em `apps/api/src/services/autotask-polling.ts` e `apps/api/src/clients/autotask.ts`.
+- `./scripts/stack.sh status` confirmou um único listener local da API e health `ok`.
+- Medição local: contagem de `.run/logs/api.log` cresceu de `3902` para `3964` em 10s para `/ticket-field-options` (`+62`, repetido com `+60`).
+- A mesma amostra mostrou `/audit/T20260301.0003` `+29` em 10s, incompatível com o polling nominal de 12s e consistente com refetch em toda renderização.

@@ -8,7 +8,7 @@ import type {
     SourceFinding,
     IterativeEnrichmentProfile,
     EntityResolution
-} from '@playbook-brain/types';
+} from '@cerebro/types';
 
 export {
     IterativeEnrichmentSections,

@@ -1,4 +1,4 @@
-import type { CP0QueueErrorClassification } from '@playbook-brain/types';
+import type { CP0QueueErrorClassification } from '@cerebro/types';
 
 export class PlatformError extends Error {
   public readonly code: string;

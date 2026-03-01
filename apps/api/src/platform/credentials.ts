@@ -1,4 +1,4 @@
-import type { CP0IntegrationCredentialRef, CP0LaunchIntegrationId } from '@playbook-brain/types';
+import type { CP0IntegrationCredentialRef, CP0LaunchIntegrationId } from '@cerebro/types';
 import { assertTenantMatch, requireTenantScope } from './tenant-scope.js';
 
 export interface IntegrationCredentialStore {

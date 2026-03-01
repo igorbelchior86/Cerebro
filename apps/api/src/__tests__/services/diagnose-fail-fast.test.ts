@@ -1,4 +1,4 @@
-import type { EvidencePack } from '@playbook-brain/types';
+import type { EvidencePack } from '@cerebro/types';
 import { DiagnoseService } from '../../services/diagnose.js';
 
 describe('DiagnoseService fail-fast behavior', () => {

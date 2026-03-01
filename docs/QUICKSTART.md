@@ -1,4 +1,4 @@
-# Quick Start Guide - Playbook Brain
+# Quick Start Guide - Cerebro
 
 ## Prerequisites
 - macOS or Linux
@@ -120,7 +120,7 @@ curl http://localhost:3001/playbook/$SESSION/markdown
 ## Project Structure
 
 ```
-Playbook Brain/
+Cerebro/
 ├── apps/
 │   ├── api/          # Express backend + services
 │   └── web/          # Next.js frontend
@@ -137,8 +137,8 @@ Playbook Brain/
 ### Port already in use
 ```bash
 # Change ports:
-PORT=3002 pnpm --filter @playbook-brain/api dev
-pnpm --filter @playbook-brain/web dev -- -p 3001
+PORT=3002 pnpm --filter @cerebro/api dev
+pnpm --filter @cerebro/web dev -- -p 3001
 ```
 
 ### Database connection failed
@@ -178,17 +178,17 @@ NODE_ENV=production pnpm start
 ### View logs
 ```bash
 # API logs
-pnpm --filter @playbook-brain/api dev
+pnpm --filter @cerebro/api dev
 
 # Web logs
-pnpm --filter @playbook-brain/web dev
+pnpm --filter @cerebro/web dev
 ```
 
 ### Database
 
 ```bash
 # View database directly
-psql postgresql://playbook:playbook_dev@localhost:5432/playbook_brain
+psql postgresql://playbook:playbook_dev@localhost:5432/cerebro
 
 # Query sessions
 SELECT id, ticket_id, status, created_at FROM triage_sessions;

@@ -6,10 +6,11 @@ import axios from 'axios';
 import ChatSidebar, { ActiveTicket } from '@/components/ChatSidebar';
 import ChatMessage, { Message } from '@/components/ChatMessage';
 import ChatInput, { type ChatInputSubmitPayload } from '@/components/ChatInput';
+import { NewTicketWorkspaceBridgeProvider } from '@/components/new-ticket-workspace-context';
 import PlaybookPanel from '@/components/PlaybookPanel';
 import ResizableLayout from '@/components/ResizableLayout';
 import { usePathname } from 'next/navigation';
-import { useRouter } from '@/i18n/routing';
+import NewTicketHomePage from '../home/page';
 import { usePollingResource } from '@/hooks/usePollingResource';
 import { useScrollVelocity } from '@/hooks/useScrollVelocity';
 import {
@@ -311,8 +312,8 @@ export default function SessionDetail({
 }) {
   const t = useTranslations('ChatSession');
   const pathname = usePathname();
-  const router = useRouter();
   const [selectedTicketId, setSelectedTicketId] = useState(params.id);
+  const [isDraftMode, setIsDraftMode] = useState(false);
   const [data, setData] = useState<SessionData | null>(null);
   const { scrollRef, style: velocityStyle } = useScrollVelocity();
   const [messages, setMessages] = useState<Message[]>([
@@ -2034,21 +2035,40 @@ export default function SessionDetail({
     external_psa_user: messages.filter((msg) => msg.channel === 'external_psa_user').length,
   };
 
+  const switchTicketInPlace = (id: string) => {
+    if (id === selectedTicketId) {
+      setIsDraftMode(false);
+      return;
+    }
+    setSelectedTicketId(id);
+    setIsDraftMode(false);
+    const nextPath = pathname.replace(/\/triage\/[^/]+$/, `/triage/${id}`);
+    window.history.replaceState(null, '', `${nextPath}${window.location.search}`);
+  };
+
+  const draftModeLayer = (
+    <NewTicketWorkspaceBridgeProvider
+      value={{
+        onDismissDraft: () => setIsDraftMode(false),
+        onSelectTicket: (id) => switchTicketInPlace(id),
+        onDraftCreated: (id) => switchTicketInPlace(id),
+      }}
+    >
+      <NewTicketHomePage />
+    </NewTicketWorkspaceBridgeProvider>
+  );
+
   return (
-    <ResizableLayout
-      transparentSidebar={true}
-      sidebarContent={
+    <>
+      <div style={{ display: isDraftMode ? 'none' : 'block' }} aria-hidden={isDraftMode}>
+        <ResizableLayout
+          transparentSidebar={true}
+          sidebarContent={
         <ChatSidebar
           tickets={displayTickets}
           currentTicketId={selectedTicketId}
           isLoading={isLoadingTickets || loading}
-          onCreateTicket={(context) => {
-            const returnTicketId = String(context?.returnTicketId || '').trim();
-            const nextPath = returnTicketId
-              ? `/triage/home?returnTicketId=${encodeURIComponent(returnTicketId)}`
-              : '/triage/home';
-            router.push(nextPath, { scroll: false });
-          }}
+          onCreateTicket={() => setIsDraftMode(true)}
           onSelectTicket={(id) => {
             if (id === selectedTicketId) return;
             setSelectedTicketId(id);
@@ -2057,7 +2077,7 @@ export default function SessionDetail({
           }}
         />
       }
-      rightContent={
+          rightContent={
         <PlaybookPanel
           content={data?.playbook?.content_md || null}
           status={playbookStatus}
@@ -2066,7 +2086,7 @@ export default function SessionDetail({
           {...(playbookPanelData ? { data: playbookPanelData } : {})}
         />
       }
-      mainContent={
+          mainContent={
         <div className="flex-1 flex flex-col" style={{ background: 'transparent', minWidth: 0, height: '100%', minHeight: 0, padding: '12px', gap: '8px' }}>
           <div style={{ border: '1px solid var(--bento-outline)', borderRadius: '14px', background: 'var(--bg-card)', flexShrink: 0 }}>
             {/* Header */}
@@ -2805,8 +2825,13 @@ export default function SessionDetail({
             </div>
           ) : null}
         </div>
-      }
-    />
+          }
+        />
+      </div>
+      <div style={{ display: isDraftMode ? 'block' : 'none' }} aria-hidden={!isDraftMode}>
+        {draftModeLayer}
+      </div>
+    </>
   );
 }
 

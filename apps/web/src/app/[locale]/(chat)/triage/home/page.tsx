@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import ChatInput, { type ChatInputSubmitPayload } from '@/components/ChatInput';
 import ChatMessage, { type Message } from '@/components/ChatMessage';
 import ChatSidebar, { type ActiveTicket } from '@/components/ChatSidebar';
+import { useNewTicketWorkspaceBridge } from '@/components/new-ticket-workspace-context';
 import PlaybookPanel from '@/components/PlaybookPanel';
 import ResizableLayout from '@/components/ResizableLayout';
 import {
@@ -337,6 +338,7 @@ function DraftDecisionButton({
 export default function HomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const bridge = useNewTicketWorkspaceBridge();
   const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT);
   const [sidebarTickets, setSidebarTickets] = useState<ActiveTicket[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(true);
@@ -574,8 +576,13 @@ export default function HomePage() {
   };
 
   const discardDraft = () => {
-    const returnTicketId = String(searchParams.get('returnTicketId') || '').trim();
     resetDraft();
+    if (bridge?.onDismissDraft) {
+      bridge.onDismissDraft();
+      return;
+    }
+
+    const returnTicketId = String(searchParams.get('returnTicketId') || '').trim();
     if (returnTicketId) {
       router.push(`/triage/${returnTicketId}`, { scroll: false });
     }
@@ -666,6 +673,10 @@ export default function HomePage() {
       }
 
       resetDraft();
+      if (bridge?.onDraftCreated) {
+        bridge.onDraftCreated(createdTicketRef);
+        return;
+      }
       router.push(`/triage/${createdTicketRef}`, { scroll: false });
     } catch (err) {
       const mapped = mapHttpErrorToFrontendState(err, 'Unable to create ticket');
@@ -906,7 +917,13 @@ export default function HomePage() {
           currentTicketId="__draft__"
           onDraftStatusChange={(status) => setDraft((prev) => ({ ...prev, status: createDraftReference(status.id, status.name) }))}
           isLoading={isLoadingTickets}
-          onSelectTicket={(id) => router.push(`/triage/${id}`, { scroll: false })}
+          onSelectTicket={(id) => {
+            if (bridge?.onSelectTicket) {
+              bridge.onSelectTicket(id);
+              return;
+            }
+            router.push(`/triage/${id}`, { scroll: false });
+          }}
           onCreateTicket={resetDraft}
         />
       )}

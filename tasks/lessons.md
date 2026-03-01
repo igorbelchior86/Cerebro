@@ -1,3 +1,9 @@
+## Lesson: 2026-03-01 (preserving state is not enough when the UX bug is caused by route remount)
+**Mistake**: Eu tratei a perda de contexto do `New Ticket` como problema de persistência de estado, mas mantive a navegação para outra rota.
+**Root cause**: Foquei no sintoma secundário (sidebar resetando) e não no mecanismo principal que o usuário rejeitou: o remount completo da shell ao trocar de página.
+**Rule**: Se o requisito é “parecer desktop app”, qualquer fluxo que troca a rota e remonta a workspace principal deve ser tratado como bug de arquitetura de navegação, não só de estado.
+**Pattern**: Em shells tri-pane stateful, antes de adicionar `sessionStorage`, verificar se o fluxo deveria ser um modo inline no mesmo workspace em vez de uma nova rota.
+
 ## Lesson: 2026-03-01 (never sort provider picklists before deriving provider defaults)
 **Mistake**: Eu ordenei as picklists do Autotask alfabeticamente antes de derivar defaults no draft.
 **Root cause**: A ordenação local apagou o único sinal operacional disponível quando não existe `isDefault` explícito: a ordem original do provider.

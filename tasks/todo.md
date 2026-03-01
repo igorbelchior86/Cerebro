@@ -1,3 +1,49 @@
+# Task: Eliminar remount visual mantendo ticket e draft montados
+**Status**: completed
+**Started**: 2026-03-01T16:43:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar que o remount restante vinha do `return` condicional entre as duas árvores.
+- [x] Step 2: Manter as duas workspaces montadas e alternar apenas visibilidade em `/triage/[id]`.
+- [x] Step 3: Validar com typecheck e documentar a mitigação final.
+
+## Open Questions
+- Assumindo prioridade de UX sobre custo de memória local: as duas árvores podem ficar montadas enquanto a página estiver aberta.
+
+## Progress Notes
+- O remount restante vinha do swap de árvore React em `SessionDetail`, mesmo sem troca de rota.
+- A mitigação aplicada foi tática e direta: remover o `return` exclusivo do draft e deixar as duas shells vivas, com toggle de `display`.
+
+## Review
+- Verificação executada:
+- `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+- `wiki/changelog/2026-03-01-new-ticket-persistent-mounted-mode.md`
+
+# Task: Eliminar remount do New Ticket com draft inline na shell
+**Status**: completed
+**Started**: 2026-03-01T16:26:00-05:00
+
+## Plan
+- [x] Step 1: Registrar a lição do patch parcial anterior e localizar o ponto mínimo de integração inline.
+- [x] Step 2: Reutilizar a workspace de draft existente como componente e abrir `New Ticket` sem trocar de rota.
+- [x] Step 3: Validar com typecheck e documentar a mudança arquitetural na wiki.
+
+## Open Questions
+- Assumindo que manter `/triage/home` como entrypoint secundário ainda é útil, mas o fluxo principal de `New Ticket` deve abrir inline a partir de `/triage/[id]`.
+
+## Progress Notes
+- O patch anterior corrigiu o dismiss e preservou contexto, mas o remount persistiu porque o fluxo ainda navegava para outra rota.
+- A correção agora precisa atacar a navegação: `New Ticket` deve virar modo inline da mesma shell tri-pane.
+- A shell `/triage/[id]` agora entra em `isDraftMode` local e renderiza a workspace de draft inline, sem `router.push`.
+- A workspace de draft continua reutilizável via `/triage/home`, mas agora consome um bridge de contexto opcional para delegar dismiss/seleção/criação quando renderizada inline.
+
+## Review
+- Verificação executada:
+- `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+- `wiki/changelog/2026-03-01-new-ticket-inline-shell-mode.md`
+
 # Task: Preservar contexto do sidebar ao abrir/fechar New Ticket
 **Status**: completed
 **Started**: 2026-03-01T16:15:00-05:00

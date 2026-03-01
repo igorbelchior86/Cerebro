@@ -1,3 +1,55 @@
+# Task: Tornar o /playbook/full-flow idempotente contra overlap com orchestrator e polling
+**Status**: completed
+**Started**: 2026-03-01T16:31:00-05:00
+
+## Plan
+- [x] Step 1: Auditar hotspots de concorrência com o skill e identificar o race dominante.
+- [x] Step 2: Aplicar coordenação atômica para o background do `full-flow` usando claim no banco.
+- [x] Step 3: Validar com checks focados e documentar.
+
+## Open Questions
+- O endpoint autenticado `GET /playbook/full-flow` não é invocável por `curl` sem cookie de sessão local, então a reprodução automatizada ponta a ponta do request real fica parcialmente bloqueada no terminal.
+
+## Progress Notes
+- O skill confirmou `triage-orchestrator.ts` e `routes/playbook.ts` como hotspots P1.
+- O `full-flow` disparava background writes sem nenhum claim atômico de sessão, protegido apenas por `Set` em memória (`fullFlowInFlight`), que não coordena com o orchestrator nem com outro processo.
+- Isso permitia overlap real entre polling do ticket, refresh manual e retry listener escrevendo a mesma `triage_sessions` e os mesmos artefatos.
+
+## Review
+- Verificação executada:
+- `python3 .codex/skills/cerebro-concurrency-race-auditor/scripts/concurrency_hotspots.py` ✅
+- `node .codex/skills/cerebro-concurrency-race-auditor/scripts/http_burst.mjs --url http://localhost:3001/health --concurrency 10 --rounds 3` ✅
+- `pnpm --filter @playbook-brain/api typecheck` ✅
+- `./scripts/stack.sh restart` ✅
+- Documentação criada:
+- `wiki/changelog/2026-03-01-full-flow-atomic-background-claim.md`
+
+# Task: Parar loop de ticket-field-options que reintroduz Network Error no ticket
+**Status**: completed
+**Started**: 2026-03-01T16:24:00-05:00
+
+## Plan
+- [x] Step 1: Correlacionar o `Network Error` da tela com os logs vivos de web/api.
+- [x] Step 2: Remover o loop de requests de `ticket-field-options` disparado por editor hidden/mounted e cache vazio.
+- [x] Step 3: Validar no runtime e documentar a correção.
+
+## Open Questions
+- Assumindo que o banner do ticket era efeito colateral de saturação/instabilidade causada pelo loop de metadata, não falha estrutural contínua em `/playbook/full-flow`.
+
+## Progress Notes
+- Os logs mostravam `/full-flow` retornando `200`, mas uma enxurrada contínua de `GET /ticket-field-options`.
+- Em `/triage/[id]`, o draft permanece montado em background; se o editor de contexto do draft ficar ativo enquanto hidden, o efeito continuava buscando metadata.
+- Quando o backend devolvia lista vazia em modo degradado, o frontend regravava cache vazio e reativava o efeito, gerando storm de requests.
+
+## Review
+- Verificação executada:
+- `pnpm --filter @playbook-brain/web typecheck` ✅
+- `./scripts/stack.sh restart` ✅
+- `curl -I http://localhost:3000/en/triage/T20260226.0033?sidebarFilter=all` -> `200` ✅
+- `tail -n 80 .run/logs/api.log` sem storm contínuo novo de `/ticket-field-options` após restart ✅
+- Documentação criada:
+- `wiki/changelog/2026-03-01-stop-hidden-context-editor-ticket-field-options-loop.md`
+
 # Task: Eliminar chunks stale do Next dev antes de subir a stack
 **Status**: completed
 **Started**: 2026-03-01T16:18:00-05:00

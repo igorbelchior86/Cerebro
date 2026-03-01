@@ -1816,7 +1816,9 @@ export default function SessionDetail({
         ) {
           const options = await listAutotaskTicketFieldOptionsByField(ticketFieldKey!);
           if (!ignore) {
-            setTicketFieldOptionsCache((prev) => ({ ...prev, [ticketFieldKey!]: options }));
+            if (options.length > 0) {
+              setTicketFieldOptionsCache((prev) => ({ ...prev, [ticketFieldKey!]: options }));
+            }
             setContextEditorOptions(mapTicketFieldEditorToOptions(options, contextEditorQuery));
           }
           return;

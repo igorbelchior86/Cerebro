@@ -1,3 +1,15 @@
+## Lesson: 2026-03-01 (process-local in-flight guards are not enough for full-flow background work)
+**Mistake**: Eu aceitei o `fullFlowInFlight` como se ele resolvesse a concorrência do `GET /playbook/full-flow`.
+**Root cause**: O `Set` em memória evita duplicação só dentro do mesmo processo e só entre requests que passam por esse módulo; ele não coordena com o `triageOrchestrator` nem sobrevive a restart.
+**Rule**: Se uma rota HTTP pode iniciar processamento que também é iniciado por poller/orchestrator, a exclusão mútua precisa ser baseada em estado atômico no banco, não apenas em memória local.
+**Pattern**: `Set`/flag local em route + poller separado escrevendo a mesma sessão = race real mesmo em Node single-thread.
+
+## Lesson: 2026-03-01 (hidden mounted workspaces must stop remote effects when inactive)
+**Mistake**: Eu mantive o draft montado em background para preservar UX, mas não suspendi todos os efeitos remotos quando ele ficava hidden.
+**Root cause**: Um editor de contexto podia continuar ativo no draft oculto, e o efeito de busca seguia chamando `ticket-field-options` mesmo fora de foco.
+**Rule**: Quando uma workspace permanece montada apenas para preservar estado, todos os efeitos de rede e modais ativos precisam ser explicitamente desativados ao entrar em modo inativo.
+**Pattern**: Shell oculta + editor de busca ainda aberto + integração retornando lista vazia = loop silencioso de requests em background.
+
 ## Lesson: 2026-03-01 (missing Next vendor chunks should be treated as stale .next artifacts first)
 **Mistake**: Eu tratei o novo `Server Error` como possível regressão de código da aplicação antes de validar o artefato de build do `next dev`.
 **Root cause**: O runtime estava tentando carregar um arquivo inexistente dentro de `apps/web/.next/server/vendor-chunks`, o que aponta para cache dev corrompido e não para bug semântico em página/rota.

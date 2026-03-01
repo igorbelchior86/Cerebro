@@ -23,6 +23,7 @@ const fullFlowInFlight = new Set<string>();
 const FULL_FLOW_SESSION_CREATE_LOCK_NAMESPACE = 41022;
 const FULL_FLOW_RETRY_BASE_DELAY_MS = 2 * 60 * 1000;
 const FULL_FLOW_RETRY_MAX_DELAY_MS = 30 * 60 * 1000;
+const FULL_FLOW_PROCESSING_STALE_INTERVAL = '5 minutes';
 
 interface AutotaskCreds {
   apiIntegrationCode: string;
@@ -278,6 +279,23 @@ async function markSessionPendingForRetry(sessionId: string, errorMessage: strin
       [nextRetryCount, nextRetryAt, errorMessage, sessionId]
     );
   });
+}
+
+async function claimSessionForFullFlowBackground(sessionId: string): Promise<boolean> {
+  const claimed = await queryOne<{ id: string }>(
+    `UPDATE triage_sessions
+     SET status = 'processing',
+         last_error = NULL,
+         updated_at = NOW()
+     WHERE id = $1
+       AND (
+         status IN ('pending', 'failed')
+         OR (status = 'processing' AND updated_at < NOW() - INTERVAL '${FULL_FLOW_PROCESSING_STALE_INTERVAL}')
+       )
+     RETURNING id`,
+    [sessionId]
+  );
+  return Boolean(claimed?.id);
 }
 
 // ─── GET /playbook/full-flow ──────────────────────────────
@@ -716,6 +734,21 @@ router.get('/full-flow', async (req, res) => {
           );
         }
 
+        if (currentValidation && !currentValidation.safe_to_generate_playbook) {
+          await execute(
+            `UPDATE triage_sessions
+             SET status = $1,
+                 last_error = NULL,
+                 retry_count = 0,
+                 next_retry_at = NULL,
+                 updated_at = NOW()
+             WHERE id = $2`,
+            [currentValidation.status, sessionId]
+          );
+          console.log(`[FULL-FLOW] Background: Validation blocked playbook for ${sessionId}. Status ${currentValidation.status}`);
+          return;
+        }
+
         // 4. Playbook
         if (!playbook && currentValidation?.safe_to_generate_playbook && currentDiagnosis && currentPack) {
           console.log(`[FULL-FLOW] Background: Generating Playbook for ${sessionId}`);
@@ -810,15 +843,26 @@ router.get('/full-flow', async (req, res) => {
         console.log(
           `[FULL-FLOW] Retry backoff active for ${sessionId} until ${nextRetryAt?.toISOString()}. Skipping background trigger.`
         );
-      } else 
-      if (fullFlowInFlight.has(sessionId)) {
+      } else if (fullFlowInFlight.has(sessionId)) {
         console.log(`[FULL-FLOW] Background already running for ${sessionId}. Skipping duplicate trigger.`);
       } else {
-        console.log(`[FULL-FLOW] Scheduling background processing for ${sessionId}`);
-        fullFlowInFlight.add(sessionId);
-        void triggerBackgroundProcessing().finally(() => {
-          fullFlowInFlight.delete(sessionId);
-        });
+        const claimedForBackground = await claimSessionForFullFlowBackground(sessionId);
+        if (!claimedForBackground) {
+          console.log(`[FULL-FLOW] Session ${sessionId} already claimed by another worker/request. Skipping duplicate trigger.`);
+        } else {
+          console.log(`[FULL-FLOW] Scheduling background processing for ${sessionId}`);
+          if (sessionRow?.id === sessionId) {
+            sessionRow = {
+              ...sessionRow,
+              status: 'processing',
+              last_error: null,
+            };
+          }
+          fullFlowInFlight.add(sessionId);
+          void triggerBackgroundProcessing().finally(() => {
+            fullFlowInFlight.delete(sessionId);
+          });
+        }
       }
     } else {
       console.log(`[FULL-FLOW] All artifacts already ready for ${sessionId}. No background trigger needed.`);

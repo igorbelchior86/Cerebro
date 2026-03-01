@@ -701,7 +701,12 @@ export default function HomePage() {
   };
 
   useEffect(() => {
-    if (!activeContextEditor) return;
+    if (isActive) return;
+    closeContextEditor();
+  }, [isActive]);
+
+  useEffect(() => {
+    if (!isActive || !activeContextEditor) return;
 
     let ignore = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -755,7 +760,9 @@ export default function HomePage() {
         if (ticketFieldKey) {
           const options = await listAutotaskTicketFieldOptionsByField(ticketFieldKey);
           if (!ignore) {
-            setTicketFieldOptionsCache((prev) => ({ ...prev, [ticketFieldKey]: options }));
+            if (options.length > 0) {
+              setTicketFieldOptionsCache((prev) => ({ ...prev, [ticketFieldKey]: options }));
+            }
             setContextEditorOptions(mapTicketFieldEditorToOptions(options, contextEditorQuery));
           }
           return;
@@ -794,7 +801,7 @@ export default function HomePage() {
       ignore = true;
       if (timer) clearTimeout(timer);
     };
-  }, [activeContextEditor, activeOrgId, contextEditorQuery, ticketFieldOptionsCache]);
+  }, [activeContextEditor, activeOrgId, contextEditorQuery, isActive, ticketFieldOptionsCache]);
 
   const handleSelectContextOption = (option: ContextEditorOption) => {
     if (!activeContextEditor) return;

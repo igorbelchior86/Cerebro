@@ -8,10 +8,12 @@ import type {
   ItglueEnrichedPayload,
   Doc,
   Signal,
-  TicketEnrichmentSection,
   ITGlueWanCandidate,
   ITGlueInfraCandidate
 } from './prepare-context.types.js';
+import type { NinjaOneClient } from '../clients/ninjaone.js';
+import type { ITGlueClient } from '../clients/itglue.js';
+import { callLLM } from './llm-adapter.js';
 
 export function itgAttr(attrs: Record<string, unknown> | null | undefined, key: string): unknown {
   if (!attrs) return undefined;
@@ -243,7 +245,14 @@ export function buildTicketEnrichmentSection(input: {
       sourceRef: input.ticket.description ? 'ticket.description' : undefined,
       round: 1,
     }),
-    created_at: new Date().toISOString(),
+    created_at: buildField({
+      value: new Date().toISOString(),
+      status: 'confirmed',
+      confidence: 1,
+      sourceSystem: 'system',
+      sourceRef: 'generated',
+      round: 1,
+    }),
   };
 }
 
@@ -716,7 +725,7 @@ export function extractITGlueInfraCandidates(input: {
     { kind: 'firewall', canonical: 'Palo Alto', pattern: /\bpalo\s?alto\b|\bpa-\d+\b/i },
     { kind: 'firewall', canonical: 'WatchGuard', pattern: /\bwatchguard\b/i },
     { kind: 'firewall', canonical: 'Sophos', pattern: /\bsophos\b/i },
-    { kind: 'wifi', canonical: 'UniFi', pattern: /\bunifi\b|\ubiquiti\b/i },
+    { kind: 'wifi', canonical: 'UniFi', pattern: /\bunifi\b|\bubiquiti\b/i },
     { kind: 'wifi', canonical: 'Meraki', pattern: /\bmeraki\b/i },
     { kind: 'wifi', canonical: 'Aruba', pattern: /\baruba\b|\binstant on\b/i },
     { kind: 'wifi', canonical: 'Ruckus', pattern: /\bruckus\b/i },
@@ -939,37 +948,6 @@ export function pickEnrichedValue(payload: ItglueEnrichedPayload | null, key: st
   const field = payload.fields[key];
   if (!field || (field.confidence || 0) < 0.6) return null;
   return field.value || null;
-}
-
-export function inferPhoneProvider(input: {
-  ticketText: string;
-  docs: Doc[];
-  itglueConfigs: any[];
-  itgluePasswords: any[];
-  signals: Signal[];
-}): string | null {
-  const sourceText = [
-    input.ticketText,
-    ...input.docs.map((d) => `${d.title} ${d.snippet}`),
-    ...input.itglueConfigs.map((c: any) => JSON.stringify(c?.attributes || {})),
-    ...input.itgluePasswords.map((p: any) => JSON.stringify(p?.attributes || {})),
-    ...input.signals.map((s) => `${s.source} ${s.type} ${s.summary}`),
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  const providerMatchers: Array<{ name: string; pattern: RegExp }> = [
-    { name: 'GoTo Connect', pattern: /\bgoto(\s?connect)?\b|\bgotoconnect\b/ },
-    { name: 'RingCentral', pattern: /\bring\s?central\b/ },
-    { name: '8x8', pattern: /\b8x8\b/ },
-    { name: 'Zoom Phone', pattern: /\bzoom\s?phone\b/ },
-    { name: 'Microsoft Teams Phone', pattern: /\bteams\s?phone\b|\bmicrosoft\s?teams\b/ },
-    { name: 'Vonage', pattern: /\bvonage\b/ },
-    { name: 'Dialpad', pattern: /\bdialpad\b/ },
-  ];
-  const found = providerMatchers.find((m) => m.pattern.test(sourceText));
-  return found ? found.name : null;
 }
 
 export function getEnrichmentFieldByPath(
@@ -1297,14 +1275,14 @@ Ticket text:
     });
 
     if (descriptionCanonical.length >= 10 || descriptionUi.length >= 10) {
-      const canonicalRequesterEmail = requesterEmail || extractFirstEmail(ticket.requester || '') || extractFirstEmail(narrative);
+      const canonicalRequesterEmail = requesterEmail || extractFirstEmail(ticket.requester || '') || extractFirstEmail(narrative) || '';
       const canonicalRequesterName = requesterName || normalizeName(ticket.requester || '') || '';
       const canonicalAffectedName = affectedUserName || canonicalRequesterName || '';
       const canonicalAffectedEmail = affectedUserEmail || canonicalRequesterEmail || '';
       const canonicalDisplayText = descriptionCanonical || postProcessCanonicalTicketText(fallback.descriptionClean);
       let descriptionDisplayMarkdown = '';
-      const strictFormat = await this.formatDisplayMarkdownVerbatimWithLLM(canonicalDisplayText).catch(() => '');
-      if (this.isDisplayMarkdownVerbatimEnough(canonicalDisplayText, strictFormat)) {
+      const strictFormat = await formatDisplayMarkdownVerbatimWithLLM(canonicalDisplayText).catch(() => '');
+      if (isDisplayMarkdownVerbatimEnough(canonicalDisplayText, strictFormat)) {
         descriptionDisplayMarkdown = strictFormat;
       }
       return {
@@ -1753,7 +1731,7 @@ export function guardTicketUiRoleAssignment(input: {
   }
 
   // Rewrite to preserve requester role and keep affected user unnamed unless explicitly present.
-  ui = ui.replace(new RegExp(`\\b${this.escapeRegex(requesterName)}\\b`, 'ig'), '').replace(/\s+/g, ' ').trim();
+  ui = ui.replace(new RegExp(`\\b${escapeRegex(requesterName)}\\b`, 'ig'), '').replace(/\s+/g, ' ').trim();
   ui = ui.replace(/\bfor\s+new\s+(maintenance\s+)?employee\b/gi, 'for a new $1employee (name not provided)');
   ui = ui.replace(/\bnew\s+(maintenance\s+)?employee\b/i, 'new $1employee (name not provided)');
   ui = ui.replace(/\s+/g, ' ').trim();
@@ -1846,18 +1824,19 @@ export function extractLoggedInUser(deviceDetails: any): string | null {
 
 export async function resolveLastLoggedInContext(
   ninjaoneClient: NinjaOneClient,
-  deviceId: string
+  deviceId: string,
+  normalizeTimeValue: (value: string) => string
 ): Promise<{ userName: string; logonTime: string }> {
   const direct = await ninjaoneClient.getDeviceLastLoggedOnUser(deviceId).catch(() => null);
   const directUser = String(direct?.userName || '').trim();
-  const directTime = this.enrichmentEngine.normalizeTimeValue(direct?.logonTime || '');
+  const directTime = normalizeTimeValue(String(direct?.logonTime || ''));
   if (directUser) return { userName: directUser, logonTime: directTime };
 
   const report = await ninjaoneClient.listLastLoggedOnUsers({ pageSize: 1000 }).catch(() => null);
   const rows = Array.isArray(report?.results) ? report.results : [];
-  const match = rows.find((row) => String(row.deviceId) === String(deviceId));
+  const match = rows.find((row: any) => String(row.deviceId) === String(deviceId));
   const reportUser = String(match?.userName || '').trim();
-  const reportTime = this.enrichmentEngine.normalizeTimeValue(match?.logonTime || '');
+  const reportTime = normalizeTimeValue(String(match?.logonTime || ''));
   if (reportUser) return { userName: reportUser, logonTime: reportTime };
 
   return { userName: '', logonTime: '' };
@@ -1881,6 +1860,7 @@ export async function buildNinjaContextSignals(input: {
   orgId: string | null;
   tenantId: string | null;
   sourceWorkspace: string;
+  normalizeTimeValue: (value: string) => string;
 }): Promise<Signal[]> {
   const signals: Signal[] = [];
   const [activities, interfaces, softwareRows] = await Promise.all([
@@ -1900,7 +1880,7 @@ export async function buildNinjaContextSignals(input: {
     signals.push({
       id: `ninja-activity-${input.deviceId}-${String(activity.id || summary).slice(0, 48)}`,
       source: 'ninja',
-      timestamp: this.enrichmentEngine.normalizeTimeValue(activity.createTime || activity.timestamp || '') || new Date().toISOString(),
+      timestamp: input.normalizeTimeValue(String(activity.createTime || activity.timestamp || '')) || new Date().toISOString(),
       type: 'ticket_note',
       summary: `Activity: ${summary}`,
       raw_ref: activity,
@@ -1913,7 +1893,7 @@ export async function buildNinjaContextSignals(input: {
   for (const iface of interfaces.slice(0, 4)) {
     const name = String(iface.adapterName || iface.interfaceName || 'interface').trim();
     const ips = Array.isArray(iface.ipAddress) ? iface.ipAddress : [iface.ipAddress];
-    const ip = ips.map((v) => String(v || '').trim()).filter(Boolean)[0] || 'no-ip';
+    const ip = ips.map((v: unknown) => String(v || '').trim()).filter(Boolean)[0] || 'no-ip';
     signals.push({
       id: `ninja-iface-${input.deviceId}-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
       source: 'ninja',
@@ -1935,7 +1915,7 @@ export async function buildNinjaContextSignals(input: {
     signals.push({
       id: `ninja-sw-${input.deviceId}-${swName.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 48)}`,
       source: 'ninja',
-      timestamp: this.enrichmentEngine.normalizeTimeValue(sw.timestamp || '') || new Date().toISOString(),
+      timestamp: input.normalizeTimeValue(String(sw.timestamp || '')) || new Date().toISOString(),
       type: 'ticket_note',
       summary: `Software: ${swName}${version ? ` ${version}` : ''}${publisher ? ` (${publisher})` : ''}`,
       raw_ref: sw,
@@ -2067,8 +2047,8 @@ export async function resolveNinjaOrg(
       org: o,
       score: scoreOrgNameMatch(companyName, String(o?.name || '')),
     }))
-    .filter((r) => r.score >= 0.8)
-    .sort((a, b) => b.score - a.score);
+    .filter((r: { score: number }) => r.score >= 0.8)
+    .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
   const found = ranked[0]?.org || null;
   return found ? { id: Number(found.id), name: String(found.name) } : null;
 }
@@ -2088,8 +2068,8 @@ export async function resolveITGlueOrg(
         String(itgAttr(o?.attributes || {}, 'short_name') || '')
       ),
     }))
-    .filter((r) => r.score >= 0.8)
-    .sort((a, b) => b.score - a.score);
+    .filter((r: { score: number }) => r.score >= 0.8)
+    .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
   const byName = rankedByName[0]?.org;
   if (byName) {
     return { id: String(byName.id), name: String(itgAttr(byName?.attributes || {}, 'name') || companyName) };
@@ -2106,7 +2086,7 @@ export async function resolveITGlueOrg(
     'refreshtech.com',
   ];
   const domains = extractEmailDomains(hintText || '').filter(
-    (d) => !ignoreDomainSuffixes.some((suffix) => d === suffix || d.endsWith(`.${suffix}`))
+    (d: string) => !ignoreDomainSuffixes.some((suffix) => d === suffix || d.endsWith(`.${suffix}`))
   );
   if (domains.length === 0) return null;
 
@@ -2126,8 +2106,8 @@ export async function resolveITGlueOrg(
       );
       return { org: o, score: domainScore > 0 ? domainScore * 0.75 + nameScore * 0.25 : 0 };
     })
-    .filter((r) => r.score >= 0.75)
-    .sort((a, b) => b.score - a.score);
+    .filter((r: { score: number }) => r.score >= 0.75)
+    .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
 
   const byDomain = rankedByDomain[0]?.org;
   return byDomain ? { id: String(byDomain.id), name: String(itgAttr(byDomain?.attributes || {}, 'name') || companyName) } : null;
@@ -2163,7 +2143,7 @@ export function shouldPreferCompanyCandidateOverIntake(intakeCompany: string, ca
   return true;
 }
 
-function normalizeSimpleToken(value: string): string {
+export function normalizeSimpleToken(value: string): string {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 

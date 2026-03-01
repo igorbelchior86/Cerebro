@@ -41,6 +41,7 @@ import {
   itgAttr,
   normalizeName,
   buildField,
+  buildIterativeEnrichmentProfile,
   getEnrichmentFieldByPath,
   setEnrichmentFieldByPath,
   flattenEnrichmentFields,
@@ -72,8 +73,13 @@ import {
   fuzzyMatch,
   generateNameAliases,
   extractSoftwareHintsFromTicket,
-  normalizeHistoryTerms,
-  scoreHistoryCandidate,
+  extractLoggedInUser as extractLoggedInUserHelper,
+  extractITGlueInfraCandidates as extractITGlueInfraCandidatesHelper,
+  extractITGlueWanCandidate as extractITGlueWanCandidateHelper,
+  extractInfraMakeModel as extractInfraMakeModelHelper,
+  inferIspName as inferIspNameHelper,
+  normalizeSimpleToken,
+  resolveNinjaOrg as resolveNinjaOrgHelper,
   isLikelyDomainDerivedCompanyLabel,
   shouldPreferCompanyCandidateOverIntake,
   capitalize,
@@ -4451,7 +4457,7 @@ Output schema:
         const normalizedValue = normalizeCandidateValue(resolution.value);
         const candidateSet = candidateValuesByPath.get(String(resolution.path || '')) || new Set<string>();
         const hasDeterministicInference = infRefs.length > 0 && infRefs.every((id) => allowedInferenceIds.has(id));
-        const isUnknownLike = isFusionUnknownValue(normalizeFusionResolutionValue(resolution.path, resolution.value));
+        const isUnknownLike = this.isFusionUnknownValue(this.normalizeFusionResolutionValue(resolution.path, resolution.value));
         if (!isUnknownLike && !candidateSet.has(normalizedValue) && !hasDeterministicInference) {
           continue;
         }
@@ -4549,8 +4555,8 @@ Output schema:
     for (const resolution of resolutions) {
       const current = getEnrichmentFieldByPath(next, resolution.path);
       if (!current) continue;
-      const normalized = normalizeFusionResolutionValue(resolution.path, resolution.value);
-      const isUnknown = isFusionUnknownValue(normalized);
+      const normalized = this.normalizeFusionResolutionValue(resolution.path, resolution.value);
+      const isUnknown = this.isFusionUnknownValue(normalized);
       if (!isUnknown && (!Array.isArray(resolution.evidence_refs) || resolution.evidence_refs.length === 0)) {
         continue;
       }
@@ -4832,7 +4838,7 @@ Output schema:
     companyName?: string;
     terms: string[];
   }): Promise<RelatedCase[]> {
-    const normalizedTerms = normalizeHistoryTerms(input.terms);
+    const normalizedTerms = this.normalizeHistoryTerms(input.terms);
     if (normalizedTerms.length === 0) return [];
     try {
       const rows = await query<{
@@ -4869,7 +4875,7 @@ Output schema:
       const scored = rows
         .map((row) => {
           const haystack = `${row.ticket_id} ${row.symptom_text} ${row.resolution_text}`.toLowerCase();
-          const match = scoreHistoryCandidate(haystack, normalizedTerms);
+          const match = this.scoreHistoryCandidate(haystack, normalizedTerms);
           return {
             row,
             score: match.score,
@@ -5011,7 +5017,7 @@ Output schema:
       updatedPaths.push(path);
     };
 
-    const firewall = extractInfraMakeModel('firewall', input.itglueConfigs, input.docs);
+    const firewall = this.extractInfraMakeModel('firewall', input.itglueConfigs, input.docs);
     patchIfBetter('infra.firewall_make_model', buildField({
       value: firewall.value,
       status: firewall.status,
@@ -5020,7 +5026,7 @@ Output schema:
       sourceRef: firewall.sourceRef,
       round: 9,
     }));
-    const wifi = extractInfraMakeModel('wifi', input.itglueConfigs, input.docs);
+    const wifi = this.extractInfraMakeModel('wifi', input.itglueConfigs, input.docs);
     patchIfBetter('infra.wifi_make_model', buildField({
       value: wifi.value,
       status: wifi.status,
@@ -5029,7 +5035,7 @@ Output schema:
       sourceRef: wifi.sourceRef,
       round: 9,
     }));
-    const sw = extractInfraMakeModel('switch', input.itglueConfigs, input.docs);
+    const sw = this.extractInfraMakeModel('switch', input.itglueConfigs, input.docs);
     patchIfBetter('infra.switch_make_model', buildField({
       value: sw.value,
       status: sw.status,
@@ -5039,7 +5045,7 @@ Output schema:
       round: 9,
     }));
 
-    const isp = inferIspName({ ticketNarrative: input.ticketNarrative, docs: input.docs, itglueConfigs: input.itglueConfigs });
+    const isp = this.inferIspName({ ticketNarrative: input.ticketNarrative, docs: input.docs, itglueConfigs: input.itglueConfigs });
     if (isp) {
       patchIfBetter('network.isp_name', buildField({
         value: isp,
@@ -5167,11 +5173,11 @@ Output schema:
 
       let contradictionCaseIds: string[] = [];
       if (record.path === 'network.isp_name') {
-        const currentIsp = inferIspName({ ticketNarrative: currentValue, docs: [], itglueConfigs: [] });
+        const currentIsp = this.inferIspName({ ticketNarrative: currentValue, docs: [], itglueConfigs: [] });
         if (currentIsp) {
           const altProviders = new Set<string>();
           for (const hc of caseHaystacks) {
-            const observed = inferIspName({ ticketNarrative: hc.text, docs: [], itglueConfigs: [] });
+            const observed = this.inferIspName({ ticketNarrative: hc.text, docs: [], itglueConfigs: [] });
             if (!observed) continue;
             const providerContextLikely =
               hc.text.includes('dns') ||
@@ -5285,7 +5291,7 @@ Output schema:
       if (domain.length >= 3) terms.add(domain);
     }
     if (path === 'network.isp_name') {
-      const canonical = inferIspName({ ticketNarrative: currentValue, docs: [], itglueConfigs: [] });
+      const canonical = this.inferIspName({ ticketNarrative: currentValue, docs: [], itglueConfigs: [] });
       if (canonical) terms.add(canonical.toLowerCase());
       if (/comcast/i.test(currentValue)) terms.add('xfinity');
       if (/xfinity/i.test(currentValue)) terms.add('comcast');
@@ -5316,6 +5322,102 @@ Output schema:
     if (priority <= 2) return 'High';
     if (priority <= 3) return 'Medium';
     return 'Low';
+  }
+
+  private async resolveNinjaOrg(
+    ninjaoneClient: NinjaOneClient,
+    companyName: string
+  ): Promise<{ id: number; name: string } | null> {
+    return resolveNinjaOrgHelper(ninjaoneClient, companyName);
+  }
+
+  private extractLoggedInUser(deviceDetails: any): string | null {
+    return extractLoggedInUserHelper(deviceDetails);
+  }
+
+  private extractITGlueWanCandidate(input: {
+    ticketNarrative: string;
+    itglueAssets: any[];
+    itglueConfigs: any[];
+    docs: Doc[];
+  }): ITGlueWanCandidate | null {
+    return extractITGlueWanCandidateHelper(input);
+  }
+
+  private inferIspName(input: {
+    ticketNarrative: string;
+    docs: Doc[];
+    itglueConfigs: any[];
+  }): string {
+    return inferIspNameHelper(input);
+  }
+
+  private extractITGlueInfraCandidates(input: {
+    itgluePasswords: any[];
+    itglueConfigs: any[];
+    itglueAssets: any[];
+    docs: Doc[];
+  }) {
+    return extractITGlueInfraCandidatesHelper(input);
+  }
+
+  private extractInfraMakeModel(
+    kind: 'firewall' | 'wifi' | 'switch',
+    configs: any[],
+    docs: Doc[]
+  ) {
+    return extractInfraMakeModelHelper(kind, configs, docs);
+  }
+
+  private parseMakeModel(value: string): { vendor: string; model: string } | null {
+    const normalized = normalizeName(String(value || ''));
+    if (!normalized || normalized.toLowerCase() === 'unknown') return null;
+    const parts = normalized.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return null;
+    return {
+      vendor: parts[0] || normalized,
+      model: parts.slice(1).join(' '),
+    };
+  }
+
+  private rankITGlueDocsForTicket(ticketNarrative: string, docs: Doc[]): Doc[] {
+    const terms = [...new Set(
+      String(ticketNarrative || '')
+        .toLowerCase()
+        .split(/[^a-z0-9]+/)
+        .map((term) => term.trim())
+        .filter((term) => term.length >= 4)
+        .slice(0, 24)
+    )];
+    if (terms.length === 0 || docs.length <= 1) return docs;
+
+    return [...docs].sort((a, b) => {
+      const aText = `${a.title || ''} ${a.snippet || ''}`.toLowerCase();
+      const bText = `${b.title || ''} ${b.snippet || ''}`.toLowerCase();
+      const score = (text: string) =>
+        terms.reduce((total, term) => total + (text.includes(term) ? 1 : 0), 0);
+      return score(bText) - score(aText);
+    });
+  }
+
+  private normalizeFusionResolutionValue(path: string, value: unknown): string {
+    if (value === null || value === undefined) return 'unknown';
+    const raw = typeof value === 'string' ? value : String(value);
+    const trimmed = normalizeName(raw).trim();
+    if (!trimmed) return 'unknown';
+
+    const lowered = trimmed.toLowerCase();
+    if (this.isFusionUnknownValue(lowered)) return 'unknown';
+    if (path.includes('email') || path.includes('principal_name')) return lowered;
+    if (['identity.account_status', 'identity.mfa_state', 'endpoint.device_type', 'network.vpn_state', 'network.location_context'].includes(path)) {
+      return lowered;
+    }
+    return trimmed;
+  }
+
+  private isFusionUnknownValue(value: unknown): boolean {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === '' || ['unknown', 'n/a', 'na', 'none', 'null', 'undefined'].includes(normalized);
   }
 
 
@@ -5392,7 +5494,7 @@ Ticket text:
         narrative,
       });
 
-      const canonicalRequesterEmail = requesterEmail || extractFirstEmail(ticket.requester || '') || extractFirstEmail(narrative);
+      const canonicalRequesterEmail = requesterEmail || extractFirstEmail(ticket.requester || '') || extractFirstEmail(narrative) || '';
       const canonicalRequesterName = requesterName || normalizeName(ticket.requester || '') || '';
       const canonicalAffectedName = affectedUserName || canonicalRequesterName || '';
       const canonicalAffectedEmail = affectedUserEmail || canonicalRequesterEmail || '';

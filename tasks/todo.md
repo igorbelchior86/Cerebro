@@ -1,3 +1,30 @@
+# Task: Concluir refatoração de Prepare Context helpers sem travar o fluxo
+**Status**: completed
+**Started**: 2026-03-01T14:05:00-05:00
+
+## Plan
+- [x] Step 1: Inspecionar o estado atual da refatoração em `prepare-context.ts` e `prepare-context-helpers.ts`.
+- [x] Step 2: Corrigir a extração parcial dos helpers com o menor diff possível.
+- [x] Step 3: Validar com `pnpm --filter @playbook-brain/api typecheck`.
+- [x] Step 4: Registrar a mudança na wiki local e em `tasks/`.
+
+## Open Questions
+- Assumindo escopo mínimo: concluir a refatoração significa restaurar compilação e preservar o comportamento existente, sem expandir a surface funcional.
+
+## Progress Notes
+- A quebra real não era mais duplicação em `prepare-context.ts`; era uma extração incompleta em `prepare-context-helpers.ts` com import faltando, função duplicada, regex inválido e resquícios de `this`.
+- `prepare-context.ts` também ficou com referências órfãs a helpers/métodos que não existiam mais após a refatoração.
+- A correção foi restrita a reamarrar os helpers exportados, repor wrappers mínimos e normalizar os pontos quebrados de tipagem/compilação.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+- Documentação criada:
+  - `wiki/changelog/2026-03-01-prepare-context-refactor-typecheck-fix.md`
+- Evidências usadas:
+  - `apps/api/src/services/prepare-context.ts`
+  - `apps/api/src/services/prepare-context-helpers.ts`
+
 # Task: Materializar artefatos P0-GRAPH alinhados às APIs dos produtos
 **Status**: completed
 **Started**: 2026-03-01T13:24:00-05:00

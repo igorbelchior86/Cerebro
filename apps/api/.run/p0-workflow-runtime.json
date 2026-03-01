@@ -6779,6 +6779,78 @@
         "attempts": 1,
         "status": "failed"
       }
+    },
+    {
+      "audit_id": "8106fbb1-4d5a-40ab-8ef9-0961ca9264e4",
+      "timestamp": "2026-03-01T19:01:11.856Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260301.0002"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132832",
+        "ticket_id": "T20260301.0002"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132832:ticket.created:2026-03-01T18:20:23.917Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-03-01T19:01:11.843Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
+    },
+    {
+      "audit_id": "82a8061b-9b0f-411f-a6ad-1e246caabd12",
+      "timestamp": "2026-03-01T19:01:11.932Z",
+      "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+      "actor": {
+        "kind": "system",
+        "id": "autotask-sync",
+        "origin": "autotask_poller"
+      },
+      "action": "workflow.sync.applied",
+      "target": {
+        "integration": "Autotask",
+        "entity_type": "ticket",
+        "entity_id": "T20260301.0003"
+      },
+      "result": "success",
+      "correlation": {
+        "trace_id": "autotask-poller-132833",
+        "ticket_id": "T20260301.0003"
+      },
+      "metadata": {
+        "event_type": "ticket.created",
+        "event_id": "autotask-poller:132833:ticket.created:2026-03-01T18:22:28.780Z",
+        "provenance": {
+          "source": "autotask_poller",
+          "fetched_at": "2026-03-01T19:01:11.925Z"
+        },
+        "domains": [
+          "tickets",
+          "ticket_notes",
+          "correlates.resources",
+          "correlates.ticket_metadata",
+          "correlates.ticket_note_metadata"
+        ]
+      }
     }
   ],
   "processedSyncEvents": [
@@ -6828,7 +6900,9 @@
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132827:ticket.created:2026-02-28T02:10:24.007Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132828:ticket.created:2026-02-28T06:20:16.187Z",
     "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132829:ticket.created:2026-02-28T12:10:14.567Z",
-    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132830:ticket.created:2026-02-28T17:44:40.317Z"
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132830:ticket.created:2026-02-28T17:44:40.317Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132832:ticket.created:2026-03-01T18:20:23.917Z",
+    "5b5f7e25-2396-4bec-a584-41352be7e876::autotask-poller:132833:ticket.created:2026-03-01T18:22:28.780Z"
   ],
   "inbox": [
     [
@@ -7728,6 +7802,74 @@
           "correlates.ticket_note_metadata": {}
         },
         "updated_at": "2026-02-28T17:57:11.205Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260301.0002",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260301.0002",
+        "external_id": "132832",
+        "title": "City Of Norfolk Vehicle Auction @ Auction757.com",
+        "description": "From \"Scott Freeman, Auctioneer\" <info@auction757.com>: Upcoming Auctions @ Auction757.com\r\nView this email in your browser (https://mailchi.mp/auction757/march_2026_auctions?e=0d39048b45)\r\nFollow O (https://auction757.us5.list-manage.com/track/click?u=07dd07a28b3431ecac9e7bcec&id=d3f6057f61&e=0d39048b45) ur YouTube video channel (https://auction757.us5.list-manage.com/track/click?u=07dd07a28b3431ecac9e7bcec&id=13c09d5eaf&e=0d39048b45)  to receive immediate notification whenever we post a video walk-through of an upcoming auction.\r\n\r\nMarch 5th - City of Norfolk Auction\r\nTidewater Seafood Auction Cancelled\r\nMarch 19th - GB's & Hampton Police Auction\r\nMarch 24th - Suffolk Public Schools Woodworking Shop\r\nApril TBD - 2 Feather & Fin Chicken & Seafood Restaurant Auctions\r\nMay 12th - Norfolk Airport Auction\r\n\r\nClick HERE! (https://auction757.us5.list-manage.com/track/click?u=07dd07a28b3431ecac9e7bcec&id=9a4c41b7fc&e=0d39048b45) to view all upcoming auctions/liquidations\r\nCity of Norfolk Auction\r\nThurs, March 5th @ 10:30AM\r\n\r\nOnsite Inspection:\r\nTues, March 3rd, 10AM-2PM\r\n\r\nThis City Of Norfolk Auction will be hosted @ Auction757.com by Scott Freeman, Auctioneer. The online auction is expected to include 80+ cars, trucks, vans & motorcycles by such makers as Toyota, BMW, Chevrolet, Mazda, Nissan, Ford, GMC, Acura, Pontiac, Mercedes, Honda, Chrysler, Cadillac, Lexus, Hyundai & others.\r\n\r\nYouTube video HERE! (https://auction757.us5.list-manage.com/track/click?u=07dd07a28b3431ecac9e7bcec&id=75089a88b8&e=0d39048b45)\r\n\r\nBidding is open nowHERE! (https://auction757.us5.list-manage.com/track/click?u=07dd07a28b3431ecac9e7bcec&id=4647fd7aae&e=0d39048b45)\r\nGB's & Hampton Police Auction\r\nThurs, March 19th @ 10:30AM\r\n\r\nOnsite Inspection:\r\nTues, March 17th, 10AM-2PM\r\n\r\nAuction is expected to include 70+/- tow related trucks, cars of all types, dual axel tractor & more!!\r\n\r\nYouTube video & online bidding posted 1 week prior to auction date!\r\nSuffolk Public Schools\r\nWoodworking Shop Auction\r\nMarch 24th @ 10:30am\r\n\r\nAuction includes commercial equipment/tools such as a Delta 10\" tilting arbor saw, 2 Delta drill presses, 2 Delta scroll saws, Baldor bench grinder with pedestal, 2 Delta 14\" band saws, Delta 10\" miter saw, Delta sander, 2 dust collectors & more!\r\nYouTube videoHERE! (https://auction757.us5.list-manage.com/track/click?u=07dd07a28b3431ecac9e7bcec&id=d6aa9d4692&e=0d39048b45)\r\nOnline bidding posted 1 week prior to auction date!\r\n\r\n============================================================\r\n** Facebook (https://auction757.us5.list-manage.com/track/click?u=07dd07a28b3431ecac9e7bcec&id=55c56e5fe7&e=0d39048b45)\r\n** Facebook (https://auction757.us5.list-manage.com/track/click?u=07dd07a28b3431ecac9e7bcec&id=76e79c7b62&e=0d39048b45)\r\n** LinkedIn (https://auction757.us5.list-manage.com/track/click?u=07dd07a28b3431ecac9e7bcec&id=3c439b23cc&e=0d39048b45)\r\n** LinkedIn (https://auction757.us5.list-manage.com/track/click?u=07dd07a28b3431ecac9e7bcec&id=e60732867a&e=0d39048b45)\r\n** Website (https://auction757.us5.list-manage.com/track/click?u=07dd07a28b3431ecac9e7bcec&id=8c71f1ba8e&e=0d39048b45)\r\n** Website (https://auction757.us5.list-manage.com/track/click?u=07dd07a28b3431ecac9e7bcec&id=edb30ffc3d&e=0d39048b45)\r\n\r\n\r\n\r\nCopyright Scott Freeman, Auctioneer\r\nand Auction757.com\r\n2012-2026 All rights reserved.\r\n\r\nOur email address is:\r\nInfo@Auction757.com\r\n\r\n** unsubscribe from this list (https://auction757.us5.list-manage.com/track/click?u=07dd07a28b3431ecac9e7bcec&id=52c746dd93&e=0d39048b45)\r\n** update subscription preferences (https://auction757.us5.list-manage.com/track/click?u=07dd07a28b3431ecac9e7bcec&id=0770927e3b&e=0d39048b45)\r\n\r\nThis email was sent to HELP@REFRESHTECH.COM (mailto:HELP@REFRESHTECH.COM)\r\nwhy did I get this? (https://auction757.us5.list-manage.com/about?u=07dd07a28b3431ecac9e7bcec&id=35a43fb252&e=0d39048b45&c=50d7de94bc)     unsubscribe from this list (https://auction757.us5.list-manage.com/unsubscribe?u=07dd07a28b3431ecac9e7bcec&id=35a43fb252&t=b&e=0d39048b45&c=50d7de94bc)     update subscription preferences (https://auction757.us5.list-manage.com/profile?u=07dd07a28b3431ecac9e7bcec&id=35a43fb252&e=0d39048b45&c=50d7de94bc)\r\nScott Freeman, Auctioneer . P.O. Box 65465 . Virginia Beach, VA 23467 . USA",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-03-01T19:01:11.851Z",
+        "last_event_occurred_at": "2026-03-01T18:20:23.917Z",
+        "last_event_id": "autotask-poller:132832:ticket.created:2026-03-01T18:20:23.917Z",
+        "source_of_truth": "Autotask",
+        "domain_snapshots": {
+          "tickets": {
+            "external_id": "132832",
+            "ticket_number": "T20260301.0002",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "ticket_notes": {},
+          "correlates.resources": {},
+          "correlates.ticket_metadata": {
+            "ticket_number": "T20260301.0002",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "correlates.ticket_note_metadata": {}
+        },
+        "updated_at": "2026-03-01T19:01:11.851Z"
+      }
+    ],
+    [
+      "5b5f7e25-2396-4bec-a584-41352be7e876::T20260301.0003",
+      {
+        "tenant_id": "5b5f7e25-2396-4bec-a584-41352be7e876",
+        "ticket_id": "T20260301.0003",
+        "external_id": "132833",
+        "title": "Auction 757 contact",
+        "description": "From Scott Freeman, Auctioneer <info@auction757.com>: Thank you for the email. We will respond shortly.",
+        "status": "1",
+        "queue_id": 29683512,
+        "comments": [],
+        "last_sync_at": "2026-03-01T19:01:11.929Z",
+        "last_event_occurred_at": "2026-03-01T18:22:28.780Z",
+        "last_event_id": "autotask-poller:132833:ticket.created:2026-03-01T18:22:28.780Z",
+        "source_of_truth": "Autotask",
+        "domain_snapshots": {
+          "tickets": {
+            "external_id": "132833",
+            "ticket_number": "T20260301.0003",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "ticket_notes": {},
+          "correlates.resources": {},
+          "correlates.ticket_metadata": {
+            "ticket_number": "T20260301.0003",
+            "status": "1",
+            "queue_id": 29683512
+          },
+          "correlates.ticket_note_metadata": {}
+        },
+        "updated_at": "2026-03-01T19:01:11.929Z"
       }
     ]
   ],

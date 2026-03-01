@@ -819,3 +819,8 @@
 **Root cause**: Acoplamento excessivo entre persistência externa e estado local de dependência de UI.
 **Rule**: Em fluxos multi-etapa dependentes (`Org -> User`), aplicar estado local otimista para continuidade operacional e tratar write externo como best-effort com feedback explícito.
 **Pattern**: Caso específico de tenant/org com validação mais restritiva no provider externo deve degradar para warning, não bloquear seleção subsequente necessária ao próprio reparo (escolher User).
+## Lesson: 2026-03-01 (Bound long-running checks and diagnose locally before retrying)
+**Mistake**: A execução anterior ficou presa em comandos de terminal sem fechar o diagnóstico, o que alongou a refatoração e obscureceu a causa real.
+**Root cause**: O fluxo tentou “esperar o terminal terminar” em vez de primeiro reconstruir o estado local e rodar checks curtos/bounded para identificar o ponto exato da quebra.
+**Rule**: Em refatorações quebradas, começar por inspeção local + checks de duração controlada (`typecheck`, `rg`, leituras direcionadas) antes de qualquer comando potencialmente longo.
+**Pattern**: Se o relato é “travou” e a árvore já contém código parcial, tratar como problema de consistência do código, não como problema de aguardar mais tempo.

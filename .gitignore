@@ -47,3 +47,24 @@ debug-api.ts
 gitignore
 test-llm.ts
 run-migration.js
+patch.js
+index.ts
+org_name
+
+# Runtime state (never version these)
+.run/
+apps/api/.run/
+*.pid
+
+# OS / editor artifacts
+.DS_Store
+Thumbs.db
+
+# Stale Next.js build artifacts
+.next.stale*/
+
+# Operational scripts (moved to scripts/ops/)
+apps/api/tmp-*
+apps/api/fix-*.cjs
+apps/api/fix-*.js
+apps/api/test-*.js

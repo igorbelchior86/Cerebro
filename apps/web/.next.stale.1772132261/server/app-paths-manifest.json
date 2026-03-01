@@ -1,9 +1,0 @@
-{
-  "/_not-found/page": "app/_not-found/page.js",
-  "/[locale]/(chat)/triage/home/page": "app/[locale]/(chat)/triage/home/page.js",
-  "/[locale]/(chat)/triage/[id]/page": "app/[locale]/(chat)/triage/[id]/page.js",
-  "/[locale]/(main)/workflow/p0/page": "app/[locale]/(main)/workflow/p0/page.js",
-  "/[locale]/(main)/workflow/p0/[ticketId]/page": "app/[locale]/(main)/workflow/p0/[ticketId]/page.js",
-  "/[locale]/(main)/page": "app/[locale]/(main)/page.js",
-  "/[locale]/(main)/manager-ops/p0/page": "app/[locale]/(main)/manager-ops/p0/page.js"
-}

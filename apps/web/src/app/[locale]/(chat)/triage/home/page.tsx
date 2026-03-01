@@ -8,11 +8,14 @@ import PlaybookPanel from '@/components/PlaybookPanel';
 import ResizableLayout from '@/components/ResizableLayout';
 import {
   type AutotaskCompanyOption,
+  type AutotaskTicketDraftDefaults,
   type AutotaskTicketFieldKey,
   type AutotaskContactOption,
   type AutotaskPicklistOption,
   type AutotaskResourceOption,
+  getAutotaskTicketDraftDefaults,
   getWorkflowCommandStatus,
+  listAutotaskTicketFieldOptions,
   listAutotaskTicketFieldOptionsByField,
   mapHttpErrorToFrontendState,
   searchAutotaskCompanies,
@@ -47,6 +50,7 @@ interface DraftState {
   title: string;
   body: string;
   status?: DraftReference;
+  queue?: DraftReference;
   org?: DraftReference;
   contact?: DraftReference;
   additionalContact?: DraftReference;
@@ -105,6 +109,52 @@ function mapEditorToTicketFieldKey(
   if (key === 'Sub-Issue Type') return 'subIssueType';
   if (key === 'Service Level Agreement') return 'serviceLevelAgreement';
   return null;
+}
+
+function pickDraftDefaultOption(
+  field: AutotaskTicketFieldKey,
+  options: AutotaskPicklistOption[]
+): AutotaskPicklistOption | null {
+  if (!Array.isArray(options) || options.length === 0) return null;
+
+  const active = options.filter((row) => row.isActive !== false);
+  const pool = active.length > 0 ? active : options;
+  const explicitDefault = pool.find((row) => row.isDefault);
+  if (explicitDefault) return explicitDefault;
+
+  if (field === 'status') {
+    return (
+      pool.find((row) => row.label.trim().toLowerCase() === 'new') ||
+      pool.find((row) => row.label.trim().toLowerCase().includes('new')) ||
+      pool[0] ||
+      null
+    );
+  }
+
+  if (field === 'priority') {
+    return (
+      pool.find((row) => /\bp3\b/i.test(row.label)) ||
+      pool.find((row) => /\bmedium\b/i.test(row.label)) ||
+      pool.find((row) => /\bnormal\b/i.test(row.label)) ||
+      pool[0] ||
+      null
+    );
+  }
+
+  if (field === 'queue') {
+    return pool[0] || null;
+  }
+
+  return null;
+}
+
+function mapDraftReferenceToSidebarPriority(value?: DraftReference): NonNullable<ActiveTicket['priority']> {
+  const label = String(value?.name || '').trim().toLowerCase();
+  if (!label) return 'P3';
+  if (/\bp1\b|\bcritical\b/.test(label)) return 'P1';
+  if (/\bp2\b|\bhigh\b/.test(label)) return 'P2';
+  if (/\bp4\b|\blow\b/.test(label)) return 'P4';
+  return 'P3';
 }
 
 function TechPill({
@@ -295,6 +345,7 @@ export default function HomePage() {
   const [contextEditorError, setContextEditorError] = useState('');
   const [contextEditorOptions, setContextEditorOptions] = useState<ContextEditorOption[]>([]);
   const [ticketFieldOptionsCache, setTicketFieldOptionsCache] = useState<TicketFieldOptionsCache>({});
+  const [ticketDraftDefaults, setTicketDraftDefaults] = useState<AutotaskTicketDraftDefaults | null>(null);
   const [isCreatingDraft, setIsCreatingDraft] = useState(false);
   const [draftActionError, setDraftActionError] = useState('');
 
@@ -323,41 +374,142 @@ export default function HomePage() {
   const secondaryTech = draft.secondaryTech?.name || 'Unassigned';
 
   useEffect(() => {
-    if (draft.status) return;
-    const cached = ticketFieldOptionsCache.status;
-    if (cached && cached.length > 0) {
-      const preferred = cached.find((row) => row.label.trim().toLowerCase() === 'new')
-        || cached.find((row) => row.label.trim().toLowerCase().includes('new'))
-        || cached[0];
-      if (!preferred) return;
-      setDraft((prev) => prev.status ? prev : { ...prev, status: createDraftReference(preferred.id, preferred.label) });
+    const applyDraftDefaults = (
+      source: TicketFieldOptionsCache,
+      defaults?: AutotaskTicketDraftDefaults | null
+    ) => {
+      setDraft((prev) => {
+        let changed = false;
+        const next = { ...prev };
+
+        if (!prev.status) {
+          const preferred = defaults?.status || pickDraftDefaultOption('status', source.status || []);
+          if (preferred) {
+            next.status = createDraftReference(preferred.id, preferred.label);
+            changed = true;
+          }
+        }
+
+        if (!prev.priority) {
+          const preferred = defaults?.priority || pickDraftDefaultOption('priority', source.priority || []);
+          if (preferred) {
+            next.priority = createDraftReference(preferred.id, preferred.label);
+            changed = true;
+          }
+        }
+
+        if (!prev.serviceLevelAgreement) {
+          const preferred =
+            defaults?.serviceLevelAgreement ||
+            pickDraftDefaultOption('serviceLevelAgreement', source.serviceLevelAgreement || []);
+          if (preferred) {
+            next.serviceLevelAgreement = createDraftReference(preferred.id, preferred.label);
+            changed = true;
+          }
+        }
+
+        if (!prev.queue) {
+          const preferred = defaults?.queue || pickDraftDefaultOption('queue', source.queue || []);
+          if (preferred) {
+            next.queue = createDraftReference(preferred.id, preferred.label);
+            changed = true;
+          }
+        }
+
+        if (!prev.issueType && defaults?.issueType) {
+          next.issueType = createDraftReference(defaults.issueType.id, defaults.issueType.label);
+          changed = true;
+        }
+
+        if (!prev.subIssueType && defaults?.subIssueType) {
+          next.subIssueType = createDraftReference(defaults.subIssueType.id, defaults.subIssueType.label);
+          changed = true;
+        }
+
+        return changed ? next : prev;
+      });
+    };
+
+    const hasLoadedTrackedCatalogs =
+      Array.isArray(ticketFieldOptionsCache.status) &&
+      ticketFieldOptionsCache.status.length > 0 &&
+      Array.isArray(ticketFieldOptionsCache.priority) &&
+      ticketFieldOptionsCache.priority.length > 0 &&
+      Array.isArray(ticketFieldOptionsCache.serviceLevelAgreement) &&
+      ticketFieldOptionsCache.serviceLevelAgreement.length > 0;
+
+    if (hasLoadedTrackedCatalogs) {
+      applyDraftDefaults(ticketFieldOptionsCache, ticketDraftDefaults);
       return;
     }
 
     let ignore = false;
     void (async () => {
       try {
-        const options = await listAutotaskTicketFieldOptionsByField('status');
+        const [all, defaults, queue, status, priority, issueType, subIssueType, serviceLevelAgreement] = await Promise.all([
+          listAutotaskTicketFieldOptions().catch(() => null),
+          getAutotaskTicketDraftDefaults().catch(() => null),
+          listAutotaskTicketFieldOptionsByField('queue').catch(() => null),
+          listAutotaskTicketFieldOptionsByField('status').catch(() => null),
+          listAutotaskTicketFieldOptionsByField('priority').catch(() => null),
+          listAutotaskTicketFieldOptionsByField('issueType').catch(() => null),
+          listAutotaskTicketFieldOptionsByField('subIssueType').catch(() => null),
+          listAutotaskTicketFieldOptionsByField('serviceLevelAgreement').catch(() => null),
+        ]);
         if (ignore) return;
-        setTicketFieldOptionsCache((prev) => ({ ...prev, status: options }));
-        const preferred = options.find((row) => row.label.trim().toLowerCase() === 'new')
-          || options.find((row) => row.label.trim().toLowerCase().includes('new'))
-          || options[0];
-        if (!preferred) return;
-        setDraft((prev) => prev.status ? prev : { ...prev, status: createDraftReference(preferred.id, preferred.label) });
-      } catch {
-        // Keep draft status editable from sidebar even if prefill fails.
+
+        const nextCache: TicketFieldOptionsCache = {};
+        if (all) Object.assign(nextCache, all);
+        if (Array.isArray(queue) && (queue.length > 0 || !Array.isArray(nextCache.queue))) nextCache.queue = queue;
+        if (Array.isArray(status) && (status.length > 0 || !Array.isArray(nextCache.status))) nextCache.status = status;
+        if (Array.isArray(priority) && (priority.length > 0 || !Array.isArray(nextCache.priority))) nextCache.priority = priority;
+        if (Array.isArray(issueType) && (issueType.length > 0 || !Array.isArray(nextCache.issueType))) nextCache.issueType = issueType;
+        if (Array.isArray(subIssueType) && (subIssueType.length > 0 || !Array.isArray(nextCache.subIssueType))) {
+          nextCache.subIssueType = subIssueType;
+        }
+        if (
+          Array.isArray(serviceLevelAgreement) &&
+          (serviceLevelAgreement.length > 0 || !Array.isArray(nextCache.serviceLevelAgreement))
+        ) {
+          nextCache.serviceLevelAgreement = serviceLevelAgreement;
+        }
+
+        const hasAnyCatalog = Object.values(nextCache).some((rows) => Array.isArray(rows) && rows.length > 0);
+        if (hasAnyCatalog) {
+          setTicketFieldOptionsCache((prev) => ({
+            ...prev,
+            ...nextCache,
+          }));
+          applyDraftDefaults(nextCache, defaults);
+        }
+
+        if (defaults) {
+          setTicketDraftDefaults(defaults);
+          if (!hasAnyCatalog) {
+            applyDraftDefaults({}, defaults);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to prefill new-ticket draft metadata', err);
       }
     })();
 
     return () => {
       ignore = true;
     };
-  }, [draft.status, ticketFieldOptionsCache.status]);
+  }, [
+    draft.priority,
+    draft.queue,
+    draft.serviceLevelAgreement,
+    draft.status,
+    ticketDraftDefaults,
+    ticketFieldOptionsCache,
+  ]);
 
   const playbookDraftData = useMemo(() => ({
     ticketId: 'New Ticket',
     context: [
+      { key: 'Queue', val: draft.queue?.name || '-', editable: false },
       { key: 'Org', val: draft.org?.name || '-', editable: true },
       { key: 'Contact', val: draft.contact?.name || '-', editable: true },
       { key: 'Additional contacts', val: draft.additionalContact?.name || '-', editable: true },
@@ -378,12 +530,22 @@ export default function HomePage() {
       ? [
         {
           id: 'new-ticket-triage',
-          text: 'Queue: Triage (temporary default until queue selection exists).',
+          text: `Queue: ${draft.queue?.name || 'Triage'}.`,
         },
       ]
       : [],
     escalate: [],
-  }), [draft.additionalContact?.name, draft.body, draft.contact?.name, draft.org?.name]);
+  }), [
+    draft.additionalContact?.name,
+    draft.body,
+    draft.contact?.name,
+    draft.issueType?.name,
+    draft.org?.name,
+    draft.priority?.name,
+    draft.queue?.name,
+    draft.serviceLevelAgreement?.name,
+    draft.subIssueType?.name,
+  ]);
 
   const draftMessages: Message[] = draft.body
     ? [
@@ -441,6 +603,7 @@ export default function HomePage() {
           ...(draft.contact?.id ? { contact_id: draft.contact.id } : {}),
           ...(draft.primaryTech?.id ? { assignee_resource_id: draft.primaryTech.id } : {}),
           ...(draft.secondaryTech?.id ? { secondary_resource_id: draft.secondaryTech.id } : {}),
+          ...(draft.queue?.id ? { queue_id: draft.queue.id } : {}),
           ...(draft.priority?.id ? { priority: draft.priority.id } : {}),
           ...(draft.issueType?.id ? { issue_type: draft.issueType.id } : {}),
           ...(draft.subIssueType?.id ? { sub_issue_type: draft.subIssueType.id } : {}),
@@ -722,11 +885,12 @@ export default function HomePage() {
             status: 'pending',
             ...(draft.status?.id !== undefined ? { ticket_status_value: draft.status.id } : {}),
             ticket_status_label: draft.status?.name || 'New',
-            priority: 'P3',
+            priority: mapDraftReferenceToSidebarPriority(draft.priority),
             title: ticketTitle,
             company: draft.org?.name || '-',
             requester: draft.contact?.name || '-',
-            created_at: new Date().toISOString(),
+            ...(draft.queue?.name ? { queue: draft.queue.name } : {}),
+            created_at: '',
             isDraft: true,
           }}
           currentTicketId="__draft__"

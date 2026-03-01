@@ -1,3 +1,174 @@
+# Task: Remover fallback incorreto de SLA no New Ticket
+**Status**: completed
+**Started**: 2026-03-01T15:36:00-05:00
+
+## Plan
+- [x] Step 1: Localizar por que o SLA estava vindo como `Enhanced`.
+- [x] Step 2: Remover a heurística que escolhia o primeiro SLA ativo sem default confirmado.
+- [x] Step 3: Validar com typecheck e documentar.
+
+## Open Questions
+- Assumindo que um SLA preenchido com valor errado é pior do que deixar o campo em branco até existir uma fonte autoritativa de default.
+
+## Progress Notes
+- O valor `Enhanced` vinha da nossa própria heurística: a lista de SLAs é ordenada alfabeticamente e o código estava escolhendo `pool[0]`.
+- Essa heurística existia no frontend (`pickDraftDefaultOption`) e no backend (`pickPreferredDraftOption`).
+- O fallback de `queue` foi preservado, mas o SLA agora só é preenchido quando houver `isDefault`, `ticketCategoryFieldDefaults` ou outra fonte explícita.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+- Documentação criada:
+  - `wiki/changelog/2026-03-01-remove-incorrect-sla-fallback.md`
+
+# Task: Tornar o prefill do New Ticket resiliente a falhas parciais de metadata/defaults
+**Status**: completed
+**Started**: 2026-03-01T15:28:00-05:00
+
+## Plan
+- [x] Step 1: Diagnosticar por que a UI continuava vazia apesar do código de defaults já existir.
+- [x] Step 2: Remover pontos de falha total no backend/frontend e permitir carregamento parcial por campo.
+- [x] Step 3: Validar com typecheck e documentar a correção.
+
+## Open Questions
+- Assumindo o sintoma atual: pelo menos um dos endpoints de metadata/defaults está falhando em runtime e o fluxo anterior engolia o erro, deixando o draft vazio.
+
+## Progress Notes
+- O frontend usava uma busca agregada e engolia qualquer erro no `useEffect`; se uma única request falhasse, nenhum default era aplicado.
+- A rota `/autotask/ticket-field-options` também falhava “em bloco”: qualquer erro em um campo quebrava a resposta inteira.
+- O carregamento agora é fail-open: a rota agrega com `catch(() => [])` por campo e o frontend busca catálogo agregado + campos individuais em paralelo, mesclando o que estiver disponível.
+- O draft só considera os catálogos “carregados” quando `status`, `priority` e `serviceLevelAgreement` vierem com opções reais, evitando travar em arrays vazios.
+- O runtime local em `:3001` estava rodando com `tsx src/index.ts` sem watch; reiniciei a API com `pnpm --filter @playbook-brain/api dev` para carregar este patch via `nodemon`.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+- Documentação criada:
+  - `wiki/changelog/2026-03-01-new-ticket-prefill-fail-open.md`
+
+# Task: Implementar draft defaults de New Ticket via TicketCategoryFieldDefaults do Autotask
+**Status**: completed
+**Started**: 2026-03-01T15:12:00-05:00
+
+## Plan
+- [x] Step 1: Inspecionar o client/rotas do Autotask para confirmar a fonte atual de defaults do draft.
+- [x] Step 2: Implementar um endpoint backend de draft defaults baseado em `ticketCategory` + `TicketCategoryFieldDefaults`, com fallback seguro.
+- [x] Step 3: Atualizar o frontend do draft para consumir esses defaults, validar com typecheck e documentar.
+
+## Open Questions
+- Assumindo que o tenant expõe `ticketCategory` default em `Tickets/entityInformation/fields` e que `ticketCategoryFieldDefaults` pode não estar disponível em todos os ambientes; por isso o backend mantém fallback para metadata de picklist.
+
+## Progress Notes
+- O Cerebro estava inferindo defaults do draft só a partir de `entityInformation/fields`, que é catálogo de picklists, não o default efetivo de criação.
+- Foi adicionado `getTicketDraftDefaults()` no `AutotaskClient`, que resolve `ticketCategory` default, tenta consultar `ticketCategoryFieldDefaults`, e só cai para heurística quando a entidade/shape não estiver disponível.
+- O frontend do `triage/home` agora consome `/autotask/ticket-draft-defaults`, aplica `status`, `priority`, `queue`, `SLA`, e também preenche `issueType` / `subIssueType` quando vierem defaultados pela categoria.
+- O draft agora envia `queue_id` no create e exibe a queue default no shell do ticket.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+- Documentação criada:
+  - `wiki/changelog/2026-03-01-autotask-ticket-category-draft-defaults.md`
+
+# Task: Corrigir fallback de default do SLA no draft para espelhar o comportamento do Autotask
+**Status**: completed
+**Started**: 2026-03-01T14:52:00-05:00
+
+## Plan
+- [x] Step 1: Inspecionar o helper atual de prefill do draft para SLA.
+- [x] Step 2: Aplicar fallback pragmático para o SLA quando o provider não expõe um default detectável.
+- [x] Step 3: Validar com checks relevantes e atualizar wiki/tasks.
+
+## Open Questions
+- Assumindo o comportamento observado no tenant: quando o Autotask já carrega um SLA default mas o metadata não traz um marcador explícito, o primeiro valor ativo da picklist representa esse default operacional.
+
+## Progress Notes
+- O frontend só preenchia `serviceLevelAgreement` automaticamente quando havia `isDefault` explícito ou quando existia exatamente uma opção ativa.
+- Isso falhava no tenant atual: o SLA default existe no Autotask, mas a picklist exposta ao Cerebro não vinha com um sinal detectável de default.
+- O helper de prefill agora trata `serviceLevelAgreement` como fallback para a primeira opção ativa, alinhando o draft ao comportamento observado no sistema-fonte.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+- Documentação criada:
+  - `wiki/changelog/2026-03-01-draft-sla-fallback-default-prefill.md`
+
+# Task: Corrigir detecção de default do SLA no metadata do Autotask
+**Status**: completed
+**Started**: 2026-03-01T14:42:00-05:00
+
+## Plan
+- [x] Step 1: Inspecionar o parser de picklists do Autotask para identificar por que o default de SLA não é detectado.
+- [x] Step 2: Ajustar a detecção de default no backend e confirmar o prefill do draft para SLA.
+- [x] Step 3: Validar com checks web+api e atualizar tasks/wiki.
+
+## Open Questions
+- Assumindo que o Autotask expõe o default de SLA no metadata do campo (e não necessariamente em cada item da picklist).
+
+## Progress Notes
+- O parser antigo só marcava `isDefault` quando o item da picklist trazia um boolean explícito.
+- Agora o client também lê `defaultValue`/`defaultPicklistValue`/variações no nível do campo e compara esse valor com o `rawId` da opção.
+- Isso é o caminho mais provável para o SLA, que frequentemente vem com default declarado no field metadata.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+  - `wiki/changelog/2026-03-01-autotask-field-level-default-picklist-detection.md`
+
+# Task: Corrigir draft metadata mirror/defaults e reduzir mismatch de hidratação no New Ticket
+**Status**: completed
+**Started**: 2026-03-01T14:32:00-05:00
+
+## Plan
+- [x] Step 1: Inspecionar o shell do draft e localizar qualquer outro nested button/hydration mismatch remanescente.
+- [x] Step 2: Rastrear o fluxo de draft para Issue/Sub Issue/Priority/SLA e identificar defaults/mirror do Autotask.
+- [x] Step 3: Aplicar correções mínimas, validar com checks web+api e documentar em tasks/wiki.
+
+## Open Questions
+- Assumindo escopo mínimo: corrigir os sintomas atuais no draft sem redesenhar o modelo inteiro de defaults do Autotask.
+
+## Progress Notes
+- O `PlaybookPanel` do draft não refletia `Issue Type`, `Sub-Issue Type`, `Priority` e `SLA` porque o `useMemo` ignorava essas dependências.
+- O create do draft falhava com `Missing Required Field: priority` porque o frontend só enviava `priority` se o usuário escolhesse manualmente, apesar de já exibir `P3` como aparência default.
+- O metadata endpoint já traz a picklist do Autotask; ele foi expandido para preservar um sinal de default (`isDefault`) quando a API expõe esse atributo.
+- O draft agora tenta prefill de `status`, `priority` e `serviceLevelAgreement` usando defaults explícitos do Autotask e heurísticas determinísticas mínimas quando necessário.
+
+## Review
+- Verificação executada:
+  - `pnpm --filter @playbook-brain/web typecheck` ✅
+  - `pnpm --filter @playbook-brain/api typecheck` ✅
+- Documentação criada:
+  - `wiki/changelog/2026-03-01-draft-ticket-defaults-and-mirror-fix.md`
+
+# Task: Corrigir hydration error por nested button no ChatSidebar
+**Status**: completed
+**Started**: 2026-03-01T14:18:00-05:00
+
+## Plan
+- [x] Step 1: Localizar a composição que gera `<button>` dentro de `<button>` no `ChatSidebar`.
+- [x] Step 2: Ajustar o wrapper do card para um container semanticamente válido, preservando click + teclado.
+- [x] Step 3: Validar com `pnpm --filter @playbook-brain/web typecheck`.
+- [x] Step 4: Registrar a correção em `tasks/` e na wiki local.
+
+## Open Questions
+- Assumindo escopo mínimo: o único nested button relevante para este erro é o card do ticket com o ícone de editar status embutido.
+
+## Progress Notes
+- O stack bate com `apps/web/src/components/ChatSidebar.tsx`: o card inteiro é um `button` e o chip de status contém um segundo `button` de edição.
+- O wrapper do card foi trocado para um `div` com `role="button"`/`tabIndex`/`onKeyDown`, eliminando o nested button sem perder seleção por mouse/teclado.
+
+## Review
+- Verificação executada:
+- `pnpm --filter @playbook-brain/web typecheck` ✅
+- Documentação criada:
+- `wiki/changelog/2026-03-01-chat-sidebar-hydration-nested-button-fix.md`
+
 # Task: Concluir refatoração de Prepare Context helpers sem travar o fluxo
 **Status**: completed
 **Started**: 2026-03-01T14:05:00-05:00

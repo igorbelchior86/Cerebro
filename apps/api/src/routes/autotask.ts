@@ -355,6 +355,7 @@ router.get('/ticket-field-options', async (req, res, next) => {
 
     const requestedField = String(req.query.field || '').trim();
     const fieldLoaders = {
+      queue: () => client.getTicketQueues(),
       priority: () => client.getTicketPriorityOptions(),
       status: () => client.getTicketStatusOptions(),
       issueType: () => client.getTicketIssueTypeOptions(),
@@ -379,21 +380,44 @@ router.get('/ticket-field-options', async (req, res, next) => {
       return;
     }
 
-    const priority = await fieldLoaders.priority();
-    const status = await fieldLoaders.status();
-    const issueType = await fieldLoaders.issueType();
-    const subIssueType = await fieldLoaders.subIssueType();
-    const serviceLevelAgreement = await fieldLoaders.serviceLevelAgreement();
+    const [queue, priority, status, issueType, subIssueType, serviceLevelAgreement] = await Promise.all([
+      fieldLoaders.queue().catch(() => []),
+      fieldLoaders.priority().catch(() => []),
+      fieldLoaders.status().catch(() => []),
+      fieldLoaders.issueType().catch(() => []),
+      fieldLoaders.subIssueType().catch(() => []),
+      fieldLoaders.serviceLevelAgreement().catch(() => []),
+    ]);
 
     res.json({
       success: true,
       data: {
+        queue,
         priority,
         status,
         issueType,
         subIssueType,
         serviceLevelAgreement,
       },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/ticket-draft-defaults', async (_req, res, next) => {
+  try {
+    const client = await getTenantScopedClient();
+    if (!client) {
+      res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
+      return;
+    }
+
+    const data = await client.getTicketDraftDefaults();
+    res.json({
+      success: true,
+      data,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

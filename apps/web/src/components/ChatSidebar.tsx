@@ -1045,11 +1045,23 @@ export default function ChatSidebar({
                 const createdAtLabel = formatCreatedAt(normalized.createdAt, ticket.age, t('justNow'));
 
                 return (
-                  <button type="button" key={ticket.id} onClick={() => {
-                    if (!canSelectTicket) return;
-                    persistSidebarState(filter);
-                    onSelectTicket?.(ticket.id);
-                  }}
+                  <div
+                    key={ticket.id}
+                    role={canSelectTicket ? 'button' : undefined}
+                    tabIndex={canSelectTicket ? 0 : undefined}
+                    aria-disabled={canSelectTicket ? undefined : true}
+                    onClick={() => {
+                      if (!canSelectTicket) return;
+                      persistSidebarState(filter);
+                      onSelectTicket?.(ticket.id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (!canSelectTicket) return;
+                      if (e.key !== 'Enter' && e.key !== ' ') return;
+                      e.preventDefault();
+                      persistSidebarState(filter);
+                      onSelectTicket?.(ticket.id);
+                    }}
                     className="animate-fadeIn"
                     style={{
                       position: 'relative',
@@ -1072,18 +1084,18 @@ export default function ChatSidebar({
                     }}
                     onMouseEnter={(e) => {
                       if (!isActive && canSelectTicket) {
-                        (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card-hover)';
-                        (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-accent)';
-                        (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 10px 22px rgba(20,24,38,0.2)';
-                        (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)';
+                        (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-card-hover)';
+                        (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-accent)';
+                        (e.currentTarget as HTMLDivElement).style.boxShadow = '0 10px 22px rgba(20,24,38,0.2)';
+                        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)';
                       }
                     }}
                     onMouseLeave={(e) => {
                       if (!isActive && canSelectTicket) {
-                        (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-card)';
-                        (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
-                        (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 6px 16px rgba(20,24,38,0.12)';
-                        (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+                        (e.currentTarget as HTMLDivElement).style.background = 'var(--bg-card)';
+                        (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)';
+                        (e.currentTarget as HTMLDivElement).style.boxShadow = '0 6px 16px rgba(20,24,38,0.12)';
+                        (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
                       }
                     }}
                   >
@@ -1180,7 +1192,7 @@ export default function ChatSidebar({
                         {normalized.requester}
                       </span>
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>

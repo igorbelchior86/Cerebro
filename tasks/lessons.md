@@ -1,3 +1,27 @@
+## Lesson: 2026-03-01 (never promote the first picklist option into a fake default for SLA)
+**Mistake**: Eu usei o primeiro SLA ativo como fallback automático quando não havia default confirmado.
+**Root cause**: A lista vem ordenada alfabeticamente, então `pool[0]` virou um valor arbitrário (`Enhanced`), não um default real do Autotask.
+**Rule**: Para campos sensíveis de contexto como SLA, não inferir default por posição da picklist; só preencher automaticamente com fonte autoritativa ou sinal explícito.
+**Pattern**: Se a ordem da lista pode ser lexicográfica, `first item` nunca deve ser tratado como default de negócio.
+
+## Lesson: 2026-03-01 (draft prefill must fail open, not fail silent)
+**Mistake**: Eu deixei o prefill do New Ticket depender de uma busca agregada e engolir qualquer erro sem fallback.
+**Root cause**: Uma única falha de metadata/default fazia o `useEffect` desistir do prefill inteiro, e a UI ficava vazia sem qualquer degradação útil.
+**Rule**: Em bootstrap de formulário com várias fontes remotas, cada fonte deve falhar isoladamente e o cliente deve aplicar o máximo de dados parciais possível.
+**Pattern**: Se status/priority/SLA dependem de catálogos independentes, não usar um único ponto de falha para inicializar o draft.
+
+## Lesson: 2026-03-01 (provider form defaults must be modeled from creation rules, not only picklist metadata)
+**Mistake**: Eu tentei reconstruir o comportamento do `New Ticket` do Autotask usando apenas `entityInformation/fields`.
+**Root cause**: Confundi catálogo de picklists com defaults efetivos de criação; o provider aplica defaults de `ticketCategory` e regras de criação acima da metadata bruta.
+**Rule**: Quando o objetivo é espelhar um formulário de criação de integração, procurar primeiro a fonte de defaults efetivos (categoria/regra de criação) e só usar picklists para catálogo/labels.
+**Pattern**: Se a UI do provider abre com campos preenchidos mas a metadata de picklist não marca o default claramente, assumir que existe uma camada separada de creation defaults e modelá-la no backend.
+
+## Lesson: 2026-03-01 (provider-default parity sometimes needs an operational fallback, not metadata perfection)
+**Mistake**: Eu tratei o prefill de SLA como dependente apenas de um `isDefault` detectável no metadata do Autotask.
+**Root cause**: O tenant atual carrega um SLA padrão na UI do provider, mas a payload disponível para o Cerebro não expõe esse default de forma consistente.
+**Rule**: Quando o objetivo é espelhar o comportamento operacional do provider e o metadata não carrega o marcador de default com confiabilidade, o frontend pode precisar de um fallback determinístico e explícito.
+**Pattern**: Se o provider mostra um campo já preenchido, mas a picklist entregue ao cliente não marca o default, aplicar um fallback estável de prefill no draft em vez de esperar um sinal perfeito do metadata.
+
 ## Lesson: 2026-03-01 (async create commands must not be treated as failures just because they are still processing)
 **Mistake**: Eu tratei a criação de ticket como se precisasse completar quase instantaneamente no frontend.
 **Root cause**: O polling do botão verde esperava só duas checagens curtas e convertia um estado normal de `accepted/processing` em erro.
@@ -824,3 +848,18 @@
 **Root cause**: O fluxo tentou “esperar o terminal terminar” em vez de primeiro reconstruir o estado local e rodar checks curtos/bounded para identificar o ponto exato da quebra.
 **Rule**: Em refatorações quebradas, começar por inspeção local + checks de duração controlada (`typecheck`, `rg`, leituras direcionadas) antes de qualquer comando potencialmente longo.
 **Pattern**: Se o relato é “travou” e a árvore já contém código parcial, tratar como problema de consistência do código, não como problema de aguardar mais tempo.
+## Lesson: 2026-03-01 (interactive card containers must not wrap secondary action buttons)
+**Mistake**: Eu deixei o card inteiro do ticket como `<button>` e depois inseri um botão secundário de editar status dentro dele.
+**Root cause**: A mudança adicionou uma ação inline nova sem revalidar a semântica HTML do container clicável já existente.
+**Rule**: Se um card precisa conter ações secundárias interativas, o wrapper não pode ser um `<button>`; usar container com `role="button"` + teclado, ou separar hit areas.
+**Pattern**: Sempre que adicionar ícones/ações dentro de um card clicável, revisar imediatamente se o elemento pai já é interativo nativo.
+## Lesson: 2026-03-01 (draft shells must keep memo dependencies aligned with editable fields)
+**Mistake**: Eu deixei o draft atualizar o state de `Issue/Sub-Issue/Priority/SLA`, mas o painel lateral continuou preso em valores antigos.
+**Root cause**: O `useMemo` que monta o `PlaybookPanel` do draft não dependia desses campos editáveis, então a UI parecia “não salvar” apesar do state mudar.
+**Rule**: Sempre que um draft/context panel renderiza campos editáveis via `useMemo`, a lista de dependências deve cobrir todos os campos que a UI exibe.
+**Pattern**: Se o modal fecha com sucesso e o valor não muda visualmente, revisar primeiro memoization/stale derived data antes de culpar persistência.
+## Lesson: 2026-03-01 (provider defaults may live on field metadata, not on each picklist entry)
+**Mistake**: Eu assumi que o default do Autotask viria marcado em cada item da picklist.
+**Root cause**: O parser só olhava flags booleanas por item (`isDefault`, etc.) e ignorava `defaultValue`/equivalentes no próprio field metadata.
+**Rule**: Em metadados de picklist de providers, validar tanto o nível do item quanto o nível do campo para detectar defaults reais.
+**Pattern**: Se a UI recebe as opções corretas mas o default não aparece, revisar primeiro se o provider publica o default como `field.defaultValue` em vez de `option.isDefault`.

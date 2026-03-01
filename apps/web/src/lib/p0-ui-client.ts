@@ -120,9 +120,11 @@ export interface AutotaskPicklistOption {
   id: number;
   label: string;
   isActive?: boolean;
+  isDefault?: boolean;
 }
 
 export interface AutotaskTicketFieldOptions {
+  queue: AutotaskPicklistOption[];
   priority: AutotaskPicklistOption[];
   status: AutotaskPicklistOption[];
   issueType: AutotaskPicklistOption[];
@@ -131,6 +133,16 @@ export interface AutotaskTicketFieldOptions {
 }
 
 export type AutotaskTicketFieldKey = keyof AutotaskTicketFieldOptions;
+
+export interface AutotaskTicketDraftDefaults {
+  ticketCategoryId: number | null;
+  queue: AutotaskPicklistOption | null;
+  priority: AutotaskPicklistOption | null;
+  status: AutotaskPicklistOption | null;
+  issueType: AutotaskPicklistOption | null;
+  subIssueType: AutotaskPicklistOption | null;
+  serviceLevelAgreement: AutotaskPicklistOption | null;
+}
 
 export interface AutotaskTicketContextUpdateResult {
   ticketId: string;
@@ -383,6 +395,10 @@ export function listAutotaskTicketFieldOptions() {
 export function listAutotaskTicketFieldOptionsByField(field: AutotaskTicketFieldKey) {
   const search = new URLSearchParams({ field });
   return request<AutotaskPicklistOption[]>(`/autotask/ticket-field-options?${search.toString()}`);
+}
+
+export function getAutotaskTicketDraftDefaults() {
+  return request<AutotaskTicketDraftDefaults>('/autotask/ticket-draft-defaults');
 }
 
 export function updateAutotaskTicketContext(

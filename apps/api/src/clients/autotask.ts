@@ -32,6 +32,17 @@ export interface AutotaskPicklistOption {
   id: number;
   label: string;
   isActive?: boolean;
+  isDefault?: boolean;
+}
+
+export interface AutotaskTicketDraftDefaults {
+  ticketCategoryId: number | null;
+  status: AutotaskPicklistOption | null;
+  priority: AutotaskPicklistOption | null;
+  issueType: AutotaskPicklistOption | null;
+  subIssueType: AutotaskPicklistOption | null;
+  serviceLevelAgreement: AutotaskPicklistOption | null;
+  queue: AutotaskPicklistOption | null;
 }
 
 /** Discovery endpoint — acts as universal entry point for zone lookup */
@@ -152,6 +163,137 @@ export class AutotaskClient {
     if (Array.isArray(response?.items)) return response.items;
     if (Array.isArray(response?.records)) return response.records;
     return [];
+  }
+
+  private async queryEntity<T>(
+    entityPath: string,
+    filter: Array<Record<string, unknown>>,
+    maxRecords: number = 25
+  ): Promise<T[]> {
+    const response = await this.requestJson<{ items?: T[]; records?: T[]; item?: T }>(
+      'POST',
+      `${entityPath}/query`,
+      {
+        body: {
+          MaxRecords: maxRecords,
+          filter,
+        },
+      }
+    );
+    return this.extractCollection(response);
+  }
+
+  private async getEntityFields(entityPath: string): Promise<any[]> {
+    const response = await this.request<any>(`${entityPath}/entityInformation/fields`);
+    if (Array.isArray(response)) return response;
+    if (Array.isArray(response?.fields)) return response.fields;
+    if (Array.isArray(response?.items)) return response.items;
+    return [];
+  }
+
+  private collectFieldDefaultCandidates(targetField: any): Set<string> {
+    const candidates = new Set<string>();
+    const push = (value: unknown) => {
+      if (value === null || value === undefined) return;
+      if (typeof value === 'object') {
+        const obj = value as Record<string, unknown>;
+        push(obj.value);
+        push(obj.id);
+        push(obj.code);
+        push(obj.picklistValue);
+        return;
+      }
+      const normalized = String(value).trim();
+      if (!normalized) return;
+      candidates.add(normalized);
+    };
+    push(
+      targetField?.defaultValue ??
+      targetField?.defaultPicklistValue ??
+      targetField?.defaultPickListValue ??
+      targetField?.defaultValueId ??
+      targetField?.defaultValueID ??
+      targetField?.default
+    );
+    return candidates;
+  }
+
+  private pickPreferredDraftOption(
+    fieldName: 'queueID' | 'status' | 'priority' | 'issueType' | 'subIssueType' | 'serviceLevelAgreementID',
+    options: AutotaskPicklistOption[]
+  ): AutotaskPicklistOption | null {
+    if (!Array.isArray(options) || options.length === 0) return null;
+    const active = options.filter((row) => row.isActive !== false);
+    const pool = active.length > 0 ? active : options;
+    const explicitDefault = pool.find((row) => row.isDefault);
+    if (explicitDefault) return explicitDefault;
+
+    if (fieldName === 'status') {
+      return (
+        pool.find((row) => row.label.trim().toLowerCase() === 'new') ||
+        pool.find((row) => row.label.trim().toLowerCase().includes('new')) ||
+        pool[0] ||
+        null
+      );
+    }
+
+    if (fieldName === 'priority') {
+      return (
+        pool.find((row) => /\bp3\b/i.test(row.label)) ||
+        pool.find((row) => /\bmedium\b/i.test(row.label)) ||
+        pool.find((row) => /\bnormal\b/i.test(row.label)) ||
+        pool[0] ||
+        null
+      );
+    }
+
+    if (fieldName === 'queueID') {
+      return pool[0] || null;
+    }
+
+    return null;
+  }
+
+  private resolveOptionById(options: AutotaskPicklistOption[], rawValue: unknown): AutotaskPicklistOption | null {
+    const numeric = Number(rawValue);
+    if (!Number.isFinite(numeric)) return null;
+    return options.find((option) => option.id === numeric) || null;
+  }
+
+  private async getTicketDefaultCategoryId(): Promise<number | null> {
+    const fields = await this.getEntityFields('/tickets');
+    const targetField = fields.find((field: any) =>
+      String(field?.name || field?.fieldName || '').toLowerCase() === 'ticketcategory'
+    );
+    if (!targetField) return null;
+
+    const defaultCandidates = this.collectFieldDefaultCandidates(targetField);
+    const rawValues = Array.isArray(targetField?.picklistValues)
+      ? targetField.picklistValues
+      : Array.isArray(targetField?.pickListValues)
+        ? targetField.pickListValues
+        : [];
+
+    for (const entry of rawValues) {
+      const rawId = entry?.value ?? entry?.id ?? entry?.code ?? entry?.picklistValue;
+      const id = Number(rawId);
+      if (!Number.isFinite(id)) continue;
+      const isExplicitDefault =
+        typeof entry?.isDefault === 'boolean'
+          ? entry.isDefault
+          : typeof entry?.isDefaultValue === 'boolean'
+            ? entry.isDefaultValue
+            : typeof entry?.defaultValue === 'boolean'
+              ? entry.defaultValue
+              : typeof entry?.default === 'boolean'
+                ? entry.default
+                : false;
+      if (isExplicitDefault || defaultCandidates.has(String(rawId).trim())) {
+        return id;
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -275,18 +417,12 @@ export class AutotaskClient {
    * This is more reliable than querying queue assignments because it returns the canonical queue labels.
    */
   private async getTicketFieldPicklist(fieldName: string): Promise<AutotaskPicklistOption[]> {
-    const response = await this.request<any>('/tickets/entityInformation/fields');
-    const fields = Array.isArray(response)
-      ? response
-      : Array.isArray(response?.fields)
-        ? response.fields
-        : Array.isArray(response?.items)
-          ? response.items
-          : [];
+    const fields = await this.getEntityFields('/tickets');
 
     const targetField = fields.find((field: any) =>
       String(field?.name || field?.fieldName || '').toLowerCase() === fieldName.toLowerCase()
     );
+    const fieldLevelDefaultCandidates = this.collectFieldDefaultCandidates(targetField);
     const rawValues = Array.isArray(targetField?.picklistValues)
       ? targetField.picklistValues
       : Array.isArray(targetField?.pickListValues)
@@ -309,8 +445,23 @@ export class AutotaskClient {
           typeof entry?.isActive === 'boolean'
             ? entry.isActive
             : (typeof entry?.isInactive === 'boolean' ? !entry.isInactive : undefined);
+        const isDefault =
+          typeof entry?.isDefault === 'boolean'
+            ? entry.isDefault
+            : typeof entry?.isDefaultValue === 'boolean'
+              ? entry.isDefaultValue
+              : typeof entry?.defaultValue === 'boolean'
+                ? entry.defaultValue
+                : typeof entry?.default === 'boolean'
+                  ? entry.default
+                  : fieldLevelDefaultCandidates.has(String(rawId).trim());
         if (!Number.isFinite(id) || !label) return null;
-        return { id, label, ...(typeof isActive === 'boolean' ? { isActive } : {}) };
+        return {
+          id,
+          label,
+          ...(typeof isActive === 'boolean' ? { isActive } : {}),
+          ...(typeof isDefault === 'boolean' ? { isDefault } : {}),
+        };
       })
       .filter((q: AutotaskQueueOption | null): q is AutotaskQueueOption => Boolean(q));
 
@@ -345,15 +496,78 @@ export class AutotaskClient {
     return this.getTicketFieldPicklist('serviceLevelAgreementID');
   }
 
+  async getTicketDraftDefaults(): Promise<AutotaskTicketDraftDefaults> {
+    const [queue, status, priority, issueType, subIssueType, serviceLevelAgreement] = await Promise.all([
+      this.getTicketQueues().catch(() => []),
+      this.getTicketStatusOptions().catch(() => []),
+      this.getTicketPriorityOptions().catch(() => []),
+      this.getTicketIssueTypeOptions().catch(() => []),
+      this.getTicketSubIssueTypeOptions().catch(() => []),
+      this.getTicketServiceLevelAgreementOptions().catch(() => []),
+    ]);
+
+    const defaults: AutotaskTicketDraftDefaults = {
+      ticketCategoryId: null,
+      status: this.pickPreferredDraftOption('status', status),
+      priority: this.pickPreferredDraftOption('priority', priority),
+      issueType: this.pickPreferredDraftOption('issueType', issueType),
+      subIssueType: this.pickPreferredDraftOption('subIssueType', subIssueType),
+      serviceLevelAgreement: this.pickPreferredDraftOption('serviceLevelAgreementID', serviceLevelAgreement),
+      queue: this.pickPreferredDraftOption('queueID', queue),
+    };
+
+    const ticketCategoryId = await this.getTicketDefaultCategoryId().catch(() => null);
+    if (!Number.isFinite(ticketCategoryId)) return defaults;
+
+    defaults.ticketCategoryId = Number(ticketCategoryId);
+
+    try {
+      const rows = await this.queryEntity<Record<string, unknown>>(
+        '/ticketCategoryFieldDefaults',
+        [{ op: 'eq', field: 'ticketCategoryID', value: Number(ticketCategoryId) }],
+        5
+      );
+      const categoryDefaults = rows[0];
+      if (!categoryDefaults) return defaults;
+
+      const readDefault = (...keys: string[]) => {
+        for (const key of keys) {
+          if (categoryDefaults[key] !== undefined && categoryDefaults[key] !== null) {
+            return categoryDefaults[key];
+          }
+        }
+        return null;
+      };
+
+      defaults.status = this.resolveOptionById(status, readDefault('status', 'Status')) || defaults.status;
+      defaults.priority = this.resolveOptionById(priority, readDefault('priority', 'Priority')) || defaults.priority;
+      defaults.issueType = this.resolveOptionById(issueType, readDefault('issueType', 'issueTypeID', 'IssueType', 'IssueTypeID')) || defaults.issueType;
+      defaults.subIssueType =
+        this.resolveOptionById(subIssueType, readDefault('subIssueType', 'subIssueTypeID', 'SubIssueType', 'SubIssueTypeID')) ||
+        defaults.subIssueType;
+      defaults.serviceLevelAgreement =
+        this.resolveOptionById(
+          serviceLevelAgreement,
+          readDefault(
+            'serviceLevelAgreementID',
+            'serviceLevelAgreementId',
+            'ServiceLevelAgreementID',
+            'ServiceLevelAgreementId'
+          )
+        ) ||
+        defaults.serviceLevelAgreement;
+      defaults.queue =
+        this.resolveOptionById(queue, readDefault('queueID', 'queueId', 'QueueID', 'QueueId')) ||
+        defaults.queue;
+    } catch {
+      // Keep metadata-based defaults if category defaults are unavailable for this tenant.
+    }
+
+    return defaults;
+  }
+
   private async getTicketNoteFieldPicklist(fieldName: string): Promise<AutotaskPicklistOption[]> {
-    const response = await this.request<any>('/ticketNotes/entityInformation/fields');
-    const fields = Array.isArray(response)
-      ? response
-      : Array.isArray(response?.fields)
-        ? response.fields
-        : Array.isArray(response?.items)
-          ? response.items
-          : [];
+    const fields = await this.getEntityFields('/ticketNotes');
     const targetField = fields.find((field: any) =>
       String(field?.name || field?.fieldName || '').toLowerCase() === fieldName.toLowerCase()
     );

@@ -1,3 +1,5 @@
+import { operationalLogger } from '../../../lib/operational-logger.js';
+
 export interface ParsedTicket {
     id: string;
     title: string;
@@ -109,7 +111,12 @@ export class EmailParser {
         const id = idMatch ? idMatch[1] : null;
 
         if (!id) {
-            console.warn('[EmailParser] Could not extract Ticket ID from email.', { subject });
+            operationalLogger.warn('adapters.email_parser.ticket_id_not_found', {
+                module: 'adapters.email.email-parser',
+                signal: 'integration_failure',
+                degraded_mode: true,
+                subject_preview: subject.slice(0, 120),
+            });
             return null;
         }
 

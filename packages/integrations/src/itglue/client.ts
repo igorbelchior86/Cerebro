@@ -4,6 +4,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { ITGlueDocument } from '@cerebro/types';
+import { isIntegrationClientError, normalizeIntegrationError, throwFromHttpResponse } from '../errors.js';
 
 export interface ITGlueConfig {
   apiKey: string;
@@ -14,15 +15,18 @@ export interface ITGlueConfig {
    * AU: https://api.au.itglue.com
    */
   baseUrl?: string;
+  timeoutMs?: number;
 }
 
 export class ITGlueClient {
   private apiKey: string;
   private baseUrl: string;
+  private timeoutMs: number;
 
   constructor(config: ITGlueConfig) {
     this.apiKey = config.apiKey;
     this.baseUrl = (config.baseUrl || 'https://api.itglue.com').replace(/\/$/, '');
+    this.timeoutMs = config.timeoutMs ?? 15000;
   }
 
   private async request<T>(endpoint: string, params?: Record<string, string | number | boolean>) {
@@ -33,22 +37,35 @@ export class ITGlueClient {
       });
     }
 
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        // IT Glue uses x-api-key header (lowercase)
-        'x-api-key': this.apiKey,
-        // Content-Type for GET must NOT be application/vnd.api+json (no body)
-        // Only include it for write operations
-      },
-    });
+    try {
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          // IT Glue uses x-api-key header (lowercase)
+          'x-api-key': this.apiKey,
+          // Content-Type for GET must NOT be application/vnd.api+json (no body)
+          // Only include it for write operations
+        },
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
 
-    if (!response.ok) {
-      throw new Error(`IT Glue API error: ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        await throwFromHttpResponse({
+          integration: 'itglue',
+          operation: `GET ${endpoint}`,
+          response,
+        });
+      }
+
+      const data = await response.json();
+      return data as T;
+    } catch (error) {
+      throw normalizeIntegrationError({
+        integration: 'itglue',
+        operation: `GET ${endpoint}`,
+        error,
+      });
     }
-
-    const data = await response.json();
-    return data as T;
   }
 
   async getOrganizations(pageSize: number = 100) {
@@ -109,8 +126,7 @@ export class ITGlueClient {
       });
       return response.data;
     } catch (error) {
-      const message = String((error as Error)?.message || '').toLowerCase();
-      if (!message.includes('404')) throw error;
+      if (!(isIntegrationClientError(error) && error.statusCode === 404)) throw error;
       const response = await this.request<{
         data: ITGlueDocument[];
         meta: { pages: number };
@@ -132,8 +148,7 @@ export class ITGlueClient {
       });
       return response.data;
     } catch (error) {
-      const message = String((error as Error)?.message || '').toLowerCase();
-      if (!message.includes('404')) throw error;
+      if (!(isIntegrationClientError(error) && error.statusCode === 404)) throw error;
       const response = await this.request<{
         data: Array<{ id: string; attributes: Record<string, unknown>; relationships?: Record<string, unknown>; type?: string }>;
         meta?: { pages?: number; total_count?: number };
@@ -231,8 +246,7 @@ export class ITGlueClient {
       });
       return response.data;
     } catch (error) {
-      const message = String((error as Error)?.message || '').toLowerCase();
-      if (!message.includes('404')) throw error;
+      if (!(isIntegrationClientError(error) && error.statusCode === 404)) throw error;
       const response = await this.request<{
         data: Array<{ id: string; attributes: Record<string, unknown> }>;
         meta: { total_count: number };
@@ -286,8 +300,7 @@ export class ITGlueClient {
       });
       return response.data;
     } catch (error) {
-      const message = String((error as Error)?.message || '').toLowerCase();
-      if (!message.includes('404')) throw error;
+      if (!(isIntegrationClientError(error) && error.statusCode === 404)) throw error;
       const fallback = await this.request<{
         data: Array<{ id: string; attributes?: Record<string, unknown>; relationships?: Record<string, unknown> }>;
       }>('/attachments', {
@@ -308,8 +321,7 @@ export class ITGlueClient {
       });
       return response.data;
     } catch (error) {
-      const message = String((error as Error)?.message || '').toLowerCase();
-      if (!message.includes('404')) throw error;
+      if (!(isIntegrationClientError(error) && error.statusCode === 404)) throw error;
       const fallback = await this.request<{
         data: Array<{ id: string; attributes?: Record<string, unknown>; relationships?: Record<string, unknown> }>;
       }>('/related_items', {

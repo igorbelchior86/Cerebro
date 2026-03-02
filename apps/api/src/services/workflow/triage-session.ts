@@ -34,8 +34,8 @@ export class TriageSessionService {
         return {
             id: sessionId,
             ticket_id: params.ticket_id,
-            org_id: params.org_id,
-            org_name: params.org_name,
+            ...(params.org_id ? { org_id: params.org_id } : {}),
+            ...(params.org_name ? { org_name: params.org_name } : {}),
             status: 'pending',
             created_by: params.created_by,
             created_at: new Date().toISOString(),

@@ -2,6 +2,7 @@ import { ITGlueClient } from '../../../clients/itglue.js';
 import { queryOne } from '../../../db/index.js';
 import type { DataSourceFetcher, DataSourceContext, FetchResult } from './types.js';
 import { resolveITGlueOrg, resolveITGlueOrgFamilyScopes } from './itglue-helpers.js';
+import { operationalLogger } from '../../../lib/operational-logger.js';
 
 export class ITGlueFetcher implements DataSourceFetcher {
     name = 'itglue';
@@ -9,7 +10,12 @@ export class ITGlueFetcher implements DataSourceFetcher {
     async fetch(context: DataSourceContext): Promise<FetchResult> {
         const creds = await this.getCredentials(context);
         if (!creds) {
-            console.warn(`[ITGlueFetcher] No credentials found`);
+            operationalLogger.warn('read_model.itglue_fetcher.credentials_missing', {
+                module: 'read-models.itglue-fetcher',
+                integration: 'itglue',
+                signal: 'integration_failure',
+                degraded_mode: true,
+            }, { ticket_id: context.ticketId || null });
             return {};
         }
 
@@ -39,7 +45,11 @@ export class ITGlueFetcher implements DataSourceFetcher {
             }
 
             if (!itglueOrgId) {
-                console.log(`[ITGlueFetcher] No ITGlue Org ID mapped or resolved. Returning empty.`);
+                operationalLogger.info('read_model.itglue_fetcher.org_not_resolved', {
+                    module: 'read-models.itglue-fetcher',
+                    integration: 'itglue',
+                    degraded_mode: true,
+                }, { ticket_id: context.ticketId || null });
                 return result;
             }
 
@@ -56,7 +66,11 @@ export class ITGlueFetcher implements DataSourceFetcher {
             const firstScope = scopes[0];
             const primaryScope = firstScope ? firstScope.id : undefined;
             if (!primaryScope) {
-                console.log(`[ITGlueFetcher] No valid ITGlue primary scope id found.`);
+                operationalLogger.info('read_model.itglue_fetcher.primary_scope_missing', {
+                    module: 'read-models.itglue-fetcher',
+                    integration: 'itglue',
+                    degraded_mode: true,
+                }, { ticket_id: context.ticketId || null });
                 return result;
             }
 
@@ -86,7 +100,12 @@ export class ITGlueFetcher implements DataSourceFetcher {
             result.raw!.itglueScopes = scopes;
 
         } catch (err) {
-            console.error(`[ITGlueFetcher] Error fetching data:`, err);
+            operationalLogger.error('read_model.itglue_fetcher.fetch_failed', err, {
+                module: 'read-models.itglue-fetcher',
+                integration: 'itglue',
+                signal: 'integration_failure',
+                degraded_mode: true,
+            }, { ticket_id: context.ticketId || null });
         }
 
         return result;

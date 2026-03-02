@@ -5,6 +5,7 @@ import { PrepareContextService, persistEvidencePack } from '../context/prepare-c
 import { DiagnoseService } from '../ai/diagnose.js';
 import { ValidatePolicyService } from '../domain/validate-policy.js';
 import { PlaybookWriterService } from '../ai/playbook-writer.js';
+import { operationalLogger } from '../../lib/operational-logger.js';
 
 export class TriageOrchestrator {
     private prepareService: PrepareContextService;
@@ -30,23 +31,36 @@ export class TriageOrchestrator {
      */
     startRetryListener() {
         if (this.retryIntervalId) return;
-        console.log('[Orchestrator] Starting background retry listener (every 2 mins)');
+        operationalLogger.info('orchestration.triage.retry_listener_started', {
+            module: 'orchestration.triage-orchestrator',
+            interval_ms: 2 * 60 * 1000,
+        });
 
         // Execute immediately on startup
         this.processPendingSessions().catch(err =>
-            console.error('[Orchestrator] Initial pending sessions processing failed:', err)
+            operationalLogger.error('orchestration.triage.initial_pending_processing_failed', err, {
+                module: 'orchestration.triage-orchestrator',
+                signal: 'integration_failure',
+                degraded_mode: true,
+            })
         );
 
         this.retryIntervalId = setInterval(() => {
             this.processPendingSessions().catch(err =>
-                console.error('[Orchestrator] Pending sessions processing failed:', err)
+                operationalLogger.error('orchestration.triage.pending_processing_failed', err, {
+                    module: 'orchestration.triage-orchestrator',
+                    signal: 'integration_failure',
+                    degraded_mode: true,
+                })
             );
         }, 2 * 60 * 1000);
     }
 
     private async processPendingSessions() {
         if (this.isRetrySweepRunning) {
-            console.log('[Orchestrator] Retry sweep already running. Skipping overlapping tick.');
+            operationalLogger.info('orchestration.triage.retry_sweep_overlap_skipped', {
+                module: 'orchestration.triage-orchestrator',
+            });
             return;
         }
 
@@ -65,12 +79,17 @@ export class TriageOrchestrator {
 
                 if (staleSessions.length === 0) return;
 
-                console.log(`[Orchestrator] Found ${staleSessions.length} stale/pending sessions. Processing batch...`);
+                operationalLogger.info('orchestration.triage.retry_sweep_batch_found', {
+                    module: 'orchestration.triage-orchestrator',
+                    batch_size: staleSessions.length,
+                });
                 let quotaHit = false;
 
                 for (const s of staleSessions) {
                     if (quotaHit) {
-                        console.log(`[Orchestrator] Quota was hit, skipping remaining tickets in this cycle.`);
+                        operationalLogger.info('orchestration.triage.retry_sweep_quota_stop', {
+                            module: 'orchestration.triage-orchestrator',
+                        });
                         break;
                     }
 
@@ -78,7 +97,11 @@ export class TriageOrchestrator {
                         await this.runPipeline(s.ticket_id, undefined, 'autotask');
                     } catch (err: any) {
                         const message = String(err?.message || err || '').toLowerCase();
-                        console.error(`[Orchestrator] Error processing ${s.ticket_id}:`, message);
+                        operationalLogger.error('orchestration.triage.retry_sweep_ticket_failed', err, {
+                            module: 'orchestration.triage-orchestrator',
+                            signal: 'integration_failure',
+                            degraded_mode: true,
+                        }, { ticket_id: s.ticket_id });
                         if (this.isTransientProviderError(message) || err?.name === 'LLMQuotaExceededError') {
                             quotaHit = true;
                         }
@@ -101,9 +124,14 @@ export class TriageOrchestrator {
      */
     async runPipeline(ticketId: string, orgId?: string, source: 'email' | 'autotask' = 'autotask') {
         return tenantContext.run({ tenantId: undefined, bypassRLS: true }, async () => {
-            console.log(`[Orchestrator] Starting pipeline for ticket ${ticketId} (source: ${source})`);
+            operationalLogger.info('orchestration.triage.pipeline_started', {
+                module: 'orchestration.triage-orchestrator',
+                source,
+            }, { ticket_id: ticketId });
             if (await this.isTicketManuallySuppressed(ticketId)) {
-                console.log(`[Orchestrator] Ticket ${ticketId} is manually suppressed. Skipping pipeline execution.`);
+                operationalLogger.info('orchestration.triage.pipeline_skipped_manual_suppression', {
+                    module: 'orchestration.triage-orchestrator',
+                }, { ticket_id: ticketId });
                 await this.markLatestSessionBlockedBySuppression(ticketId);
                 return;
             }
@@ -113,7 +141,10 @@ export class TriageOrchestrator {
 
             try {
                 // PHASE 1: Prepare Context
-                console.log(`[Orchestrator] [${sid}] Phase 1: Prepare Context`);
+                operationalLogger.info('orchestration.triage.phase_prepare_context_started', {
+                    module: 'orchestration.triage-orchestrator',
+                    session_id: sid,
+                }, { ticket_id: ticketId });
                 const pack = await this.prepareService.prepare({
                     sessionId: sid,
                     ticketId,
@@ -122,7 +153,10 @@ export class TriageOrchestrator {
                 await persistEvidencePack(sid, pack);
 
                 // PHASE 2: Diagnose
-                console.log(`[Orchestrator] [${sid}] Phase 2: Diagnose`);
+                operationalLogger.info('orchestration.triage.phase_diagnose_started', {
+                    module: 'orchestration.triage-orchestrator',
+                    session_id: sid,
+                }, { ticket_id: ticketId });
                 const diagnosis = await this.diagnoseService.diagnose(pack);
                 await execute(
                     `INSERT INTO llm_outputs (id, session_id, step, model, payload, created_at)
@@ -142,7 +176,10 @@ export class TriageOrchestrator {
                 );
 
                 // PHASE 3: Validate
-                console.log(`[Orchestrator] [${sid}] Phase 3: Validate`);
+                operationalLogger.info('orchestration.triage.phase_validate_started', {
+                    module: 'orchestration.triage-orchestrator',
+                    session_id: sid,
+                }, { ticket_id: ticketId });
                 const validation = this.validateService.validate(diagnosis, pack);
                 const persistedRequiredFixes = [
                     ...(validation.required_fixes || []),
@@ -183,13 +220,20 @@ export class TriageOrchestrator {
                 );
 
                 if (!validation.safe_to_generate_playbook) {
-                    console.warn(`[Orchestrator] [${sid}] Pipeline stopped at validation. Status: ${validation.status}`);
+                    operationalLogger.warn('orchestration.triage.validation_blocked', {
+                        module: 'orchestration.triage-orchestrator',
+                        session_id: sid,
+                        validation_status: validation.status,
+                    }, { ticket_id: ticketId });
                     await this.updateSessionStatus(sid, validation.status as any, { clearRetry: true, lastError: null });
                     return;
                 }
 
                 // PHASE 4: Playbook
-                console.log(`[Orchestrator] [${sid}] Phase 4: Playbook Generation`);
+                operationalLogger.info('orchestration.triage.phase_playbook_started', {
+                    module: 'orchestration.triage-orchestrator',
+                    session_id: sid,
+                }, { ticket_id: ticketId });
                 const playbook = await this.playbookService.generatePlaybook(diagnosis, validation, pack);
 
                 await execute(
@@ -221,13 +265,26 @@ export class TriageOrchestrator {
                 );
 
                 await this.updateSessionStatus(sid, 'approved', { clearRetry: true, lastError: null });
-                console.log(`[Orchestrator] [${sid}] Pipeline completed successfully. Playbook ready.`);
+                operationalLogger.info('orchestration.triage.pipeline_completed', {
+                    module: 'orchestration.triage-orchestrator',
+                    session_id: sid,
+                }, { ticket_id: ticketId });
             } catch (error: any) {
-                console.error(`[Orchestrator] [${sid}] Pipeline failed:`, error);
+                operationalLogger.error('orchestration.triage.pipeline_failed', error, {
+                    module: 'orchestration.triage-orchestrator',
+                    session_id: sid,
+                    signal: 'integration_failure',
+                    degraded_mode: true,
+                }, { ticket_id: ticketId });
                 const message = String(error?.message || error || '');
                 if (this.isTransientProviderError(message) || error.name === 'LLMQuotaExceededError') {
                     await this.markPendingForRetry(sid, message);
-                    console.warn(`[Orchestrator] [${sid}] Marked as pending for retry (quota/transient error): ${message}`);
+                    operationalLogger.warn('orchestration.triage.marked_pending_for_retry', {
+                        module: 'orchestration.triage-orchestrator',
+                        session_id: sid,
+                        reason: message,
+                        degraded_mode: true,
+                    }, { ticket_id: ticketId });
                 } else {
                     await this.updateSessionStatus(sid, 'failed', { lastError: message, clearRetry: true });
                 }
@@ -309,10 +366,18 @@ export class TriageOrchestrator {
                     const ageMs = Number.isNaN(updatedAt.getTime()) ? 0 : Date.now() - updatedAt.getTime();
                     const staleMs = 5 * 60 * 1000;
                     if (ageMs < staleMs) {
-                        console.log(`[Orchestrator] Ticket ${ticketId} is already processing in session ${sessionId}. Skipping.`);
+                        operationalLogger.info('orchestration.triage.claim_skip_processing_active', {
+                            module: 'orchestration.triage-orchestrator',
+                            session_id: sessionId,
+                        }, { ticket_id: ticketId });
                         return null;
                     }
-                    console.warn(`[Orchestrator] Session ${sessionId} was stuck in processing (${Math.round(ageMs / 1000)}s). Resuming.`);
+                    operationalLogger.warn('orchestration.triage.claim_resume_stuck_processing', {
+                        module: 'orchestration.triage-orchestrator',
+                        session_id: sessionId,
+                        stale_seconds: Math.round(ageMs / 1000),
+                        degraded_mode: true,
+                    }, { ticket_id: ticketId });
                 }
 
                 if (existingSession.status === 'approved') {
@@ -321,10 +386,17 @@ export class TriageOrchestrator {
                         [sessionId]
                     );
                     if (playbookResult.rows[0]) {
-                        console.log(`[Orchestrator] Ticket ${ticketId} already has approved playbook in session ${sessionId}. Skipping.`);
+                        operationalLogger.info('orchestration.triage.claim_skip_already_approved', {
+                            module: 'orchestration.triage-orchestrator',
+                            session_id: sessionId,
+                        }, { ticket_id: ticketId });
                         return null;
                     }
-                    console.warn(`[Orchestrator] Session ${sessionId} is approved but has no playbook. Reprocessing.`);
+                    operationalLogger.warn('orchestration.triage.claim_reprocess_missing_playbook', {
+                        module: 'orchestration.triage-orchestrator',
+                        session_id: sessionId,
+                        degraded_mode: true,
+                    }, { ticket_id: ticketId });
                 }
 
                 await client.query(
@@ -333,7 +405,10 @@ export class TriageOrchestrator {
                      WHERE id = $1`,
                     [sessionId]
                 );
-                console.log(`[Orchestrator] Resuming/retrying existing session ${sessionId}`);
+                operationalLogger.info('orchestration.triage.claim_existing_session_resumed', {
+                    module: 'orchestration.triage-orchestrator',
+                    session_id: sessionId,
+                }, { ticket_id: ticketId });
                 return sessionId;
             }
 
@@ -348,7 +423,10 @@ export class TriageOrchestrator {
                  VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
                 [sessionId, ticketId, orgId || null, 'processing', 'system', defaultTenant?.id || null]
             );
-            console.log(`[Orchestrator] Created new session ${sessionId} for ticket ${ticketId}`);
+            operationalLogger.info('orchestration.triage.claim_new_session_created', {
+                module: 'orchestration.triage-orchestrator',
+                session_id: sessionId,
+            }, { ticket_id: ticketId });
             return sessionId;
         });
     }

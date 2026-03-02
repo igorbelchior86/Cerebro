@@ -25,7 +25,8 @@ import { autoSeedAdmin } from './db/seed-admin.js';
 import { triageOrchestrator } from './services/orchestration/triage-orchestrator.js';
 import { autotaskPollingService } from './services/adapters/autotask-polling.js';
 import { bootstrapWorkspaceRuntimeSettings } from './services/read-models/runtime-settings.js';
-import { createObservabilityMiddleware, createObservabilityRuntime, requestContextMiddleware } from './platform/index.js';
+import { createObservabilityMiddleware, requestContextMiddleware } from './platform/index.js';
+import { observabilityRuntime, operationalLogger } from './lib/operational-logger.js';
 
 // Load environment variables — look for .env at monorepo root (../../../ relative to dist/)
 const __filename = fileURLToPath(import.meta.url);
@@ -33,8 +34,6 @@ const __dirname = dirname(__filename);
 config({ path: resolve(__dirname, '../../../', '.env') });
 
 const app: Express = express();
-
-const observabilityRuntime = createObservabilityRuntime();
 
 // Middleware
 app.use(express.json({ limit: '12mb' }));
@@ -107,7 +106,11 @@ app.use('/email-ingestion', emailIngestionRoutes);
 
 // ─── Error Handling ──────────────────────────────────────────
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('[ERROR]', err.message);
+  operationalLogger.error('api.unhandled_error', err, {
+    module: 'api.bootstrap',
+    route_path: req.path,
+    method: req.method,
+  });
   res.status(500).json({
     error: err.message || 'Internal Server Error',
     timestamp: new Date().toISOString(),
@@ -126,12 +129,16 @@ app.use((req, res) => {
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
 app.listen(PORT, '0.0.0.0', async () => {
-  console.log(`\n[API] ✓ Server running at http://localhost:${PORT}`);
-  console.log(`[API] ✓ Health check: http://localhost:${PORT}/health`);
-  console.log(`[API] ✓ Auth: JWT + httpOnly cookie + TOTP MFA`);
-  console.log(
-    `[API] ✓ LLM env loaded (provider=${process.env.LLM_PROVIDER || 'gemini'}, geminiKey=${process.env.GEMINI_API_KEY ? 'yes' : 'no'}, groqKey=${process.env.GROQ_API_KEY ? 'yes' : 'no'})`
-  );
+  operationalLogger.info('api.server_started', {
+    module: 'api.bootstrap',
+    port: PORT,
+    base_url: `http://localhost:${PORT}`,
+    health_url: `http://localhost:${PORT}/health`,
+    auth_mode: 'jwt_cookie_totp',
+    llm_provider: process.env.LLM_PROVIDER || 'gemini',
+    gemini_key_present: Boolean(process.env.GEMINI_API_KEY),
+    groq_key_present: Boolean(process.env.GROQ_API_KEY),
+  });
   await autoSeedAdmin();
   await bootstrapWorkspaceRuntimeSettings();
 
@@ -141,7 +148,7 @@ app.listen(PORT, '0.0.0.0', async () => {
   // Start Autotask Polling Service
   autotaskPollingService.start();
 
-  console.log(`[API] ✓ Ready\n`);
+  operationalLogger.info('api.server_ready', { module: 'api.bootstrap', port: PORT });
 });
 
 export default app;

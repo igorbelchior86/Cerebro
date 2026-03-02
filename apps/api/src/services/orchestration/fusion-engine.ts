@@ -9,6 +9,7 @@ import type {
     FusionAdjudicationOutput,
     EnrichmentField
 } from '../context/prepare-context.types.js';
+import { operationalLogger } from '../../lib/operational-logger.js';
 
 export interface FusionEngineDeps {
     normalizeName: (name: string) => string;
@@ -76,7 +77,11 @@ export class FusionEngine {
                 deterministicInferences: inferences,
             });
         } catch (err) {
-            console.error('[FusionEngine] LLM Adjudication failed, falling back to deterministic:', err);
+            operationalLogger.error('orchestration.fusion.llm_adjudication_failed', err, {
+                module: 'orchestration.fusion-engine',
+                degraded_mode: true,
+                fallback: 'deterministic',
+            });
             resolutions = this.buildDeterministicFusionFallbackResolutions(input, links);
         }
 

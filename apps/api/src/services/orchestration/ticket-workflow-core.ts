@@ -3,6 +3,7 @@ import { readJsonFileSafe, writeJsonFileAtomic } from '../read-models/runtime-js
 import { classifyQueueError } from '../../platform/errors.js';
 import { resolveAutotaskOperation } from '../adapters/autotask-operation-registry.js';
 import type { WorkflowRealtimeTicketChangePayload } from './workflow-realtime.js';
+import { operationalLogger } from '../../lib/operational-logger.js';
 
 export type WorkflowTargetIntegration =
   | 'Autotask'
@@ -539,13 +540,15 @@ export class TicketWorkflowCoreService {
   ) { }
 
   private publishRealtime(payload: WorkflowRealtimeTicketChangePayload): void {
-    console.info('[workflow.realtime.publish]', {
-      tenant_id: payload.tenant_id,
-      ticket_id: payload.ticket_id,
-      trace_id: payload.trace_id,
+    operationalLogger.info('workflow.realtime.publish', {
+      module: 'orchestration.ticket-workflow-core',
       change_kind: payload.change_kind,
       command_id: payload.command_id,
       sync_event_id: payload.sync_event_id,
+    }, {
+      tenant_id: payload.tenant_id,
+      ticket_id: payload.ticket_id,
+      trace_id: payload.trace_id || null,
     });
     this.options.realtimePublisher?.(payload);
   }

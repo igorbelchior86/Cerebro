@@ -4,6 +4,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { NinjaOneDevice } from '@cerebro/types';
+import { normalizeIntegrationError, throwFromHttpResponse } from '../errors.js';
 
 interface NinjaOneConfig {
   clientId: string;
@@ -15,12 +16,14 @@ interface NinjaOneConfig {
    * OC: https://oc.ninjarmm.com
    */
   baseUrl?: string;
+  timeoutMs?: number;
 }
 
 export class NinjaOneClient {
   private clientId: string;
   private clientSecret: string;
   private baseUrl: string;
+  private timeoutMs: number;
   private accessToken: string = '';
   private tokenExpiresAt: number = 0;
 
@@ -29,6 +32,7 @@ export class NinjaOneClient {
     this.clientSecret = config.clientSecret;
     // Default to US region
     this.baseUrl = (config.baseUrl || 'https://app.ninjarmm.com').replace(/\/$/, '');
+    this.timeoutMs = config.timeoutMs ?? 15000;
   }
 
   private async getAccessToken(): Promise<string> {
@@ -37,28 +41,40 @@ export class NinjaOneClient {
     }
 
     // Correct endpoint: /ws/oauth/token (not /oauth/token)
-    const response = await fetch(`${this.baseUrl}/ws/oauth/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        scope: 'monitoring management control',
-      }).toString(),
-    });
+    try {
+      const response = await fetch(`${this.baseUrl}/ws/oauth/token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          grant_type: 'client_credentials',
+          client_id: this.clientId,
+          client_secret: this.clientSecret,
+          scope: 'monitoring management control',
+        }).toString(),
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw new Error(`NinjaOne auth error ${response.status}: ${body}`);
+      if (!response.ok) {
+        await throwFromHttpResponse({
+          integration: 'ninjaone',
+          operation: 'POST /ws/oauth/token',
+          response,
+        });
+      }
+
+      const data = await response.json() as { access_token: string; expires_in: number };
+      this.accessToken = data.access_token;
+      this.tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000;
+      return this.accessToken;
+    } catch (error) {
+      throw normalizeIntegrationError({
+        integration: 'ninjaone',
+        operation: 'POST /ws/oauth/token',
+        error,
+      });
     }
-
-    const data = await response.json() as { access_token: string; expires_in: number };
-    this.accessToken = data.access_token;
-    this.tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000;
-    return this.accessToken;
   }
 
   private async request<T>(endpoint: string, params?: Record<string, string | number>) {
@@ -70,20 +86,33 @@ export class NinjaOneClient {
       });
     }
 
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    try {
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
 
-    if (!response.ok) {
-      throw new Error(`NinjaOne API error: ${response.status}`);
+      if (!response.ok) {
+        await throwFromHttpResponse({
+          integration: 'ninjaone',
+          operation: `GET /api/v2${endpoint}`,
+          response,
+        });
+      }
+
+      const data = await response.json();
+      return data as T;
+    } catch (error) {
+      throw normalizeIntegrationError({
+        integration: 'ninjaone',
+        operation: `GET /api/v2${endpoint}`,
+        error,
+      });
     }
-
-    const data = await response.json();
-    return data as T;
   }
 
   private async requestV2<T>(endpoint: string, params?: Record<string, string | number>) {
@@ -95,20 +124,33 @@ export class NinjaOneClient {
       });
     }
 
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
+    try {
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
 
-    if (!response.ok) {
-      throw new Error(`NinjaOne API error: ${response.status}`);
+      if (!response.ok) {
+        await throwFromHttpResponse({
+          integration: 'ninjaone',
+          operation: `GET /v2${endpoint}`,
+          response,
+        });
+      }
+
+      const data = await response.json();
+      return data as T;
+    } catch (error) {
+      throw normalizeIntegrationError({
+        integration: 'ninjaone',
+        operation: `GET /v2${endpoint}`,
+        error,
+      });
     }
-
-    const data = await response.json();
-    return data as T;
   }
 
   async getDevice(deviceId: string): Promise<NinjaOneDevice> {
@@ -138,8 +180,13 @@ export class NinjaOneClient {
       );
       const arr = Array.isArray(response) ? response : (response as { data?: NinjaOneDevice[] }).data ?? [];
       if (arr.length > 0) return arr;
-    } catch {
-      // fall through to global devices endpoint
+    } catch (error) {
+      const normalized = normalizeIntegrationError({
+        integration: 'ninjaone',
+        operation: `GET /api/v2/organizations/${organizationId}/devices`,
+        error,
+      });
+      if (normalized.statusCode !== 404) throw normalized;
     }
 
     // Fallback: list all devices and filter client-side
@@ -172,7 +219,13 @@ export class NinjaOneClient {
         properties?: Record<string, unknown>;
         [key: string]: unknown;
       }>(`/devices/${deviceId}`);
-    } catch {
+    } catch (error) {
+      const normalized = normalizeIntegrationError({
+        integration: 'ninjaone',
+        operation: `GET /api/v2/devices/${deviceId}`,
+        error,
+      });
+      if (normalized.statusCode !== 404) throw normalized;
       // Official beta docs use singular resource for this endpoint.
       return this.requestV2<{
         id: string;
@@ -190,7 +243,13 @@ export class NinjaOneClient {
   async getDeviceLastLoggedOnUser(deviceId: string): Promise<{ userName: string; logonTime?: number } | null> {
     try {
       return await this.requestV2<{ userName: string; logonTime?: number }>(`/device/${deviceId}/last-logged-on-user`);
-    } catch {
+    } catch (error) {
+      const normalized = normalizeIntegrationError({
+        integration: 'ninjaone',
+        operation: `GET /v2/device/${deviceId}/last-logged-on-user`,
+        error,
+      });
+      if (normalized.statusCode !== 404) throw normalized;
       return null;
     }
   }

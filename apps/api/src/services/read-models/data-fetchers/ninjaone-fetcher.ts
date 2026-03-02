@@ -1,6 +1,7 @@
 import { NinjaOneClient } from '../../../clients/ninjaone.js';
 import { queryOne } from '../../../db/index.js';
 import type { DataSourceFetcher, DataSourceContext, FetchResult } from './types.js';
+import { operationalLogger } from '../../../lib/operational-logger.js';
 
 export class NinjaOneFetcher implements DataSourceFetcher {
     name = 'ninjaone';
@@ -8,7 +9,12 @@ export class NinjaOneFetcher implements DataSourceFetcher {
     async fetch(context: DataSourceContext): Promise<FetchResult> {
         const creds = await this.getCredentials(context);
         if (!creds) {
-            console.warn(`[NinjaOneFetcher] No credentials found`);
+            operationalLogger.warn('read_model.ninjaone_fetcher.credentials_missing', {
+                module: 'read-models.ninjaone-fetcher',
+                integration: 'ninjaone',
+                signal: 'integration_failure',
+                degraded_mode: true,
+            }, { ticket_id: context.ticketId || null });
             return {};
         }
 
@@ -44,8 +50,14 @@ export class NinjaOneFetcher implements DataSourceFetcher {
             } else if (ninjaOrgId) {
                 try {
                     ninjaOrgMatch = await client.getOrganization(ninjaOrgId);
-                } catch (e) {
-                    console.warn(`[NinjaOneFetcher] Could not fetch org ${ninjaOrgId}:`, e);
+                } catch {
+                    operationalLogger.warn('read_model.ninjaone_fetcher.org_fetch_failed', {
+                        module: 'read-models.ninjaone-fetcher',
+                        integration: 'ninjaone',
+                        signal: 'integration_failure',
+                        org_id: ninjaOrgId,
+                        degraded_mode: true,
+                    }, { ticket_id: context.ticketId || null });
                 }
             }
 
@@ -76,7 +88,12 @@ export class NinjaOneFetcher implements DataSourceFetcher {
             }
 
         } catch (err) {
-            console.error(`[NinjaOneFetcher] Error fetching data:`, err);
+            operationalLogger.error('read_model.ninjaone_fetcher.fetch_failed', err, {
+                module: 'read-models.ninjaone-fetcher',
+                integration: 'ninjaone',
+                signal: 'integration_failure',
+                degraded_mode: true,
+            }, { ticket_id: context.ticketId || null });
         }
 
         return result;

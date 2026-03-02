@@ -1,4 +1,5 @@
 import { query, execute } from '../../../db/index.js';
+import { operationalLogger } from '../../../lib/operational-logger.js';
 
 export class PgStore {
     private hasCompanyColumnCache: boolean | null = null;
@@ -30,7 +31,11 @@ export class PgStore {
                 [messageId, JSON.stringify(emailData)]
             );
         } catch (error) {
-            console.error('[PgStore] Error saving raw email:', error);
+            operationalLogger.error('adapters.email.pg_store.save_raw_email_failed', error, {
+                module: 'adapters.email.pg-store',
+                signal: 'integration_failure',
+                degraded_mode: true,
+            });
         }
     }
 
@@ -120,7 +125,12 @@ export class PgStore {
                 }
             }
         } catch (error) {
-            console.error('[PgStore] Error saving processed ticket:', error);
+            operationalLogger.error('adapters.email.pg_store.save_processed_ticket_failed', error, {
+                module: 'adapters.email.pg-store',
+                signal: 'integration_failure',
+                degraded_mode: true,
+                ticket_id: String(ticket?.id || ''),
+            });
         }
     }
 }

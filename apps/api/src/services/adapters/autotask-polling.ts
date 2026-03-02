@@ -4,6 +4,7 @@ import type { WorkflowEventEnvelope } from '../orchestration/ticket-workflow-cor
 import { triageOrchestrator } from '../orchestration/triage-orchestrator.js';
 import { workflowService } from '../orchestration/workflow-runtime.js';
 import { classifyQueueError } from '../../platform/errors.js';
+import { operationalLogger } from '../../lib/operational-logger.js';
 
 interface AutotaskCreds {
   apiIntegrationCode: string;
@@ -131,15 +132,38 @@ export class AutotaskPollingService {
 
   start() {
     if (this.intervalId) {
-      console.log('[AutotaskPolling] Already running.');
+      operationalLogger.info('adapters.autotask_polling.already_running', {
+        module: 'adapters.autotask-polling',
+      });
       return;
     }
 
-    console.log(`[AutotaskPolling] Starting polling service. Interval: ${this.pollIntervalMs}ms`);
+    operationalLogger.info('adapters.autotask_polling.started', {
+      module: 'adapters.autotask-polling',
+      poll_interval_ms: this.pollIntervalMs,
+    });
 
-    this.runOnce().catch(console.error);
+    this.runOnce().catch((error) => operationalLogger.error(
+      'adapters.autotask_polling.initial_run_failed',
+      error,
+      {
+        module: 'adapters.autotask-polling',
+        integration: 'autotask',
+        signal: 'integration_failure',
+        degraded_mode: true,
+      },
+    ));
     this.intervalId = setInterval(() => {
-      this.runOnce().catch(console.error);
+      this.runOnce().catch((error) => operationalLogger.error(
+        'adapters.autotask_polling.run_failed',
+        error,
+        {
+          module: 'adapters.autotask-polling',
+          integration: 'autotask',
+          signal: 'integration_failure',
+          degraded_mode: true,
+        },
+      ));
     }, this.pollIntervalMs);
   }
 
@@ -147,13 +171,17 @@ export class AutotaskPollingService {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
-      console.log('[AutotaskPolling] Stopped.');
+      operationalLogger.info('adapters.autotask_polling.stopped', {
+        module: 'adapters.autotask-polling',
+      });
     }
   }
 
   async runOnce(): Promise<void> {
     if (this.isPolling) {
-      console.log('[AutotaskPolling] Previous poll still running, skipping this iteration.');
+      operationalLogger.info('adapters.autotask_polling.skip_overlap', {
+        module: 'adapters.autotask-polling',
+      });
       return;
     }
 
@@ -161,9 +189,13 @@ export class AutotaskPollingService {
     try {
       const now = this.nowFn();
       if (this.rateLimitCooldownUntil && now < this.rateLimitCooldownUntil) {
-        console.warn(
-          `[AutotaskPolling] Rate limit cooldown active until ${new Date(this.rateLimitCooldownUntil).toISOString()}. Skipping poll.`
-        );
+        operationalLogger.warn('adapters.autotask_polling.rate_limit_cooldown_active', {
+          module: 'adapters.autotask-polling',
+          integration: 'autotask',
+          signal: 'integration_failure',
+          degraded_mode: true,
+          cooldown_until: new Date(this.rateLimitCooldownUntil).toISOString(),
+        });
         return;
       }
 
@@ -171,7 +203,12 @@ export class AutotaskPollingService {
         await this.processPendingSyncRetries();
         const context = await this.buildPollContextFn();
         if (!context) {
-          console.warn('[AutotaskPolling] Missing Autotask credentials (DB/UI and env fallback). Skipping poll.');
+          operationalLogger.warn('adapters.autotask_polling.credentials_missing', {
+            module: 'adapters.autotask-polling',
+            integration: 'autotask',
+            signal: 'integration_failure',
+            degraded_mode: true,
+          });
           return;
         }
 
@@ -181,7 +218,10 @@ export class AutotaskPollingService {
 
         if (!tickets || tickets.length === 0) return;
 
-        console.log(`[AutotaskPolling] Found ${tickets.length} recently created tickets.`);
+        operationalLogger.info('adapters.autotask_polling.tickets_found', {
+          module: 'adapters.autotask-polling',
+          ticket_count: tickets.length,
+        });
         for (const ticket of tickets) {
           const ticketIdStr = String((ticket as any)?.ticketNumber || (ticket as any)?.id || '').trim();
           if (!ticketIdStr) continue;
@@ -189,22 +229,40 @@ export class AutotaskPollingService {
           try {
             await this.triageRunFn(String((ticket as any)?.id ?? ticketIdStr));
           } catch (err) {
-            console.error(`[AutotaskPolling] Error orchestrating ticket ${(ticket as any)?.id}:`, err);
+            operationalLogger.error('adapters.autotask_polling.orchestration_failed', err, {
+              module: 'adapters.autotask-polling',
+              integration: 'autotask',
+              signal: 'integration_failure',
+              degraded_mode: true,
+            }, { ticket_id: ticketIdStr });
           }
         }
       });
       if (!lock.acquired) {
-        console.log('[AutotaskPolling] Another instance holds the polling lock. Skipping this iteration.');
+        operationalLogger.info('adapters.autotask_polling.lock_not_acquired', {
+          module: 'adapters.autotask-polling',
+          lock_namespace: this.advisoryLockNamespace,
+          lock_key: this.advisoryLockKey,
+        });
       }
     } catch (error) {
       const classified = classifyQueueError(error);
       if (classified.code === 'RATE_LIMIT') {
         this.rateLimitCooldownUntil = this.nowFn() + (15 * 60 * 1000);
-        console.warn(
-          `[AutotaskPolling] Entering rate limit cooldown until ${new Date(this.rateLimitCooldownUntil).toISOString()}.`
-        );
+        operationalLogger.warn('adapters.autotask_polling.rate_limit_cooldown_entered', {
+          module: 'adapters.autotask-polling',
+          integration: 'autotask',
+          signal: 'integration_failure',
+          degraded_mode: true,
+          cooldown_until: new Date(this.rateLimitCooldownUntil).toISOString(),
+        });
       }
-      console.error('[AutotaskPolling] Polling failed:', error);
+      operationalLogger.error('adapters.autotask_polling.poll_failed', error, {
+        module: 'adapters.autotask-polling',
+        integration: 'autotask',
+        signal: 'integration_failure',
+        degraded_mode: true,
+      });
     } finally {
       this.isPolling = false;
     }
@@ -212,7 +270,12 @@ export class AutotaskPollingService {
 
   private async ingestWorkflowSyncEvent(ticket: Record<string, unknown>, tenantId?: string): Promise<void> {
     if (!tenantId) {
-      console.warn('[AutotaskPolling] Workflow sync ingestion skipped: no tenant_id available for poller runtime.');
+      operationalLogger.warn('adapters.autotask_polling.workflow_sync_skipped_missing_tenant', {
+        module: 'adapters.autotask-polling',
+        integration: 'autotask',
+        signal: 'integration_failure',
+        degraded_mode: true,
+      }, { ticket_id: String(ticket.ticketNumber || ticket.id || '') || null });
       return;
     }
 
@@ -290,23 +353,23 @@ export class AutotaskPollingService {
         this.syncDlq.set(key, operation);
       }
 
-      console.error(
-        '[AutotaskPolling] Workflow sync ingestion failed',
-        JSON.stringify({
-          source,
-          tenant_id: event.tenant_id,
-          ticket_id: ticketId,
-          trace_id: event.correlation.trace_id,
-          classification: classified,
-          degraded_mode: true,
-          operation: {
-            attempts: operation.attempts,
-            max_attempts: operation.maxAttempts,
-            disposition: operation.disposition,
-            ...(operation.nextRetryAt ? { next_retry_at: new Date(operation.nextRetryAt).toISOString() } : {}),
-          },
-        }),
-      );
+      operationalLogger.error('adapters.autotask_polling.workflow_sync_ingestion_failed', error, {
+        module: 'adapters.autotask-polling',
+        integration: 'autotask',
+        signal: 'integration_failure',
+        source,
+        classification_code: classified.code,
+        classification_disposition: classified.disposition,
+        degraded_mode: true,
+        operation_attempts: operation.attempts,
+        operation_max_attempts: operation.maxAttempts,
+        operation_disposition: operation.disposition,
+        ...(operation.nextRetryAt ? { operation_next_retry_at: new Date(operation.nextRetryAt).toISOString() } : {}),
+      }, {
+        tenant_id: event.tenant_id,
+        ticket_id: ticketId || null,
+        trace_id: event.correlation.trace_id || null,
+      });
     }
   }
 }

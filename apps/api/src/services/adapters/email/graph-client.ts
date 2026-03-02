@@ -1,6 +1,7 @@
 import { Client } from '@microsoft/microsoft-graph-client';
 import { ConfidentialClientApplication } from '@azure/msal-node';
 import 'isomorphic-fetch';
+import { operationalLogger } from '../../../lib/operational-logger.js';
 
 export class GraphClient {
     private msalClient: ConfidentialClientApplication | null = null;
@@ -14,7 +15,12 @@ export class GraphClient {
             const tenantId = process.env.GRAPH_TENANT_ID;
 
             if (!clientId || !clientSecret || !tenantId) {
-                console.warn('[GraphClient] Missing Graph API credentials in environment variables.');
+                operationalLogger.warn('adapters.graph_client.credentials_missing', {
+                    module: 'adapters.email.graph-client',
+                    integration: 'microsoft_graph',
+                    signal: 'integration_failure',
+                    degraded_mode: true,
+                });
             }
 
             this.msalClient = new ConfidentialClientApplication({
@@ -73,7 +79,12 @@ export class GraphClient {
 
             return response.value;
         } catch (error) {
-            console.error('[GraphClient] Error fetching emails:', error);
+            operationalLogger.error('adapters.graph_client.fetch_emails_failed', error, {
+                module: 'adapters.email.graph-client',
+                integration: 'microsoft_graph',
+                signal: 'integration_failure',
+                degraded_mode: true,
+            });
             throw error;
         }
     }
@@ -88,7 +99,12 @@ export class GraphClient {
                 .api(`/users/${mailboxAddress}/messages/${messageId}`)
                 .patch({ isRead: true });
         } catch (error) {
-            console.error('[GraphClient] Error marking email as read:', error);
+            operationalLogger.error('adapters.graph_client.mark_email_read_failed', error, {
+                module: 'adapters.email.graph-client',
+                integration: 'microsoft_graph',
+                signal: 'integration_failure',
+                degraded_mode: true,
+            });
         }
     }
 }

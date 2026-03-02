@@ -12,6 +12,7 @@ import { diagnoseEvidencePack } from '../../services/ai/diagnose.js';
 import { validateDiagnosis, isSafeToGenerate } from '../../services/domain/validate-policy.js';
 import { getEvidencePack } from '../../services/context/prepare-context.js';
 import { query, queryOne, execute } from '../../db/index.js';
+import { operationalLogger } from '../../lib/operational-logger.js';
 
 const router: Router = Router();
 
@@ -54,9 +55,16 @@ router.post('/', async (req, res) => {
     );
 
     // ─── Generate diagnosis via Claude 3.5 Sonnet ────────────────
-    console.log(`[DIAGNOSE] Starting diagnosis for session ${sessionId}`);
+    operationalLogger.info('routes.ai.diagnose.started', {
+      module: 'routes.ai.diagnose',
+      session_id: sessionId,
+    });
     const diagnosis = await diagnoseEvidencePack(pack);
-    console.log(`[DIAGNOSE] Diagnosis complete - ${diagnosis.top_hypotheses.length} hypotheses`);
+    operationalLogger.info('routes.ai.diagnose.completed', {
+      module: 'routes.ai.diagnose',
+      session_id: sessionId,
+      hypothesis_count: diagnosis.top_hypotheses.length,
+    });
 
     // ─── Persist diagnosis to database ────────────────────────────
     await execute(
@@ -71,7 +79,11 @@ router.post('/', async (req, res) => {
       diagnosis,
     });
   } catch (err) {
-    console.error('[DIAGNOSE] Error:', err);
+    operationalLogger.error('routes.ai.diagnose.failed', err, {
+      module: 'routes.ai.diagnose',
+      signal: 'integration_failure',
+      degraded_mode: true,
+    });
     res.status(500).json({
       error: String(err),
       timestamp: new Date().toISOString(),
@@ -104,7 +116,11 @@ router.get('/:sessionId', async (req, res) => {
     const diagnosis: DiagnosisOutput = JSON.parse(result.content);
     return res.json({ sessionId, diagnosis });
   } catch (err) {
-    console.error('[DIAGNOSE] GET Error:', err);
+    operationalLogger.error('routes.ai.diagnose_get.failed', err, {
+      module: 'routes.ai.diagnose',
+      signal: 'integration_failure',
+      degraded_mode: true,
+    });
     res.status(500).json({
       error: String(err),
       timestamp: new Date().toISOString(),
@@ -162,11 +178,17 @@ router.post('/validate', async (req, res) => {
     const diagnosis: DiagnosisOutput = JSON.parse(diagResult.content);
 
     // ─── Validate diagnosis against policies ──────────────────────
-    console.log(`[VALIDATE] Validating diagnosis for session ${sessionId}`);
+    operationalLogger.info('routes.ai.validate.started', {
+      module: 'routes.ai.diagnose',
+      session_id: sessionId,
+    });
     const validation = await validateDiagnosis(diagnosis, pack, config);
-    console.log(
-      `[VALIDATE] Status: ${validation.status}, Safe to generate: ${validation.safe_to_generate_playbook}`
-    );
+    operationalLogger.info('routes.ai.validate.completed', {
+      module: 'routes.ai.diagnose',
+      session_id: sessionId,
+      validation_status: validation.status,
+      safe_to_generate_playbook: validation.safe_to_generate_playbook,
+    });
 
     // ─── Persist validation to database ───────────────────────────
     await execute(
@@ -192,7 +214,11 @@ router.post('/validate', async (req, res) => {
           : ['Answer required questions', 'Apply required fixes'],
     });
   } catch (err) {
-    console.error('[VALIDATE] Error:', err);
+    operationalLogger.error('routes.ai.validate.failed', err, {
+      module: 'routes.ai.diagnose',
+      signal: 'integration_failure',
+      degraded_mode: true,
+    });
     res.status(500).json({
       error: String(err),
       timestamp: new Date().toISOString(),
@@ -225,7 +251,11 @@ router.get('/validation/:sessionId', async (req, res) => {
     const validation: ValidationOutput = JSON.parse(result.content);
     return res.json({ sessionId, validation });
   } catch (err) {
-    console.error('[VALIDATE] GET Error:', err);
+    operationalLogger.error('routes.ai.validation_get.failed', err, {
+      module: 'routes.ai.diagnose',
+      signal: 'integration_failure',
+      degraded_mode: true,
+    });
     res.status(500).json({
       error: String(err),
       timestamp: new Date().toISOString(),
@@ -273,7 +303,10 @@ router.post('/diagnose-and-validate', async (req, res) => {
     );
 
     // ─── Step 1: Diagnose ────────────────────────────────────────
-    console.log(`[FULL-FLOW] Starting diagnosis for session ${sessionId}`);
+    operationalLogger.info('routes.ai.diagnose_validate_flow.diagnose_started', {
+      module: 'routes.ai.diagnose',
+      session_id: sessionId,
+    });
     const diagnosis = await diagnoseEvidencePack(pack);
 
     await execute(
@@ -284,7 +317,10 @@ router.post('/diagnose-and-validate', async (req, res) => {
     );
 
     // ─── Step 2: Validate ────────────────────────────────────────
-    console.log(`[FULL-FLOW] Starting validation for session ${sessionId}`);
+    operationalLogger.info('routes.ai.diagnose_validate_flow.validate_started', {
+      module: 'routes.ai.diagnose',
+      session_id: sessionId,
+    });
     const validation = await validateDiagnosis(diagnosis, pack);
 
     await execute(
@@ -300,9 +336,12 @@ router.post('/diagnose-and-validate', async (req, res) => {
       [validation.status, sessionId]
     );
 
-    console.log(
-      `[FULL-FLOW] Complete - Status: ${validation.status}, Safe: ${validation.safe_to_generate_playbook}`
-    );
+    operationalLogger.info('routes.ai.diagnose_validate_flow.completed', {
+      module: 'routes.ai.diagnose',
+      session_id: sessionId,
+      validation_status: validation.status,
+      safe_to_generate_playbook: validation.safe_to_generate_playbook,
+    });
 
     return res.json({
       sessionId,
@@ -315,7 +354,11 @@ router.post('/diagnose-and-validate', async (req, res) => {
           : ['Answer required questions', 'Apply required fixes'],
     });
   } catch (err) {
-    console.error('[FULL-FLOW] Error:', err);
+    operationalLogger.error('routes.ai.diagnose_validate_flow.failed', err, {
+      module: 'routes.ai.diagnose',
+      signal: 'integration_failure',
+      degraded_mode: true,
+    });
     res.status(500).json({
       error: String(err),
       timestamp: new Date().toISOString(),

@@ -36,6 +36,41 @@ export class MissingTenantContextError extends PlatformError {
 }
 
 export function classifyQueueError(error: unknown): CP0QueueErrorClassification {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'kind' in error &&
+    (error as { kind?: unknown }).kind === 'integration_client_error'
+  ) {
+    const integrationError = error as {
+      code?: string;
+      retryable?: boolean;
+      message?: string;
+    };
+    switch (integrationError.code) {
+      case 'auth':
+        return { code: 'AUTH', disposition: 'dlq', reason: integrationError.message || 'integration auth error' };
+      case 'rate_limit':
+        return { code: 'RATE_LIMIT', disposition: 'retry', reason: integrationError.message || 'integration rate limit' };
+      case 'timeout':
+        return { code: 'TIMEOUT', disposition: 'retry', reason: integrationError.message || 'integration timeout' };
+      case 'validation':
+        return { code: 'VALIDATION', disposition: 'dlq', reason: integrationError.message || 'integration validation error' };
+      case 'provider_error':
+        return {
+          code: 'DEPENDENCY',
+          disposition: integrationError.retryable ? 'retry' : 'dlq',
+          reason: integrationError.message || 'integration provider error',
+        };
+      default:
+        return {
+          code: 'UNKNOWN',
+          disposition: integrationError.retryable ? 'retry' : 'dlq',
+          reason: integrationError.message || 'integration unknown error',
+        };
+    }
+  }
+
   if (error instanceof PlatformError) {
     if (error.code === 'READ_ONLY_INTEGRATION_MUTATION') {
       return { code: 'POLICY_REJECTED', disposition: 'dlq', reason: error.message };

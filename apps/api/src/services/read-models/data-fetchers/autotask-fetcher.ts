@@ -2,13 +2,19 @@ import { AutotaskClient } from '../../../clients/autotask.js';
 import { queryOne } from '../../../db/index.js';
 import type { DataSourceFetcher, DataSourceContext, FetchResult } from './types.js';
 import type { AutotaskTicket } from '@cerebro/types';
+import { operationalLogger } from '../../../lib/operational-logger.js';
 export class AutotaskFetcher implements DataSourceFetcher {
     name = 'autotask';
 
     async fetch(context: DataSourceContext): Promise<FetchResult> {
         const creds = await this.getCredentials(context);
         if (!creds) {
-            console.warn(`[AutotaskFetcher] No credentials found for org/tenant`);
+            operationalLogger.warn('read_model.autotask_fetcher.credentials_missing', {
+                module: 'read-models.autotask-fetcher',
+                integration: 'autotask',
+                signal: 'integration_failure',
+                degraded_mode: true,
+            }, { ticket_id: context.ticketId || null });
             return {};
         }
 
@@ -58,8 +64,14 @@ export class AutotaskFetcher implements DataSourceFetcher {
                             id: company.id ? company.id.toString() : ticketWithRefs.companyID.toString(),
                             name: (company.companyName as string) || `Company ${ticketWithRefs.companyID}`,
                         };
-                    } catch (companyErr) {
-                        console.warn(`[AutotaskFetcher] Failed to fetch company ${ticketWithRefs.companyID}:`, companyErr);
+                    } catch {
+                        operationalLogger.warn('read_model.autotask_fetcher.company_fetch_failed', {
+                            module: 'read-models.autotask-fetcher',
+                            integration: 'autotask',
+                            signal: 'integration_failure',
+                            company_id: ticketWithRefs.companyID,
+                            degraded_mode: true,
+                        }, { ticket_id: context.ticketId || null });
                     }
                 }
 
@@ -72,13 +84,24 @@ export class AutotaskFetcher implements DataSourceFetcher {
                             name: (contact.firstName ? `${contact.firstName} ${contact.lastName || ''}`.trim() : 'Unknown'),
                             email: (contact.emailAddress as string) || '',
                         };
-                    } catch (contactErr) {
-                        console.warn(`[AutotaskFetcher] Failed to fetch contact ${ticketWithRefs.contactID}:`, contactErr);
+                    } catch {
+                        operationalLogger.warn('read_model.autotask_fetcher.contact_fetch_failed', {
+                            module: 'read-models.autotask-fetcher',
+                            integration: 'autotask',
+                            signal: 'integration_failure',
+                            contact_id: ticketWithRefs.contactID,
+                            degraded_mode: true,
+                        }, { ticket_id: context.ticketId || null });
                     }
                 }
             }
         } catch (err) {
-            console.error(`[AutotaskFetcher] Failed to fetch ticket ${context.ticketId}:`, err);
+            operationalLogger.error('read_model.autotask_fetcher.ticket_fetch_failed', err, {
+                module: 'read-models.autotask-fetcher',
+                integration: 'autotask',
+                signal: 'integration_failure',
+                degraded_mode: true,
+            }, { ticket_id: context.ticketId || null });
         }
 
         return result;

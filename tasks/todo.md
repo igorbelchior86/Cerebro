@@ -1,3 +1,74 @@
+# Task: Padronizar taxonomia de erro/retryability para ITGlue e NinjaOne
+**Status**: completed
+**Started**: 2026-03-02T12:13:28-05:00
+
+## Plan
+- [x] Step 1: Mapear clients ITGlue/NinjaOne e consumidores que dependem de `Error.message` textual.
+- [x] Step 2: Definir erro tipado único no pacote `@cerebro/integrations` com códigos `auth`, `rate_limit`, `timeout`, `validation`, `provider_error`, `unknown` e flag de retryability.
+- [x] Step 3: Implementar normalização nos clients ITGlue/NinjaOne e substituir parsing textual nos fallbacks/consumidores impactados.
+- [x] Step 4: Cobrir cenários críticos (401/403, 429, timeout, 5xx) com testes unitários dos clients; ajustar testes consumidores impactados.
+- [x] Step 5: Executar `pnpm -r typecheck`, rodar testes relevantes e documentar em `wiki/features` e `wiki/changelog`.
+
+## Open Questions
+- Nenhuma no momento; a implementação seguirá sem alterar operações write nem contratos públicos externos.
+
+## Progress Notes
+- Tarefa iniciada com foco em consolidar classificação de falha externa em camada única para ITGlue/NinjaOne.
+- Identificados pontos com parsing textual de erro: fallback 404 no ITGlue (`message.includes('404')`) e múltiplos consumidores de mensagens cruas em serviços/guardrails.
+- Normalização implementada em `packages/integrations/src/errors.ts` e aplicada em `itglue/client.ts` + `ninjaone/client.ts` com timeout por `AbortSignal.timeout(...)`.
+- Fallbacks de compatibilidade foram migrados para status tipado (`statusCode === 404`) sem parsing de string.
+- Consumidor central `classifyQueueError` agora entende `IntegrationClientError` por taxonomia (`auth/rate_limit/timeout/validation/provider_error/unknown`).
+- Testes adicionados e verdes para 401/403, 429, timeout e 5xx.
+
+## Review
+- What worked:
+- A taxonomia ficou centralizada no pacote de integrações e reaproveitada pelos dois clients e pelo classificador de fila.
+- A migração removeu parsing textual do fallback de 404 no ITGlue, mantendo comportamento de fallback existente.
+- What was tricky:
+- Compatibilidade de tipagem entre `ts-jest` e `tsc` para `Error.cause` exigiu ajuste para evitar conflito de `override`.
+- `pnpm -r typecheck` está falhando por dois erros preexistentes fora do escopo desta tarefa (`apps/api/src/lib/operational-logger.ts` e `apps/api/src/services/workflow/triage-session.ts`).
+- Verification:
+- `pnpm --filter @cerebro/api test -- integration-client-errors.test.ts integration-error-classification.test.ts` ✅
+- `pnpm -r typecheck` ❌ (falhas preexistentes fora do escopo: `apps/api/src/lib/operational-logger.ts:41` e `apps/api/src/services/workflow/triage-session.ts:34`)
+- Documentation:
+- `wiki/features/2026-03-02-itglue-ninjaone-error-taxonomy.md`
+- `wiki/changelog/2026-03-02-itglue-ninjaone-error-taxonomy.md`
+
+# Task: Padronizar logs críticos com correlação obrigatória (tenant_id/ticket_id/trace_id)
+**Status**: completed
+**Started**: 2026-03-02T12:25:00-05:00
+
+## Plan
+- [x] Step 1: Consolidar runtime de observabilidade e criar logger estruturado reutilizável com correlação obrigatória.
+- [x] Step 2: Substituir `console.*` nos módulos prioritários (`routes/ai`, `services/adapters`, `services/orchestration`, `read-models/data-fetchers`) por logs estruturados sem dados sensíveis.
+- [x] Step 3: Validar com grep antes/depois + `pnpm -r typecheck` + suíte impactada e atualizar wiki (`/wiki/architecture` e `/wiki/changelog`).
+
+## Open Questions
+- Nenhuma bloqueante; assumido que `tenant_id/ticket_id/trace_id` podem ser `null` quando não aplicáveis, mas sempre presentes no payload de log.
+
+## Progress Notes
+- Levantamento inicial concluído com inventário completo de `console.*` no escopo prioritário.
+- Detectado uso misto de contexto assíncrono (`@cerebro/platform` + `apps/api/lib/tenantContext`); logger novo fará fallback entre os dois para preservar correlação.
+- Runtime consolidado via `apps/api/src/lib/operational-logger.ts` e conectado ao bootstrap da API.
+- Conversão concluída para logger estruturado nos módulos críticos priorizados (rotas AI, adapters, orchestration, fetchers).
+- Evidência grep antes/depois:
+  - Antes (`HEAD`): `git grep -nE "console\\.(log|error|warn|info|debug)" HEAD -- apps/api/src/routes/ai apps/api/src/services/adapters apps/api/src/services/orchestration apps/api/src/services/read-models/data-fetchers | wc -l` => `106`
+  - Depois (working tree): `rg -n "console\\.(log|error|warn|info|debug)" apps/api/src/routes/ai apps/api/src/services/adapters apps/api/src/services/orchestration apps/api/src/services/read-models/data-fetchers | wc -l` => `0`
+
+## Review
+- What worked:
+- Logger único removeu logs soltos e padronizou correlação em uma interface consistente.
+- Eventos de falha externa passaram a emitir sinal operacional estruturado (`signal=integration_failure`, `degraded_mode=true`) nos fluxos críticos.
+- What was tricky:
+- O código de playbook está delegado para `services/application/route-handlers`; foi necessário cobrir essa camada para retirar logs soltos efetivos do fluxo.
+- Havia falha de typecheck fora do objetivo inicial em `triage-session`; corrigi tipagem opcional sem alteração de regra de negócio para manter a verificação verde.
+- Verification:
+- `pnpm -r typecheck` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/platform/operational-logger.test.ts` ✅
+- Documentation:
+- `wiki/architecture/2026-03-02-production-log-correlation-standardization.md`
+- `wiki/changelog/2026-03-02-production-log-correlation-standardization.md`
+
 # Task: Corrigir regressão HTTP 500 após ajuste da lista de techs no novo ticket
 **Status**: completed
 **Started**: 2026-03-01T18:40:00-05:00
@@ -2138,3 +2209,44 @@
 - `./scripts/stack.sh status` confirmou um único listener local da API e health `ok`.
 - Medição local: contagem de `.run/logs/api.log` cresceu de `3902` para `3964` em 10s para `/ticket-field-options` (`+62`, repetido com `+60`).
 - A mesma amostra mostrou `/audit/T20260301.0003` `+29` em 10s, incompatível com o polling nominal de 12s e consistente com refetch em toda renderização.
+
+---
+
+# Task: Thin controllers nas rotas API pesadas (playbook/autotask/auth/email-ingestion)
+**Status**: implementing
+**Started**: 2026-03-02T09:00:00-05:00
+
+## Plan
+- [x] Step 1: Inventariar lógica de negócio nas quatro rotas alvo e mapear destino em services/orchestration/adapters.
+- [x] Step 2: Consultar referência curta (Context7) para padrão thin route handlers e alinhar contratos.
+- [x] Step 3: Refatorar `apps/api/src/routes/identity/auth.ts` para delegar fluxo de domínio para service.
+- [x] Step 4: Refatorar `apps/api/src/routes/ingestion/email-ingestion.ts` para delegar SQL/orquestração/cache para service.
+- [x] Step 5: Refatorar `apps/api/src/routes/ai/playbook.ts` e `apps/api/src/routes/integrations/autotask.ts` removendo lógica de negócio relevante do route.
+- [x] Step 6: Verificar com `pnpm -r typecheck` e testes relevantes (`pnpm test` ou suíte da superfície alterada).
+- [x] Step 7: Atualizar wiki em `wiki/changelog` e `wiki/architecture` com template padrão.
+
+## Open Questions
+- Sem perguntas bloqueantes no momento. Assumo que manter payloads/status HTTP atuais é requisito rígido.
+
+## Progress Notes
+- Escopo validado: quatro rotas alvo possuem lógica de negócio embutida e serão tratadas por prioridade de risco.
+- Referência Context7 consultada (`/expressjs/express`): middleware para validação/auth e handlers focados em transporte + propagação de erro para camada apropriada.
+- Fluxos completos das quatro rotas foram movidos para `apps/api/src/services/application/route-handlers/*`; os arquivos em `apps/api/src/routes/*` agora só delegam.
+- `apps/api/src/services/adapters/email-ingestion-polling.ts` foi atualizado para importar ingest/backfill do novo módulo de service (não da rota).
+- Verificação executada:
+- `pnpm -r typecheck` falhou por erros pré-existentes fora do escopo em `apps/api/src/lib/operational-logger.ts` e `apps/api/src/services/workflow/triage-session.ts`.
+- `pnpm test` falhou com conjunto de falhas pré-existentes + `EPERM listen 0.0.0.0` no sandbox em testes que sobem server.
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/routes/triage.integration.test.ts` passou (10/10).
+- Wiki atualizada em `wiki/changelog/2026-03-02-thin-routes-service-delegation.md` e `wiki/architecture/2026-03-02-route-layer-thin-controller-delegation.md`.
+
+## Review
+- What worked:
+- Migração por deslocamento de handlers preservou contratos HTTP e reduziu a camada `routes/*` para delegação explícita.
+- What was tricky:
+- O workspace já estava com falhas globais de typecheck/test fora do escopo, impedindo evidência “all green” completa.
+- Verification:
+- `pnpm -r typecheck` ❌ (falhas pré-existentes fora do escopo)
+- `pnpm test` ❌ (falhas pré-existentes + limitação sandbox para listen em `0.0.0.0`)
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/routes/triage.integration.test.ts` ✅
+- Risks/follow-ups:
+- Como os handlers foram realocados integralmente, o principal risco é cobertura de import path/runtime em rotas menos exercitadas; recomendável smoke test autenticado dos quatro grupos de endpoint.

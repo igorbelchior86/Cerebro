@@ -1,5 +1,6 @@
-import { backfillPendingEmailTickets, ingestSupportMailboxOnce } from '../../routes/ingestion/email-ingestion.js';
+import { backfillPendingEmailTickets, ingestSupportMailboxOnce } from '../application/route-handlers/email-ingestion-route-handlers.js';
 import { withTryAdvisoryLock } from '../../db/index.js';
+import { operationalLogger } from '../../lib/operational-logger.js';
 
 export class EmailIngestionPollingService {
     private intervalId: NodeJS.Timeout | null = null;
@@ -17,19 +18,45 @@ export class EmailIngestionPollingService {
         );
 
         if (this.intervalId) {
-            console.log('[EmailIngestionPolling] Already running.');
+            operationalLogger.info('adapters.email_ingestion_polling.already_running', {
+                module: 'adapters.email-ingestion-polling',
+            });
             return;
         }
 
         if (!hasGraphCreds) {
-            console.warn('[EmailIngestionPolling] Missing Graph credentials. New-email ingestion disabled; backfill still enabled.');
+            operationalLogger.warn('adapters.email_ingestion_polling.graph_credentials_missing', {
+                module: 'adapters.email-ingestion-polling',
+                integration: 'microsoft_graph',
+                signal: 'integration_failure',
+                degraded_mode: true,
+            });
         }
 
-        console.log(`[EmailIngestionPolling] Starting polling. Interval: ${this.pollIntervalMs}ms`);
-        this.poll().catch((err) => console.error('[EmailIngestionPolling] Initial poll failed:', err));
+        operationalLogger.info('adapters.email_ingestion_polling.started', {
+            module: 'adapters.email-ingestion-polling',
+            poll_interval_ms: this.pollIntervalMs,
+        });
+        this.poll().catch((err) => operationalLogger.error(
+            'adapters.email_ingestion_polling.initial_poll_failed',
+            err,
+            {
+                module: 'adapters.email-ingestion-polling',
+                signal: 'integration_failure',
+                degraded_mode: true,
+            },
+        ));
 
         this.intervalId = setInterval(() => {
-            this.poll().catch((err) => console.error('[EmailIngestionPolling] Poll failed:', err));
+            this.poll().catch((err) => operationalLogger.error(
+                'adapters.email_ingestion_polling.poll_failed',
+                err,
+                {
+                    module: 'adapters.email-ingestion-polling',
+                    signal: 'integration_failure',
+                    degraded_mode: true,
+                },
+            ));
         }, this.pollIntervalMs);
     }
 
@@ -37,7 +64,9 @@ export class EmailIngestionPollingService {
         if (this.intervalId) {
             clearInterval(this.intervalId);
             this.intervalId = null;
-            console.log('[EmailIngestionPolling] Stopped.');
+            operationalLogger.info('adapters.email_ingestion_polling.stopped', {
+                module: 'adapters.email-ingestion-polling',
+            });
         }
     }
 
@@ -55,16 +84,26 @@ export class EmailIngestionPollingService {
                 if (hasGraphCreds) {
                     const { processed } = await ingestSupportMailboxOnce(process.env.GRAPH_MAILBOX_ADDRESS);
                     if (processed > 0) {
-                        console.log(`[EmailIngestionPolling] Processed ${processed} email ticket(s).`);
+                        operationalLogger.info('adapters.email_ingestion_polling.emails_processed', {
+                            module: 'adapters.email-ingestion-polling',
+                            processed_count: processed,
+                        });
                     }
                 }
                 const backfill = await backfillPendingEmailTickets(25);
                 if (backfill.processed > 0) {
-                    console.log(`[EmailIngestionPolling] Backfilled ${backfill.processed} pending ticket(s).`);
+                    operationalLogger.info('adapters.email_ingestion_polling.backfill_processed', {
+                        module: 'adapters.email-ingestion-polling',
+                        processed_count: backfill.processed,
+                    });
                 }
             });
             if (!lock.acquired) {
-                console.log('[EmailIngestionPolling] Another instance holds the polling lock. Skipping this iteration.');
+                operationalLogger.info('adapters.email_ingestion_polling.lock_not_acquired', {
+                    module: 'adapters.email-ingestion-polling',
+                    lock_namespace: this.advisoryLockNamespace,
+                    lock_key: this.advisoryLockKey,
+                });
             }
         } finally {
             this.isPolling = false;

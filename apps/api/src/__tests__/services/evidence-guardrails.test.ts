@@ -2,7 +2,7 @@ import type { DiagnosisOutput, EvidencePack } from '@cerebro/types';
 import {
   shouldBlockDiagnosisOutput,
   shouldBlockPlaybookOutput,
-} from '../../services/evidence-guardrails.js';
+} from '../../services/domain/evidence-guardrails.js';
 
 function buildBasePack(): EvidencePack {
   return {

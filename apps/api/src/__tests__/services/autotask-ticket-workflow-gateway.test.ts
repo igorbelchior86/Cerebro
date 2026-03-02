@@ -1,5 +1,5 @@
-import { AutotaskTicketWorkflowGateway } from '../../services/autotask-ticket-workflow-gateway';
-import type { WorkflowCommandEnvelope } from '../../services/ticket-workflow-core';
+import { AutotaskTicketWorkflowGateway } from '../../services/orchestration/autotask-ticket-workflow-gateway';
+import type { WorkflowCommandEnvelope } from '../../services/orchestration/ticket-workflow-core';
 
 function buildCommand(overrides: Partial<WorkflowCommandEnvelope> = {}): WorkflowCommandEnvelope {
   return {

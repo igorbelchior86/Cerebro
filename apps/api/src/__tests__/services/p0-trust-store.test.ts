@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { InMemoryP0TrustStore } from '../../services/p0-trust-store.js';
-import type { TrustAIDecisionRecord, TrustAuditRecord } from '../../services/p0-trust-contracts.js';
+import { InMemoryP0TrustStore } from '../../services/domain/p0-trust-store.js';
+import type { TrustAIDecisionRecord, TrustAuditRecord } from '../../services/domain/p0-trust-contracts.js';
 
 function buildAudit(): TrustAuditRecord {
   return {

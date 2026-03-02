@@ -1,4 +1,4 @@
-import { PrepareContextService } from '../../services/prepare-context.js';
+import { PrepareContextService } from '../../services/context/prepare-context.js';
 
 describe('PrepareContextService device resolution guard', () => {
   it('does not select a device when top correlation score is zero', async () => {

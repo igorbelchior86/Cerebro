@@ -1,6 +1,6 @@
-import { InMemoryFeatureFlagService } from '../platform/feature-flags.js';
-import { P0_LAUNCH_INTEGRATION_POLICY } from '../platform/policy.js';
-import { readJsonFileSafe, writeJsonFileAtomic } from './runtime-json-file.js';
+import { InMemoryFeatureFlagService } from '../../platform/feature-flags.js';
+import { P0_LAUNCH_INTEGRATION_POLICY } from '../../platform/policy.js';
+import { readJsonFileSafe, writeJsonFileAtomic } from '../read-models/runtime-json-file.js';
 
 export type P0RolloutFlagCategory = 'cohort' | 'core' | 'enrichment' | 'automation';
 

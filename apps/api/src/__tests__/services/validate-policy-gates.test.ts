@@ -1,5 +1,5 @@
 import type { DiagnosisOutput, EvidencePack } from '@cerebro/types';
-import { ValidatePolicyService } from '../../services/validate-policy.js';
+import { ValidatePolicyService } from '../../services/domain/validate-policy.js';
 
 function buildField(value: unknown, status: 'confirmed' | 'inferred' | 'unknown' | 'conflict' = 'confirmed') {
   return {

@@ -8,7 +8,7 @@ import type {
   Hypothesis,
 } from '@cerebro/types';
 import { getDefaultLLMProvider } from './llm-adapter.js';
-import { shouldBlockDiagnosisOutput } from './evidence-guardrails.js';
+import { shouldBlockDiagnosisOutput } from '../domain/evidence-guardrails.js';
 
 type HypothesisGroundingStatus = 'grounded' | 'partial' | 'weak' | 'unsupported';
 type EnrichedHypothesis = Hypothesis & {

@@ -4,18 +4,18 @@
 
 import { Router } from 'express';
 import type { PlaybookOutput, ValidationOutput } from '@cerebro/types';
-import { generatePlaybook } from '../services/playbook-writer.js';
+import { generatePlaybook } from '../services/ai/playbook-writer.js';
 import {
   getEvidencePack,
   getTicketContextAppendix,
   getTicketTextArtifact,
   persistEvidencePack,
-} from '../services/prepare-context.js';
+} from '../services/context/prepare-context.js';
 import { v4 as uuidv4 } from 'uuid';
 import { queryOne, execute, transaction } from '../db/index.js';
-import { diagnoseEvidencePack } from '../services/diagnose.js';
-import { validateDiagnosis } from '../services/validate-policy.js';
-import { PrepareContextService } from '../services/prepare-context.js';
+import { diagnoseEvidencePack } from '../services/ai/diagnose.js';
+import { validateDiagnosis } from '../services/domain/validate-policy.js';
+import { PrepareContextService } from '../services/context/prepare-context.js';
 import { AutotaskClient } from '../clients/autotask.js';
 
 const router: Router = Router();

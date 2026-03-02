@@ -22,9 +22,9 @@ import workflowRoutes from './routes/workflow.js';
 import managerOpsRoutes from './routes/manager-ops.js';
 import { requireAuth } from './middleware/auth.js';
 import { autoSeedAdmin } from './db/seed-admin.js';
-import { triageOrchestrator } from './services/triage-orchestrator.js';
-import { autotaskPollingService } from './services/autotask-polling.js';
-import { bootstrapWorkspaceRuntimeSettings } from './services/runtime-settings.js';
+import { triageOrchestrator } from './services/orchestration/triage-orchestrator.js';
+import { autotaskPollingService } from './services/adapters/autotask-polling.js';
+import { bootstrapWorkspaceRuntimeSettings } from './services/read-models/runtime-settings.js';
 import { createObservabilityMiddleware, createObservabilityRuntime, requestContextMiddleware } from './platform/index.js';
 
 // Load environment variables — look for .env at monorepo root (../../../ relative to dist/)

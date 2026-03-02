@@ -10,7 +10,7 @@ import type {
   EvidencePack,
 } from '@cerebro/types';
 import { getDefaultLLMProvider } from './llm-adapter.js';
-import { explainPlaybookGuardBlock, shouldBlockPlaybookOutput } from './evidence-guardrails.js';
+import { explainPlaybookGuardBlock, shouldBlockPlaybookOutput } from '../domain/evidence-guardrails.js';
 
 const INTERNAL_LEAK_PATTERNS: RegExp[] = [
   /\bllm\b/i,

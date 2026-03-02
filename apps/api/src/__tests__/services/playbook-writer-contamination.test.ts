@@ -1,4 +1,4 @@
-import { PlaybookWriterService } from '../../services/playbook-writer.js';
+import { PlaybookWriterService } from '../../services/ai/playbook-writer.js';
 
 describe('PlaybookWriter contamination guard', () => {
   it('detects internal-engine leakage terms', () => {

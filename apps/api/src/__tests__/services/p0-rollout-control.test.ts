@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { P0RolloutControlService } from '../../services/p0-rollout-control.js';
+import { P0RolloutControlService } from '../../services/domain/p0-rollout-control.js';
 
 describe('P0RolloutControlService', () => {
   it('returns tenant-scoped rollout posture with all flags default false and frozen launch policy', () => {

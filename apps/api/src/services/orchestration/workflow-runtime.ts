@@ -1,5 +1,5 @@
-import { queryOne } from '../db/index.js';
-import { AutotaskClient } from '../clients/autotask.js';
+import { queryOne } from '../../db/index.js';
+import { AutotaskClient } from '../../clients/autotask.js';
 import { AutotaskTicketWorkflowGateway } from './autotask-ticket-workflow-gateway.js';
 import { InMemoryTicketWorkflowRepository, TicketWorkflowCoreService } from './ticket-workflow-core.js';
 import { WorkflowRealtimeHub } from './workflow-realtime.js';

@@ -22,20 +22,20 @@ import type {
   IterativeEnrichmentSections,
   SecurityAgentSummary,
 } from '@cerebro/types';
-import { AutotaskClient } from '../clients/autotask.js';
-import { NinjaOneClient } from '../clients/ninjaone.js';
-import { ITGlueClient } from '../clients/itglue.js';
-import { shouldBlockDiagnosisOutput } from './evidence-guardrails.js';
-import { webSearch, type SearchResult } from './web-search.js';
-import { query, queryOne, execute } from '../db/index.js';
-import { callLLM } from './llm-adapter.js';
+import { AutotaskClient } from '../../clients/autotask.js';
+import { NinjaOneClient } from '../../clients/ninjaone.js';
+import { ITGlueClient } from '../../clients/itglue.js';
+import { shouldBlockDiagnosisOutput } from '../domain/evidence-guardrails.js';
+import { webSearch, type SearchResult } from '../ai/web-search.js';
+import { query, queryOne, execute } from '../../db/index.js';
+import { callLLM } from '../ai/llm-adapter.js';
 
-import { AutotaskFetcher } from './data-fetchers/autotask-fetcher.js';
-import { NinjaOneFetcher } from './data-fetchers/ninjaone-fetcher.js';
-import { ITGlueFetcher } from './data-fetchers/itglue-fetcher.js';
-import { EvidenceBuilder } from './evidence-builder.js';
-import { EnrichmentEngine } from './enrichment-engine.js';
-import { FusionEngine } from './fusion-engine.js';
+import { AutotaskFetcher } from '../read-models/data-fetchers/autotask-fetcher.js';
+import { NinjaOneFetcher } from '../read-models/data-fetchers/ninjaone-fetcher.js';
+import { ITGlueFetcher } from '../read-models/data-fetchers/itglue-fetcher.js';
+import { EvidenceBuilder } from '../domain/evidence-builder.js';
+import { EnrichmentEngine } from '../ai/enrichment-engine.js';
+import { FusionEngine } from '../orchestration/fusion-engine.js';
 
 import {
   itgAttr,
@@ -181,10 +181,10 @@ export class PrepareContextService {
 
   constructor() {
     this.fusionEngine = new FusionEngine({
-      normalizeName: (n) => normalizeName(n),
-      itgAttr: (a, k) => itgAttr(a, k),
-      buildField: (i) => buildField(i),
-      isPublicIPv4: (ip) => this.enrichmentEngine.isPublicIPv4(ip)
+      normalizeName: (n: string) => normalizeName(n),
+      itgAttr: (a: any, k: string) => itgAttr(a, k),
+      buildField: (i: any) => buildField(i),
+      isPublicIPv4: (ip: string) => this.enrichmentEngine.isPublicIPv4(ip)
     });
   }
 
@@ -366,7 +366,7 @@ export class PrepareContextService {
         const ticketIdNum = Number(autotaskTicket.id);
         if (!Number.isNaN(ticketIdNum)) {
           const notes = await autotaskClient.getTicketNotes(ticketIdNum);
-          signals = notes.map((note, idx) => ({
+          signals = notes.map((note: any, idx: number) => ({
             id: `autotask-note-${idx}`,
             source: 'autotask' as const,
             timestamp: note.createDate,
@@ -398,7 +398,7 @@ export class PrepareContextService {
 
         // Coleta notas (signals)
         const notes = await autotaskClient.getTicketNotes(ticketIdNum);
-        signals = notes.map((note, idx) => ({
+        signals = notes.map((note: any, idx: number) => ({
           id: `autotask-note-${idx}`,
           source: 'autotask' as const,
           timestamp: note.createDate,

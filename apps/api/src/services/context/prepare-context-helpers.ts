@@ -11,9 +11,9 @@ import type {
   ITGlueWanCandidate,
   ITGlueInfraCandidate
 } from './prepare-context.types.js';
-import type { NinjaOneClient } from '../clients/ninjaone.js';
-import type { ITGlueClient } from '../clients/itglue.js';
-import { callLLM } from './llm-adapter.js';
+import type { NinjaOneClient } from '../../clients/ninjaone.js';
+import type { ITGlueClient } from '../../clients/itglue.js';
+import { callLLM } from '../ai/llm-adapter.js';
 
 export function itgAttr(attrs: Record<string, unknown> | null | undefined, key: string): unknown {
   if (!attrs) return undefined;

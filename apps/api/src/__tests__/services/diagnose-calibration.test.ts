@@ -1,5 +1,5 @@
 import type { EvidencePack } from '@cerebro/types';
-import { DiagnoseService } from '../../services/diagnose.js';
+import { DiagnoseService } from '../../services/ai/diagnose.js';
 
 function buildPackForEmailChange(): EvidencePack {
   return {

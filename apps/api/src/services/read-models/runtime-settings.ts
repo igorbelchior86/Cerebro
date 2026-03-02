@@ -1,6 +1,6 @@
-import { queryOne } from '../db/index.js';
-import { tenantContext } from '../lib/tenantContext.js';
-import { resetDefaultLLMProvider } from './llm-adapter.js';
+import { queryOne } from '../../db/index.js';
+import { tenantContext } from '../../lib/tenantContext.js';
+import { resetDefaultLLMProvider } from '../ai/llm-adapter.js';
 
 type WorkspaceSettings = Record<string, unknown>;
 

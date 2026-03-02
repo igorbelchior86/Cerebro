@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
-import { readJsonFileSafe, writeJsonFileAtomic } from './runtime-json-file.js';
-import { classifyQueueError } from '../platform/errors.js';
-import { resolveAutotaskOperation } from './autotask-operation-registry.js';
+import { readJsonFileSafe, writeJsonFileAtomic } from '../read-models/runtime-json-file.js';
+import { classifyQueueError } from '../../platform/errors.js';
+import { resolveAutotaskOperation } from '../adapters/autotask-operation-registry.js';
 import type { WorkflowRealtimeTicketChangePayload } from './workflow-realtime.js';
 
 export type WorkflowTargetIntegration =
@@ -536,7 +536,7 @@ export class TicketWorkflowCoreService {
     private readonly repo: TicketWorkflowRepository,
     private readonly gateway: TicketWorkflowGateway,
     private readonly options: { maxAttempts?: number; realtimePublisher?: (payload: WorkflowRealtimeTicketChangePayload) => void } = {}
-  ) {}
+  ) { }
 
   private publishRealtime(payload: WorkflowRealtimeTicketChangePayload): void {
     console.info('[workflow.realtime.publish]', {
@@ -881,10 +881,10 @@ export class TicketWorkflowCoreService {
         : {}),
       ...(String(patch.assignee_resource_id ?? patch.assigned_to ?? (result as any)?.assigned_to ?? existing.assigned_to ?? '').trim()
         ? {
-            assigned_to: String(
-              patch.assignee_resource_id ?? patch.assigned_to ?? (result as any)?.assigned_to ?? existing.assigned_to
-            ).trim(),
-          }
+          assigned_to: String(
+            patch.assignee_resource_id ?? patch.assigned_to ?? (result as any)?.assigned_to ?? existing.assigned_to
+          ).trim(),
+        }
         : {}),
       ...(Number.isFinite(Number(patch.queue_id)) ? { queue_id: Number(patch.queue_id) } : {}),
       ...(String(patch.queue_name ?? existing.queue_name ?? '').trim()
@@ -1315,7 +1315,7 @@ export class TicketWorkflowCoreService {
       domain: 'correlates.ticket_metadata',
       classification:
         (!statusesMatch(localTicket.status, remoteTicket.status, remoteTicket.status_label)) ||
-        (localTicket.ticket_number && remoteTicket.ticket_number && localTicket.ticket_number !== remoteTicket.ticket_number)
+          (localTicket.ticket_number && remoteTicket.ticket_number && localTicket.ticket_number !== remoteTicket.ticket_number)
           ? 'mismatch'
           : localTicket.status || localTicket.ticket_number || remoteTicket.status || remoteTicket.ticket_number
             ? 'match'

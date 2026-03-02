@@ -1,4 +1,4 @@
-import { query, execute } from '../../db/index.js';
+import { query, execute } from '../../../db/index.js';
 
 export class PgStore {
     private hasCompanyColumnCache: boolean | null = null;

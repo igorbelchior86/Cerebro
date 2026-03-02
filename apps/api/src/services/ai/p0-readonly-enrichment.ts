@@ -5,8 +5,8 @@ import type {
   P0ReadonlyIntegrationSource,
   TicketContextEnvelopeP0,
 } from '@cerebro/types';
-import type { InMemoryP0TrustStore } from './p0-trust-store.js';
-import type { TrustActorRef, TrustAuditRecord, TrustCorrelationRefs } from './p0-trust-contracts.js';
+import type { InMemoryP0TrustStore } from '../domain/p0-trust-store.js';
+import type { TrustActorRef, TrustAuditRecord, TrustCorrelationRefs } from '../domain/p0-trust-contracts.js';
 
 type ProviderPayload = {
   raw?: unknown;

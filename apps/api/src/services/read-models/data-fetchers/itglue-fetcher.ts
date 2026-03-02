@@ -1,5 +1,5 @@
-import { ITGlueClient } from '../../clients/itglue.js';
-import { queryOne } from '../../db/index.js';
+import { ITGlueClient } from '../../../clients/itglue.js';
+import { queryOne } from '../../../db/index.js';
 import type { DataSourceFetcher, DataSourceContext, FetchResult } from './types.js';
 import { resolveITGlueOrg, resolveITGlueOrgFamilyScopes } from './itglue-helpers.js';
 

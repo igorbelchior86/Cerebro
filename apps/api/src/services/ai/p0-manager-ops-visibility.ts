@@ -2,7 +2,7 @@ import type {
   ManagerQueueSnapshotItem,
   ManagerVisibilitySnapshot,
 } from '@cerebro/types';
-import type { TrustAIDecisionRecord, TrustAuditRecord } from './p0-trust-contracts.js';
+import type { TrustAIDecisionRecord, TrustAuditRecord } from '../domain/p0-trust-contracts.js';
 
 export interface BuildManagerVisibilityInput {
   tenantId: string;

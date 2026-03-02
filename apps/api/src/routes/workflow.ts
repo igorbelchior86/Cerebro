@@ -5,9 +5,9 @@ import {
   WorkflowReconcileFetchError,
   buildCommandEnvelope,
   type WorkflowEventEnvelope,
-} from '../services/ticket-workflow-core.js';
-import { workflowRealtimeHub, workflowService } from '../services/workflow-runtime.js';
-import { toSseChunk } from '../services/workflow-realtime.js';
+} from '../services/orchestration/ticket-workflow-core.js';
+import { workflowRealtimeHub, workflowService } from '../services/orchestration/workflow-runtime.js';
+import { toSseChunk } from '../services/orchestration/workflow-realtime.js';
 
 const router: ExpressRouter = Router();
 

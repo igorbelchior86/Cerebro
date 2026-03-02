@@ -1,4 +1,4 @@
-import { PlaybookWriterService } from '../../services/playbook-writer.js';
+import { PlaybookWriterService } from '../../services/ai/playbook-writer.js';
 
 describe('PlaybookWriter structure contract (Phase 5)', () => {
   it('accepts playbook with field-guide sections (context, hypotheses, checklist, escalation)', () => {

@@ -1,6 +1,6 @@
 import type { CP0AiDecisionRecord, DiagnosisOutput, EvidencePack, ValidationOutput } from '@cerebro/types';
-import { P0AiTriageAssistService } from '../../services/p0-ai-triage-assist.js';
-import { InMemoryP0TrustStore } from '../../services/p0-trust-store.js';
+import { P0AiTriageAssistService } from '../../services/ai/p0-ai-triage-assist.js';
+import { InMemoryP0TrustStore } from '../../services/domain/p0-trust-store.js';
 
 function buildPack(priority: 'Critical' | 'High' | 'Medium' | 'Low' = 'Medium'): EvidencePack {
   return {

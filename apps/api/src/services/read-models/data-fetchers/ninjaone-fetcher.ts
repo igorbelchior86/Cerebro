@@ -1,5 +1,5 @@
-import { NinjaOneClient } from '../../clients/ninjaone.js';
-import { queryOne } from '../../db/index.js';
+import { NinjaOneClient } from '../../../clients/ninjaone.js';
+import { queryOne } from '../../../db/index.js';
 import type { DataSourceFetcher, DataSourceContext, FetchResult } from './types.js';
 
 export class NinjaOneFetcher implements DataSourceFetcher {

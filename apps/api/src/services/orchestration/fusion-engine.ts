@@ -1,4 +1,4 @@
-import { callLLM } from './llm-adapter.js';
+import { callLLM } from '../ai/llm-adapter.js';
 import type {
     IterativeEnrichmentSections,
     TicketLike,
@@ -8,7 +8,7 @@ import type {
     FusionFieldResolution,
     FusionAdjudicationOutput,
     EnrichmentField
-} from './prepare-context.types.js';
+} from '../context/prepare-context.types.js';
 
 export interface FusionEngineDeps {
     normalizeName: (name: string) => string;
@@ -351,15 +351,15 @@ export class FusionEngine {
 
         const out: FusionFieldResolution[] = [];
         for (const resolution of input.resolutions || []) {
-            const refs = Array.isArray(resolution.evidence_refs) ? resolution.evidence_refs.map((r) => String(r || '').trim()).filter(Boolean) : [];
-            const infRefs = Array.isArray(resolution.inference_refs) ? resolution.inference_refs.map((r) => String(r || '').trim()).filter(Boolean) : [];
-            if (refs.some((ref) => !allowedEvidenceRefs.has(ref))) continue;
-            if (infRefs.some((id) => !allowedInferenceIds.has(id))) continue;
+            const refs = Array.isArray(resolution.evidence_refs) ? resolution.evidence_refs.map((r: any) => String(r || '').trim()).filter(Boolean) : [];
+            const infRefs = Array.isArray(resolution.inference_refs) ? resolution.inference_refs.map((r: any) => String(r || '').trim()).filter(Boolean) : [];
+            if (refs.some((ref: any) => !allowedEvidenceRefs.has(ref))) continue;
+            if (infRefs.some((id: any) => !allowedInferenceIds.has(id))) continue;
 
             if (guardedIdentityPaths.has(resolution.path)) {
                 const normalizedValue = normalizeCandidateValue(resolution.value);
                 const candidateSet = candidateValuesByPath.get(resolution.path) || new Set<string>();
-                const hasDeterministicInference = infRefs.length > 0 && infRefs.every((id) => allowedInferenceIds.has(id));
+                const hasDeterministicInference = infRefs.length > 0 && infRefs.every((id: any) => allowedInferenceIds.has(id));
                 const isUnknownLike = this.isFusionUnknownValue(this.normalizeFusionResolutionValue(resolution.path, resolution.value));
                 if (!isUnknownLike && !candidateSet.has(normalizedValue) && !hasDeterministicInference) continue;
             }

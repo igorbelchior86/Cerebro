@@ -1,5 +1,5 @@
-import { AutotaskClient } from '../../clients/autotask.js';
-import { queryOne } from '../../db/index.js';
+import { AutotaskClient } from '../../../clients/autotask.js';
+import { queryOne } from '../../../db/index.js';
 import type { DataSourceFetcher, DataSourceContext, FetchResult } from './types.js';
 import type { AutotaskTicket } from '@cerebro/types';
 export class AutotaskFetcher implements DataSourceFetcher {

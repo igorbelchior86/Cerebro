@@ -1,4 +1,4 @@
-import { resolveAutotaskOperation } from '../../services/autotask-operation-registry.js';
+import { resolveAutotaskOperation } from '../../services/adapters/autotask-operation-registry.js';
 
 describe('Autotask operation registry (Prompt B unblocked surface)', () => {
   it('resolves newly unblocked operations to concrete handlers', () => {

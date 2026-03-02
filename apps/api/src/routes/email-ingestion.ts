@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { AutotaskClient } from '../clients/autotask.js';
 import { queryOne } from '../db/index.js';
-import { graphClient } from '../services/email/graph-client.js';
-import { emailParser } from '../services/email/email-parser.js';
-import { pgStore } from '../services/email/pg-store.js';
-import { triageOrchestrator } from '../services/triage-orchestrator.js';
+import { graphClient } from '../services/adapters/email/graph-client.js';
+import { emailParser } from '../services/adapters/email/email-parser.js';
+import { pgStore } from '../services/adapters/email/pg-store.js';
+import { triageOrchestrator } from '../services/orchestration/triage-orchestrator.js';
 
 const router: Router = Router();
 
@@ -544,8 +544,8 @@ router.get('/list', async (_req: Request, res: Response) => {
                 const title = isMeaningful(ssotTitle, 'Untitled Ticket')
                     ? ssotTitle
                     : (isMeaningful(processedTitle, 'Untitled Ticket')
-                    ? processedTitle
-                    : (isMeaningful(packTitle, 'Untitled Ticket') ? packTitle : 'Untitled Ticket'));
+                        ? processedTitle
+                        : (isMeaningful(packTitle, 'Untitled Ticket') ? packTitle : 'Untitled Ticket'));
 
                 const processedCompany = extractCompany(row.company, row.raw_body);
                 const packCompany = normalizeText(packOrg.name, '');
@@ -553,8 +553,8 @@ router.get('/list', async (_req: Request, res: Response) => {
                 const company = isMeaningful(ssotCompany, 'Unknown org', 'organization')
                     ? ssotCompany
                     : (isMeaningful(processedCompany, 'Unknown org', 'organization')
-                    ? processedCompany
-                    : (isMeaningful(packCompany, 'Unknown org', 'organization') ? packCompany : 'Unknown org'));
+                        ? processedCompany
+                        : (isMeaningful(packCompany, 'Unknown org', 'organization') ? packCompany : 'Unknown org'));
 
                 const processedRequester = extractRequester(row.requester, row.raw_body);
                 const packRequester = normalizeText(packUser.name, '');
@@ -567,10 +567,10 @@ router.get('/list', async (_req: Request, res: Response) => {
                 const requester = isMeaningful(ssotRequester, 'Unknown requester', 'requester', 'user')
                     ? ssotRequester
                     : (isMeaningful(canonicalRequester, 'Unknown requester', 'requester', 'user')
-                    ? canonicalRequester
-                    : (isMeaningful(processedRequester, 'Unknown requester', 'requester', 'user')
-                    ? processedRequester
-                    : (isMeaningful(packRequester, 'Unknown requester', 'requester', 'user') ? packRequester : 'Unknown requester')));
+                        ? canonicalRequester
+                        : (isMeaningful(processedRequester, 'Unknown requester', 'requester', 'user')
+                            ? processedRequester
+                            : (isMeaningful(packRequester, 'Unknown requester', 'requester', 'user') ? packRequester : 'Unknown requester')));
 
                 const canonicalSite = normalizeText(
                     normalizedTicketSection?.site?.value || packTicket.site,

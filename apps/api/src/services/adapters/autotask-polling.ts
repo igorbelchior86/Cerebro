@@ -1,9 +1,9 @@
-import { AutotaskClient } from '../clients/autotask.js';
-import { queryOne, withTryAdvisoryLock } from '../db/index.js';
-import type { WorkflowEventEnvelope } from './ticket-workflow-core.js';
-import { triageOrchestrator } from './triage-orchestrator.js';
-import { workflowService } from './workflow-runtime.js';
-import { classifyQueueError } from '../platform/errors.js';
+import { AutotaskClient } from '../../clients/autotask.js';
+import { queryOne, withTryAdvisoryLock } from '../../db/index.js';
+import type { WorkflowEventEnvelope } from '../orchestration/ticket-workflow-core.js';
+import { triageOrchestrator } from '../orchestration/triage-orchestrator.js';
+import { workflowService } from '../orchestration/workflow-runtime.js';
+import { classifyQueueError } from '../../platform/errors.js';
 
 interface AutotaskCreds {
   apiIntegrationCode: string;

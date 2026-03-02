@@ -1,4 +1,4 @@
-import type { ITGlueClient } from '../../clients/itglue.js';
+import type { ITGlueClient } from '../../../clients/itglue.js';
 
 export function itgAttr(attrs: Record<string, unknown> | null | undefined, key: string): unknown {
     if (!attrs) return undefined;
@@ -137,8 +137,8 @@ export async function resolveITGlueOrg(
             org: o,
             score: scoreOrgNameMatch(companyName, String(itgAttr(o?.attributes || {}, 'name') || ''), String(itgAttr(o?.attributes || {}, 'short_name') || '')),
         }))
-        .filter((r) => r.score >= 0.8)
-        .sort((a, b) => b.score - a.score);
+        .filter((r: { score: number }) => r.score >= 0.8)
+        .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
     const byName = rankedByName[0]?.org;
     if (byName) {
         return { id: String(byName.id), name: String(itgAttr(byName?.attributes || {}, 'name') || companyName) };
@@ -167,8 +167,8 @@ export async function resolveITGlueOrg(
             );
             return { org: o, score: domainScore > 0 ? domainScore * 0.75 + nameScore * 0.25 : 0 };
         })
-        .filter((r) => r.score >= 0.75)
-        .sort((a, b) => b.score - a.score);
+        .filter((r: { score: number }) => r.score >= 0.75)
+        .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
 
     const byDomain = rankedByDomain[0]?.org;
     return byDomain ? { id: String(byDomain.id), name: String(itgAttr(byDomain?.attributes || {}, 'name') || companyName) } : null;
@@ -180,7 +180,7 @@ export async function resolveITGlueOrgFamilyScopes(
     companyName?: string
 ): Promise<Array<{ id: string; name: string; reason: string }>> {
     const orgs = await itglueClient.getOrganizations(1000);
-    const byId = new Map<string, any>(orgs.map((org: any): [string, any] => [String(org?.id || '').trim(), org]).filter(([id]) => Boolean(id)));
+    const byId = new Map<string, any>(orgs.map((org: any): [string, any] => [String(org?.id || '').trim(), org]).filter(([id]: [string, any]) => Boolean(id)));
     const matched = byId.get(String(matchedOrg.id)) || null;
     if (!matched) return [{ id: matchedOrg.id, name: matchedOrg.name, reason: 'matched' }];
 

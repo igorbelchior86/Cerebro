@@ -1,6 +1,6 @@
 import express from 'express';
 import request from 'supertest';
-import { WorkflowReconcileFetchError } from '../../services/ticket-workflow-core.js';
+import { WorkflowReconcileFetchError } from '../../services/orchestration/ticket-workflow-core.js';
 
 const mockWorkflowService = {
   listInbox: jest.fn(),

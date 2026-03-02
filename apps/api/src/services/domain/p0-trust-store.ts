@@ -1,4 +1,4 @@
-import { readJsonFileSafe, writeJsonFileAtomic } from './runtime-json-file.js';
+import { readJsonFileSafe, writeJsonFileAtomic } from '../read-models/runtime-json-file.js';
 import type { TrustAIDecisionRecord, TrustAuditRecord } from './p0-trust-contracts.js';
 
 export class InMemoryP0TrustStore {

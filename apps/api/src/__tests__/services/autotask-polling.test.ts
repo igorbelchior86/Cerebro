@@ -1,4 +1,4 @@
-import { AutotaskPollingService } from '../../services/autotask-polling.js';
+import { AutotaskPollingService } from '../../services/adapters/autotask-polling.js';
 
 describe('AutotaskPollingService P0 hardening', () => {
   it('feeds polled Autotask tickets into workflow sync path and triage pipeline', async () => {

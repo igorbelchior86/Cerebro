@@ -5,16 +5,16 @@ import type {
   ManagerQueueSnapshotItem,
   ValidationOutput,
 } from '@cerebro/types';
-import type { TrustCorrelationRefs } from '../services/p0-trust-contracts.js';
+import type { TrustCorrelationRefs } from '../services/domain/p0-trust-contracts.js';
 import { requireAdmin } from '../middleware/auth.js';
-import { p0TrustStore } from '../services/p0-trust-store.js';
-import { P0AiTriageAssistService } from '../services/p0-ai-triage-assist.js';
+import { p0TrustStore } from '../services/domain/p0-trust-store.js';
+import { P0AiTriageAssistService } from '../services/ai/p0-ai-triage-assist.js';
 import {
   P0ReadOnlyEnrichmentService,
   ReadOnlyIntegrationMutationError,
-} from '../services/p0-readonly-enrichment.js';
-import { P0ManagerOpsVisibilityService } from '../services/p0-manager-ops-visibility.js';
-import { p0RolloutControlService } from '../services/p0-rollout-control.js';
+} from '../services/ai/p0-readonly-enrichment.js';
+import { P0ManagerOpsVisibilityService } from '../services/ai/p0-manager-ops-visibility.js';
+import { p0RolloutControlService } from '../services/domain/p0-rollout-control.js';
 
 const router: ExpressRouter = Router();
 router.use(requireAdmin);

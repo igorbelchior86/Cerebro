@@ -10,7 +10,7 @@ import {
   buildCommandEnvelope,
   type TicketWorkflowGateway,
   type WorkflowEventEnvelope,
-} from '../../services/ticket-workflow-core.js';
+} from '../../services/orchestration/ticket-workflow-core.js';
 
 describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
   const tenantId = 'tenant-1';

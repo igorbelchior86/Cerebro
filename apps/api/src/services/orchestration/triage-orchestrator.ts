@@ -1,10 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
-import { execute, query, transaction } from '../db/index.js';
-import { tenantContext } from '../lib/tenantContext.js';
-import { PrepareContextService, persistEvidencePack } from './prepare-context.js';
-import { DiagnoseService } from './diagnose.js';
-import { ValidatePolicyService } from './validate-policy.js';
-import { PlaybookWriterService } from './playbook-writer.js';
+import { execute, query, transaction } from '../../db/index.js';
+import { tenantContext } from '../../lib/tenantContext.js';
+import { PrepareContextService, persistEvidencePack } from '../context/prepare-context.js';
+import { DiagnoseService } from '../ai/diagnose.js';
+import { ValidatePolicyService } from '../domain/validate-policy.js';
+import { PlaybookWriterService } from '../ai/playbook-writer.js';
 
 export class TriageOrchestrator {
     private prepareService: PrepareContextService;
@@ -258,8 +258,8 @@ export class TriageOrchestrator {
     }
 
     private async markPendingForRetry(sessionId: string, errorMessage: string) {
-        await transaction(async (client) => {
-            const current = await client.query<{ retry_count: number | null }>(
+        await transaction(async (client: any) => {
+            const current = await (client as any).query(
                 `SELECT retry_count FROM triage_sessions WHERE id = $1 FOR UPDATE`,
                 [sessionId]
             );
@@ -285,13 +285,13 @@ export class TriageOrchestrator {
         type TenantRow = { id: string };
         type PlaybookRow = { id: string };
 
-        return transaction(async (client) => {
+        return transaction(async (client: any) => {
             await client.query(
                 `SELECT pg_advisory_xact_lock($1, hashtext($2))`,
                 [this.advisoryLockNamespace, ticketId]
             );
 
-            const existingResult = await client.query<SessionRow>(
+            const existingResult = await (client as any).query(
                 `SELECT id, status, updated_at
                  FROM triage_sessions
                  WHERE ticket_id = $1
@@ -316,7 +316,7 @@ export class TriageOrchestrator {
                 }
 
                 if (existingSession.status === 'approved') {
-                    const playbookResult = await client.query<PlaybookRow>(
+                    const playbookResult = await (client as any).query(
                         `SELECT id FROM playbooks WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1`,
                         [sessionId]
                     );
@@ -338,7 +338,7 @@ export class TriageOrchestrator {
             }
 
             const sessionId = uuidv4();
-            const defaultTenantResult = await client.query<TenantRow>(
+            const defaultTenantResult = await (client as any).query(
                 `SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`
             );
             const defaultTenant = defaultTenantResult.rows[0];

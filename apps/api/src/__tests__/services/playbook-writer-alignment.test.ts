@@ -1,5 +1,5 @@
 import type { DiagnosisOutput } from '@cerebro/types';
-import { PlaybookWriterService } from '../../services/playbook-writer.js';
+import { PlaybookWriterService } from '../../services/ai/playbook-writer.js';
 
 describe('PlaybookWriter hypothesis alignment with anchor eligibility', () => {
   it('does not require checklist tags for high-confidence hypotheses marked anchor=no', () => {

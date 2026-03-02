@@ -1,8 +1,8 @@
-import { InMemoryP0TrustStore } from '../../services/p0-trust-store.js';
+import { InMemoryP0TrustStore } from '../../services/domain/p0-trust-store.js';
 import {
   P0ReadOnlyEnrichmentService,
   ReadOnlyIntegrationMutationError,
-} from '../../services/p0-readonly-enrichment.js';
+} from '../../services/ai/p0-readonly-enrichment.js';
 
 describe('P0ReadOnlyEnrichmentService', () => {
   it('normalizes read-only context/evidence with provenance for all four integrations', async () => {

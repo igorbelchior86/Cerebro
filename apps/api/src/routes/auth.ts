@@ -26,7 +26,7 @@ import {
   type AuthPayload,
 } from '../middleware/auth.js';
 import { tenantContext } from '../lib/tenantContext.js';
-import { applyWorkspaceRuntimeSettings } from '../services/runtime-settings.js';
+import { applyWorkspaceRuntimeSettings } from '../services/read-models/runtime-settings.js';
 
 const router: IRouter = Router();
 

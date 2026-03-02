@@ -1,6 +1,6 @@
 import type { ManagerQueueSnapshotItem } from '@cerebro/types';
-import { P0ManagerOpsVisibilityService } from '../../services/p0-manager-ops-visibility.js';
-import type { TrustAIDecisionRecord, TrustAuditRecord } from '../../services/p0-trust-contracts.js';
+import { P0ManagerOpsVisibilityService } from '../../services/ai/p0-manager-ops-visibility.js';
+import type { TrustAIDecisionRecord, TrustAuditRecord } from '../../services/domain/p0-trust-contracts.js';
 
 function buildDecision(input: Partial<TrustAIDecisionRecord> & { decision_id: string; ticket_id: string }): TrustAIDecisionRecord {
   return {

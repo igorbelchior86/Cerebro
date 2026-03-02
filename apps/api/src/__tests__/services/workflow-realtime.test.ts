@@ -1,4 +1,4 @@
-import { WorkflowRealtimeHub, toSseChunk, HEARTBEAT_INTERVAL_MS } from '../../services/workflow-realtime.js';
+import { WorkflowRealtimeHub, toSseChunk, HEARTBEAT_INTERVAL_MS } from '../../services/orchestration/workflow-realtime.js';
 
 type FakeResponse = {
   write: jest.Mock<void, [string]>;

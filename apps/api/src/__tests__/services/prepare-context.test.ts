@@ -14,7 +14,7 @@ describe('PrepareContextService', () => {
 
   describe('service initialization', () => {
     it('should be importable', async () => {
-      const module = await import('../../services/prepare-context');
+      const module = await import('../../services/context/prepare-context');
       expect(module).toBeDefined();
     });
   });
@@ -33,7 +33,7 @@ describe('PrepareContextService', () => {
 
   describe('ticket canonical text formatting', () => {
     it('formats likely email signatures into a readable block in clean text', async () => {
-      const { PrepareContextService } = await import('../../services/prepare-context');
+      const { PrepareContextService } = await import('../../services/context/prepare-context');
       const service = new PrepareContextService() as any;
 
       const raw = `New Computer Set-Up -Deanna Zeitouni Hi Refresh, Mark recently filled out the new employee form for Deanna. We’ve received her new laptop, and I’ve set up the local Refresh domain for you to be able to remote in and finish setting her up. I’m running generic updates on the device now but can help you connect when you are ready. Thanks, Alex Hall Sr. Project Engineer Ramsey Products Corp. 135 Performance Dr. Belmont, NC 28012 Alex.hall@ramseychain.com Direct: 704-688-6734`;

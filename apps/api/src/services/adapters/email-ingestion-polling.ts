@@ -1,5 +1,5 @@
-import { backfillPendingEmailTickets, ingestSupportMailboxOnce } from '../routes/email-ingestion.js';
-import { withTryAdvisoryLock } from '../db/index.js';
+import { backfillPendingEmailTickets, ingestSupportMailboxOnce } from '../../routes/email-ingestion.js';
+import { withTryAdvisoryLock } from '../../db/index.js';
 
 export class EmailIngestionPollingService {
     private intervalId: NodeJS.Timeout | null = null;

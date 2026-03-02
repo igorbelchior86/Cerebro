@@ -1,14 +1,14 @@
-import { AutotaskClient } from '../clients/autotask.js';
+import { AutotaskClient } from '../../clients/autotask.js';
 import type {
   TicketWorkflowGateway,
   WorkflowCommandEnvelope,
   WorkflowExecutionResult,
 } from './ticket-workflow-core.js';
-import { resolveAutotaskOperation } from './autotask-operation-registry.js';
-import { normalizeTextForAutotask } from './autotask-text-normalizer.js';
+import { resolveAutotaskOperation } from '../adapters/autotask-operation-registry.js';
+import { normalizeTextForAutotask } from '../adapters/autotask-text-normalizer.js';
 
 export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
-  constructor(private readonly clientFactory: (tenantId: string) => Promise<AutotaskClient | null>) {}
+  constructor(private readonly clientFactory: (tenantId: string) => Promise<AutotaskClient | null>) { }
   private statusLabelCache = new Map<AutotaskClient, Map<string, string>>();
 
   private async resolveWriteTicketId(client: AutotaskClient, ticketRef: string | number): Promise<string | number> {
@@ -28,7 +28,7 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
     if (!raw || /^\d+$/.test(raw)) return statusValue;
     try {
       const options = await client.getTicketStatusOptions();
-      const match = options.find((option) => option.label.trim().toLowerCase() === raw.toLowerCase());
+      const match = options.find((option: any) => option.label.trim().toLowerCase() === raw.toLowerCase());
       if (match) return match.id;
     } catch {
       // Keep original status if metadata lookup fails.

@@ -1,5 +1,5 @@
 import type { EvidencePack } from '@cerebro/types';
-import { DiagnoseService } from '../../services/diagnose.js';
+import { DiagnoseService } from '../../services/ai/diagnose.js';
 
 describe('DiagnoseService fail-fast behavior', () => {
   it('throws when response cannot be parsed as diagnosis JSON', () => {

@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { operationalLogger } from '../../lib/operational-logger.js';
 
 export function readJsonFileSafe<T>(filePath: string): T | null {
   try {
@@ -8,7 +9,11 @@ export function readJsonFileSafe<T>(filePath: string): T | null {
     return JSON.parse(raw) as T;
   } catch (error: any) {
     if (error?.code === 'ENOENT') return null;
-    console.warn(`[RuntimeJsonFile] Failed to read ${filePath}:`, error);
+    operationalLogger.warn('read_models.runtime_json_file.read_failed', {
+      module: 'services.read-models.runtime-json-file',
+      file_path: filePath,
+      error_message: String(error?.message || error),
+    });
     return null;
   }
 }
@@ -21,4 +26,3 @@ export function writeJsonFileAtomic(filePath: string, data: unknown): void {
   writeFileSync(tmpPath, payload, 'utf8');
   renameSync(tmpPath, filePath);
 }
-

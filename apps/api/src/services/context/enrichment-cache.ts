@@ -6,6 +6,7 @@
 import crypto from 'crypto';
 
 import { callLLM } from '../ai/llm-adapter.js';
+import { operationalLogger } from '../../lib/operational-logger.js';
 import { extractJsonObject, itgAttr } from './prepare-context-helpers.js';
 import {
     getItglueOrgEnriched,
@@ -291,7 +292,12 @@ export async function getOrRefreshItglueEnriched(input: {
         await upsertItglueOrgEnriched(input.orgId, payload as unknown as Record<string, unknown>, input.sourceHash);
         return payload;
     } catch (error) {
-        console.error('[PrepareContext] IT Glue enrichment failed:', error);
+        operationalLogger.error('context.enrichment_cache.itglue_enrichment_failed', error, {
+            module: 'services.context.enrichment-cache',
+            org_id: input.orgId,
+            signal: 'integration_failure',
+            degraded_mode: true,
+        });
         return cached ? (cached.payload as unknown as ItglueEnrichedPayload) : null;
     }
 }
@@ -355,7 +361,12 @@ ${JSON.stringify(summary).slice(0, 14000)}`;
         await upsertNinjaOrgEnriched(input.orgId, payload as unknown as Record<string, unknown>, input.sourceHash);
         return payload;
     } catch (error) {
-        console.error('[PrepareContext] Ninja enrichment failed:', error);
+        operationalLogger.error('context.enrichment_cache.ninja_enrichment_failed', error, {
+            module: 'services.context.enrichment-cache',
+            org_id: input.orgId,
+            signal: 'integration_failure',
+            degraded_mode: true,
+        });
         return cached ? (cached.payload as unknown as NinjaEnrichedPayload) : null;
     }
 }

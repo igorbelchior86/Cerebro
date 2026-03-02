@@ -6,11 +6,18 @@
 
 import type { EvidencePack } from '@cerebro/types';
 import { query, queryOne, execute } from '../../db/index.js';
+import { operationalLogger } from '../../lib/operational-logger.js';
 import type {
     TicketSSOT,
     TicketTextArtifact,
     TicketContextAppendix,
 } from './prepare-context.types.js';
+
+function persistenceCorrelation(ticketId?: string) {
+    return {
+        ticket_id: ticketId ? String(ticketId) : null,
+    };
+}
 
 // ─── EvidencePack ────────────────────────────────────────────
 
@@ -32,9 +39,15 @@ export async function persistEvidencePack(sessionId: string, pack: EvidencePack)
                 [sessionId, JSON.stringify(pack)]
             );
         }
-        console.log(`[DB] Persisted EvidencePack for session ${sessionId}`);
+        operationalLogger.info('context.persistence.evidence_pack_persisted', {
+            module: 'services.context.persistence',
+            session_id: sessionId,
+        });
     } catch (error) {
-        console.error('[DB] Failed to persist EvidencePack:', error);
+        operationalLogger.error('context.persistence.evidence_pack_persist_failed', error, {
+            module: 'services.context.persistence',
+            session_id: sessionId,
+        });
         throw error;
     }
 }
@@ -50,7 +63,10 @@ export async function getEvidencePack(sessionId: string): Promise<EvidencePack |
         );
         return result?.payload || null;
     } catch (error) {
-        console.error('[DB] Failed to retrieve EvidencePack:', error);
+        operationalLogger.error('context.persistence.evidence_pack_fetch_failed', error, {
+            module: 'services.context.persistence',
+            session_id: sessionId,
+        });
         return null;
     }
 }
@@ -68,7 +84,11 @@ export async function persistTicketSSOT(
     try {
         const canPersist = await canPersistTicketScopedArtifact(ticketId, sessionId, 'ticket_ssot');
         if (!canPersist) {
-            console.log(`[DB] Skipped SSOT persist for superseded session ${sessionId} ticket ${ticketId}`);
+            operationalLogger.info('context.persistence.ssot_persist_skipped_superseded', {
+                module: 'services.context.persistence',
+                session_id: sessionId,
+                ticket_id: ticketId,
+            }, persistenceCorrelation(ticketId));
             return;
         }
         await execute(
@@ -78,9 +98,17 @@ export async function persistTicketSSOT(
        DO UPDATE SET payload = EXCLUDED.payload, session_id = EXCLUDED.session_id, updated_at = NOW()`,
             [ticketId, sessionId, JSON.stringify(payload)]
         );
-        console.log(`[DB] Persisted SSOT for ticket ${ticketId}`);
+        operationalLogger.info('context.persistence.ssot_persisted', {
+            module: 'services.context.persistence',
+            session_id: sessionId,
+            ticket_id: ticketId,
+        }, persistenceCorrelation(ticketId));
     } catch (error) {
-        console.error('[DB] Failed to persist SSOT:', error);
+        operationalLogger.error('context.persistence.ssot_persist_failed', error, {
+            module: 'services.context.persistence',
+            session_id: sessionId,
+            ticket_id: ticketId,
+        }, persistenceCorrelation(ticketId));
         throw error;
     }
 }
@@ -95,7 +123,11 @@ export async function persistTicketTextArtifact(
     try {
         const canPersist = await canPersistTicketScopedArtifact(ticketId, sessionId, 'ticket_text_artifact');
         if (!canPersist) {
-            console.log(`[DB] Skipped ticket text artifact persist for superseded session ${sessionId} ticket ${ticketId}`);
+            operationalLogger.info('context.persistence.ticket_text_artifact_persist_skipped_superseded', {
+                module: 'services.context.persistence',
+                session_id: sessionId,
+                ticket_id: ticketId,
+            }, persistenceCorrelation(ticketId));
             return;
         }
         await execute(
@@ -105,9 +137,17 @@ export async function persistTicketTextArtifact(
        DO UPDATE SET payload = EXCLUDED.payload, session_id = EXCLUDED.session_id, updated_at = NOW()`,
             [ticketId, sessionId, JSON.stringify(payload)]
         );
-        console.log(`[DB] Persisted ticket text artifact for ticket ${ticketId}`);
+        operationalLogger.info('context.persistence.ticket_text_artifact_persisted', {
+            module: 'services.context.persistence',
+            session_id: sessionId,
+            ticket_id: ticketId,
+        }, persistenceCorrelation(ticketId));
     } catch (error) {
-        console.error('[DB] Failed to persist ticket text artifact:', error);
+        operationalLogger.error('context.persistence.ticket_text_artifact_persist_failed', error, {
+            module: 'services.context.persistence',
+            session_id: sessionId,
+            ticket_id: ticketId,
+        }, persistenceCorrelation(ticketId));
     }
 }
 
@@ -125,7 +165,10 @@ export async function getTicketTextArtifact(
         );
         return row || null;
     } catch (error) {
-        console.error('[DB] Failed to fetch ticket text artifact:', error);
+        operationalLogger.error('context.persistence.ticket_text_artifact_fetch_failed', error, {
+            module: 'services.context.persistence',
+            ticket_id: ticketId,
+        }, persistenceCorrelation(ticketId));
         return null;
     }
 }
@@ -140,7 +183,11 @@ export async function persistTicketContextAppendix(
     try {
         const canPersist = await canPersistTicketScopedArtifact(ticketId, sessionId, 'ticket_context_appendix');
         if (!canPersist) {
-            console.log(`[DB] Skipped ticket context appendix persist for superseded session ${sessionId} ticket ${ticketId}`);
+            operationalLogger.info('context.persistence.ticket_context_appendix_persist_skipped_superseded', {
+                module: 'services.context.persistence',
+                session_id: sessionId,
+                ticket_id: ticketId,
+            }, persistenceCorrelation(ticketId));
             return;
         }
         await execute(
@@ -150,9 +197,17 @@ export async function persistTicketContextAppendix(
        DO UPDATE SET payload = EXCLUDED.payload, session_id = EXCLUDED.session_id, updated_at = NOW()`,
             [ticketId, sessionId, JSON.stringify(payload)]
         );
-        console.log(`[DB] Persisted ticket context appendix for ticket ${ticketId}`);
+        operationalLogger.info('context.persistence.ticket_context_appendix_persisted', {
+            module: 'services.context.persistence',
+            session_id: sessionId,
+            ticket_id: ticketId,
+        }, persistenceCorrelation(ticketId));
     } catch (error) {
-        console.error('[DB] Failed to persist ticket context appendix:', error);
+        operationalLogger.error('context.persistence.ticket_context_appendix_persist_failed', error, {
+            module: 'services.context.persistence',
+            session_id: sessionId,
+            ticket_id: ticketId,
+        }, persistenceCorrelation(ticketId));
     }
 }
 
@@ -170,7 +225,10 @@ export async function getTicketContextAppendix(
         );
         return row || null;
     } catch (error) {
-        console.error('[DB] Failed to fetch ticket context appendix:', error);
+        operationalLogger.error('context.persistence.ticket_context_appendix_fetch_failed', error, {
+            module: 'services.context.persistence',
+            ticket_id: ticketId,
+        }, persistenceCorrelation(ticketId));
         return null;
     }
 }
@@ -214,12 +272,22 @@ async function canPersistTicketScopedArtifact(
         );
         const isLatest = String(latest?.id || '') === String(sessionId || '');
         if (!isLatest) {
-            console.log(`[DB] Guard rejected ${artifactKind} persist: session ${sessionId} is not latest for ticket ${ticketId}`);
+            operationalLogger.info('context.persistence.artifact_guard_rejected_superseded', {
+                module: 'services.context.persistence',
+                artifact_kind: artifactKind,
+                session_id: sessionId,
+                ticket_id: ticketId,
+            }, persistenceCorrelation(ticketId));
             return false;
         }
         return true;
     } catch (error) {
-        console.error(`[DB] Artifact guard failed for ${artifactKind}; allowing persist as fallback:`, error);
+        operationalLogger.error('context.persistence.artifact_guard_failed_allowing_fallback', error, {
+            module: 'services.context.persistence',
+            artifact_kind: artifactKind,
+            session_id: sessionId,
+            ticket_id: ticketId,
+        }, persistenceCorrelation(ticketId));
         return true;
     }
 }
@@ -240,7 +308,10 @@ export async function persistItglueOrgSnapshot(
             [orgId, JSON.stringify(payload), sourceHash]
         );
     } catch (error) {
-        console.error('[DB] Failed to persist IT Glue snapshot:', error);
+        operationalLogger.error('context.persistence.itglue_snapshot_persist_failed', error, {
+            module: 'services.context.persistence',
+            org_id: orgId,
+        });
     }
 }
 
@@ -258,7 +329,10 @@ export async function getItglueOrgEnriched(
         );
         return row || null;
     } catch (error) {
-        console.error('[DB] Failed to fetch IT Glue enriched cache:', error);
+        operationalLogger.error('context.persistence.itglue_enriched_fetch_failed', error, {
+            module: 'services.context.persistence',
+            org_id: orgId,
+        });
         return null;
     }
 }
@@ -277,7 +351,10 @@ export async function upsertItglueOrgEnriched(
             [orgId, JSON.stringify(payload), sourceHash]
         );
     } catch (error) {
-        console.error('[DB] Failed to persist IT Glue enriched cache:', error);
+        operationalLogger.error('context.persistence.itglue_enriched_persist_failed', error, {
+            module: 'services.context.persistence',
+            org_id: orgId,
+        });
     }
 }
 
@@ -297,7 +374,10 @@ export async function persistNinjaOrgSnapshot(
             [orgId, JSON.stringify(payload), sourceHash]
         );
     } catch (error) {
-        console.error('[DB] Failed to persist Ninja snapshot:', error);
+        operationalLogger.error('context.persistence.ninja_snapshot_persist_failed', error, {
+            module: 'services.context.persistence',
+            org_id: orgId,
+        });
     }
 }
 
@@ -315,7 +395,10 @@ export async function getNinjaOrgEnriched(
         );
         return row || null;
     } catch (error) {
-        console.error('[DB] Failed to fetch Ninja enriched cache:', error);
+        operationalLogger.error('context.persistence.ninja_enriched_fetch_failed', error, {
+            module: 'services.context.persistence',
+            org_id: orgId,
+        });
         return null;
     }
 }
@@ -334,6 +417,9 @@ export async function upsertNinjaOrgEnriched(
             [orgId, JSON.stringify(payload), sourceHash]
         );
     } catch (error) {
-        console.error('[DB] Failed to persist Ninja enriched cache:', error);
+        operationalLogger.error('context.persistence.ninja_enriched_persist_failed', error, {
+            module: 'services.context.persistence',
+            org_id: orgId,
+        });
     }
 }

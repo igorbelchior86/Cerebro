@@ -11,14 +11,29 @@ describe('AutotaskClient', () => {
   let client: AutotaskClient;
 
   beforeEach(() => {
+    jest.resetAllMocks();
     client = new AutotaskClient({
       apiIntegrationCode: 'test-code',
       username: 'test@example.com',
       secret: 'test-secret',
       zoneUrl: 'https://webservices14.autotask.net/atservicesrest/v1.0'
     });
-    jest.clearAllMocks();
   });
+
+  function findFetchCall(
+    pathSuffix: string,
+    method: string,
+  ): [string, { method?: string; body?: unknown } | undefined] {
+    const call = (global.fetch as jest.Mock).mock.calls.find(([url, init]: [string, { method?: string } | undefined]) => {
+      const pathname = new URL(String(url)).pathname.toLowerCase();
+      const requestMethod = String(init?.method || 'GET').toUpperCase();
+      return pathname.endsWith(pathSuffix.toLowerCase()) && requestMethod === method.toUpperCase();
+    });
+    if (!call) {
+      throw new Error(`Expected fetch call ${method} ${pathSuffix}`);
+    }
+    return call as [string, { method?: string; body?: unknown } | undefined];
+  }
 
   describe('constructor', () => {
     it('should initialize with correct base URL', () => {
@@ -170,16 +185,13 @@ describe('AutotaskClient', () => {
         .mockResolvedValueOnce({
           ok: true,
           json: async () => ({
-            fields: [{ name: 'noteType', picklistValues: [{ value: 7, label: 'Internal' }] }]
-          })
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: async () => ({
-            fields: [{
-              name: 'publish',
-              picklistValues: [{ value: 1, label: 'All Autotask Users' }, { value: 2, label: 'Internal' }]
-            }]
+            fields: [
+              { name: 'noteType', picklistValues: [{ value: 7, label: 'Internal' }] },
+              {
+                name: 'publish',
+                picklistValues: [{ value: 1, label: 'All Autotask Users' }, { value: 2, label: 'Internal' }]
+              }
+            ]
           })
         })
         .mockResolvedValueOnce({
@@ -189,11 +201,11 @@ describe('AutotaskClient', () => {
 
       await client.createTicketNote('T20260226.0044', { noteText: 'hello', noteType: 'Internal' });
 
-      const postUrl = new URL((global.fetch as jest.Mock).mock.calls[3][0] as string);
-      const postInit = (global.fetch as jest.Mock).mock.calls[3][1];
+      const [postUrlRaw, postInit] = findFetchCall('/tickets/444/notes', 'POST');
+      const postUrl = new URL(postUrlRaw);
       expect(postUrl.pathname.toLowerCase()).toContain('/tickets/444/notes');
-      expect(postInit.method).toBe('POST');
-      expect(JSON.parse(String(postInit.body))).toMatchObject({ noteText: 'hello', description: 'hello', noteType: 7, title: 'hello' });
+      expect(postInit?.method).toBe('POST');
+      expect(JSON.parse(String(postInit!.body))).toMatchObject({ noteText: 'hello', description: 'hello', noteType: 7, title: 'hello' });
     });
 
     it('should DELETE /tickets/{id} for ticket delete operations', async () => {
@@ -211,10 +223,10 @@ describe('AutotaskClient', () => {
 
       await client.deleteTicket('T20260227.0777');
 
-      const deleteUrl = new URL((global.fetch as jest.Mock).mock.calls[1][0] as string);
-      const deleteInit = (global.fetch as jest.Mock).mock.calls[1][1];
+      const [deleteUrlRaw, deleteInit] = findFetchCall('/tickets/777', 'DELETE');
+      const deleteUrl = new URL(deleteUrlRaw);
       expect(deleteUrl.pathname.toLowerCase()).toContain('/tickets/777');
-      expect(deleteInit.method).toBe('DELETE');
+      expect(deleteInit?.method).toBe('DELETE');
     });
 
     it('should PATCH /timeEntries with body id for time entry update', async () => {
@@ -250,11 +262,11 @@ describe('AutotaskClient', () => {
         dataBase64: 'data:image/png;base64,QUJD',
       });
 
-      const postUrl = new URL((global.fetch as jest.Mock).mock.calls[1][0] as string);
-      const postInit = (global.fetch as jest.Mock).mock.calls[1][1];
+      const [postUrlRaw, postInit] = findFetchCall('/tickets/888/attachments', 'POST');
+      const postUrl = new URL(postUrlRaw);
       expect(postUrl.pathname.toLowerCase()).toContain('/tickets/888/attachments');
-      expect(postInit.method).toBe('POST');
-      expect(JSON.parse(String(postInit.body))).toMatchObject({
+      expect(postInit?.method).toBe('POST');
+      expect(JSON.parse(String(postInit!.body))).toMatchObject({
         attachmentInfo: {
           title: 'error screenshot',
           fullPath: 'error.png',

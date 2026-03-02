@@ -1,6 +1,10 @@
-import { tenantContext } from '../../lib/tenantContext.js';
-import { MissingTenantContextError, TenantScopeViolationError } from '../../platform/errors.js';
-import { assertTenantMatch, requireTenantScope } from '../../platform/tenant-scope.js';
+import {
+  tenantContext,
+  MissingTenantContextError,
+  TenantScopeViolationError,
+  assertTenantMatch,
+  requireTenantScope,
+} from '@cerebro/platform';
 
 describe('CP0 tenant scope enforcement', () => {
   it('returns tenant from async context', () => {
@@ -26,4 +30,3 @@ describe('CP0 tenant scope enforcement', () => {
     expect(() => assertTenantMatch('t1', 't2')).toThrow(TenantScopeViolationError);
   });
 });
-

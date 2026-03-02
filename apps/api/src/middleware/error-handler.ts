@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { operationalLogger } from '../lib/operational-logger.js';
 
 /**
  * Global error handling middleware
@@ -48,6 +49,14 @@ export const errorHandler = (
 ) => {
   const timestamp = new Date().toISOString();
   const requestId = req.headers['x-request-id'] as string || 'unknown';
+  const tenantId = resolveCorrelationField(req, ['x-tenant-id'], [req.params?.tenantId], [req.body?.tenant_id, req.query?.tenant_id]);
+  const ticketId = resolveCorrelationField(
+    req,
+    ['x-ticket-id'],
+    [req.params?.ticketId, req.params?.id],
+    [req.body?.ticket_id, req.query?.ticket_id]
+  );
+  const traceId = resolveCorrelationField(req, ['x-trace-id'], [], []);
 
   // Default error response
   let statusCode = 500;
@@ -86,14 +95,21 @@ export const errorHandler = (
     error = 'TIMEOUT_ERROR';
   }
 
-  // Log error
-  console.error({
+  operationalLogger.error('middleware.error_handler.unhandled_error', err, {
+    module: 'middleware.error-handler',
     timestamp,
-    requestId,
-    statusCode,
-    error,
+    request_id: requestId,
+    status_code: statusCode,
+    error_code: error,
     message,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    path: req.path,
+    method: req.method,
+    ...(process.env.NODE_ENV === 'development' ? { stack: err.stack } : {}),
+  }, {
+    tenant_id: tenantId,
+    ticket_id: ticketId,
+    trace_id: traceId,
+    request_id: requestId,
   });
 
   // Send error response
@@ -160,15 +176,46 @@ export const requestLogger = (req: Request, res: Response, next: NextFunction) =
 
   res.on('finish', () => {
     const duration = Date.now() - start;
-    console.log({
-      requestId,
+    const tenantId = resolveCorrelationField(req, ['x-tenant-id'], [req.params?.tenantId], [req.body?.tenant_id, req.query?.tenant_id]);
+    const ticketId = resolveCorrelationField(
+      req,
+      ['x-ticket-id'],
+      [req.params?.ticketId, req.params?.id],
+      [req.body?.ticket_id, req.query?.ticket_id]
+    );
+    const traceId = resolveCorrelationField(req, ['x-trace-id'], [], []);
+    operationalLogger.info('middleware.request_logger.completed', {
+      module: 'middleware.error-handler',
+      request_id: requestId,
       method: req.method,
       path: req.path,
-      status: res.statusCode,
-      duration: `${duration}ms`,
-      timestamp: new Date().toISOString()
+      status_code: res.statusCode,
+      duration_ms: duration,
+      timestamp: new Date().toISOString(),
+    }, {
+      tenant_id: tenantId,
+      ticket_id: ticketId,
+      trace_id: traceId,
+      request_id: requestId,
     });
   });
 
   next();
 };
+
+function resolveCorrelationField(
+  req: Request,
+  headerKeys: string[],
+  paramCandidates: unknown[],
+  payloadCandidates: unknown[]
+): string | null {
+  for (const key of headerKeys) {
+    const value = req.headers[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  for (const value of [...paramCandidates, ...payloadCandidates]) {
+    const text = String(value ?? '').trim();
+    if (text) return text;
+  }
+  return null;
+}

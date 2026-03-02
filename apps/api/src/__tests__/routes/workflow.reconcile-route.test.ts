@@ -1,5 +1,3 @@
-import express from 'express';
-import request from 'supertest';
 import { WorkflowReconcileFetchError } from '../../services/orchestration/ticket-workflow-core.js';
 
 const mockWorkflowService = {
@@ -13,11 +11,49 @@ const mockWorkflowService = {
   listAuditByTicket: jest.fn(),
 };
 
-jest.mock('../../services/workflow-runtime.js', () => ({
+jest.mock('../../services/orchestration/workflow-runtime.js', () => ({
   workflowService: mockWorkflowService,
 }));
 
 import workflowRouter from '../../routes/workflow/workflow.js';
+
+async function invokeReconcileRoute(ticketId: string, correlationId: string) {
+  const headers = new Map<string, string>([['x-correlation-id', correlationId]]);
+  const req: any = {
+    method: 'POST',
+    url: `/reconcile/${ticketId}`,
+    originalUrl: `/workflow/reconcile/${ticketId}`,
+    headers: Object.fromEntries(headers),
+    body: {},
+    auth: { tid: 'tenant-1', sub: 'user-1', role: 'admin' },
+    header(name: string) {
+      return headers.get(name.toLowerCase());
+    },
+  };
+
+  return new Promise<{ status: number; body: Record<string, unknown> }>((resolve, reject) => {
+    const res: any = {
+      statusCode: 200,
+      status(code: number) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload: Record<string, unknown>) {
+        resolve({ status: this.statusCode, body: payload });
+        return this;
+      },
+      setHeader() {},
+    };
+
+    (workflowRouter as any).handle(req, res, (error: unknown) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve({ status: res.statusCode, body: {} });
+      }
+    });
+  });
+}
 
 describe('workflow reconcile route', () => {
   beforeEach(() => {
@@ -27,18 +63,7 @@ describe('workflow reconcile route', () => {
   it('returns classified 429 response for upstream Autotask rate limit during reconcile', async () => {
     mockWorkflowService.reconcileTicket.mockRejectedValueOnce(new Error('Autotask API error: 429 '));
 
-    const app = express();
-    app.use(express.json());
-    app.use((req, _res, next) => {
-      (req as any).auth = { tid: 'tenant-1', sub: 'user-1', role: 'admin' };
-      next();
-    });
-    app.use('/workflow', workflowRouter);
-
-    const response = await request(app)
-      .post('/workflow/reconcile/VAL-H-S2-001')
-      .set('x-correlation-id', 'agent-h-reconcile-trace')
-      .send({});
+    const response = await invokeReconcileRoute('VAL-H-S2-001', 'agent-h-reconcile-trace');
 
     expect(response.status).toBe(429);
     expect(response.body).toMatchObject({
@@ -79,18 +104,7 @@ describe('workflow reconcile route', () => {
       }),
     );
 
-    const app = express();
-    app.use(express.json());
-    app.use((req, _res, next) => {
-      (req as any).auth = { tid: 'tenant-1', sub: 'user-1', role: 'admin' };
-      next();
-    });
-    app.use('/workflow', workflowRouter);
-
-    const response = await request(app)
-      .post('/workflow/reconcile/T20260227.2001')
-      .set('x-correlation-id', 'typed-reconcile-trace')
-      .send({});
+    const response = await invokeReconcileRoute('T20260227.2001', 'typed-reconcile-trace');
 
     expect(response.status).toBe(504);
     expect(response.body).toMatchObject({

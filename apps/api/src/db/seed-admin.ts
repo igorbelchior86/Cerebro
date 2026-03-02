@@ -13,6 +13,7 @@ config({ path: resolve(process.cwd(), '../../.env') });
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { query, queryOne } from './index.js';
+import { operationalLogger } from '../lib/operational-logger.js';
 
 interface Tenant { id: string; }
 
@@ -43,7 +44,13 @@ export async function autoSeedAdmin(): Promise<void> {
         [user_id, tenant_id, email.toLowerCase().trim(), password_hash],
       );
       await query('COMMIT');
-      console.log(`[SEED] Admin tenant created: "${org}" <${email}>`);
+      operationalLogger.info('db.seed_admin.tenant_created', {
+        module: 'db.seed-admin',
+        tenant_id: tenant_id,
+        organization: org,
+      }, {
+        tenant_id,
+      });
     } catch (err) {
       await query('ROLLBACK');
       throw err;
@@ -51,9 +58,17 @@ export async function autoSeedAdmin(): Promise<void> {
   } catch (err: any) {
     // Silently skip if DB not ready yet — will succeed on next restart
     if (err.code === '42P01') {
-      console.warn('[SEED] Auth tables not found — run DB migration 003 first');
+      operationalLogger.warn('db.seed_admin.auth_tables_not_found', {
+        module: 'db.seed-admin',
+        signal: 'integration_failure',
+        degraded_mode: true,
+        error_code: err.code,
+      });
     } else {
-      console.error('[SEED] autoSeedAdmin error:', err.message);
+      operationalLogger.error('db.seed_admin.failed', err, {
+        module: 'db.seed-admin',
+        error_code: err?.code || null,
+      });
     }
   }
 }
@@ -61,6 +76,16 @@ export async function autoSeedAdmin(): Promise<void> {
 // ─── Standalone runner ────────────────────────────────────────
 if (process.argv[1]?.endsWith('seed-admin.ts') || process.argv[1]?.endsWith('seed-admin.js')) {
   autoSeedAdmin()
-    .then(() => { console.log('[SEED] Done'); process.exit(0); })
-    .catch((err) => { console.error(err); process.exit(1); });
+    .then(() => {
+      operationalLogger.info('db.seed_admin.done', {
+        module: 'db.seed-admin',
+      });
+      process.exit(0);
+    })
+    .catch((err) => {
+      operationalLogger.error('db.seed_admin.runner_failed', err, {
+        module: 'db.seed-admin',
+      });
+      process.exit(1);
+    });
 }

@@ -4,6 +4,7 @@
 // history calibration, and final-refinement planning.
 // ─────────────────────────────────────────────────────────────
 import { query, queryOne } from '../../db/index.js';
+import { operationalLogger } from '../../lib/operational-logger.js';
 import {
   extractInfraMakeModel,
   inferIspName,
@@ -277,7 +278,18 @@ export async function findRelatedCasesBroad(input: {
       resolved_at: row.resolved_at,
     }));
   } catch (error) {
-    console.log('[PrepareContext] Could not run broad related case search:', error);
+    operationalLogger.warn('context.history_resolver.broad_search_failed', {
+      module: 'services.context.history-resolver',
+      org_id: input.orgId || null,
+      company_name: input.companyName || null,
+      ticket_id: input.ticketId || null,
+      terms_count: normalizedTerms.length,
+      signal: 'integration_failure',
+      degraded_mode: true,
+      error_message: String((error as Error)?.message || error),
+    }, {
+      ticket_id: input.ticketId || null,
+    });
     return [];
   }
 }
@@ -299,7 +311,15 @@ export async function findRelatedCasesByTerms(terms: string[], orgId?: string, c
     });
     return fallback.slice(0, 3);
   } catch (error) {
-    console.log('[PrepareContext] Could not find related cases:', error);
+    operationalLogger.warn('context.history_resolver.related_cases_failed', {
+      module: 'services.context.history-resolver',
+      org_id: orgId || null,
+      company_name: companyName || null,
+      terms_count: terms.length,
+      signal: 'integration_failure',
+      degraded_mode: true,
+      error_message: String((error as Error)?.message || error),
+    });
     return [];
   }
 }

@@ -1,7 +1,11 @@
-import { tenantContext } from '../../lib/tenantContext.js';
-import { AuditTrailService, InMemoryAuditSink } from '../../platform/audit-trail.js';
-import { ReadOnlyIntegrationMutationError } from '../../platform/errors.js';
-import { enforceIntegrationMutationPolicy, ensureIntegrationMutationAllowed } from '../../platform/policy.js';
+import {
+  tenantContext,
+  AuditTrailService,
+  InMemoryAuditSink,
+  ReadOnlyIntegrationMutationError,
+  enforceIntegrationMutationPolicy,
+  ensureIntegrationMutationAllowed,
+} from '@cerebro/platform';
 
 const actor = { type: 'user', id: 'u1', role: 'tech', origin: 'api' } as const;
 
@@ -74,4 +78,3 @@ describe('CP0 integration launch policy guardrail + audit', () => {
     expect(sink.records[0]?.correlation.trace_id).toBe('trace-2');
   });
 });
-

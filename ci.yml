@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -27,9 +27,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
       - run: pnpm lint
+      - run: pnpm typecheck
 
   # ─── Gate 2: Unit + Domain Tests (required for all PRs) ───────────────────────
   unit-tests:
@@ -39,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -49,7 +48,7 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test --filter='./packages/*' --filter='./apps/api'
+      - run: pnpm -r --filter "./packages/*" --filter "./apps/api" test
 
   # ─── Gate 3: Critical Path Tests (required for all PRs) ──────────────────────
   # Covers: tenant scoping, policy gates, validate-policy, p0-rollout, evidence
@@ -60,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -71,9 +70,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - name: Run critical-path tests
-        working-directory: apps/api
         run: |
-          npx jest --testPathPattern="(validate-policy|p0-rollout|evidence-guardrails|p0-trust|ticket-workflow-core|autotask-ticket-workflow-gateway)" --passWithNoTests
+          pnpm --filter @cerebro/api test -- --runInBand --testPathPatterns="(validate-policy|p0-rollout|evidence-guardrails|p0-trust|ticket-workflow-core|autotask-ticket-workflow-gateway)" --passWithNoTests
 
   # ─── Gate 4: Integration Tests (main branch only, requires services) ──────────
   integration-tests:
@@ -114,7 +112,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
 
@@ -124,5 +122,4 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm db:migrate
-      - run: pnpm test --filter='./apps/api' -- --testPathPattern=integration
+      - run: pnpm --filter @cerebro/api test -- --runInBand --testPathPatterns=integration

@@ -1,5 +1,6 @@
 import { queryOne } from '../../db/index.js';
 import { tenantContext } from '../../lib/tenantContext.js';
+import { operationalLogger } from '../../lib/operational-logger.js';
 import { resetDefaultLLMProvider } from '../ai/llm-adapter.js';
 
 type WorkspaceSettings = Record<string, unknown>;
@@ -48,6 +49,9 @@ export async function bootstrapWorkspaceRuntimeSettings(): Promise<void> {
     );
     if (!tenant?.settings) return;
     applyWorkspaceRuntimeSettings(tenant.settings);
-    console.log('[RuntimeSettings] Workspace settings loaded into process env');
+    operationalLogger.info('read_models.runtime_settings.bootstrap_loaded', {
+      module: 'services.read-models.runtime-settings',
+      source: 'tenant_settings',
+    });
   });
 }

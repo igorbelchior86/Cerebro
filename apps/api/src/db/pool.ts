@@ -6,6 +6,7 @@ import pg from 'pg';
 import { config } from 'dotenv';
 import { resolve } from 'path';
 import { tenantContext } from '../lib/tenantContext.js';
+import { operationalLogger } from '../lib/operational-logger.js';
 
 // Using process.cwd() to avoid TS1343 (import.meta error) under Jest's CommonJS transform.
 // Assumes Node process runs from `apps/api` (pnpm dev, pnpm build, pnpm start)
@@ -30,16 +31,30 @@ const pool = new Pool({
 });
 
 pool.on('error', (err) => {
-  console.error('[DB] Unexpected error on idle client', err);
+  const store = tenantContext.getStore();
+  operationalLogger.error('db.pool.idle_client_error', err, {
+    module: 'db.pool',
+  }, {
+    tenant_id: store?.tenantId ?? null,
+    ticket_id: store?.ticketId ?? null,
+    trace_id: store?.traceId ?? null,
+    request_id: store?.requestId ?? null,
+    job_id: store?.jobId ?? null,
+    command_id: store?.commandId ?? null,
+  });
   process.exit(1);
 });
 
 pool.on('connect', () => {
-  console.log('[DB] New client connection established');
+  operationalLogger.info('db.pool.client_connected', {
+    module: 'db.pool',
+  });
 });
 
 pool.on('remove', () => {
-  console.log('[DB] Client connection removed');
+  operationalLogger.info('db.pool.client_removed', {
+    module: 'db.pool',
+  });
 });
 
 /**
@@ -51,7 +66,19 @@ export async function query<T>(text: string, params?: unknown[]): Promise<T[]> {
     const result = await client.query(text, params);
     const duration = Date.now() - startTime;
     if (duration > 1000) {
-      console.warn(`[DB] Slow query (${duration}ms):`, text.substring(0, 50));
+      const store = tenantContext.getStore();
+      operationalLogger.warn('db.pool.slow_query', {
+        module: 'db.pool',
+        duration_ms: duration,
+        query_preview: text.substring(0, 50),
+      }, {
+        tenant_id: store?.tenantId ?? null,
+        ticket_id: store?.ticketId ?? null,
+        trace_id: store?.traceId ?? null,
+        request_id: store?.requestId ?? null,
+        job_id: store?.jobId ?? null,
+        command_id: store?.commandId ?? null,
+      });
     }
     return result.rows as T[];
   });
@@ -134,7 +161,9 @@ export function getPoolStats() {
  */
 export async function closePool(): Promise<void> {
   await pool.end();
-  console.log('[DB] Connection pool closed');
+  operationalLogger.info('db.pool.closed', {
+    module: 'db.pool',
+  });
 }
 
 /**
@@ -145,7 +174,17 @@ export async function healthCheck(): Promise<boolean> {
     const result = await pool.query('SELECT NOW()');
     return result.rows.length > 0;
   } catch (error) {
-    console.error('[DB] Health check failed:', error);
+    const store = tenantContext.getStore();
+    operationalLogger.error('db.pool.healthcheck_failed', error, {
+      module: 'db.pool',
+    }, {
+      tenant_id: store?.tenantId ?? null,
+      ticket_id: store?.ticketId ?? null,
+      trace_id: store?.traceId ?? null,
+      request_id: store?.requestId ?? null,
+      job_id: store?.jobId ?? null,
+      command_id: store?.commandId ?? null,
+    });
     return false;
   }
 }

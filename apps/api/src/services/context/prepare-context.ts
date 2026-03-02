@@ -29,6 +29,7 @@ import { shouldBlockDiagnosisOutput } from '../domain/evidence-guardrails.js';
 import { webSearch, type SearchResult } from '../ai/web-search.js';
 import { query, queryOne, execute } from '../../db/index.js';
 import { callLLM } from '../ai/llm-adapter.js';
+import { operationalLogger } from '../../lib/operational-logger.js';
 
 import { AutotaskFetcher } from '../read-models/data-fetchers/autotask-fetcher.js';
 import { NinjaOneFetcher } from '../read-models/data-fetchers/ninjaone-fetcher.js';
@@ -270,7 +271,12 @@ export class PrepareContextService {
    * Principal: Coleta dados de múltiplas fontes e monta EvidencePack
    */
   async prepare(input: PrepareContextInput): Promise<EvidencePack> {
-    console.log(`[PrepareContext] Starting for ticket ${input.ticketId}`);
+    operationalLogger.info('context.prepare_context.started', {
+      module: 'services.context.prepare-context',
+      ticket_id: input.ticketId,
+    }, {
+      ticket_id: input.ticketId,
+    });
 
     const startTime = Date.now();
     const missingData: Array<{ field: string; why: string }> = [];
@@ -305,12 +311,24 @@ export class PrepareContextService {
     const isEmailTicket = input.ticketId.startsWith('T');
 
     if (isEmailTicket) {
-      console.log(`[PrepareContext] Resolving T-format ticket from Autotask: ${input.ticketId}`);
+      operationalLogger.info('context.prepare_context.autotask_t_format_lookup_started', {
+        module: 'services.context.prepare-context',
+        ticket_id: input.ticketId,
+      }, {
+        tenant_id: tenantId ?? null,
+        ticket_id: input.ticketId,
+      });
       try {
         const autotaskTicket = await autotaskClient.getTicketByTicketNumber(input.ticketId);
         ticket = autotaskTicket;
         intakeSource = 'autotask';
-        console.log(`[PrepareContext] Resolved ${input.ticketId} from Autotask API (primary)`);
+        operationalLogger.info('context.prepare_context.autotask_t_format_lookup_resolved', {
+          module: 'services.context.prepare-context',
+          ticket_id: input.ticketId,
+        }, {
+          tenant_id: tenantId ?? null,
+          ticket_id: input.ticketId,
+        });
 
         const ticketIdNum = Number(autotaskTicket.id);
         if (!Number.isNaN(ticketIdNum)) {
@@ -328,7 +346,16 @@ export class PrepareContextService {
           }));
         }
       } catch (autotaskErr) {
-        console.warn(`[PrepareContext] Autotask lookup failed for ${input.ticketId}: ${(autotaskErr as Error).message}`);
+        operationalLogger.warn('context.prepare_context.autotask_t_format_lookup_failed', {
+          module: 'services.context.prepare-context',
+          ticket_id: input.ticketId,
+          signal: 'integration_failure',
+          degraded_mode: true,
+          error_message: (autotaskErr as Error).message,
+        }, {
+          tenant_id: tenantId ?? null,
+          ticket_id: input.ticketId,
+        });
         missingData.push({
           field: 'autotask_ticket',
           why: `Autotask lookup failed for T-format ticket: ${(autotaskErr as Error).message}`,
@@ -343,7 +370,13 @@ export class PrepareContextService {
         }
         ticket = await autotaskClient.getTicket(ticketIdNum);
         intakeSource = 'autotask';
-        console.log(`[PrepareContext] Got Autotask ticket ${input.ticketId}`);
+        operationalLogger.info('context.prepare_context.autotask_numeric_lookup_resolved', {
+          module: 'services.context.prepare-context',
+          ticket_id: input.ticketId,
+        }, {
+          tenant_id: tenantId ?? null,
+          ticket_id: input.ticketId,
+        });
 
         // Coleta notas (signals)
         const notes = await autotaskClient.getTicketNotes(ticketIdNum);
@@ -404,12 +437,28 @@ export class PrepareContextService {
           .find((v) => Boolean(v && v.toLowerCase() !== 'unknown'));
         if (companyNameCandidate) {
           ticket.company = companyNameCandidate;
-          console.log(`[PrepareContext] Resolved Autotask company ${autotaskCompanyId}: ${companyNameCandidate}`);
+          operationalLogger.info('context.prepare_context.autotask_company_resolved', {
+            module: 'services.context.prepare-context',
+            ticket_id: input.ticketId,
+            autotask_company_id: autotaskCompanyId,
+            company_name: companyNameCandidate,
+          }, {
+            tenant_id: tenantId ?? null,
+            ticket_id: input.ticketId,
+          });
         }
       } catch (error) {
-        console.warn(
-          `[PrepareContext] Could not resolve Autotask company ${autotaskCompanyId}: ${(error as Error).message}`
-        );
+        operationalLogger.warn('context.prepare_context.autotask_company_resolve_failed', {
+          module: 'services.context.prepare-context',
+          ticket_id: input.ticketId,
+          autotask_company_id: autotaskCompanyId,
+          signal: 'integration_failure',
+          degraded_mode: true,
+          error_message: (error as Error).message,
+        }, {
+          tenant_id: tenantId ?? null,
+          ticket_id: input.ticketId,
+        });
       }
     }
     if (Number.isFinite(autotaskContactId)) {
@@ -446,14 +495,29 @@ export class PrepareContextService {
           }
         }
         if (contactNameCandidate || contactEmailCandidate) {
-          console.log(
-            `[PrepareContext] Resolved Autotask contact ${autotaskContactId}: ${contactNameCandidate || 'unknown'}${contactEmailCandidate ? ` <${contactEmailCandidate}>` : ''}`
-          );
+          operationalLogger.info('context.prepare_context.autotask_contact_resolved', {
+            module: 'services.context.prepare-context',
+            ticket_id: input.ticketId,
+            autotask_contact_id: autotaskContactId,
+            contact_name: contactNameCandidate || 'unknown',
+            contact_email: contactEmailCandidate || null,
+          }, {
+            tenant_id: tenantId ?? null,
+            ticket_id: input.ticketId,
+          });
         }
       } catch (error) {
-        console.warn(
-          `[PrepareContext] Could not resolve Autotask contact ${autotaskContactId}: ${(error as Error).message}`
-        );
+        operationalLogger.warn('context.prepare_context.autotask_contact_resolve_failed', {
+          module: 'services.context.prepare-context',
+          ticket_id: input.ticketId,
+          autotask_contact_id: autotaskContactId,
+          signal: 'integration_failure',
+          degraded_mode: true,
+          error_message: (error as Error).message,
+        }, {
+          tenant_id: tenantId ?? null,
+          ticket_id: input.ticketId,
+        });
       }
     }
     if (Number.isFinite(autotaskAssignedResourceId)) {
@@ -473,14 +537,29 @@ export class PrepareContextService {
         if (resourceNameCandidate) autotaskAssignedResourceNameResolved = resourceNameCandidate;
         if (resourceEmailCandidate) autotaskAssignedResourceEmailResolved = resourceEmailCandidate;
         if (resourceNameCandidate || resourceEmailCandidate) {
-          console.log(
-            `[PrepareContext] Resolved Autotask resource ${autotaskAssignedResourceId}: ${resourceNameCandidate || 'unknown'}${resourceEmailCandidate ? ` <${resourceEmailCandidate}>` : ''}`
-          );
+          operationalLogger.info('context.prepare_context.autotask_resource_resolved', {
+            module: 'services.context.prepare-context',
+            ticket_id: input.ticketId,
+            autotask_resource_id: autotaskAssignedResourceId,
+            resource_name: resourceNameCandidate || 'unknown',
+            resource_email: resourceEmailCandidate || null,
+          }, {
+            tenant_id: tenantId ?? null,
+            ticket_id: input.ticketId,
+          });
         }
       } catch (error) {
-        console.warn(
-          `[PrepareContext] Could not resolve Autotask resource ${autotaskAssignedResourceId}: ${(error as Error).message}`
-        );
+        operationalLogger.warn('context.prepare_context.autotask_resource_resolve_failed', {
+          module: 'services.context.prepare-context',
+          ticket_id: input.ticketId,
+          autotask_resource_id: autotaskAssignedResourceId,
+          signal: 'integration_failure',
+          degraded_mode: true,
+          error_message: (error as Error).message,
+        }, {
+          tenant_id: tenantId ?? null,
+          ticket_id: input.ticketId,
+        });
       }
     }
     const originalTicketTitle = String(ticket.title || '').trim();
@@ -1227,7 +1306,16 @@ export class PrepareContextService {
           });
         }
       } catch (e) {
-        console.error('[PrepareContext] External search failed:', e);
+        operationalLogger.error('context.prepare_context.external_search_failed', e, {
+          module: 'services.context.prepare-context',
+          ticket_id: input.ticketId,
+          query: searchQuery,
+          signal: 'integration_failure',
+          degraded_mode: true,
+        }, {
+          tenant_id: tenantId ?? null,
+          ticket_id: input.ticketId,
+        });
       }
     }
 
@@ -1899,7 +1987,14 @@ export class PrepareContextService {
       .build();
 
     const duration = Date.now() - startTime;
-    console.log(`[PrepareContext] Completed in ${duration}ms`);
+    operationalLogger.info('context.prepare_context.completed', {
+      module: 'services.context.prepare-context',
+      ticket_id: input.ticketId,
+      duration_ms: duration,
+    }, {
+      tenant_id: tenantId ?? null,
+      ticket_id: input.ticketId,
+    });
 
     return evidencePack;
   }

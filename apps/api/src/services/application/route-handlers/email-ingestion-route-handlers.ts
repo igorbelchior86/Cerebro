@@ -5,6 +5,7 @@ import { graphClient } from '../../adapters/email/graph-client.js';
 import { emailParser } from '../../adapters/email/email-parser.js';
 import { pgStore } from '../../adapters/email/pg-store.js';
 import { triageOrchestrator } from '../../orchestration/triage-orchestrator.js';
+import { operationalLogger } from '../../../lib/operational-logger.js';
 
 const router: Router = Router();
 
@@ -28,6 +29,17 @@ const SIDEBAR_QUEUE_ENRICH_LIMIT = 200;
 const SIDEBAR_QUEUE_ENRICH_CONCURRENCY = 6;
 const sidebarTicketQueueCache = new Map<string, SidebarQueueCacheEntry>();
 let autotaskQueueCatalogCache: { expiresAt: number; byId: Map<number, string> } | null = null;
+
+function correlationFromRequest(req?: Request, fallbackTicketId?: string) {
+    const tenantId = String(req?.auth?.tid || '').trim();
+    const traceId = String(req?.header('x-correlation-id') || req?.header('x-trace-id') || '').trim();
+    const ticketId = String(fallbackTicketId || '').trim();
+    return {
+        ...(tenantId ? { tenant_id: tenantId } : {}),
+        ...(traceId ? { trace_id: traceId } : {}),
+        ...(ticketId ? { ticket_id: ticketId } : {}),
+    };
+}
 
 async function getAutotaskClientForSidebar(): Promise<AutotaskClient | null> {
     try {
@@ -191,12 +203,18 @@ async function hydrateAutotaskQueueMetadataForSidebar(items: Array<Record<string
 
 export async function ingestSupportMailboxOnce(mailbox?: string): Promise<{ processed: number }> {
     const mailboxAddress = mailbox || process.env.GRAPH_MAILBOX_ADDRESS || 'help@refreshtech.com';
-    console.log(`[EmailIngestion] Starting ingestion for mailbox: ${mailboxAddress}`);
+    operationalLogger.info('routes.email_ingestion.ingest.started', {
+        module: 'routes.email-ingestion',
+        mailbox_address: mailboxAddress,
+    });
 
     const emails = await graphClient.fetchSupportEmails(mailboxAddress);
 
     if (!emails || emails.length === 0) {
-        console.log('[EmailIngestion] No new matching emails found.');
+        operationalLogger.info('routes.email_ingestion.ingest.no_new_emails', {
+            module: 'routes.email-ingestion',
+            mailbox_address: mailboxAddress,
+        });
         return { processed: 0 };
     }
 
@@ -220,16 +238,31 @@ export async function ingestSupportMailboxOnce(mailbox?: string): Promise<{ proc
             try {
                 await graphClient.markEmailAsRead(mailboxAddress, messageId);
             } catch (markErr: any) {
-                console.warn(`[EmailIngestion] Could not mark as read: ${markErr.message}`);
+                operationalLogger.warn('routes.email_ingestion.ingest.mark_read_failed', {
+                    module: 'routes.email-ingestion',
+                    mailbox_address: mailboxAddress,
+                    message_id: messageId,
+                    reason: String(markErr?.message || 'unknown'),
+                }, {
+                    ticket_id: parsed.id,
+                });
             }
 
             processedCount++;
         } catch (err: any) {
-            console.error(`[EmailIngestion] Error processing email id ${email.id}:`, err);
+            operationalLogger.error('routes.email_ingestion.ingest.email_processing_failed', err, {
+                module: 'routes.email-ingestion',
+                email_id: String(email.id || ''),
+                mailbox_address: mailboxAddress,
+            });
         }
     }
 
-    console.log(`[EmailIngestion] Finished processing ${processedCount} emails.`);
+    operationalLogger.info('routes.email_ingestion.ingest.completed', {
+        module: 'routes.email-ingestion',
+        mailbox_address: mailboxAddress,
+        processed_count: processedCount,
+    });
     return { processed: processedCount };
 }
 
@@ -260,26 +293,37 @@ export async function backfillPendingEmailTickets(limit = 20): Promise<{ process
             await triageOrchestrator.runPipeline(row.id, undefined, 'email');
             processed++;
         } catch (err: any) {
-            console.error(`[EmailIngestion] Backfill failed for ticket ${row.id}:`, err?.message || err);
+            operationalLogger.error('routes.email_ingestion.backfill.ticket_failed', err, {
+                module: 'routes.email-ingestion',
+                ticket_id: row.id,
+            }, {
+                ticket_id: row.id,
+            });
         }
     }
     if (processed > 0) {
-        console.log(`[EmailIngestion] Backfill processed ${processed} pending ticket(s).`);
+        operationalLogger.info('routes.email_ingestion.backfill.completed', {
+            module: 'routes.email-ingestion',
+            processed_count: processed,
+        });
     }
     return { processed };
 }
 
-router.post('/ingest', async (_req: Request, res: Response) => {
+router.post('/ingest', async (req: Request, res: Response) => {
     try {
         const result = await ingestSupportMailboxOnce();
         return res.json({ message: 'Ingestion completed', processed: result.processed });
     } catch (error: any) {
-        console.error('[EmailIngestion] Ingestion failed:', error);
+        operationalLogger.error('routes.email_ingestion.ingest_route.failed', error, {
+            module: 'routes.email-ingestion',
+            route: 'POST /email-ingestion/ingest',
+        }, correlationFromRequest(req));
         return res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
 });
 
-router.get('/list', async (_req: Request, res: Response) => {
+router.get('/list', async (req: Request, res: Response) => {
     try {
         const { query } = await import('../../../db/index.js');
         const hasCompanyColumn = await query<{ exists: boolean }>(
@@ -653,15 +697,18 @@ router.get('/list', async (_req: Request, res: Response) => {
         try {
             await hydrateAutotaskQueueMetadataForSidebar(mapped as Array<Record<string, any>>);
         } catch (hydrationError: any) {
-            console.warn(
-                '[EmailIngestion] Sidebar queue hydration failed:',
-                hydrationError?.message || hydrationError
-            );
+            operationalLogger.warn('routes.email_ingestion.list.sidebar_hydration_failed', {
+                module: 'routes.email-ingestion',
+                reason: String(hydrationError?.message || hydrationError || 'unknown'),
+            }, correlationFromRequest(req));
         }
 
         res.json({ success: true, data: mapped });
     } catch (error: any) {
-        console.error('[EmailIngestion] List failed:', error);
+        operationalLogger.error('routes.email_ingestion.list.failed', error, {
+            module: 'routes.email-ingestion',
+            route: 'GET /email-ingestion/list',
+        }, correlationFromRequest(req));
         res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
 });
@@ -739,7 +786,10 @@ router.patch('/tickets/:ticketId/manual-suppression', async (req: Request, res: 
             suppression_reason_label: suppressed ? 'Manual suppression' : null,
         });
     } catch (error: any) {
-        console.error('[EmailIngestion] Manual suppression update failed:', error);
+        operationalLogger.error('routes.email_ingestion.manual_suppression_patch.failed', error, {
+            module: 'routes.email-ingestion',
+            route: 'PATCH /email-ingestion/tickets/:ticketId/manual-suppression',
+        }, correlationFromRequest(req, String(req.params.ticketId || '').trim()));
         return res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
 });

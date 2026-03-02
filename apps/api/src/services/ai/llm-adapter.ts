@@ -3,6 +3,8 @@
 // Easily switch between Groq, Anthropic, OpenAI, Minimax, etc.
 // ─────────────────────────────────────────────────────────────
 
+import { operationalLogger } from '../../lib/operational-logger.js';
+
 export interface Message {
   role: 'user' | 'assistant';
   content: string;
@@ -111,7 +113,12 @@ class GroqRateLimiter implements RateLimiter {
     }
 
     if (this.state.remainingTokens < 2000) {
-      console.warn(`[Groq] Low tokens remaining: ${this.state.remainingTokens}. Reset in ${Math.round((this.state.resetTokensAt - Date.now()) / 1000)}s`);
+      operationalLogger.warn('services.ai.llm_adapter.groq_low_tokens_remaining', {
+        module: 'services.ai.llm-adapter',
+        provider: 'groq',
+        remaining_tokens: this.state.remainingTokens,
+        reset_in_seconds: Math.round((this.state.resetTokensAt - Date.now()) / 1000),
+      });
     }
   }
 
@@ -219,7 +226,12 @@ class GroqProvider implements LLMProvider {
           delay = Math.max(delay, 5000); // Minimum 5s on 429
         }
 
-        console.warn(`[Groq] rate-limited (attempt ${attempt + 1}), retrying in ${Math.round(delay)}ms…`);
+        operationalLogger.warn('services.ai.llm_adapter.groq_rate_limited_retry', {
+          module: 'services.ai.llm-adapter',
+          provider: 'groq',
+          attempt: attempt + 1,
+          retry_in_ms: Math.round(delay),
+        });
         await new Promise(r => setTimeout(r, delay));
       }
     }

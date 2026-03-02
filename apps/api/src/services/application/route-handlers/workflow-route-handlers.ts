@@ -1,4 +1,5 @@
 import { Router, type Request, type Response, type Router as ExpressRouter } from 'express';
+import { operationalLogger } from '../../../lib/operational-logger.js';
 import { classifyQueueError } from '../../../platform/errors.js';
 import {
   WorkflowPolicyError,
@@ -74,22 +75,26 @@ router.get('/realtime', async (req, res) => {
     })
   );
 
-  console.info('[workflow.realtime.connected]', {
-    tenant_id: tenantId,
-    ticket_id: ticketId || undefined,
-    trace_id: traceId,
+  operationalLogger.info('routes.workflow.realtime.connected', {
+    module: 'routes.workflow.realtime',
     client_id: clientId,
     clients_for_tenant: workflowRealtimeHub.clientCount(tenantId),
+  }, {
+    tenant_id: tenantId,
+    ...(ticketId ? { ticket_id: ticketId } : {}),
+    trace_id: traceId,
   });
 
   req.on('close', () => {
     close();
-    console.info('[workflow.realtime.disconnected]', {
-      tenant_id: tenantId,
-      ticket_id: ticketId || undefined,
-      trace_id: traceId,
+    operationalLogger.info('routes.workflow.realtime.disconnected', {
+      module: 'routes.workflow.realtime',
       client_id: clientId,
       clients_for_tenant: workflowRealtimeHub.clientCount(tenantId),
+    }, {
+      tenant_id: tenantId,
+      ...(ticketId ? { ticket_id: ticketId } : {}),
+      trace_id: traceId,
     });
   });
 });

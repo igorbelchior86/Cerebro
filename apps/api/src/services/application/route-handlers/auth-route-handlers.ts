@@ -25,6 +25,7 @@ import {
   requireAdmin,
   type AuthPayload,
 } from '../../../middleware/auth.js';
+import { operationalLogger } from '../../../lib/operational-logger.js';
 import { tenantContext } from '../../../lib/tenantContext.js';
 import { applyWorkspaceRuntimeSettings } from '../../read-models/runtime-settings.js';
 
@@ -57,6 +58,15 @@ async function uniqueSlug(base: string): Promise<string> {
     if (!existing) return slug;
     slug = `${base}-${i++}`;
   }
+}
+
+function correlationFromRequest(req: Request) {
+  const tenantId = String(req.auth?.tid || '').trim();
+  const traceId = String(req.header('x-correlation-id') || req.header('x-trace-id') || '').trim();
+  return {
+    ...(tenantId ? { tenant_id: tenantId } : {}),
+    ...(traceId ? { trace_id: traceId } : {}),
+  };
 }
 
 // ─── POST /auth/register-tenant ──────────────────────────────
@@ -120,7 +130,10 @@ router.post('/register-tenant', async (req: Request, res: Response) => {
       if (err.code === '23505') {
         return res.status(409).json({ error: 'Email already registered' });
       }
-      console.error('[AUTH] register-tenant error:', err);
+      operationalLogger.error('routes.auth.register_tenant.failed', err, {
+        module: 'routes.auth',
+        route: 'POST /auth/register-tenant',
+      }, correlationFromRequest(req));
       res.status(500).json({ error: 'Failed to create tenant' });
     }
   });
@@ -168,7 +181,10 @@ router.post('/login', async (req: Request, res: Response) => {
         user: { id: user.id, email: user.email, role: user.role, tenantId: user.tenant_id, mfaEnabled: false },
       });
     } catch (err) {
-      console.error('[AUTH] login error:', err);
+      operationalLogger.error('routes.auth.login.failed', err, {
+        module: 'routes.auth',
+        route: 'POST /auth/login',
+      }, correlationFromRequest(req));
       res.status(500).json({ error: 'Login failed' });
     }
   });
@@ -216,7 +232,10 @@ router.post('/mfa/validate', async (req: Request, res: Response) => {
         user: { id: user.id, email: user.email, role: user.role, tenantId: user.tenant_id, mfaEnabled: true },
       });
     } catch (err) {
-      console.error('[AUTH] mfa/validate error:', err);
+      operationalLogger.error('routes.auth.mfa_validate.failed', err, {
+        module: 'routes.auth',
+        route: 'POST /auth/mfa/validate',
+      }, correlationFromRequest(req));
       res.status(500).json({ error: 'MFA validation failed' });
     }
   });
@@ -241,7 +260,10 @@ router.post('/mfa/setup', requireAuth, async (req: Request, res: Response) => {
 
     res.json({ secret, qrDataUrl, otpauthUrl });
   } catch (err) {
-    console.error('[AUTH] mfa/setup error:', err);
+    operationalLogger.error('routes.auth.mfa_setup.failed', err, {
+      module: 'routes.auth',
+      route: 'POST /auth/mfa/setup',
+    }, correlationFromRequest(req));
     res.status(500).json({ error: 'MFA setup failed' });
   }
 });
@@ -266,7 +288,10 @@ router.post('/mfa/enable', requireAuth, async (req: Request, res: Response) => {
     await query('UPDATE users SET totp_enabled = TRUE WHERE id = $1', [userId]);
     res.json({ message: 'MFA enabled successfully' });
   } catch (err) {
-    console.error('[AUTH] mfa/enable error:', err);
+    operationalLogger.error('routes.auth.mfa_enable.failed', err, {
+      module: 'routes.auth',
+      route: 'POST /auth/mfa/enable',
+    }, correlationFromRequest(req));
     res.status(500).json({ error: 'Failed to enable MFA' });
   }
 });
@@ -287,7 +312,10 @@ router.post('/mfa/disable', requireAuth, async (req: Request, res: Response) => 
     await query('UPDATE users SET totp_secret = NULL, totp_enabled = FALSE WHERE id = $1', [user.id]);
     res.json({ message: 'MFA disabled' });
   } catch (err) {
-    console.error('[AUTH] mfa/disable error:', err);
+    operationalLogger.error('routes.auth.mfa_disable.failed', err, {
+      module: 'routes.auth',
+      route: 'POST /auth/mfa/disable',
+    }, correlationFromRequest(req));
     res.status(500).json({ error: 'Failed to disable MFA' });
   }
 });
@@ -317,7 +345,10 @@ router.get('/me', requireAuth, async (req: Request, res: Response) => {
       tenant: { id: user.tenant_id, name: user.tenant_name, slug: user.tenant_slug },
     });
   } catch (err) {
-    console.error('[AUTH] /me error:', err);
+    operationalLogger.error('routes.auth.me_get.failed', err, {
+      module: 'routes.auth',
+      route: 'GET /auth/me',
+    }, correlationFromRequest(req));
     res.status(500).json({ error: 'Failed to fetch user' });
   }
 });
@@ -360,7 +391,10 @@ router.patch('/me/profile', requireAuth, async (req: Request, res: Response) => 
 
     res.json({ message: 'Profile updated', profile: result[0] });
   } catch (err) {
-    console.error('[AUTH] /me/profile error:', err);
+    operationalLogger.error('routes.auth.me_profile_patch.failed', err, {
+      module: 'routes.auth',
+      route: 'PATCH /auth/me/profile',
+    }, correlationFromRequest(req));
     res.status(500).json({ error: 'Failed to update profile' });
   }
 });
@@ -403,7 +437,10 @@ router.post('/invite', requireAuth, requireAdmin, async (req: Request, res: Resp
     const inviteUrl = `${process.env.APP_URL || 'http://localhost:3000'}/accept-invite?token=${token}`;
     res.json({ message: 'Invite created', inviteUrl, token });
   } catch (err) {
-    console.error('[AUTH] invite error:', err);
+    operationalLogger.error('routes.auth.invite.failed', err, {
+      module: 'routes.auth',
+      route: 'POST /auth/invite',
+    }, correlationFromRequest(req));
     res.status(500).json({ error: 'Failed to create invite' });
   }
 });
@@ -457,7 +494,10 @@ router.post('/accept-invite', async (req: Request, res: Response) => {
       if (err.code === '23505') {
         return res.status(409).json({ error: 'Email already registered' });
       }
-      console.error('[AUTH] accept-invite error:', err);
+      operationalLogger.error('routes.auth.accept_invite.failed', err, {
+        module: 'routes.auth',
+        route: 'POST /auth/accept-invite',
+      }, correlationFromRequest(req));
       res.status(500).json({ error: 'Failed to accept invite' });
     }
   });
@@ -478,7 +518,10 @@ router.get('/team', requireAuth, async (req: Request, res: Response) => {
     );
     res.json(members);
   } catch (err) {
-    console.error('[AUTH] team error:', err);
+    operationalLogger.error('routes.auth.team_get.failed', err, {
+      module: 'routes.auth',
+      route: 'GET /auth/team',
+    }, correlationFromRequest(req));
     res.status(500).json({ error: 'Failed to fetch team members' });
   }
 });
@@ -495,7 +538,10 @@ router.get('/workspace/settings', requireAuth, async (req: Request, res: Respons
     if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
     res.json(tenant.settings || {});
   } catch (err) {
-    console.error('[AUTH] workspace/settings GET error:', err);
+    operationalLogger.error('routes.auth.workspace_settings_get.failed', err, {
+      module: 'routes.auth',
+      route: 'GET /auth/workspace/settings',
+    }, correlationFromRequest(req));
     res.status(500).json({ error: 'Failed to fetch workspace settings' });
   }
 });
@@ -527,7 +573,10 @@ router.patch('/workspace/settings', requireAuth, requireAdmin, async (req: Reque
 
     res.json({ message: 'Workspace settings updated', settings: merged });
   } catch (err) {
-    console.error('[AUTH] workspace/settings PATCH error:', err);
+    operationalLogger.error('routes.auth.workspace_settings_patch.failed', err, {
+      module: 'routes.auth',
+      route: 'PATCH /auth/workspace/settings',
+    }, correlationFromRequest(req));
     res.status(500).json({ error: 'Failed to update workspace settings' });
   }
 });

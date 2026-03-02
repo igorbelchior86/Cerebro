@@ -9,6 +9,7 @@ import type {
 } from '@cerebro/types';
 import { getDefaultLLMProvider } from './llm-adapter.js';
 import { shouldBlockDiagnosisOutput } from '../domain/evidence-guardrails.js';
+import { operationalLogger } from '../../lib/operational-logger.js';
 
 type HypothesisGroundingStatus = 'grounded' | 'partial' | 'weak' | 'unsupported';
 type EnrichedHypothesis = Hypothesis & {
@@ -263,7 +264,12 @@ Rules:
 
       return parsedDiagnosis;
     } catch (err) {
-      console.error('[DIAGNOSE] Failed to parse response:', err);
+      operationalLogger.error('services.ai.diagnose.parse_failed', err, {
+        module: 'services.ai.diagnose',
+        degraded_mode: true,
+      }, {
+        ticket_id: String(pack.ticket.id || ''),
+      });
       throw new Error(
         `Diagnosis parse failed for ticket ${pack.ticket.id}: ${(err as Error)?.message || String(err)}`
       );

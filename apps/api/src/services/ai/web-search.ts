@@ -1,4 +1,5 @@
 import { getDefaultLLMProvider } from './llm-adapter.js';
+import { operationalLogger } from '../../lib/operational-logger.js';
 
 export interface SearchResult {
     title: string;
@@ -12,7 +13,10 @@ export class WebSearchService {
      * Search the web for technical documentation and known issues
      */
     async search(query: string): Promise<SearchResult[]> {
-        console.log(`[WebSearch] Searching for: ${query}`);
+        operationalLogger.info('services.ai.web_search.started', {
+            module: 'services.ai.web-search',
+            query,
+        });
 
         const tavilyKey = process.env.TAVILY_API_KEY;
         if (tavilyKey) {
@@ -48,7 +52,11 @@ export class WebSearchService {
                 source: 'tavily',
             }));
         } catch (error) {
-            console.error('[WebSearch] Tavily failed:', error);
+            operationalLogger.error('services.ai.web_search.tavily_failed', error, {
+                module: 'services.ai.web-search',
+                provider: 'tavily',
+                degraded_mode: true,
+            });
             return this.mockSearch(query);
         }
     }

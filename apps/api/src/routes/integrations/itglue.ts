@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { Router, type Router as ExpressRouter } from 'express';
-import { ITGlueClient } from '../clients/index.js';
+import { ITGlueClient } from '../../clients/index.js';
 
 const router: ExpressRouter = Router();
 

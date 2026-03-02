@@ -5,10 +5,10 @@ import Link from 'next/link';
 import type { P0AuditRecord } from '@cerebro/types';
 import { usePollingResource } from '@/hooks/usePollingResource';
 import {
-  ManagerOpsAIDecision,
-  WorkflowInboxTicket,
-  WorkflowAuditRecord,
-  WorkflowReconciliationIssue,
+  type ManagerOpsAIDecision,
+  type WorkflowInboxTicket,
+  type WorkflowAuditRecord,
+  type WorkflowReconciliationIssue,
   listManagerOpsAiDecisions,
   listManagerOpsAudit,
   listWorkflowAudit,
@@ -327,7 +327,7 @@ function AuditList({ rows, compact }: { rows: Array<WorkflowAuditRecord | P0Audi
           <div className="mt-1 flex flex-wrap gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
             <span>{new Date(row.timestamp).toLocaleString()}</span>
             {'correlation' in row && row.correlation?.trace_id ? <span>trace={row.correlation.trace_id}</span> : null}
-            {'actor' in row && (row.actor as any)?.id ? <span>actor={(row.actor as any).id}</span> : null}
+            {'actor' in row && (row.actor as { id?: string })?.id ? <span>actor={(row.actor as { id: string }).id}</span> : null}
           </div>
         </div>
       ))}
@@ -350,7 +350,7 @@ function ReconciliationIssueList({ rows }: { rows: WorkflowReconciliationIssue[]
           <details className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
             <summary className="cursor-pointer">Local vs remote snapshots</summary>
             <pre className="mt-2 overflow-auto rounded border p-2" style={{ borderColor: 'var(--border-subtle)', background: 'rgba(0,0,0,0.25)' }}>
-{JSON.stringify({ local: row.local_snapshot, remote: row.remote_snapshot }, null, 2)}
+              {JSON.stringify({ local: row.local_snapshot, remote: row.remote_snapshot }, null, 2)}
             </pre>
           </details>
         </div>

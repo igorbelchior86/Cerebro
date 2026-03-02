@@ -294,8 +294,8 @@ function SectionConnections() {
         setHealth(hMap);
       }
       if (cRes.ok) setSaved(await cRes.json());
-    } catch (err: any) {
-      if (userTriggered) setBannerError(err?.message || 'Failed to load');
+    } catch (err: unknown) {
+      if (userTriggered) setBannerError((err as Error)?.message || 'Failed to load');
     } finally { setLoading(false); }
   }
 
@@ -318,8 +318,8 @@ function SectionConnections() {
       }
       setActiveConfig(null);
       loadAll(true);
-    } catch (err: any) {
-      setBannerError(err?.message || 'Save failed');
+    } catch (err: unknown) {
+      setBannerError((err as Error)?.message || 'Save failed');
     }
   }
 
@@ -463,7 +463,7 @@ function SectionConnections() {
                       <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{f.label}</label>
                       {f.options ? (
                         <select
-                          value={formData[f.key] || (s as any)?.[f.key] || f.options?.[0]?.value || ''}
+                          value={formData[f.key] || (s as Record<string, string>)?.[f.key] || f.options?.[0]?.value || ''}
                           onChange={(e) => setFormData({ ...formData, [f.key]: e.target.value })}
                           className="w-full px-3 py-2 rounded-lg text-sm"
                           style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
@@ -488,7 +488,7 @@ function SectionConnections() {
                       onClick={() => {
                         const creds: Record<string, string> = {};
                         for (const f of fields) {
-                          const v = formData[f.key] || (s as any)?.[f.key] || (f.options ? f.options[0]?.value ?? '' : '');
+                          const v = formData[f.key] || (s as Record<string, string>)?.[f.key] || (f.options ? f.options[0]?.value ?? '' : '');
                           if (v) creds[f.key] = v;
                         }
                         save(id, creds);
@@ -533,7 +533,7 @@ function SectionLLM() {
   const { user } = useAuth();
   const canEdit = user?.role === 'owner' || user?.role === 'admin';
 
-  const [settings, setSettings] = useState<Record<string, any>>({});
+  const [settings, setSettings] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {

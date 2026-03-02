@@ -18,7 +18,7 @@ export interface ChatState {
   playbookError: string | null;
 }
 
-export function useChatState(sessionId: string) {
+export function useChatState(_sessionId: string) {
   const [state, setState] = useState<ChatState>({
     messages: [
       {

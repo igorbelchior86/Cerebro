@@ -4,8 +4,8 @@
 
 import { Router, type Router as ExpressRouter } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { PrepareContextService, persistEvidencePack, getEvidencePack } from '../services/context/prepare-context.js';
-import { query } from '../db/index.js';
+import { PrepareContextService, persistEvidencePack, getEvidencePack } from '../../services/context/prepare-context.js';
+import { query } from '../../db/index.js';
 
 const router: ExpressRouter = Router();
 const service = new PrepareContextService();

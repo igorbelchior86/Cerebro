@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePollingResource } from '@/hooks/usePollingResource';
 import {
-  WorkflowInboxTicket,
+  type WorkflowInboxTicket,
   listWorkflowInbox,
   mapHttpErrorToFrontendState,
   processWorkflowCommands,

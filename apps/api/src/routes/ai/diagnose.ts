@@ -8,10 +8,10 @@ import type {
   ValidationOutput,
   EvidencePack,
 } from '@cerebro/types';
-import { diagnoseEvidencePack } from '../services/ai/diagnose.js';
-import { validateDiagnosis, isSafeToGenerate } from '../services/domain/validate-policy.js';
-import { getEvidencePack } from '../services/context/prepare-context.js';
-import { query, queryOne, execute } from '../db/index.js';
+import { diagnoseEvidencePack } from '../../services/ai/diagnose.js';
+import { validateDiagnosis, isSafeToGenerate } from '../../services/domain/validate-policy.js';
+import { getEvidencePack } from '../../services/context/prepare-context.js';
+import { query, queryOne, execute } from '../../db/index.js';
 
 const router: Router = Router();
 

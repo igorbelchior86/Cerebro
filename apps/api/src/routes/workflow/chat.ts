@@ -5,10 +5,10 @@
 // ─────────────────────────────────────────────────────────────
 
 import { Router, type Router as ExpressRouter } from 'express';
-import { createLLMProvider, type Message } from '../services/ai/llm-adapter.js';
-import { queryOne } from '../db/index.js';
-import { ITGlueClient } from '../clients/itglue.js';
-import { NinjaOneClient } from '../clients/ninjaone.js';
+import { createLLMProvider, type Message } from '../../services/ai/llm-adapter.js';
+import { queryOne } from '../../db/index.js';
+import { ITGlueClient } from '../../clients/itglue.js';
+import { NinjaOneClient } from '../../clients/ninjaone.js';
 
 const router: ExpressRouter = Router();
 

@@ -114,10 +114,10 @@ function mapTicketFieldEditorToOptions(
   return options
     .filter((row) => !needle || row.label.toLowerCase().includes(needle))
     .map((row) => ({
-    id: row.id,
-    label: row.label,
-    ...(typeof row.isActive === 'boolean' ? { sublabel: row.isActive ? 'Active' : 'Inactive' } : {}),
-  }));
+      id: row.id,
+      label: row.label,
+      ...(typeof row.isActive === 'boolean' ? { sublabel: row.isActive ? 'Active' : 'Inactive' } : {}),
+    }));
 }
 
 function mapEditorToTicketFieldKey(
@@ -732,8 +732,8 @@ export default function HomePage() {
         auto_process: true,
       });
       const commandId = String(
-        (command as any)?.command_id ||
-        (command as any)?.command?.command_id ||
+        (command as Record<string, unknown>)?.command_id ||
+        ((command as Record<string, unknown>)?.command as Record<string, unknown>)?.command_id ||
         ''
       ).trim();
       if (!commandId) throw new Error('Workflow command id missing');
@@ -755,7 +755,7 @@ export default function HomePage() {
 
       const normalizedStatus = String(status?.status || '').trim().toLowerCase();
       if (normalizedStatus === 'failed' || normalizedStatus === 'dlq' || normalizedStatus === 'rejected') {
-        const detail = String((status as any)?.last_error || '').trim();
+        const detail = String((status as unknown as Record<string, unknown>)?.last_error || '').trim();
         throw new Error(detail || 'Ticket creation failed in Autotask.');
       }
       if (normalizedStatus !== 'completed') {
@@ -936,10 +936,10 @@ export default function HomePage() {
             [activeContextEditor]: mergeUniqueContextOptions(options, prev[activeContextEditor] || []).slice(0, 8),
           }));
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!ignore) {
           setContextEditorOptions([]);
-          setContextEditorError(String(err?.message || 'Unable to load Autotask options'));
+          setContextEditorError(String((err as Error)?.message || 'Unable to load Autotask options'));
         }
       } finally {
         if (!ignore) {
@@ -1291,7 +1291,7 @@ export default function HomePage() {
                             ? 'Source: Autotask company search'
                             : activeContextEditor === 'Priority' || activeContextEditor === 'Issue Type' || activeContextEditor === 'Sub-Issue Type' || activeContextEditor === 'Service Level Agreement'
                               ? 'Source: Autotask ticket field metadata'
-                            : 'Source: Autotask resource search'}
+                              : 'Source: Autotask resource search'}
                       </p>
                     </div>
                     <button

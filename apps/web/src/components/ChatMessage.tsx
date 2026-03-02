@@ -45,13 +45,7 @@ const SOURCE_CONFIG: Record<string, { icon: ReactNode; label: string }> = {
   text: { icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><line x1="10" y1="9" x2="8" y2="9" /></svg>, label: 'PlaybookWriter' },
 };
 
-function MsgTag({ children, color, bg }: { children: ReactNode; color?: string; bg?: string }) {
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '1px 6px', borderRadius: '4px', fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9.5px', fontWeight: 500, background: bg ?? 'var(--bg-badge)', color: color ?? 'var(--accent)', border: '1px solid var(--border)', margin: '0 2px', verticalAlign: 'middle' }}>
-      {children}
-    </span>
-  );
-}
+
 
 type CleanSegment =
   | { kind: 'paragraph'; text: string }
@@ -168,41 +162,7 @@ function normalizeCleanTicketTextForDisplay(input: string): CleanDisplayModel {
   return { markdownFallback, segments, rosterItems, formatted };
 }
 
-function renderHighlightedInline(text: string): ReactNode {
-  // Keep highlights restrained: deadlines/dates/action cues only.
-  const tokens = String(text || '').split(
-    /(\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b|\bmarch\s+\d{1,2}(?:st|nd|rd|th)?\b|\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b|\b(?:today|tomorrow|asap|urgent|deadline)\b|\b(?:goal(?:\s+completion)?|please prioritize|due by)\b)/gi
-  );
 
-  return tokens.map((part, idx) => {
-    if (!part) return null;
-    const lower = part.toLowerCase();
-    const isDateOrDeadline =
-      /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)/i.test(part) ||
-      /\bmarch\s+\d{1,2}(?:st|nd|rd|th)?\b/i.test(part) ||
-      /\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/.test(part) ||
-      ['today', 'tomorrow', 'asap', 'urgent', 'deadline', 'goal', 'goal completion', 'please prioritize', 'due by'].includes(lower);
-
-    if (!isDateOrDeadline) return <span key={idx}>{part}</span>;
-
-    return (
-      <span
-        key={idx}
-        style={{
-          display: 'inline',
-          padding: '0 3px',
-          borderRadius: '4px',
-          background: 'rgba(234,179,8,0.10)',
-          border: '1px solid rgba(234,179,8,0.18)',
-          color: '#B78109',
-          fontWeight: 600,
-        }}
-      >
-        {part}
-      </span>
-    );
-  });
-}
 
 function formatSimpleEmailBodyMarkdown(input: string): string {
   const raw = String(input || '').trim();
@@ -425,39 +385,7 @@ function formatSimpleEmailBodyMarkdown(input: string): string {
   return blocks.filter(Boolean).join('\n\n');
 }
 
-function parseRosterRow(input: { index?: number; title: string; detail?: string }) {
-  const source = `${input.title}${input.detail ? ` ${input.detail}` : ''}`.replace(/\s+/g, ' ').trim();
-  const nameMatch = source.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b(.*)$/);
-  const name = (nameMatch?.[1] || input.title).trim();
-  const rest = (nameMatch?.[2] || source.replace(name, '')).trim();
 
-  const employmentMatch = rest.match(/\b(1099|W2 Employee|Corp-to-Corp|corp-to-Corp|corp-to-corp)\b/i);
-  const employment = employmentMatch?.[1]
-    ? employmentMatch[1].replace(/corp-to-corp/i, 'Corp-to-Corp')
-    : '';
-  const deviceMatch = source.match(/\b(Microsoft Surface(?: Laptop)?|Personal Laptop|Laptop|Desktop|MacBook|PC|Workstation)\b/i);
-  const device = deviceMatch?.[1] || '';
-  const locationMatch = source.match(/\b([A-Z][a-z]+,\s*[A-Z]{2})\b/);
-  const location = locationMatch?.[1] || '';
-  const notes = [rest]
-    .join(' ')
-    .replace(new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '')
-    .replace(/\b(1099|W2 Employee|Corp-to-Corp|corp-to-corp)\b/gi, '')
-    .replace(/\b(Microsoft Surface(?: Laptop)?|Personal Laptop|Laptop|Desktop|MacBook|PC|Workstation)\b/gi, '')
-    .replace(/\b([A-Z][a-z]+,\s*[A-Z]{2})\b/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^[,.;:\- ]+|[,.;:\- ]+$/g, '');
-
-  return {
-    index: input.index,
-    name,
-    employment: employment || '—',
-    device: device || '—',
-    location: location || '—',
-    notes: notes || '—',
-  };
-}
 
 function RichCleanTicketText({
   text,
@@ -794,9 +722,6 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
         ? normalizeCleanTicketTextForDisplay(message.ticketTextVariant!.clean!)
         : normalizeCleanTicketTextForDisplay(message.ticketTextVariant!.original)
     : message.content;
-  const cleanDisplayModel = canToggleTicketText && hasCleanTicketText
-    ? normalizeCleanTicketTextForDisplay(message.ticketTextVariant!.clean!)
-    : null;
   const stepsList = message.steps && message.steps.length > 0 ? (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '8px' }}>
       {message.steps.map((step, i) => (

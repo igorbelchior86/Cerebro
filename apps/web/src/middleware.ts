@@ -5,7 +5,7 @@
 // Routes to proper locale using next-intl.
 // ─────────────────────────────────────────────────────────────
 
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
 import createMiddleware from 'next-intl/middleware';
 import { routing } from './i18n/routing';
@@ -47,7 +47,7 @@ export async function middleware(req: NextRequest) {
           new TextEncoder().encode(secret),
         );
         // Only allow full sessions (not mfa-pending)
-        if ((payload as any).scope === 'full') {
+        if ((payload as Record<string, unknown>).scope === 'full') {
           isAuthenticated = true;
         }
       }

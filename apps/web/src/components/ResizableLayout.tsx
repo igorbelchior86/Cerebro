@@ -31,8 +31,14 @@ export default function ResizableLayout({
   // Read from preferences once on load
   useEffect(() => {
     if (user?.preferences) {
-      if (user.preferences.sidebarWidth) setSidebarWidth(user.preferences.sidebarWidth);
-      if (user.preferences.rightWidth) setRightWidth(user.preferences.rightWidth);
+      if (typeof user.preferences.sidebarWidth === 'number' || typeof user.preferences.sidebarWidth === 'string') {
+        const sw = Number(user.preferences.sidebarWidth);
+        if (!isNaN(sw)) setSidebarWidth(sw);
+      }
+      if (typeof user.preferences.rightWidth === 'number' || typeof user.preferences.rightWidth === 'string') {
+        const rw = Number(user.preferences.rightWidth);
+        if (!isNaN(rw)) setRightWidth(rw);
+      }
     }
   }, [user?.preferences?.sidebarWidth, user?.preferences?.rightWidth]);
 
@@ -50,7 +56,7 @@ export default function ResizableLayout({
 
     const handleMouseUp = () => {
       let savedAny = false;
-      const newPrefs: any = {};
+      const newPrefs: Record<string, number> = {};
 
       if (isResizingSidebar.current) {
         isResizingSidebar.current = false;

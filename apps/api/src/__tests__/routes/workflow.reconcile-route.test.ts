@@ -17,7 +17,7 @@ jest.mock('../../services/workflow-runtime.js', () => ({
   workflowService: mockWorkflowService,
 }));
 
-import workflowRouter from '../../routes/workflow.js';
+import workflowRouter from '../../routes/workflow/workflow.js';
 
 describe('workflow reconcile route', () => {
   beforeEach(() => {

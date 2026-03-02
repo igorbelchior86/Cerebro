@@ -3,8 +3,8 @@
 import { useEffect, useState, useRef, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import axios from 'axios';
-import ChatSidebar, { ActiveTicket } from '@/components/ChatSidebar';
-import ChatMessage, { Message } from '@/components/ChatMessage';
+import ChatSidebar, { type ActiveTicket } from '@/components/ChatSidebar';
+import ChatMessage, { type Message } from '@/components/ChatMessage';
 import ChatInput, { type ChatInputSubmitPayload } from '@/components/ChatInput';
 import { NewTicketWorkspaceBridgeProvider } from '@/components/new-ticket-workspace-context';
 import PlaybookPanel from '@/components/PlaybookPanel';
@@ -38,12 +38,9 @@ import {
   submitWorkflowCommand,
   uploadAutotaskTicketAttachments,
   updateAutotaskTicketContext,
-  type ManagerOpsAIDecision,
   type WorkflowActionUxState,
-  type WorkflowAuditRecord,
   type WorkflowCommandStatus,
   type WorkflowInboxTicket,
-  type WorkflowReconciliationIssue,
 } from '@/lib/p0-ui-client';
 import { loadTriPaneSidebarTickets } from '@/lib/workflow-sidebar-adapter';
 import type { P0AuditRecord } from '@cerebro/types';
@@ -140,8 +137,11 @@ interface SessionData {
       ninja_signals_added?: number;
     };
   } | null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   evidence_pack?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   diagnosis?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   validation?: any;
   playbook?: { content_md: string };
   ticket_notes?: Array<Record<string, unknown>>;
@@ -209,10 +209,10 @@ function mapTicketFieldEditorToOptions(
   return options
     .filter((row) => !needle || row.label.toLowerCase().includes(needle))
     .map((row) => ({
-    id: row.id,
-    label: row.label,
-    ...(typeof row.isActive === 'boolean' ? { sublabel: row.isActive ? 'Active' : 'Inactive' } : {}),
-  }));
+      id: row.id,
+      label: row.label,
+      ...(typeof row.isActive === 'boolean' ? { sublabel: row.isActive ? 'Active' : 'Inactive' } : {}),
+    }));
 }
 
 function mapEditorToTicketFieldKey(
@@ -370,7 +370,7 @@ export default function SessionDetail({
   const [sidebarTickets, setSidebarTickets] = useState<ActiveTicket[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(true);
   const [isManualSuppressed, setIsManualSuppressed] = useState(false);
-  const [isManualSuppressionSaving, setIsManualSuppressionSaving] = useState(false);
+  const [isManualSuppressionSaving] = useState(false);
   const [isWorkflowReconcileRunning, setIsWorkflowReconcileRunning] = useState(false);
   const [workflowActionError, setWorkflowActionError] = useState('');
   const [techAssignmentDraft, setTechAssignmentDraft] = useState('');
@@ -562,15 +562,7 @@ export default function SessionDetail({
     return 'Unknown user';
   };
 
-  const getTicketContextMeta = (ticket?: ActiveTicket) => {
-    if (!ticket) return selectedTicketId;
-    const parts = [
-      ticket.ticket_id || ticket.id,
-      ticket.company || ticket.org,
-      ticket.requester || ticket.site,
-    ].filter(Boolean) as string[];
-    return parts.length > 0 ? parts.join(' · ') : selectedTicketId;
-  };
+
 
   const extractMarkdownSection = (markdown: string, aliases: string[]) => {
     const lines = markdown.split('\n');
@@ -723,8 +715,8 @@ export default function SessionDetail({
         auto_process: true,
       });
       const commandId = String(
-        (command as any)?.command_id ||
-        (command as any)?.command?.command_id ||
+        (command as Record<string, unknown>)?.command_id ||
+        ((command as Record<string, unknown>)?.command as Record<string, unknown>)?.command_id ||
         ''
       ).trim();
       if (!commandId) throw new Error('Workflow command id missing');
@@ -972,8 +964,8 @@ export default function SessionDetail({
         const sourceFindings = Array.isArray(pack?.source_findings) ? pack.source_findings : [];
         const hasSourceFindings = sourceFindings.length > 0;
         const relatedCount = Array.isArray(pack?.related_cases) ? pack.related_cases.length : 0;
-        const ninjaSignals = Array.isArray(pack?.signals) ? pack.signals.filter((s: any) => s?.source === 'ninja') : [];
-        const ninjaWarns = ninjaSignals.filter((s: any) => String(s?.type || '').includes('warn')).length;
+        const ninjaSignals = Array.isArray(pack?.signals) ? pack.signals.filter((s: Record<string, unknown>) => s?.source === 'ninja') : [];
+        const ninjaWarns = ninjaSignals.filter((s: Record<string, unknown>) => String(s?.type || '').includes('warn')).length;
         const docTitle = Array.isArray(pack?.docs) && pack.docs.length > 0 ? String(pack.docs[0]?.title || '').trim() : '';
         const ext = Array.isArray(pack?.external_status) && pack.external_status.length > 0 ? pack.external_status[0] : null;
 
@@ -985,7 +977,7 @@ export default function SessionDetail({
         };
 
         const prepareSteps: NonNullable<Message['steps']> = hasSourceFindings
-          ? sourceFindings.map((f: any) => ({
+          ? sourceFindings.map((f: Record<string, unknown>) => ({
             label: `${f?.round ? `R${f.round} · ` : ''}${sourceLabelMap[String(f?.source || '')] || String(f?.source || 'Source')} — ${normalizePlainText(String(f?.summary || ''), 'No summary')}`,
             status: f?.queried ? (f?.matched ? 'done' : 'running') : 'idle',
           }))
@@ -1128,8 +1120,9 @@ export default function SessionDetail({
         setPlaybookStatus('error');
       } finally {
         inFlight = false;
-        if (cancelled || reqSeq !== flowRequestSeqRef.current) return;
-        setLoading(false);
+        if (!cancelled && reqSeq === flowRequestSeqRef.current) {
+          setLoading(false);
+        }
       }
     };
 
@@ -1606,7 +1599,6 @@ export default function SessionDetail({
     ticketFieldOptionsCache.subIssueType,
   ]);
 
-  const ticketMetaLabel = `Primary: ${primaryTech} · Secondary: ${secondaryTech}`;
 
   const workflowTicket = (workflowInboxState.data || []).find(
     (row) => row.ticket_id === ticketNumber || row.ticket_id === canonicalTicketId
@@ -1781,13 +1773,14 @@ export default function SessionDetail({
     }
     if (activeContextEditor === 'Org') {
       const applyOrgSelection = (companyId: number, companyName: string) => {
-        setContextOverrides((prev) => ({
-          ...(() => {
-            const { user: _omitUser, ...rest } = prev;
-            return rest;
-          })(),
-          org: { id: companyId, name: companyName },
-        }));
+        setContextOverrides((prev) => {
+          const next = { ...prev };
+          delete next.user;
+          return {
+            ...next,
+            org: { id: companyId, name: companyName },
+          };
+        });
       };
 
       // Optimistic local selection guarantees Contact->Org dependency immediately.
@@ -1798,10 +1791,10 @@ export default function SessionDetail({
         const updated = await updateAutotaskTicketContext(ticketRef, { companyId: option.id });
         const resolvedCompanyId = toAutotaskId(updated.companyId) ?? option.id;
         applyOrgSelection(resolvedCompanyId, updated.companyName || option.label);
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Keep local Org selection so user can continue to Contact selection flow.
         setWorkflowActionError(
-          `Org selected locally. Autotask write pending/failed: ${String(err?.message || 'Unable to update Org in Autotask')}`
+          `Org selected locally. Autotask write pending/failed: ${String((err as Error)?.message || 'Unable to update Org in Autotask')}`
         );
       } finally {
         closeContextEditor();
@@ -1843,8 +1836,8 @@ export default function SessionDetail({
           }));
         }
         closeContextEditor();
-      } catch (err: any) {
-        setContextEditorError(String(err?.message || `Unable to update ${activeContextEditor} in Autotask`));
+      } catch (err: unknown) {
+        setContextEditorError(String((err as Error)?.message || `Unable to update ${activeContextEditor} in Autotask`));
         setContextEditorSaving(false);
       }
       return;
@@ -1881,8 +1874,8 @@ export default function SessionDetail({
             : {}),
         }));
         closeContextEditor();
-      } catch (err: any) {
-        setContextEditorError(String(err?.message || `Unable to update ${activeContextEditor} in Autotask`));
+      } catch (err: unknown) {
+        setContextEditorError(String((err as Error)?.message || `Unable to update ${activeContextEditor} in Autotask`));
         setContextEditorSaving(false);
       }
       return;
@@ -1944,10 +1937,10 @@ export default function SessionDetail({
             setContextEditorOptions([]);
             setContextEditorError(`Select an Org first to list ${activeContextEditor.toLowerCase()} options.`);
           }
-        } catch (err: any) {
+        } catch (err: unknown) {
           if (!ignoreResolve) {
             setContextEditorOptions([]);
-            setContextEditorError(String(err?.message || `Unable to resolve Org before listing ${activeContextEditor.toLowerCase()} options.`));
+            setContextEditorError(String((err as Error)?.message || `Unable to resolve Org before listing ${activeContextEditor.toLowerCase()} options.`));
           }
         } finally {
           if (!ignoreResolve) setContextEditorLoading(false);
@@ -2056,10 +2049,10 @@ export default function SessionDetail({
             Tech: mergeUniqueContextOptions(options, prev.Tech || []).slice(0, 8),
           }));
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!ignore) {
           setContextEditorOptions([]);
-          setContextEditorError(String(err?.message || 'Unable to load Autotask options'));
+          setContextEditorError(String((err as Error)?.message || 'Unable to load Autotask options'));
         }
       } finally {
         if (!ignore) {
@@ -2078,7 +2071,7 @@ export default function SessionDetail({
     ? data?.evidence_pack?.evidence_digest?.facts_confirmed
     : [];
   const digestFactMap = new Map<string, string>(
-    digestFacts.map((f: any) => [String(f?.id || ''), String(f?.fact || '').trim()])
+    digestFacts.map((f: Record<string, unknown>) => [String(f?.id || ''), String(f?.fact || '').trim()])
   );
   const normalizeFact = (value: string) => value.replace(/\s+/g, ' ').trim();
   const parsedPlaybookChecklist = parseChecklistFromPlaybook(data?.playbook?.content_md || undefined);
@@ -2236,14 +2229,14 @@ export default function SessionDetail({
         { key: 'Additional Devices', val: data?.ssot?.alternate_device || 'Unknown' },
       ].map(item => ({ ...item, val: item.val?.toLowerCase() === 'unknown' || item.val?.toLowerCase() === 'unknown org' ? '-' : item.val })),
       hypotheses: Array.isArray(data.diagnosis?.top_hypotheses)
-        ? data.diagnosis.top_hypotheses.slice(0, 3).map((h: any, i: number) => ({
+        ? data.diagnosis.top_hypotheses.slice(0, 3).map((h: Record<string, unknown>, i: number) => ({
           rank: Number(h?.rank) || i + 1,
           hypothesis: String(h?.hypothesis || 'Hypothesis'),
           confidence: Number(h?.confidence) || 0,
           evidence: Array.isArray(h?.evidence)
             ? h.evidence
               .slice(0, 4)
-              .map((e: any) => {
+              .map((e: unknown) => {
                 const id = String(e || '');
                 const fact = normalizeFact(String(digestFactMap.get(id) || ''));
                 return {
@@ -2251,6 +2244,7 @@ export default function SessionDetail({
                   label: fact || undefined,
                 };
               })
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               .filter((e: any, idx: number, arr: any[]) =>
                 arr.findIndex((x) => String(x.label || x.id) === String(e.label || e.id)) === idx
               )
@@ -2301,770 +2295,770 @@ export default function SessionDetail({
         <ResizableLayout
           transparentSidebar={true}
           sidebarContent={
-        <ChatSidebar
-          tickets={displayTickets}
-          currentTicketId={selectedTicketId}
-          isLoading={isLoadingTickets || loading}
-          onCreateTicket={() => setIsDraftMode(true)}
-          onSelectTicket={(id) => {
-            if (id === selectedTicketId) return;
-            setSelectedTicketId(id);
-            const currentPath = pathname ?? window.location.pathname;
-            const nextPath = currentPath.replace(/\/triage\/[^/]+$/, `/triage/${id}`);
-            window.history.replaceState(null, '', `${nextPath}${window.location.search}`);
-          }}
-        />
-      }
+            <ChatSidebar
+              tickets={displayTickets}
+              currentTicketId={selectedTicketId}
+              isLoading={isLoadingTickets || loading}
+              onCreateTicket={() => setIsDraftMode(true)}
+              onSelectTicket={(id) => {
+                if (id === selectedTicketId) return;
+                setSelectedTicketId(id);
+                const currentPath = pathname ?? window.location.pathname;
+                const nextPath = currentPath.replace(/\/triage\/[^/]+$/, `/triage/${id}`);
+                window.history.replaceState(null, '', `${nextPath}${window.location.search}`);
+              }}
+            />
+          }
           rightContent={
-        <PlaybookPanel
-          content={data?.playbook?.content_md || null}
-          status={playbookStatus}
-          sessionStatus={data?.session?.status}
-          onEditContextItem={openContextEditor}
-          {...(playbookPanelData ? { data: playbookPanelData } : {})}
-        />
-      }
+            <PlaybookPanel
+              content={data?.playbook?.content_md || null}
+              status={playbookStatus}
+              sessionStatus={data?.session?.status}
+              onEditContextItem={openContextEditor}
+              {...(playbookPanelData ? { data: playbookPanelData } : {})}
+            />
+          }
           mainContent={
-        <div className="flex-1 flex flex-col" style={{ background: 'transparent', minWidth: 0, height: '100%', minHeight: 0, padding: '12px', gap: '8px' }}>
-          <div style={{ border: '1px solid var(--bento-outline)', borderRadius: '14px', background: 'var(--bg-card)', flexShrink: 0 }}>
-            {/* Header */}
-            <div
-              className="px-4 py-3 flex items-center gap-3 flex-shrink-0"
-              style={{ borderBottom: '1px solid var(--bento-outline)', background: 'transparent' }}
-            >
-              <div
-                style={{
-                  width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
-                  background: playbookReady ? 'var(--green)' : loading ? '#EAB308' : 'var(--accent)',
-                  boxShadow: loading || !playbookReady ? `0 0 6px ${loading ? '#EAB308' : 'var(--accent)'}` : undefined,
-                }}
-              />
-              <p style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {ticketLabel}
-              </p>
-              <div ref={headerMenuRef} style={{ position: 'relative' }}>
-                <button
-                  onClick={() => setIsHeaderMenuOpen(!isHeaderMenuOpen)}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '30px',
-                    height: '30px',
-                    borderRadius: '10px',
-                    color: isHeaderMenuOpen ? 'var(--accent)' : 'var(--text-muted)',
-                    background: isHeaderMenuOpen ? 'rgba(91,127,255,0.08)' : 'var(--bg-card)',
-                    border: isHeaderMenuOpen ? '1px solid rgba(91,127,255,0.30)' : '1px solid var(--bento-outline)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                  }}
-                  title="Actions"
+            <div className="flex-1 flex flex-col" style={{ background: 'transparent', minWidth: 0, height: '100%', minHeight: 0, padding: '12px', gap: '8px' }}>
+              <div style={{ border: '1px solid var(--bento-outline)', borderRadius: '14px', background: 'var(--bg-card)', flexShrink: 0 }}>
+                {/* Header */}
+                <div
+                  className="px-4 py-3 flex items-center gap-3 flex-shrink-0"
+                  style={{ borderBottom: '1px solid var(--bento-outline)', background: 'transparent' }}
                 >
-                  <svg width="15" height="15" viewBox="0 0 20 20" fill="none">
-                    <circle cx="10" cy="5" r="1.5" fill="currentColor" />
-                    <circle cx="10" cy="10" r="1.5" fill="currentColor" />
-                    <circle cx="10" cy="15" r="1.5" fill="currentColor" />
-                  </svg>
-                </button>
-                {isHeaderMenuOpen && (
                   <div
                     style={{
-                      position: 'absolute',
-                      top: 'calc(100% + 4px)',
-                      right: 0,
-                      zIndex: 9999,
-                      minWidth: '220px',
-                      background: 'var(--bg-card)',
-                      border: '1px solid var(--bento-outline)',
-                      borderRadius: '12px',
-                      boxShadow: '0 10px 30px rgba(0,0,0,0.1)',
-                      padding: '8px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '12px'
+                      width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                      background: playbookReady ? 'var(--green)' : loading ? '#EAB308' : 'var(--accent)',
+                      boxShadow: loading || !playbookReady ? `0 0 6px ${loading ? '#EAB308' : 'var(--accent)'}` : undefined,
                     }}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <h4 style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600, padding: '0 8px', margin: '4px 0' }}>Triage</h4>
-                      <button
-                        onClick={() => {
-                          setIsHeaderMenuOpen(false);
-                          handleToggleManualSuppression();
-                        }}
-                        disabled={isManualSuppressionSaving}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          width: '100%',
-                          padding: '6px 8px',
-                          borderRadius: '6px',
-                          fontSize: '12px',
-                          color: isManualSuppressed ? '#F59E0B' : 'var(--text-primary)',
-                          background: 'transparent',
-                          border: 'none',
-                          cursor: isManualSuppressionSaving ? 'not-allowed' : 'pointer',
-                          textAlign: 'left',
-                          opacity: isManualSuppressionSaving ? 0.7 : 1,
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bento-outline)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
-                          <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
-                          <path d="M7 13L13 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                        </svg>
-                        {isManualSuppressed ? 'Remove Suppression' : 'Suppress Ticket'}
-                      </button>
-                    </div>
-
-                    <div style={{ height: '1px', background: 'var(--bento-outline)', margin: '0 4px', flexShrink: 0 }}></div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <h4 style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600, padding: '0 8px', margin: '4px 0' }}>Sync</h4>
-                      <button
-                        onClick={() => {
-                          setIsHeaderMenuOpen(false);
-                          handleReconcileWorkflowTicket();
-                        }}
-                        disabled={isWorkflowReconcileRunning || !ticketNumber}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          width: '100%',
-                          padding: '6px 8px',
-                          borderRadius: '6px',
-                          fontSize: '12px',
-                          color: 'var(--text-primary)',
-                          background: 'transparent',
-                          border: 'none',
-                          cursor: (isWorkflowReconcileRunning || !ticketNumber) ? 'not-allowed' : 'pointer',
-                          textAlign: 'left',
-                          opacity: (isWorkflowReconcileRunning || !ticketNumber) ? 0.5 : 1,
-                        }}
-                        onMouseEnter={(e) => { if (!isWorkflowReconcileRunning && ticketNumber) e.currentTarget.style.background = 'var(--bento-outline)'; }}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
-                          <path d="M4 10a6 6 0 0 1 10.2-4.2L16 7.7M16 10a6 6 0 0 1-10.2 4.2L4 12.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                          <path d="M16 4.5v3.2h-3.2M4 15.5v-3.2h3.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                        Reconcile Data
-                      </button>
-                      <button
-                        onClick={() => {
-                          setIsHeaderMenuOpen(false);
-                          handleRefreshPipeline();
-                        }}
-                        disabled={loading}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          width: '100%',
-                          padding: '6px 8px',
-                          borderRadius: '6px',
-                          fontSize: '12px',
-                          color: 'var(--text-primary)',
-                          background: 'transparent',
-                          border: 'none',
-                          cursor: loading ? 'not-allowed' : 'pointer',
-                          textAlign: 'left',
-                          opacity: loading ? 0.5 : 1,
-                        }}
-                        onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = 'var(--bento-outline)'; }}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
-                          <path d="M15.5 10C15.5 13.0376 13.0376 15.5 10 15.5C6.96243 15.5 4.5 13.0376 4.5 10C4.5 6.96243 6.96243 4.5 10 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                          <path d="M9.5 7L12 4.5L9.5 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                        Hard Refresh
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-jetbrains-mono)', marginLeft: playbookReady ? '0' : 'auto' }}>
-                {playbookReady ? '' : loading ? t('statusInitializing') : t('statusProcessing')}
-              </span>
-            </div>
-            <div className="px-4 py-3 flex flex-wrap items-center gap-2.5" style={{ background: 'transparent' }}>
-              <TechPill
-                label="Primary"
-                name={primaryTech}
-                type="primary"
-                onEdit={() => openContextEditor('Tech')}
-                onRemove={() => handleTechUpdate('primary')}
-              />
-              <TechPill
-                label="Secondary"
-                name={secondaryTech}
-                type="secondary"
-                onEdit={() => openContextEditor('Tech')}
-                onRemove={() => handleTechUpdate('secondary')}
-              />
-            </div>
-          </div>
-
-          {/* Messages Container */}
-          <div
-            ref={scrollRef}
-            className="flex-1 overflow-y-auto"
-            style={{
-              ...velocityStyle,
-              padding: '14px 14px 8px',
-              border: '1px solid var(--bento-outline)',
-              borderRadius: '14px',
-              background: 'var(--bg-card)',
-              minHeight: 0,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
-              <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>View</span>
-              <div style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', border: '1px solid var(--bento-outline)', background: 'var(--bg-panel)', padding: '2px', gap: '2px' }}>
-                {[
-                  { key: 'all', label: 'All' },
-                  { key: 'internal_ai', label: 'AI' },
-                  { key: 'external_psa_user', label: 'PSA/User' },
-                ].map((opt) => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => setChannelFilter(opt.key as 'all' | 'internal_ai' | 'external_psa_user')}
-                    style={{
-                      borderRadius: '999px',
-                      border: 'none',
-                      background: channelFilter === opt.key ? 'rgba(91,127,255,0.12)' : 'transparent',
-                      color: channelFilter === opt.key ? 'var(--accent)' : 'var(--text-muted)',
-                      padding: '4px 9px',
-                      fontSize: '10px',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {opt.label} {channelCounts[opt.key as 'all' | 'internal_ai' | 'external_psa_user']}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {error && (
-              <div
-                className="rounded-xl p-4 mb-4 text-sm"
-                style={{
-                  background: 'rgba(248,81,73,0.08)',
-                  border: '1px solid rgba(248,81,73,0.2)',
-                  color: '#fca5a5',
-                }}
-              >
-                <p className="font-semibold mb-0.5">{t('connectionError')}</p>
-                <p style={{ color: '#f87171', opacity: 0.85 }}>{error}</p>
-              </div>
-            )}
-
-            {visibleMessages.map((msg, idx) => (
-              <ChatMessage key={msg.id} message={msg} index={idx} onRetryExternalMessage={handleRetryExternalMessage} />
-            ))}
-
-            {loading && messages.length === 1 && (
-              <ChatMessage
-                key="loading-message"
-                message={{
-                  id: 'loading',
-                  role: 'system',
-                  content: t('initializingSession'),
-                  timestamp: new Date(),
-                  type: 'status',
-                  channel: 'internal_ai',
-                }}
-                index={visibleMessages.length}
-              />
-            )}
-          </div>
-
-          {/* Chat Input */}
-          <ChatInput
-            onSubmit={handleSendMessage}
-            placeholder={t('placeholder')}
-            disabled={loading}
-            isLoading={false}
-            attachmentsEnabled={true}
-            targetChannel={targetChannel}
-            onTargetChannelChange={(channel) => {
-              setTargetChannel(channel);
-              trackChatEvent('chat_channel_selected', { ticket_id: selectedTicketId, channel });
-            }}
-            showChannelToggle={true}
-            hints={[
-              'Reanalyze with new info',
-              'Generate user questions',
-              'Summarize for ticket',
-              'Escalate to L3',
-            ]}
-          />
-
-          {activeContextEditor ? (
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-label={`Edit ${activeContextEditor}`}
-              // Increased duration and added ease-out for a very smooth, magical fade of the dark blur backdrop
-              className="animate-in fade-in duration-500 ease-out"
-              style={{
-                position: 'fixed',
-                inset: 0,
-                zIndex: 9999, // Ensure global positioning top-level
-                background: 'rgba(2, 4, 8, 0.55)', // Elegant darker glass
-                backdropFilter: 'blur(8px)',
-                WebkitBackdropFilter: 'blur(8px)',
-                display: 'flex',
-                alignItems: 'flex-start', // Anchors to top
-                justifyContent: 'center',
-                paddingTop: '12vh', // Fixed vertical position, exactly like the screenshot
-              }}
-              onClick={closeContextEditor}
-            >
-              <div
-                // Softer zoom and gentle slide for a floating magical entrance
-                className="animate-in zoom-in-[0.95] slide-in-from-top-4 duration-500 ease-out"
-                style={{
-                  width: 'min(640px, calc(100vw - 32px))',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  borderRadius: '20px',
-                  border: '1px solid rgba(255,255,255,0.08)', // Subtle glass border
-                  background: 'var(--bg-elevated)', // Deep dark or clean light depending on theme
-                  boxShadow: '0 32px 64px -12px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04) inset',
-                  overflow: 'hidden', // Contains content cleanly
-                  transformOrigin: 'top center',
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {/* Header Section (Always Visible) */}
-                <div style={{ padding: '20px 24px 16px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'var(--bg-card)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', marginBottom: '20px' }}>
-                    <div>
-                      <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.02em', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7 }}>
-                          <circle cx="11" cy="11" r="8"></circle>
-                          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                        </svg>
-                        Edit {activeContextEditor}
-                      </h2>
-                      <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px', margin: 0 }}>
-                        {activeContextEditor === 'Contact' || activeContextEditor === 'Additional contacts'
-                          ? activeOrgId !== null
-                            ? `Listing contacts from selected Org (ID ${activeOrgId})`
-                            : 'Select an Org first to list contacts'
-                          : activeContextEditor === 'Priority' || activeContextEditor === 'Issue Type' || activeContextEditor === 'Sub-Issue Type' || activeContextEditor === 'Service Level Agreement'
-                            ? 'Source: Autotask ticket field metadata'
-                            : 'Source: Autotask read-only global search'}
-                      </p>
-                    </div>
+                  />
+                  <p style={{ fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {ticketLabel}
+                  </p>
+                  <div ref={headerMenuRef} style={{ position: 'relative' }}>
                     <button
-                      type="button"
-                      onClick={closeContextEditor}
-                      disabled={contextEditorSaving}
-                      className="hover:bg-white/10 hover:text-white transition-all duration-200"
+                      onClick={() => setIsHeaderMenuOpen(!isHeaderMenuOpen)}
                       style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '10px',
-                        border: '1px solid rgba(255,255,255,0.08)',
-                        background: 'rgba(255,255,255,0.03)',
-                        color: 'var(--text-secondary)',
-                        cursor: contextEditorSaving ? 'not-allowed' : 'pointer',
-                        display: 'flex',
+                        display: 'inline-flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        opacity: contextEditorSaving ? 0.6 : 1,
+                        width: '30px',
+                        height: '30px',
+                        borderRadius: '10px',
+                        color: isHeaderMenuOpen ? 'var(--accent)' : 'var(--text-muted)',
+                        background: isHeaderMenuOpen ? 'rgba(91,127,255,0.08)' : 'var(--bg-card)',
+                        border: isHeaderMenuOpen ? '1px solid rgba(91,127,255,0.30)' : '1px solid var(--bento-outline)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                       }}
-                      aria-label="Close editor"
+                      title="Actions"
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                      <svg width="15" height="15" viewBox="0 0 20 20" fill="none">
+                        <circle cx="10" cy="5" r="1.5" fill="currentColor" />
+                        <circle cx="10" cy="10" r="1.5" fill="currentColor" />
+                        <circle cx="10" cy="15" r="1.5" fill="currentColor" />
                       </svg>
                     </button>
-                  </div>
+                    {isHeaderMenuOpen && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 'calc(100% + 4px)',
+                          right: 0,
+                          zIndex: 9999,
+                          minWidth: '220px',
+                          background: 'var(--bg-card)',
+                          border: '1px solid var(--bento-outline)',
+                          borderRadius: '12px',
+                          boxShadow: '0 10px 30px rgba(0,0,0,0.1)',
+                          padding: '8px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '12px'
+                        }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <h4 style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600, padding: '0 8px', margin: '4px 0' }}>Triage</h4>
+                          <button
+                            onClick={() => {
+                              setIsHeaderMenuOpen(false);
+                              handleToggleManualSuppression();
+                            }}
+                            disabled={isManualSuppressionSaving}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              width: '100%',
+                              padding: '6px 8px',
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              color: isManualSuppressed ? '#F59E0B' : 'var(--text-primary)',
+                              background: 'transparent',
+                              border: 'none',
+                              cursor: isManualSuppressionSaving ? 'not-allowed' : 'pointer',
+                              textAlign: 'left',
+                              opacity: isManualSuppressionSaving ? 0.7 : 1,
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bento-outline)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                              <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.5" />
+                              <path d="M7 13L13 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                            </svg>
+                            {isManualSuppressed ? 'Remove Suppression' : 'Suppress Ticket'}
+                          </button>
+                        </div>
 
-                  <input
-                    type="text"
-                    value={contextEditorQuery}
-                    onChange={(e) => setContextEditorQuery(e.target.value)}
-                    disabled={contextEditorSaving}
-                    placeholder={`Type to search ${activeContextEditor.toLowerCase()}...`}
-                    className="focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent outline-none transition-shadow duration-300"
-                    style={{
-                      width: '100%',
-                      borderRadius: '12px',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      background: 'rgba(0,0,0,0.2)',
-                      color: 'var(--text-primary)',
-                      fontSize: '14.5px',
-                      padding: '12px 16px',
-                      boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)'
-                    }}
-                    autoFocus
+                        <div style={{ height: '1px', background: 'var(--bento-outline)', margin: '0 4px', flexShrink: 0 }}></div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <h4 style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600, padding: '0 8px', margin: '4px 0' }}>Sync</h4>
+                          <button
+                            onClick={() => {
+                              setIsHeaderMenuOpen(false);
+                              handleReconcileWorkflowTicket();
+                            }}
+                            disabled={isWorkflowReconcileRunning || !ticketNumber}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              width: '100%',
+                              padding: '6px 8px',
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              color: 'var(--text-primary)',
+                              background: 'transparent',
+                              border: 'none',
+                              cursor: (isWorkflowReconcileRunning || !ticketNumber) ? 'not-allowed' : 'pointer',
+                              textAlign: 'left',
+                              opacity: (isWorkflowReconcileRunning || !ticketNumber) ? 0.5 : 1,
+                            }}
+                            onMouseEnter={(e) => { if (!isWorkflowReconcileRunning && ticketNumber) e.currentTarget.style.background = 'var(--bento-outline)'; }}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                              <path d="M4 10a6 6 0 0 1 10.2-4.2L16 7.7M16 10a6 6 0 0 1-10.2 4.2L4 12.3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                              <path d="M16 4.5v3.2h-3.2M4 15.5v-3.2h3.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                            Reconcile Data
+                          </button>
+                          <button
+                            onClick={() => {
+                              setIsHeaderMenuOpen(false);
+                              handleRefreshPipeline();
+                            }}
+                            disabled={loading}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              width: '100%',
+                              padding: '6px 8px',
+                              borderRadius: '6px',
+                              fontSize: '12px',
+                              color: 'var(--text-primary)',
+                              background: 'transparent',
+                              border: 'none',
+                              cursor: loading ? 'not-allowed' : 'pointer',
+                              textAlign: 'left',
+                              opacity: loading ? 0.5 : 1,
+                            }}
+                            onMouseEnter={(e) => { if (!loading) e.currentTarget.style.background = 'var(--bento-outline)'; }}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
+                              <path d="M15.5 10C15.5 13.0376 13.0376 15.5 10 15.5C6.96243 15.5 4.5 13.0376 4.5 10C4.5 6.96243 6.96243 4.5 10 4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                              <path d="M9.5 7L12 4.5L9.5 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                            Hard Refresh
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontFamily: 'var(--font-jetbrains-mono)', marginLeft: playbookReady ? '0' : 'auto' }}>
+                    {playbookReady ? '' : loading ? t('statusInitializing') : t('statusProcessing')}
+                  </span>
+                </div>
+                <div className="px-4 py-3 flex flex-wrap items-center gap-2.5" style={{ background: 'transparent' }}>
+                  <TechPill
+                    label="Primary"
+                    name={primaryTech}
+                    type="primary"
+                    onEdit={() => openContextEditor('Tech')}
+                    onRemove={() => handleTechUpdate('primary')}
                   />
-
-                  {contextEditorError ? (
-                    <div className="animate-in fade-in slide-in-from-top-2" style={{ fontSize: '13px', color: '#ff6b6b', marginTop: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                      {contextEditorError}
-                    </div>
-                  ) : null}
+                  <TechPill
+                    label="Secondary"
+                    name={secondaryTech}
+                    type="secondary"
+                    onEdit={() => openContextEditor('Tech')}
+                    onRemove={() => handleTechUpdate('secondary')}
+                  />
                 </div>
+              </div>
 
-                {/* List Section (Smooth CSS Grid Slide-Down) */}
+              {/* Messages Container */}
+              <div
+                ref={scrollRef}
+                className="flex-1 overflow-y-auto"
+                style={{
+                  ...velocityStyle,
+                  padding: '14px 14px 8px',
+                  border: '1px solid var(--bento-outline)',
+                  borderRadius: '14px',
+                  background: 'var(--bg-card)',
+                  minHeight: 0,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>View</span>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '999px', border: '1px solid var(--bento-outline)', background: 'var(--bg-panel)', padding: '2px', gap: '2px' }}>
+                    {[
+                      { key: 'all', label: 'All' },
+                      { key: 'internal_ai', label: 'AI' },
+                      { key: 'external_psa_user', label: 'PSA/User' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => setChannelFilter(opt.key as 'all' | 'internal_ai' | 'external_psa_user')}
+                        style={{
+                          borderRadius: '999px',
+                          border: 'none',
+                          background: channelFilter === opt.key ? 'rgba(91,127,255,0.12)' : 'transparent',
+                          color: channelFilter === opt.key ? 'var(--accent)' : 'var(--text-muted)',
+                          padding: '4px 9px',
+                          fontSize: '10px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {opt.label} {channelCounts[opt.key as 'all' | 'internal_ai' | 'external_psa_user']}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {error && (
+                  <div
+                    className="rounded-xl p-4 mb-4 text-sm"
+                    style={{
+                      background: 'rgba(248,81,73,0.08)',
+                      border: '1px solid rgba(248,81,73,0.2)',
+                      color: '#fca5a5',
+                    }}
+                  >
+                    <p className="font-semibold mb-0.5">{t('connectionError')}</p>
+                    <p style={{ color: '#f87171', opacity: 0.85 }}>{error}</p>
+                  </div>
+                )}
+
+                {visibleMessages.map((msg, idx) => (
+                  <ChatMessage key={msg.id} message={msg} index={idx} onRetryExternalMessage={handleRetryExternalMessage} />
+                ))}
+
+                {loading && messages.length === 1 && (
+                  <ChatMessage
+                    key="loading-message"
+                    message={{
+                      id: 'loading',
+                      role: 'system',
+                      content: t('initializingSession'),
+                      timestamp: new Date(),
+                      type: 'status',
+                      channel: 'internal_ai',
+                    }}
+                    index={visibleMessages.length}
+                  />
+                )}
+              </div>
+
+              {/* Chat Input */}
+              <ChatInput
+                onSubmit={handleSendMessage}
+                placeholder={t('placeholder')}
+                disabled={loading}
+                isLoading={false}
+                attachmentsEnabled={true}
+                targetChannel={targetChannel}
+                onTargetChannelChange={(channel) => {
+                  setTargetChannel(channel);
+                  trackChatEvent('chat_channel_selected', { ticket_id: selectedTicketId, channel });
+                }}
+                showChannelToggle={true}
+                hints={[
+                  'Reanalyze with new info',
+                  'Generate user questions',
+                  'Summarize for ticket',
+                  'Escalate to L3',
+                ]}
+              />
+
+              {activeContextEditor ? (
                 <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={`Edit ${activeContextEditor}`}
+                  // Increased duration and added ease-out for a very smooth, magical fade of the dark blur backdrop
+                  className="animate-in fade-in duration-500 ease-out"
                   style={{
-                    display: 'grid',
-                    // The magic trick to slide down auto-height elements smoothly without JS math
-                    gridTemplateRows: contextEditorLoading || contextEditorOptions.length > 0 || contextEditorSaving ? '1fr' : '0fr',
-                    transition: 'grid-template-rows 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-                    background: 'var(--bg-panel)'
+                    position: 'fixed',
+                    inset: 0,
+                    zIndex: 9999, // Ensure global positioning top-level
+                    background: 'rgba(2, 4, 8, 0.55)', // Elegant darker glass
+                    backdropFilter: 'blur(8px)',
+                    WebkitBackdropFilter: 'blur(8px)',
+                    display: 'flex',
+                    alignItems: 'flex-start', // Anchors to top
+                    justifyContent: 'center',
+                    paddingTop: '12vh', // Fixed vertical position, exactly like the screenshot
                   }}
+                  onClick={closeContextEditor}
                 >
-                  <div style={{ overflow: 'hidden' }}>
-                    <div
-                      className="animate-in fade-in duration-500"
-                      style={{
-                        padding: contextEditorLoading || contextEditorOptions.length > 0 || contextEditorSaving ? '16px 24px 24px 24px' : '0 24px',
-                        maxHeight: 'min(50vh, 500px)',
-                        overflowY: 'auto',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px'
-                      }}
-                    >
-                      {contextEditorSaving ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-secondary)', padding: '12px 0' }}>
-                          <div style={{ width: '18px', height: '18px', borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', animation: 'spin 1s linear infinite' }} />
-                          <span style={{ fontSize: '13px' }}>Saving your selection...</span>
+                  <div
+                    // Softer zoom and gentle slide for a floating magical entrance
+                    className="animate-in zoom-in-[0.95] slide-in-from-top-4 duration-500 ease-out"
+                    style={{
+                      width: 'min(640px, calc(100vw - 32px))',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      borderRadius: '20px',
+                      border: '1px solid rgba(255,255,255,0.08)', // Subtle glass border
+                      background: 'var(--bg-elevated)', // Deep dark or clean light depending on theme
+                      boxShadow: '0 32px 64px -12px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04) inset',
+                      overflow: 'hidden', // Contains content cleanly
+                      transformOrigin: 'top center',
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {/* Header Section (Always Visible) */}
+                    <div style={{ padding: '20px 24px 16px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'var(--bg-card)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', marginBottom: '20px' }}>
+                        <div>
+                          <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.02em', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7 }}>
+                              <circle cx="11" cy="11" r="8"></circle>
+                              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                            Edit {activeContextEditor}
+                          </h2>
+                          <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px', margin: 0 }}>
+                            {activeContextEditor === 'Contact' || activeContextEditor === 'Additional contacts'
+                              ? activeOrgId !== null
+                                ? `Listing contacts from selected Org (ID ${activeOrgId})`
+                                : 'Select an Org first to list contacts'
+                              : activeContextEditor === 'Priority' || activeContextEditor === 'Issue Type' || activeContextEditor === 'Sub-Issue Type' || activeContextEditor === 'Service Level Agreement'
+                                ? 'Source: Autotask ticket field metadata'
+                                : 'Source: Autotask read-only global search'}
+                          </p>
                         </div>
-                      ) : contextEditorLoading ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-secondary)', padding: '12px 0' }}>
-                          <div style={{ width: '18px', height: '18px', borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 1s linear infinite' }} />
-                          <span style={{ fontSize: '13px' }}>Searching Autotask...</span>
-                        </div>
-                      ) : contextEditorOptions.length === 0 ? (
-                        <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
-                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ margin: '0 auto 8px', opacity: 0.5 }}><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
-                          <span style={{ fontSize: '13px' }}>
-                            {isAwaitingSearchInput ? 'Type at least 2 characters to search.' : 'No records returned.'}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="animate-in fade-in slide-in-from-top-4 duration-500" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {contextEditorOptions.map((option) => (
-                            <button
-                              key={`${activeContextEditor}-${option.id}`}
-                              type="button"
-                              onClick={() => { void handleSelectContextOption(option); }}
-                              disabled={contextEditorSaving}
-                              className="group flex flex-col items-start w-full text-left transition-all duration-200 hover:scale-[1.01]"
-                              style={{
-                                padding: '14px 18px',
-                                borderRadius: '12px',
-                                border: '1px solid rgba(255,255,255,0.04)',
-                                background: 'rgba(255,255,255,0.015)',
-                                cursor: contextEditorSaving ? 'not-allowed' : 'pointer',
-                                opacity: contextEditorSaving ? 0.65 : 1,
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!contextEditorSaving) {
-                                  e.currentTarget.style.background = 'rgba(110,134,201,0.08)';
-                                  e.currentTarget.style.borderColor = 'rgba(110,134,201,0.2)';
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!contextEditorSaving) {
-                                  e.currentTarget.style.background = 'rgba(255,255,255,0.015)';
-                                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.04)';
-                                }
-                              }}
-                            >
-                              <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '3px', transition: 'color 0.2s' }} className="group-hover:text-[var(--accent)]">
-                                {option.label}
-                              </div>
-                              {option.sublabel ? (
-                                <div style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>{option.sublabel}</div>
-                              ) : null}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          <button
-            type="button"
-            onClick={() => setIsDevPanelOpen((v) => !v)}
-            aria-expanded={isDevPanelOpen}
-            aria-controls="p0-dev-floating-panel"
-            title={isDevPanelOpen ? 'Hide development tools panel' : 'Show development tools panel'}
-            style={{
-              position: 'fixed',
-              right: '18px',
-              bottom: '18px',
-              zIndex: 60,
-              borderRadius: '14px',
-              border: '1px solid rgba(91,127,255,0.24)',
-              background: isDevPanelOpen ? 'rgba(91,127,255,0.14)' : 'rgba(255,255,255,0.96)',
-              color: isDevPanelOpen ? '#4f6fe9' : 'var(--text-primary)',
-              padding: '10px 12px',
-              boxShadow: '0 10px 30px rgba(0,0,0,0.12)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontSize: '12px',
-              fontWeight: 600,
-              backdropFilter: 'blur(14px)',
-            }}
-          >
-            <span style={{
-              width: '8px', height: '8px', borderRadius: '50%',
-              background: isDevPanelOpen ? '#4f6fe9' : '#9ca3af',
-              boxShadow: isDevPanelOpen ? '0 0 10px rgba(79,111,233,0.5)' : 'none',
-            }} />
-            {isDevPanelOpen ? 'Hide dev tools' : 'Show dev tools'}
-          </button>
-
-          {isDevPanelOpen ? (
-            <div
-              id="p0-dev-floating-panel"
-              role="dialog"
-              aria-label="Development tools for workflow and P0 signals"
-              style={{
-                position: 'fixed',
-                right: '18px',
-                bottom: '72px',
-                width: 'min(460px, calc(100vw - 36px))',
-                maxHeight: 'min(68vh, 760px)',
-                overflowY: 'auto',
-                zIndex: 59,
-                borderRadius: '18px',
-                border: '1px solid var(--bento-outline)',
-                background: 'rgba(245,247,252,0.96)',
-                boxShadow: '0 18px 48px rgba(12,18,33,0.18)',
-                backdropFilter: 'blur(18px)',
-                padding: '14px',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
-                <div>
-                  <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>Development tools (P0 validation)</div>
-                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ticket-level workflow health, AI signals, read-only integrations, and internal validation links.</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsDevPanelOpen(false)}
-                  style={{
-                    width: '28px', height: '28px', borderRadius: '9px',
-                    border: '1px solid var(--bento-outline)', background: '#fff', color: 'var(--text-muted)'
-                  }}
-                  aria-label="Close development tools panel"
-                >
-                  ×
-                </button>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-                <div style={triPaneMetricCardStyle()}>
-                  <div style={triPaneMetricLabelStyle()}>Launch policy</div>
-                  <div style={{ ...triPaneMetricValueStyle(), whiteSpace: 'normal' }}>Autotask can write updates. Other integrations are read-only.</div>
-                </div>
-                <div style={triPaneMetricCardStyle()}>
-                  <div style={triPaneMetricLabelStyle()}>Workflow connection</div>
-                  <div style={triPaneMetricValueStyle()}>
-                    {workflowTicket ? 'This ticket is present in the workflow inbox.' : (workflowAccessError ? 'Workflow data needs access or is unavailable.' : 'This ticket is not in the workflow inbox yet.')}
-                  </div>
-                </div>
-                <div style={triPaneMetricCardStyle()}>
-                  <div style={triPaneMetricLabelStyle()}>AI handoff status</div>
-                  <div style={triPaneMetricValueStyle()}>
-                    {latestManagerAi
-                      ? latestManagerAi.hitl_status === 'pending'
-                        ? 'Waiting for human review'
-                        : 'AI handoff is available'
-                      : (managerOpsAccessError ? 'Admin access required to view AI signals' : 'AI handoff has not been generated')}
-                  </div>
-                </div>
-                <div style={triPaneMetricCardStyle()}>
-                  <div style={triPaneMetricLabelStyle()}>AI confidence</div>
-                  <div style={triPaneMetricValueStyle()}>
-                    {latestManagerAi ? `${Math.round(Number(latestManagerAi.confidence || 0) * 100)}%` : 'Not available'}
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '10px' }}>
-                <div style={{ ...triPaneMetricLabelStyle(), marginBottom: '6px' }}>Workflow health details</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <div style={triPaneMetricCardStyle()}>
-                    <div style={triPaneMetricLabelStyle()}>Workflow status</div>
-                    <div style={triPaneMetricValueStyle()}>{workflowTicket?.status || (workflowAccessError ? 'Unavailable' : 'Not available')}</div>
-                  </div>
-                  <div style={triPaneMetricCardStyle()}>
-                    <div style={triPaneMetricLabelStyle()}>Workflow audit events</div>
-                    <div style={triPaneMetricValueStyle()}>{workflowAuditRows.length}</div>
-                  </div>
-                  <div style={triPaneMetricCardStyle()}>
-                    <div style={triPaneMetricLabelStyle()}>Reconciliation issues</div>
-                    <div style={triPaneMetricValueStyle()}>{workflowReconcileRows.length === 0 ? 'None' : `${workflowReconcileRows.length} (${workflowReconcileTopSeverity || 'info'})`}</div>
-                  </div>
-                  <div style={triPaneMetricCardStyle()}>
-                    <div style={triPaneMetricLabelStyle()}>Latest workflow audit</div>
-                    <div style={triPaneMetricValueStyle()}>{workflowLastAudit ? humanizeWorkflowAuditAction(workflowLastAudit.action) : 'No workflow audit event yet'}</div>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '10px' }}>
-                <div style={{ ...triPaneMetricLabelStyle(), marginBottom: '6px' }}>Read-only integration status</div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  {Object.entries(enrichmentProviderStatus).map(([provider, status]) => (
-                    <div key={provider} style={triPaneMetricCardStyle()}>
-                      <div style={triPaneMetricLabelStyle()}>{humanizeProviderName(provider)}</div>
-                      <div style={triPaneMetricValueStyle()}>{humanizeProviderStatus(status.label)}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '10px' }}>
-                <div style={{ ...triPaneMetricLabelStyle(), marginBottom: '6px' }}>Technician assignment command</div>
-                <div style={triPaneMetricCardStyle()}>
-                  {workflowWritePolicyDisabled ? (
-                    <div style={{
-                      border: '1px solid rgba(245,158,11,0.22)',
-                      background: 'rgba(245,158,11,0.08)',
-                      borderRadius: '10px',
-                      padding: '8px',
-                      marginBottom: '8px',
-                      color: '#b45309',
-                      fontSize: '11px',
-                    }}>
-                      Write policy currently disabled for this session (read-only mode). Re-authenticate or request policy update before retrying writes.
-                    </div>
-                  ) : null}
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <input
-                      value={techAssignmentDraft}
-                      onChange={(e) => setTechAssignmentDraft(e.target.value)}
-                      disabled={workflowWritePolicyDisabled || isSubmittingTechAssignment}
-                      placeholder="Assignee resource id"
-                      aria-label="Assignee resource id"
-                      style={{
-                        flex: 1,
-                        minWidth: 0,
-                        height: '30px',
-                        borderRadius: '8px',
-                        border: '1px solid var(--bento-outline)',
-                        padding: '0 9px',
-                        fontSize: '11px',
-                        color: 'var(--text-primary)',
-                        background: '#fff',
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSubmitTechAssignment}
-                      disabled={workflowWritePolicyDisabled || isSubmittingTechAssignment || !techAssignmentDraft.trim()}
-                      style={{
-                        height: '30px',
-                        borderRadius: '8px',
-                        border: '1px solid rgba(91,127,255,0.25)',
-                        background: 'rgba(91,127,255,0.08)',
-                        color: '#3f5fcb',
-                        padding: '0 10px',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        opacity: (workflowWritePolicyDisabled || isSubmittingTechAssignment || !techAssignmentDraft.trim()) ? 0.6 : 1,
-                      }}
-                    >
-                      {isSubmittingTechAssignment ? 'Submitting…' : 'Edit Tech'}
-                    </button>
-                  </div>
-                  {workflowActionFeedback ? (
-                    <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
-                      <span style={triPaneBadgeStyle(workflowActionStateTone)}>
-                        {workflowActionFeedback.uxState.toUpperCase()}
-                      </span>
-                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                        {workflowActionFeedback.detail}
-                      </span>
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                        attempts {workflowActionFeedback.attempts}/{workflowActionFeedback.maxAttempts || 'n/a'}
-                      </span>
-                      {workflowActionFeedback.nextRetryAt ? (
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                          next retry {new Date(workflowActionFeedback.nextRetryAt).toLocaleTimeString()}
-                        </span>
-                      ) : null}
-                      {workflowActionFeedback.retryable && workflowActionFeedback.commandId ? (
                         <button
                           type="button"
-                          onClick={handleManualWorkflowRetry}
+                          onClick={closeContextEditor}
+                          disabled={contextEditorSaving}
+                          className="hover:bg-white/10 hover:text-white transition-all duration-200"
                           style={{
-                            height: '24px',
-                            borderRadius: '999px',
-                            border: '1px solid rgba(245,158,11,0.25)',
-                            background: 'rgba(245,158,11,0.08)',
-                            color: '#b45309',
-                            padding: '0 9px',
-                            fontSize: '10px',
-                            fontWeight: 600,
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '10px',
+                            border: '1px solid rgba(255,255,255,0.08)',
+                            background: 'rgba(255,255,255,0.03)',
+                            color: 'var(--text-secondary)',
+                            cursor: contextEditorSaving ? 'not-allowed' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            opacity: contextEditorSaving ? 0.6 : 1,
                           }}
+                          aria-label="Close editor"
                         >
-                          Retry now
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                          </svg>
                         </button>
+                      </div>
+
+                      <input
+                        type="text"
+                        value={contextEditorQuery}
+                        onChange={(e) => setContextEditorQuery(e.target.value)}
+                        disabled={contextEditorSaving}
+                        placeholder={`Type to search ${activeContextEditor.toLowerCase()}...`}
+                        className="focus:ring-2 focus:ring-[var(--accent)] focus:border-transparent outline-none transition-shadow duration-300"
+                        style={{
+                          width: '100%',
+                          borderRadius: '12px',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          background: 'rgba(0,0,0,0.2)',
+                          color: 'var(--text-primary)',
+                          fontSize: '14.5px',
+                          padding: '12px 16px',
+                          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)'
+                        }}
+                        autoFocus
+                      />
+
+                      {contextEditorError ? (
+                        <div className="animate-in fade-in slide-in-from-top-2" style={{ fontSize: '13px', color: '#ff6b6b', marginTop: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                          {contextEditorError}
+                        </div>
                       ) : null}
                     </div>
-                  ) : null}
-                </div>
-              </div>
 
-              {(workflowActionError || workflowAccessError || managerOpsAccessError) ? (
-                <div style={{
-                  border: '1px solid rgba(245,158,11,0.22)',
-                  background: 'rgba(245,158,11,0.08)',
-                  borderRadius: '12px',
-                  padding: '10px 12px',
-                  marginBottom: '10px',
-                  color: '#b45309',
-                  fontSize: '12px',
-                  fontWeight: 500,
-                }}>
-                  {[workflowActionError, workflowAccessError, managerOpsAccessError].filter(Boolean).join(' · ')}
+                    {/* List Section (Smooth CSS Grid Slide-Down) */}
+                    <div
+                      style={{
+                        display: 'grid',
+                        // The magic trick to slide down auto-height elements smoothly without JS math
+                        gridTemplateRows: contextEditorLoading || contextEditorOptions.length > 0 || contextEditorSaving ? '1fr' : '0fr',
+                        transition: 'grid-template-rows 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+                        background: 'var(--bg-panel)'
+                      }}
+                    >
+                      <div style={{ overflow: 'hidden' }}>
+                        <div
+                          className="animate-in fade-in duration-500"
+                          style={{
+                            padding: contextEditorLoading || contextEditorOptions.length > 0 || contextEditorSaving ? '16px 24px 24px 24px' : '0 24px',
+                            maxHeight: 'min(50vh, 500px)',
+                            overflowY: 'auto',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px'
+                          }}
+                        >
+                          {contextEditorSaving ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-secondary)', padding: '12px 0' }}>
+                              <div style={{ width: '18px', height: '18px', borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', animation: 'spin 1s linear infinite' }} />
+                              <span style={{ fontSize: '13px' }}>Saving your selection...</span>
+                            </div>
+                          ) : contextEditorLoading ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-secondary)', padding: '12px 0' }}>
+                              <div style={{ width: '18px', height: '18px', borderRadius: '50%', border: '2px solid var(--accent)', borderTopColor: 'transparent', animation: 'spin 1s linear infinite' }} />
+                              <span style={{ fontSize: '13px' }}>Searching Autotask...</span>
+                            </div>
+                          ) : contextEditorOptions.length === 0 ? (
+                            <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+                              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ margin: '0 auto 8px', opacity: 0.5 }}><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
+                              <span style={{ fontSize: '13px' }}>
+                                {isAwaitingSearchInput ? 'Type at least 2 characters to search.' : 'No records returned.'}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="animate-in fade-in slide-in-from-top-4 duration-500" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              {contextEditorOptions.map((option) => (
+                                <button
+                                  key={`${activeContextEditor}-${option.id}`}
+                                  type="button"
+                                  onClick={() => { void handleSelectContextOption(option); }}
+                                  disabled={contextEditorSaving}
+                                  className="group flex flex-col items-start w-full text-left transition-all duration-200 hover:scale-[1.01]"
+                                  style={{
+                                    padding: '14px 18px',
+                                    borderRadius: '12px',
+                                    border: '1px solid rgba(255,255,255,0.04)',
+                                    background: 'rgba(255,255,255,0.015)',
+                                    cursor: contextEditorSaving ? 'not-allowed' : 'pointer',
+                                    opacity: contextEditorSaving ? 0.65 : 1,
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    if (!contextEditorSaving) {
+                                      e.currentTarget.style.background = 'rgba(110,134,201,0.08)';
+                                      e.currentTarget.style.borderColor = 'rgba(110,134,201,0.2)';
+                                    }
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    if (!contextEditorSaving) {
+                                      e.currentTarget.style.background = 'rgba(255,255,255,0.015)';
+                                      e.currentTarget.style.borderColor = 'rgba(255,255,255,0.04)';
+                                    }
+                                  }}
+                                >
+                                  <div style={{ fontSize: '14.5px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '3px', transition: 'color 0.2s' }} className="group-hover:text-[var(--accent)]">
+                                    {option.label}
+                                  </div>
+                                  {option.sublabel ? (
+                                    <div style={{ fontSize: '12.5px', color: 'var(--text-muted)' }}>{option.sublabel}</div>
+                                  ) : null}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ) : null}
 
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                <a
-                  href="/manager-ops/p0?internal=1"
-                  title="Internal validation screen for manager operations P0 signals"
-                  style={triPaneFooterLinkChipStyle()}
+              <button
+                type="button"
+                onClick={() => setIsDevPanelOpen((v) => !v)}
+                aria-expanded={isDevPanelOpen}
+                aria-controls="p0-dev-floating-panel"
+                title={isDevPanelOpen ? 'Hide development tools panel' : 'Show development tools panel'}
+                style={{
+                  position: 'fixed',
+                  right: '18px',
+                  bottom: '18px',
+                  zIndex: 60,
+                  borderRadius: '14px',
+                  border: '1px solid rgba(91,127,255,0.24)',
+                  background: isDevPanelOpen ? 'rgba(91,127,255,0.14)' : 'rgba(255,255,255,0.96)',
+                  color: isDevPanelOpen ? '#4f6fe9' : 'var(--text-primary)',
+                  padding: '10px 12px',
+                  boxShadow: '0 10px 30px rgba(0,0,0,0.12)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  backdropFilter: 'blur(14px)',
+                }}
+              >
+                <span style={{
+                  width: '8px', height: '8px', borderRadius: '50%',
+                  background: isDevPanelOpen ? '#4f6fe9' : '#9ca3af',
+                  boxShadow: isDevPanelOpen ? '0 0 10px rgba(79,111,233,0.5)' : 'none',
+                }} />
+                {isDevPanelOpen ? 'Hide dev tools' : 'Show dev tools'}
+              </button>
+
+              {isDevPanelOpen ? (
+                <div
+                  id="p0-dev-floating-panel"
+                  role="dialog"
+                  aria-label="Development tools for workflow and P0 signals"
+                  style={{
+                    position: 'fixed',
+                    right: '18px',
+                    bottom: '72px',
+                    width: 'min(460px, calc(100vw - 36px))',
+                    maxHeight: 'min(68vh, 760px)',
+                    overflowY: 'auto',
+                    zIndex: 59,
+                    borderRadius: '18px',
+                    border: '1px solid var(--bento-outline)',
+                    background: 'rgba(245,247,252,0.96)',
+                    boxShadow: '0 18px 48px rgba(12,18,33,0.18)',
+                    backdropFilter: 'blur(18px)',
+                    padding: '14px',
+                  }}
                 >
-                  Open internal manager validation screen
-                </a>
-                <a
-                  href={`/workflow/p0/${encodeURIComponent(ticketNumber)}?internal=1`}
-                  title="Internal validation screen for workflow details P0 signals"
-                  style={triPaneFooterLinkChipStyle()}
-                >
-                  Open internal workflow validation screen
-                </a>
-              </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '10px' }}>
+                    <div>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)' }}>Development tools (P0 validation)</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Ticket-level workflow health, AI signals, read-only integrations, and internal validation links.</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsDevPanelOpen(false)}
+                      style={{
+                        width: '28px', height: '28px', borderRadius: '9px',
+                        border: '1px solid var(--bento-outline)', background: '#fff', color: 'var(--text-muted)'
+                      }}
+                      aria-label="Close development tools panel"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                    <div style={triPaneMetricCardStyle()}>
+                      <div style={triPaneMetricLabelStyle()}>Launch policy</div>
+                      <div style={{ ...triPaneMetricValueStyle(), whiteSpace: 'normal' }}>Autotask can write updates. Other integrations are read-only.</div>
+                    </div>
+                    <div style={triPaneMetricCardStyle()}>
+                      <div style={triPaneMetricLabelStyle()}>Workflow connection</div>
+                      <div style={triPaneMetricValueStyle()}>
+                        {workflowTicket ? 'This ticket is present in the workflow inbox.' : (workflowAccessError ? 'Workflow data needs access or is unavailable.' : 'This ticket is not in the workflow inbox yet.')}
+                      </div>
+                    </div>
+                    <div style={triPaneMetricCardStyle()}>
+                      <div style={triPaneMetricLabelStyle()}>AI handoff status</div>
+                      <div style={triPaneMetricValueStyle()}>
+                        {latestManagerAi
+                          ? latestManagerAi.hitl_status === 'pending'
+                            ? 'Waiting for human review'
+                            : 'AI handoff is available'
+                          : (managerOpsAccessError ? 'Admin access required to view AI signals' : 'AI handoff has not been generated')}
+                      </div>
+                    </div>
+                    <div style={triPaneMetricCardStyle()}>
+                      <div style={triPaneMetricLabelStyle()}>AI confidence</div>
+                      <div style={triPaneMetricValueStyle()}>
+                        {latestManagerAi ? `${Math.round(Number(latestManagerAi.confidence || 0) * 100)}%` : 'Not available'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: '10px' }}>
+                    <div style={{ ...triPaneMetricLabelStyle(), marginBottom: '6px' }}>Workflow health details</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div style={triPaneMetricCardStyle()}>
+                        <div style={triPaneMetricLabelStyle()}>Workflow status</div>
+                        <div style={triPaneMetricValueStyle()}>{workflowTicket?.status || (workflowAccessError ? 'Unavailable' : 'Not available')}</div>
+                      </div>
+                      <div style={triPaneMetricCardStyle()}>
+                        <div style={triPaneMetricLabelStyle()}>Workflow audit events</div>
+                        <div style={triPaneMetricValueStyle()}>{workflowAuditRows.length}</div>
+                      </div>
+                      <div style={triPaneMetricCardStyle()}>
+                        <div style={triPaneMetricLabelStyle()}>Reconciliation issues</div>
+                        <div style={triPaneMetricValueStyle()}>{workflowReconcileRows.length === 0 ? 'None' : `${workflowReconcileRows.length} (${workflowReconcileTopSeverity || 'info'})`}</div>
+                      </div>
+                      <div style={triPaneMetricCardStyle()}>
+                        <div style={triPaneMetricLabelStyle()}>Latest workflow audit</div>
+                        <div style={triPaneMetricValueStyle()}>{workflowLastAudit ? humanizeWorkflowAuditAction(workflowLastAudit.action) : 'No workflow audit event yet'}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: '10px' }}>
+                    <div style={{ ...triPaneMetricLabelStyle(), marginBottom: '6px' }}>Read-only integration status</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      {Object.entries(enrichmentProviderStatus).map(([provider, status]) => (
+                        <div key={provider} style={triPaneMetricCardStyle()}>
+                          <div style={triPaneMetricLabelStyle()}>{humanizeProviderName(provider)}</div>
+                          <div style={triPaneMetricValueStyle()}>{humanizeProviderStatus(status.label)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: '10px' }}>
+                    <div style={{ ...triPaneMetricLabelStyle(), marginBottom: '6px' }}>Technician assignment command</div>
+                    <div style={triPaneMetricCardStyle()}>
+                      {workflowWritePolicyDisabled ? (
+                        <div style={{
+                          border: '1px solid rgba(245,158,11,0.22)',
+                          background: 'rgba(245,158,11,0.08)',
+                          borderRadius: '10px',
+                          padding: '8px',
+                          marginBottom: '8px',
+                          color: '#b45309',
+                          fontSize: '11px',
+                        }}>
+                          Write policy currently disabled for this session (read-only mode). Re-authenticate or request policy update before retrying writes.
+                        </div>
+                      ) : null}
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <input
+                          value={techAssignmentDraft}
+                          onChange={(e) => setTechAssignmentDraft(e.target.value)}
+                          disabled={workflowWritePolicyDisabled || isSubmittingTechAssignment}
+                          placeholder="Assignee resource id"
+                          aria-label="Assignee resource id"
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            height: '30px',
+                            borderRadius: '8px',
+                            border: '1px solid var(--bento-outline)',
+                            padding: '0 9px',
+                            fontSize: '11px',
+                            color: 'var(--text-primary)',
+                            background: '#fff',
+                          }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSubmitTechAssignment}
+                          disabled={workflowWritePolicyDisabled || isSubmittingTechAssignment || !techAssignmentDraft.trim()}
+                          style={{
+                            height: '30px',
+                            borderRadius: '8px',
+                            border: '1px solid rgba(91,127,255,0.25)',
+                            background: 'rgba(91,127,255,0.08)',
+                            color: '#3f5fcb',
+                            padding: '0 10px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            opacity: (workflowWritePolicyDisabled || isSubmittingTechAssignment || !techAssignmentDraft.trim()) ? 0.6 : 1,
+                          }}
+                        >
+                          {isSubmittingTechAssignment ? 'Submitting…' : 'Edit Tech'}
+                        </button>
+                      </div>
+                      {workflowActionFeedback ? (
+                        <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                          <span style={triPaneBadgeStyle(workflowActionStateTone)}>
+                            {workflowActionFeedback.uxState.toUpperCase()}
+                          </span>
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                            {workflowActionFeedback.detail}
+                          </span>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                            attempts {workflowActionFeedback.attempts}/{workflowActionFeedback.maxAttempts || 'n/a'}
+                          </span>
+                          {workflowActionFeedback.nextRetryAt ? (
+                            <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                              next retry {new Date(workflowActionFeedback.nextRetryAt).toLocaleTimeString()}
+                            </span>
+                          ) : null}
+                          {workflowActionFeedback.retryable && workflowActionFeedback.commandId ? (
+                            <button
+                              type="button"
+                              onClick={handleManualWorkflowRetry}
+                              style={{
+                                height: '24px',
+                                borderRadius: '999px',
+                                border: '1px solid rgba(245,158,11,0.25)',
+                                background: 'rgba(245,158,11,0.08)',
+                                color: '#b45309',
+                                padding: '0 9px',
+                                fontSize: '10px',
+                                fontWeight: 600,
+                              }}
+                            >
+                              Retry now
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {(workflowActionError || workflowAccessError || managerOpsAccessError) ? (
+                    <div style={{
+                      border: '1px solid rgba(245,158,11,0.22)',
+                      background: 'rgba(245,158,11,0.08)',
+                      borderRadius: '12px',
+                      padding: '10px 12px',
+                      marginBottom: '10px',
+                      color: '#b45309',
+                      fontSize: '12px',
+                      fontWeight: 500,
+                    }}>
+                      {[workflowActionError, workflowAccessError, managerOpsAccessError].filter(Boolean).join(' · ')}
+                    </div>
+                  ) : null}
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    <a
+                      href="/manager-ops/p0?internal=1"
+                      title="Internal validation screen for manager operations P0 signals"
+                      style={triPaneFooterLinkChipStyle()}
+                    >
+                      Open internal manager validation screen
+                    </a>
+                    <a
+                      href={`/workflow/p0/${encodeURIComponent(ticketNumber)}?internal=1`}
+                      title="Internal validation screen for workflow details P0 signals"
+                      style={triPaneFooterLinkChipStyle()}
+                    >
+                      Open internal workflow validation screen
+                    </a>
+                  </div>
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
           }
         />
       </div>
@@ -3209,24 +3203,6 @@ function buildEnrichmentProviderStatus(rows: P0AuditRecord[]): Record<string, Pr
   return output;
 }
 
-function buildEnrichmentContextItems(statusByProvider: Record<string, ProviderStatus>) {
-  const ordered = ['itglue', 'ninjaone', 'sentinelone', 'check_point'];
-  return ordered.map((key) => {
-    const row = statusByProvider[key];
-    if (!row) return { key: key.toUpperCase(), val: 'Unknown' };
-    return {
-      key: `${row.shortLabel} RO`,
-      val: row.label,
-      ...(row.tone === 'good'
-        ? { highlight: '#1DB98A' }
-        : row.tone === 'warn'
-          ? { highlight: '#F59E0B' }
-          : row.tone === 'bad'
-            ? { highlight: '#F87171' }
-            : {}),
-    };
-  });
-}
 
 function humanizeWorkflowAuditAction(action?: string): string {
   const raw = String(action || '').trim();

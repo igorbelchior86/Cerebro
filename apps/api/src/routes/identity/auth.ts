@@ -16,7 +16,7 @@ import bcrypt from 'bcryptjs';
 import { authenticator } from 'otplib';
 import QRCode from 'qrcode';
 import { v4 as uuidv4 } from 'uuid';
-import { query, queryOne } from '../db/index.js';
+import { query, queryOne } from '../../db/index.js';
 import {
   signJwt,
   setSessionCookie,
@@ -24,9 +24,9 @@ import {
   requireAuth,
   requireAdmin,
   type AuthPayload,
-} from '../middleware/auth.js';
-import { tenantContext } from '../lib/tenantContext.js';
-import { applyWorkspaceRuntimeSettings } from '../services/read-models/runtime-settings.js';
+} from '../../middleware/auth.js';
+import { tenantContext } from '../../lib/tenantContext.js';
+import { applyWorkspaceRuntimeSettings } from '../../services/read-models/runtime-settings.js';
 
 const router: IRouter = Router();
 

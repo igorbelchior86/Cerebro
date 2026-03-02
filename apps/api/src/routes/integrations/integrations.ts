@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { Router, type Router as ExpressRouter } from 'express';
-import { query, queryOne } from '../db/index.js';
+import { query, queryOne } from '../../db/index.js';
 
 const router: ExpressRouter = Router();
 

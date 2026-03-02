@@ -9,7 +9,7 @@ export interface AuthUser {
   email: string;
   name?: string | null;
   avatar?: string | null;
-  preferences?: Record<string, any>;
+  preferences?: Record<string, unknown>;
   role: 'owner' | 'admin' | 'member';
   mfaEnabled: boolean;
   createdAt: string;

@@ -92,9 +92,10 @@ export function usePollingResource<T>(
       if (!mountedRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to load');
     } finally {
-      if (!mountedRef.current) return;
-      setLoading(false);
-      setRefreshing(false);
+      if (mountedRef.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [enabled]);
 

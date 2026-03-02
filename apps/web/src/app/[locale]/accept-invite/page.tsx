@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, FormEvent, Suspense } from 'react';
+import { type FormEvent, useState } from 'react';
 import CerebroLogo from '@/components/CerebroLogo';
 import { useSearchParams } from 'next/navigation';
 import { useRouter } from '@/i18n/routing';
+import { Suspense } from 'react';
 
 const API = process.env.NEXT_PUBLIC_API_URL || '/api';
 

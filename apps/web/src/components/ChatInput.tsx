@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, KeyboardEvent, type ChangeEvent, useLayoutEffect, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, type ChangeEvent, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 
@@ -42,7 +42,6 @@ function inferExtension(name: string, mimeType: string): string {
 
 export default function ChatInput({
   onSubmit,
-  placeholder = 'Refine analysis, ask questions, add context...',
   disabled = false,
   isLoading = false,
   hints,

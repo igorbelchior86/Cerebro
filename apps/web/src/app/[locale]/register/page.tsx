@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { type FormEvent, useState } from 'react';
 import CerebroLogo from '@/components/CerebroLogo';
 import { useRouter } from '@/i18n/routing';
 

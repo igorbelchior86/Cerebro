@@ -1,10 +1,10 @@
 import { Router, Request, Response } from 'express';
-import { AutotaskClient } from '../clients/autotask.js';
-import { queryOne } from '../db/index.js';
-import { graphClient } from '../services/adapters/email/graph-client.js';
-import { emailParser } from '../services/adapters/email/email-parser.js';
-import { pgStore } from '../services/adapters/email/pg-store.js';
-import { triageOrchestrator } from '../services/orchestration/triage-orchestrator.js';
+import { AutotaskClient } from '../../clients/autotask.js';
+import { queryOne } from '../../db/index.js';
+import { graphClient } from '../../services/adapters/email/graph-client.js';
+import { emailParser } from '../../services/adapters/email/email-parser.js';
+import { pgStore } from '../../services/adapters/email/pg-store.js';
+import { triageOrchestrator } from '../../services/orchestration/triage-orchestrator.js';
 
 const router: Router = Router();
 
@@ -234,7 +234,7 @@ export async function ingestSupportMailboxOnce(mailbox?: string): Promise<{ proc
 }
 
 export async function backfillPendingEmailTickets(limit = 20): Promise<{ processed: number }> {
-    const { query } = await import('../db/index.js');
+    const { query } = await import('../../db/index.js');
     const rows = await query<{ id: string }>(
         `SELECT tp.id
          FROM tickets_processed tp
@@ -281,7 +281,7 @@ router.post('/ingest', async (_req: Request, res: Response) => {
 
 router.get('/list', async (_req: Request, res: Response) => {
     try {
-        const { query } = await import('../db/index.js');
+        const { query } = await import('../../db/index.js');
         const hasCompanyColumn = await query<{ exists: boolean }>(
             `SELECT EXISTS (
                SELECT 1
@@ -680,7 +680,7 @@ router.patch('/tickets/:ticketId/manual-suppression', async (req: Request, res: 
             return res.status(400).json({ error: 'Missing ticketId' });
         }
 
-        const { query, execute } = await import('../db/index.js');
+        const { query, execute } = await import('../../db/index.js');
         const hasManualSuppressedColumn = await query<{ exists: boolean }>(
             `SELECT EXISTS (
                SELECT 1

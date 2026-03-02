@@ -33,12 +33,18 @@ importers:
       '@azure/msal-node':
         specifier: ^5.0.4
         version: 5.0.4
-      '@microsoft/microsoft-graph-client':
-        specifier: ^3.0.7
-        version: 3.0.7
+      '@cerebro/integrations':
+        specifier: workspace:*
+        version: link:../../packages/integrations
+      '@cerebro/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
       '@cerebro/types':
         specifier: workspace:*
         version: link:../../packages/types
+      '@microsoft/microsoft-graph-client':
+        specifier: ^3.0.7
+        version: 3.0.7
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
@@ -194,6 +200,38 @@ importers:
       tailwindcss:
         specifier: ^3.4.0
         version: 3.4.19(tsx@4.21.0)
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  packages/integrations:
+    dependencies:
+      '@cerebro/types':
+        specifier: workspace:*
+        version: link:../types
+    devDependencies:
+      '@types/node':
+        specifier: ^20.10.0
+        version: 20.19.33
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
+  packages/platform:
+    dependencies:
+      '@cerebro/types':
+        specifier: workspace:*
+        version: link:../types
+      express:
+        specifier: ^4.18.0
+        version: 4.22.1
+    devDependencies:
+      '@types/express':
+        specifier: ^4.17.21
+        version: 4.17.25
+      '@types/node':
+        specifier: ^20.10.0
+        version: 20.19.33
       typescript:
         specifier: ^5.4.0
         version: 5.9.3

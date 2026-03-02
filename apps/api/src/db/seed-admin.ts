@@ -4,13 +4,11 @@
 // Also runnable directly: npm run -w apps/api seed:admin
 // ─────────────────────────────────────────────────────────────
 
-import { fileURLToPath } from 'url';
-import { dirname, resolve } from 'path';
+import { resolve } from 'path';
 import { config } from 'dotenv';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-config({ path: resolve(__dirname, '../../../../', '.env') });
+// Using process.cwd() to avoid TS1343 (import.meta error) under Jest's CommonJS transform.
+config({ path: resolve(process.cwd(), '../../.env') });
 
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
@@ -19,9 +17,9 @@ import { query, queryOne } from './index.js';
 interface Tenant { id: string; }
 
 export async function autoSeedAdmin(): Promise<void> {
-  const email    = process.env.SEED_ADMIN_EMAIL;
+  const email = process.env.SEED_ADMIN_EMAIL;
   const password = process.env.SEED_ADMIN_PASSWORD;
-  const org      = process.env.SEED_TENANT_NAME || 'My MSP';
+  const org = process.env.SEED_TENANT_NAME || 'My MSP';
 
   if (!email || !password) return; // env vars not set — skip
 
@@ -34,7 +32,7 @@ export async function autoSeedAdmin(): Promise<void> {
     const slug = org.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
     const password_hash = await bcrypt.hash(password, 12);
     const tenant_id = uuidv4();
-    const user_id   = uuidv4();
+    const user_id = uuidv4();
 
     await query('BEGIN');
     try {
@@ -61,7 +59,7 @@ export async function autoSeedAdmin(): Promise<void> {
 }
 
 // ─── Standalone runner ────────────────────────────────────────
-if (process.argv[1] === __filename) {
+if (process.argv[1]?.endsWith('seed-admin.ts') || process.argv[1]?.endsWith('seed-admin.js')) {
   autoSeedAdmin()
     .then(() => { console.log('[SEED] Done'); process.exit(0); })
     .catch((err) => { console.error(err); process.exit(1); });

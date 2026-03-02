@@ -4,15 +4,12 @@
 
 import pg from 'pg';
 import { config } from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, resolve } from 'path';
+import { resolve } from 'path';
 import { tenantContext } from '../lib/tenantContext.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// This module is imported before the API entrypoint can run dotenv, so load the root .env here.
-config({ path: resolve(__dirname, '../../../../', '.env') });
+// Using process.cwd() to avoid TS1343 (import.meta error) under Jest's CommonJS transform.
+// Assumes Node process runs from `apps/api` (pnpm dev, pnpm build, pnpm start)
+config({ path: resolve(process.cwd(), '../../.env') });
 
 // Suppress notice about TIME ZONE setting
 const types = pg.types;

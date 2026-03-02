@@ -3,15 +3,12 @@
 // ─────────────────────────────────────────────────────────────
 
 import { config } from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, resolve } from 'path';
+import { resolve } from 'path';
 import { Pool, type PoolClient } from 'pg';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// This module is imported during bootstrap before the API entrypoint can safely hydrate env.
-config({ path: resolve(__dirname, '../../../../', '.env') });
+// Using process.cwd() to avoid TS1343 (import.meta error) under Jest's CommonJS transform.
+// Assumes Node process runs from `apps/api` (pnpm dev, pnpm build, pnpm start)
+config({ path: resolve(process.cwd(), '../../.env') });
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://playbook:playbook_dev@localhost:5432/cerebro',

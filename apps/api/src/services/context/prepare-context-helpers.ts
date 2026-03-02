@@ -665,10 +665,10 @@ export function extractITGlueWanCandidate(input: {
     });
   };
 
-  for (const asset of input.itglueAssets.slice(0, 400)) {
+  for (const asset of (input.itglueAssets || []).slice(0, 400)) {
     scanRecord(asset, 'itglue_asset', `itglue_asset:${String(asset?.id || 'unknown')}`);
   }
-  for (const cfg of input.itglueConfigs.slice(0, 300)) {
+  for (const cfg of (input.itglueConfigs || []).slice(0, 300)) {
     scanRecord(cfg, 'itglue_config', `itglue_config:${String(cfg?.id || 'unknown')}`);
   }
   for (const doc of input.docs.slice(0, 20)) {
@@ -771,7 +771,7 @@ export function extractITGlueInfraCandidates(input: {
     }
   };
 
-  for (const p of input.itgluePasswords.slice(0, 500)) {
+  for (const p of (input.itgluePasswords || []).slice(0, 500)) {
     const a = p?.attributes || {};
     const name = normalizeName(String(a.name || a['resource-name'] || a.title || ''));
     const category = normalizeName(String(
@@ -780,7 +780,7 @@ export function extractITGlueInfraCandidates(input: {
     const username = normalizeName(String(a.username || ''));
     maybePush('itglue_password_metadata', `itglue_password:${String(p?.id || name || 'unknown')}`, name, `${category} ${username}`, 0.6);
   }
-  for (const cfg of input.itglueConfigs.slice(0, 300)) {
+  for (const cfg of (input.itglueConfigs || []).slice(0, 300)) {
     const a = cfg?.attributes || {};
     const name = normalizeName(String(itgAttr(a, 'name') || itgAttr(a, 'hostname') || ''));
     const vendor = normalizeName(String(
@@ -799,7 +799,7 @@ export function extractITGlueInfraCandidates(input: {
     const typeName = normalizeName(String(itgAttr(a, 'configuration_type_name') || itgAttr(a, 'type') || ''));
     maybePush('itglue_config', `itglue_config:${String(cfg?.id || name || 'unknown')}`, [vendor, model, name].filter(Boolean).join(' '), typeName, 0.72);
   }
-  for (const asset of input.itglueAssets.slice(0, 300)) {
+  for (const asset of (input.itglueAssets || []).slice(0, 300)) {
     const a = asset?.attributes || {};
     const text = JSON.stringify(a || {}).slice(0, 1000);
     const name = normalizeName(String(a.name || a.title || ''));
@@ -843,7 +843,7 @@ export function extractInfraMakeModel(
     switch: /\bswitch\b|\bcatalyst\b|\bprocurve\b|\baruba\b|\bnetgear\b|\bunifi\s?switch\b/i,
   };
 
-  for (const config of configs) {
+  for (const config of configs || []) {
     const attrs = config?.attributes || {};
     const text = JSON.stringify(attrs);
     if (!configMatchers[kind].test(text)) continue;
@@ -873,7 +873,7 @@ export function extractInfraMakeModel(
     };
   }
 
-  for (const doc of docs) {
+  for (const doc of docs || []) {
     const text = `${doc.title} ${doc.snippet}`;
     if (!configMatchers[kind].test(text)) continue;
     return {

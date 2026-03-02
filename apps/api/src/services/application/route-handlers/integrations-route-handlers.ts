@@ -44,11 +44,10 @@ interface ServiceResult {
 // ─── DB helpers ────────────────────────────────────────────────
 // Table created by migration 002 + 006. No ensureTable() needed.
 
-async function getCredentials<T>(service: string): Promise<T | null> {
-  // RLS automatically filters to current tenant
+async function getCredentials<T>(tenantId: string, service: string): Promise<T | null> {
   const row = await queryOne<{ credentials: T }>(
-    'SELECT credentials FROM integration_credentials WHERE service = $1',
-    [service]
+    'SELECT credentials FROM integration_credentials WHERE tenant_id = $1 AND service = $2',
+    [tenantId, service]
   );
   return row?.credentials ?? null;
 }
@@ -174,12 +173,15 @@ async function checkITGlue(creds: ITGlueCreds | null): Promise<ServiceResult> {
  * GET /integrations/credentials
  * Returns saved credentials for all services with secrets masked.
  */
-router.get('/credentials', async (_req, res) => {
+router.get('/credentials', async (req, res) => {
   try {
+    const tenantId = String(req.auth?.tid || '').trim();
+    if (!tenantId) return res.status(401).json({ error: 'Tenant context required' });
+
     const [at, ninja, itg] = await Promise.all([
-      getCredentials<AutotaskCreds>('autotask'),
-      getCredentials<NinjaOneCreds>('ninjaone'),
-      getCredentials<ITGlueCreds>('itglue'),
+      getCredentials<AutotaskCreds>(tenantId, 'autotask'),
+      getCredentials<NinjaOneCreds>(tenantId, 'ninjaone'),
+      getCredentials<ITGlueCreds>(tenantId, 'itglue'),
     ]);
 
     res.json({
@@ -243,8 +245,9 @@ router.put('/credentials/:service', async (req, res) => {
 router.delete('/credentials/:service', async (req, res) => {
   const { service } = req.params;
   try {
-    // RLS ensures only the current tenant's row is deleted
-    await query('DELETE FROM integration_credentials WHERE service = $1', [service]);
+    const tenantId = String(req.auth?.tid || '').trim();
+    if (!tenantId) return res.status(401).json({ error: 'Tenant context required' });
+    await query('DELETE FROM integration_credentials WHERE tenant_id = $1 AND service = $2', [tenantId, service]);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -256,12 +259,15 @@ router.delete('/credentials/:service', async (req, res) => {
  * Real-time connectivity check using stored DB credentials.
  * All three checks run in parallel with 6s timeout each.
  */
-router.get('/health', async (_req, res) => {
+router.get('/health', async (req, res) => {
   try {
+    const tenantId = String(req.auth?.tid || '').trim();
+    if (!tenantId) return res.status(401).json({ error: 'Tenant context required' });
+
     const [atCreds, ninjaCreds, itgCreds] = await Promise.all([
-      getCredentials<AutotaskCreds>('autotask'),
-      getCredentials<NinjaOneCreds>('ninjaone'),
-      getCredentials<ITGlueCreds>('itglue'),
+      getCredentials<AutotaskCreds>(tenantId, 'autotask'),
+      getCredentials<NinjaOneCreds>(tenantId, 'ninjaone'),
+      getCredentials<ITGlueCreds>(tenantId, 'itglue'),
     ]);
 
     const results = await Promise.allSettled([

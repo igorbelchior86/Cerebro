@@ -77,19 +77,27 @@ export class AutotaskPollingService {
   }
 
   private async getAutotaskCredentials(): Promise<{ tenantId?: string; credentials: AutotaskCreds } | null> {
+    const preferredTenantId =
+      process.env.AUTOTASK_POLLER_TENANT_ID ||
+      process.env.P0_SYSTEM_TENANT_ID ||
+      process.env.DEFAULT_TENANT_ID ||
+      undefined;
     try {
-      const latest = await queryOne<{ tenant_id?: string | null; credentials: AutotaskCreds }>(
-        `SELECT tenant_id, credentials
-         FROM integration_credentials
-         WHERE service = 'autotask'
-         ORDER BY updated_at DESC
-         LIMIT 1`
-      );
-      if (latest?.credentials?.apiIntegrationCode && latest.credentials?.username && latest.credentials?.secret) {
-        return {
-          ...(latest.tenant_id ? { tenantId: String(latest.tenant_id) } : {}),
-          credentials: latest.credentials,
-        };
+      if (preferredTenantId) {
+        const latest = await queryOne<{ tenant_id?: string | null; credentials: AutotaskCreds }>(
+          `SELECT tenant_id, credentials
+           FROM integration_credentials
+           WHERE tenant_id = $1 AND service = 'autotask'
+           ORDER BY updated_at DESC
+           LIMIT 1`,
+          [preferredTenantId]
+        );
+        if (latest?.credentials?.apiIntegrationCode && latest.credentials?.username && latest.credentials?.secret) {
+          return {
+            ...(latest.tenant_id ? { tenantId: String(latest.tenant_id) } : {}),
+            credentials: latest.credentials,
+          };
+        }
       }
     } catch {
       // Fall through to env fallback if DB is unavailable / table not ready.
@@ -108,11 +116,7 @@ export class AutotaskPollingService {
       process.env.AUTOTASK_API_SECRET ||
       '';
     const zoneUrl = process.env.AUTOTASK_ZONE_URL || undefined;
-    const tenantId =
-      process.env.AUTOTASK_POLLER_TENANT_ID ||
-      process.env.P0_SYSTEM_TENANT_ID ||
-      process.env.DEFAULT_TENANT_ID ||
-      undefined;
+    const tenantId = preferredTenantId;
 
     if (!apiIntegrationCode || !username || !secret) return null;
     return {

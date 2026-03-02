@@ -105,7 +105,7 @@ app.use('/manager-ops', requireAuth, managerOpsRoutes);
 
 // UI still uses these endpoints as a local inbox/session list API.
 // Email ingestion polling is disabled, but read/query routes remain mounted.
-app.use('/email-ingestion', emailIngestionRoutes);
+app.use('/email-ingestion', requireAuth, emailIngestionRoutes);
 
 // ─── Error Handling ──────────────────────────────────────────
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

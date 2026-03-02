@@ -11,14 +11,15 @@ interface AutotaskCreds {
   zoneUrl?: string;
 }
 
-async function getTenantAutotaskClient(_tenantId: string): Promise<AutotaskClient | null> {
+async function getTenantAutotaskClient(tenantId: string): Promise<AutotaskClient | null> {
   try {
     const row = await queryOne<{ credentials: AutotaskCreds }>(
       `SELECT credentials
        FROM integration_credentials
-       WHERE service = 'autotask'
+       WHERE tenant_id = $1 AND service = 'autotask'
        ORDER BY updated_at DESC
-       LIMIT 1`
+       LIMIT 1`,
+      [tenantId]
     );
     const creds = row?.credentials;
     if (creds?.apiIntegrationCode && creds?.username && creds?.secret) {
@@ -32,6 +33,10 @@ async function getTenantAutotaskClient(_tenantId: string): Promise<AutotaskClien
   } catch {
     // fall through to env creds
   }
+
+  // Never fall back to global env credentials for tenant-scoped workflow paths.
+  // This prevents accidental cross-tenant credential bleed.
+  if (tenantId) return null;
 
   const code = String(process.env.AUTOTASK_API_INTEGRATION_CODE || '').trim();
   const username = String(process.env.AUTOTASK_USERNAME || '').trim();

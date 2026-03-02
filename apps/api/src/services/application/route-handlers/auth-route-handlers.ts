@@ -31,6 +31,7 @@ import { tenantContext } from '../../../lib/tenantContext.js';
 import { applyWorkspaceRuntimeSettings } from '../../read-models/runtime-settings.js';
 import { generateOpaqueToken, hashOpaqueToken, normalizeEmail } from '../../identity/security-utils.js';
 import samlRouter from './auth-saml-route-handlers.js';
+import { sendInviteEmail } from '../../identity/mailer.js';
 
 const router: IRouter = Router();
 
@@ -70,6 +71,13 @@ function correlationFromRequest(req: Request) {
     ...(tenantId ? { tenant_id: tenantId } : {}),
     ...(traceId ? { trace_id: traceId } : {}),
   };
+}
+
+function tenantNameFromEmail(email: string): string {
+  const domain = email.split('@')[1] || 'new-tenant';
+  const label = domain.split('.')[0] || 'tenant';
+  const clean = label.replace(/[^a-zA-Z0-9]/g, ' ').trim() || 'Tenant';
+  return `${clean.charAt(0).toUpperCase()}${clean.slice(1)} MSP`;
 }
 
 async function writeIdentityAudit(input: {
@@ -285,7 +293,10 @@ router.post('/mfa/validate', async (req: Request, res: Response) => {
         return res.status(401).json({ error: 'Invalid token scope' });
       }
 
-      const user = await queryOne<User>('SELECT * FROM users WHERE id = $1', [payload.sub]);
+      const user = await queryOne<User>(
+        'SELECT * FROM users WHERE id = $1 AND tenant_id = $2',
+        [payload.sub, payload.tid],
+      );
       if (!user?.totp_secret || !user.totp_enabled) {
         return res.status(401).json({ error: 'MFA not configured' });
       }
@@ -316,13 +327,13 @@ router.post('/mfa/validate', async (req: Request, res: Response) => {
 router.post('/mfa/setup', requireAuth, async (req: Request, res: Response) => {
   try {
     const userId = req.auth!.sub;
-    const user = await queryOne<User>('SELECT * FROM users WHERE id = $1', [userId]);
+    const user = await queryOne<User>('SELECT * FROM users WHERE id = $1 AND tenant_id = $2', [userId, req.auth!.tid]);
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (user.totp_enabled) return res.status(409).json({ error: 'MFA is already enabled' });
 
     const secret = authenticator.generateSecret();
     // Store secret (not yet enabled — enabled after first successful verify)
-    await query('UPDATE users SET totp_secret = $1 WHERE id = $2', [secret, userId]);
+    await query('UPDATE users SET totp_secret = $1 WHERE id = $2 AND tenant_id = $3', [secret, userId, req.auth!.tid]);
 
     const otpauthUrl = authenticator.keyuri(user.email, 'Cerebro', secret);
     const qrDataUrl = await QRCode.toDataURL(otpauthUrl);
@@ -346,7 +357,7 @@ router.post('/mfa/enable', requireAuth, async (req: Request, res: Response) => {
     if (!code) return res.status(400).json({ error: 'code is required' });
 
     const userId = req.auth!.sub;
-    const user = await queryOne<User>('SELECT * FROM users WHERE id = $1', [userId]);
+    const user = await queryOne<User>('SELECT * FROM users WHERE id = $1 AND tenant_id = $2', [userId, req.auth!.tid]);
     if (!user) return res.status(404).json({ error: 'User not found' });
     if (!user.totp_secret) return res.status(400).json({ error: 'Run /auth/mfa/setup first' });
     if (user.totp_enabled) return res.status(409).json({ error: 'MFA already enabled' });
@@ -354,7 +365,7 @@ router.post('/mfa/enable', requireAuth, async (req: Request, res: Response) => {
     const valid = authenticator.verify({ token: code.replace(/\s/g, ''), secret: user.totp_secret });
     if (!valid) return res.status(401).json({ error: 'Invalid TOTP code' });
 
-    await query('UPDATE users SET totp_enabled = TRUE WHERE id = $1', [userId]);
+    await query('UPDATE users SET totp_enabled = TRUE WHERE id = $1 AND tenant_id = $2', [userId, req.auth!.tid]);
     res.json({ message: 'MFA enabled successfully' });
   } catch (err) {
     operationalLogger.error('routes.auth.mfa_enable.failed', err, {
@@ -372,13 +383,13 @@ router.post('/mfa/disable', requireAuth, async (req: Request, res: Response) => 
     const { password } = req.body as { password?: string };
     if (!password) return res.status(400).json({ error: 'password is required to disable MFA' });
 
-    const user = await queryOne<User>('SELECT * FROM users WHERE id = $1', [req.auth!.sub]);
+    const user = await queryOne<User>('SELECT * FROM users WHERE id = $1 AND tenant_id = $2', [req.auth!.sub, req.auth!.tid]);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid password' });
 
-    await query('UPDATE users SET totp_secret = NULL, totp_enabled = FALSE WHERE id = $1', [user.id]);
+    await query('UPDATE users SET totp_secret = NULL, totp_enabled = FALSE WHERE id = $1 AND tenant_id = $2', [user.id, req.auth!.tid]);
     res.json({ message: 'MFA disabled' });
   } catch (err) {
     operationalLogger.error('routes.auth.mfa_disable.failed', err, {
@@ -397,8 +408,8 @@ router.get('/me', requireAuth, async (req: Request, res: Response) => {
       `SELECT u.id, u.email, u.role, u.totp_enabled, u.created_at, u.name, u.avatar, u.preferences,
               t.id AS tenant_id, t.name AS tenant_name, t.slug AS tenant_slug
        FROM users u JOIN tenants t ON t.id = u.tenant_id
-       WHERE u.id = $1`,
-      [req.auth!.sub],
+       WHERE u.id = $1 AND u.tenant_id = $2`,
+      [req.auth!.sub, req.auth!.tid],
     );
     if (!user) return res.status(404).json({ error: 'User not found' });
 
@@ -451,7 +462,8 @@ router.patch('/me/profile', requireAuth, async (req: Request, res: Response) => 
     }
 
     values.push(userId);
-    const queryStr = `UPDATE users SET ${updates.join(', ')} WHERE id = $${queryIndex} RETURNING id, name, avatar, preferences`;
+    values.push(req.auth!.tid);
+    const queryStr = `UPDATE users SET ${updates.join(', ')} WHERE id = $${queryIndex} AND tenant_id = $${queryIndex + 1} RETURNING id, name, avatar, preferences`;
 
     const result = await query(queryStr, values);
     if (result.length === 0) {
@@ -481,20 +493,89 @@ router.post('/invite', requireAuth, requireAdmin, async (req: Request, res: Resp
   try {
     const { email, role = 'member' } = req.body as { email?: string; role?: string };
     if (!email) return res.status(400).json({ error: 'email is required' });
-    if (!['admin', 'member'].includes(role)) {
-      return res.status(400).json({ error: 'role must be admin or member' });
-    }
 
     const tenantId = req.auth!.tid;
     const invitedBy = req.auth!.sub;
     const normalizedEmail = normalizeEmail(email);
+    const actor = await queryOne<User>(
+      'SELECT * FROM users WHERE id = $1 AND tenant_id = $2',
+      [invitedBy, tenantId],
+    );
+    if (!actor) return res.status(404).json({ error: 'Inviter user not found' });
+    const masterEmail = normalizeEmail(process.env.PLATFORM_MASTER_EMAIL || 'admin@cerebro.local');
+    const isMasterOnboarding = normalizeEmail(actor.email) === masterEmail;
+    if (isMasterOnboarding) {
+      if (!['owner', 'admin', 'member'].includes(role)) {
+        return res.status(400).json({ error: 'role must be owner, admin or member' });
+      }
+    } else if (!['admin', 'member'].includes(role)) {
+      return res.status(400).json({ error: 'role must be admin or member' });
+    }
 
-    // Check user doesn't already exist in this tenant
+    // Global identity uniqueness
     const existing = await queryOne<User>(
       'SELECT id FROM users WHERE lower(trim(email)) = $1',
       [normalizedEmail],
     );
     if (existing) return res.status(409).json({ error: 'Email already registered' });
+
+    if (isMasterOnboarding) {
+      const tenantName = tenantNameFromEmail(normalizedEmail);
+      const slug = await uniqueSlug(slugify(tenantName));
+      const newTenantId = uuidv4();
+      const onboardingRole = 'owner';
+      const token = generateOpaqueToken();
+      const tokenHash = hashOpaqueToken(token);
+
+      await query('BEGIN');
+      try {
+        await query(
+          'INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)',
+          [newTenantId, tenantName, slug],
+        );
+        await query(
+          `INSERT INTO user_invites (tenant_id, email, token, token_hash, role, created_by, invite_type, max_uses, used_count)
+           VALUES ($1, $2, $3, $4, $5, $6, 'activation', 1, 0)`,
+          [newTenantId, normalizedEmail, token, tokenHash, onboardingRole, invitedBy],
+        );
+        await query('COMMIT');
+      } catch (error) {
+        await query('ROLLBACK');
+        throw error;
+      }
+
+      const inviteUrl = `${process.env.APP_URL || 'http://localhost:3000'}/activate-account?token=${token}`;
+      const mail = await sendInviteEmail({
+        to: normalizedEmail,
+        inviteUrl,
+        role: onboardingRole,
+        inviterEmail: actor.email,
+        tenantName,
+      });
+
+      await writeIdentityAudit({
+        req,
+        tenantId: newTenantId,
+        actorId: invitedBy,
+        action: 'identity.tenant.create',
+        detail: { tenant_name: tenantName, tenant_slug: slug, owner_email: normalizedEmail },
+      });
+      await writeIdentityAudit({
+        req,
+        tenantId: newTenantId,
+        actorId: invitedBy,
+        action: 'identity.invite.create',
+        detail: { email: normalizedEmail, role: onboardingRole, invite_type: 'activation', smtp_sent: mail.sent },
+      });
+      return res.json({
+        message: 'Tenant onboarding invite created',
+        tenant: { id: newTenantId, name: tenantName, slug },
+        inviteUrl,
+        token,
+        role: onboardingRole,
+        smtpSent: mail.sent,
+      });
+    }
 
     const token = generateOpaqueToken();
     const tokenHash = hashOpaqueToken(token);
@@ -503,9 +584,15 @@ router.post('/invite', requireAuth, requireAdmin, async (req: Request, res: Resp
        VALUES ($1, $2, $3, $4, $5, $6, 'add_member', 1, 0)`,
       [tenantId, normalizedEmail, token, tokenHash, role, invitedBy],
     );
-
-    // In production you'd email this link. For now, return it directly.
     const inviteUrl = `${process.env.APP_URL || 'http://localhost:3000'}/activate-account?token=${token}`;
+    const tenant = await queryOne<Tenant>('SELECT id, name, slug FROM tenants WHERE id = $1', [tenantId]);
+    const mail = await sendInviteEmail({
+      to: normalizedEmail,
+      inviteUrl,
+      role,
+      inviterEmail: actor.email,
+      tenantName: tenant?.name || 'Cerebro',
+    });
     await writeIdentityAudit({
       req,
       tenantId,
@@ -515,9 +602,10 @@ router.post('/invite', requireAuth, requireAdmin, async (req: Request, res: Resp
         email: normalizedEmail,
         role,
         invite_type: 'add_member',
+        smtp_sent: mail.sent,
       },
     });
-    res.json({ message: 'Invite created', inviteUrl, token });
+    res.json({ message: 'Invite created', inviteUrl, token, smtpSent: mail.sent });
   } catch (err) {
     operationalLogger.error('routes.auth.invite.failed', err, {
       module: 'routes.auth',
@@ -621,13 +709,16 @@ router.post('/accept-invite', activateAccountFromInvite);
 
 router.get('/team', requireAuth, async (req: Request, res: Response) => {
   try {
+    const tenantId = String(req.auth?.tid || '').trim();
+    if (!tenantId) return res.status(401).json({ error: 'Tenant context required' });
     const members = await query<{
       id: string; email: string; name?: string; role: string; created_at: string;
     }>(
       `SELECT id, email, name, role, created_at
        FROM users
+       WHERE tenant_id = $1
        ORDER BY created_at ASC`,
-      [],
+      [tenantId],
     );
     res.json(members);
   } catch (err) {

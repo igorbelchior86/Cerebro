@@ -5,6 +5,7 @@ import { query, queryOne } from '../../../db/index.js';
 import { tenantContext } from '../../../lib/tenantContext.js';
 import { generateOpaqueToken, hashOpaqueToken, normalizeEmail } from '../../identity/security-utils.js';
 import { operationalLogger } from '../../../lib/operational-logger.js';
+import { sendInviteEmail } from '../../identity/mailer.js';
 
 type TenantRow = { id: string; name: string; slug: string };
 type UserRow = { id: string };
@@ -122,6 +123,13 @@ router.post('/tenants', async (req: Request, res: Response) => {
 
       const appUrl = process.env.APP_URL || 'http://localhost:3000';
       const activationUrl = `${appUrl}/activate-account?token=${inviteToken}`;
+      const mail = await sendInviteEmail({
+        to: ownerEmail,
+        inviteUrl: activationUrl,
+        role: ownerRole,
+        inviterEmail: 'platform-admin@cerebro.local',
+        tenantName,
+      });
       return res.status(201).json({
         message: 'Tenant created with activation invite',
         tenant: { id: tenantId, name: tenantName, slug },
@@ -131,6 +139,7 @@ router.post('/tenants', async (req: Request, res: Response) => {
           expiresInHours: 48,
           activationUrl,
           token: inviteToken,
+          smtpSent: mail.sent,
         },
       });
     } catch (err) {
@@ -191,6 +200,13 @@ router.post('/tenants/:tenantId/invites', async (req: Request, res: Response) =>
 
       const appUrl = process.env.APP_URL || 'http://localhost:3000';
       const activationUrl = `${appUrl}/activate-account?token=${inviteToken}`;
+      const mail = await sendInviteEmail({
+        to: email,
+        inviteUrl: activationUrl,
+        role,
+        inviterEmail: 'platform-admin@cerebro.local',
+        tenantName: tenant.name,
+      });
       return res.status(201).json({
         message: 'Invite created',
         tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
@@ -200,6 +216,7 @@ router.post('/tenants/:tenantId/invites', async (req: Request, res: Response) =>
           activationUrl,
           token: inviteToken,
           expiresInHours: 48,
+          smtpSent: mail.sent,
         },
       });
     } catch (err) {

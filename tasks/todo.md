@@ -1,3 +1,87 @@
+# Task: Tenant isolation hardening wave 2 (research-backed + full route scan)
+**Status**: completed
+**Started**: 2026-03-02T18:27:00-05:00
+
+## Plan
+- [x] Step 1: Revisar referências oficiais de isolamento multi-tenant (PostgreSQL RLS + OWASP).
+- [x] Step 2: Aplicar tenant scoping explícito (`tenant_id`) nas rotas/serviços restantes com risco de bleed.
+- [x] Step 3: Remover fallback global de credenciais em fluxos tenant-scoped.
+- [x] Step 4: Executar varredura completa de queries sensíveis no backend.
+- [x] Step 5: Validar com typecheck, testes e chamadas reais por tenant.
+
+## Open Questions
+- Fluxos de ingestão/backfill ainda precisam de revisão separada para tenant scoping de tabelas históricas (`tickets_processed`, `triage_sessions`) sem quebrar compatibilidade de dados legados.
+
+## Progress Notes
+- Pesquisa aplicada:
+- PostgreSQL recomenda RLS/policies e `FORCE ROW LEVEL SECURITY` como camada de defesa (fonte oficial).
+- OWASP recomenda “tenant context enforcement in every data access path” + testes de boundary por tenant.
+- Hardening implementado:
+- `workflow-runtime`: lookup de credencial Autotask agora usa `tenant_id` recebido; sem fallback global quando tenant é informado.
+- `client-resolver`: removido fallback para “latest workspace credentials”; sessão sem `tenant_id` falha explicitamente.
+- `auth-route-handlers`: rotas autenticadas de usuário (`mfa/setup|enable|disable`, `me`, `me/profile`, `invite actor lookup`) agora ancoradas em `tenant_id`.
+- `email-ingestion` passou a exigir `requireAuth`; lookup de credenciais para sidebar virou tenant-scoped.
+- `autotask-polling`: DB lookup restrito ao tenant configurado por env (`AUTOTASK_POLLER_TENANT_ID` / `P0_SYSTEM_TENANT_ID` / `DEFAULT_TENANT_ID`), removendo busca global “latest”.
+- Varredura feita com `rg` em todos os route-handlers/services para `integration_credentials` e `users`.
+
+## Review
+- What worked:
+- Boundary de tenant ficou explícito em todo o fluxo autenticado de Team/Connections/Auth/PrepareContext/Workflow runtime.
+- What was tricky:
+- Existiam múltiplos fallbacks históricos por `.env` que mascaravam falta de credencial tenant-scoped.
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/platform/tenant-scope.test.ts src/__tests__/platform/policy-audit.test.ts src/__tests__/services/prepare-context.test.ts` ✅
+- `./scripts/stack.sh restart` ✅
+- validação manual com JWTs de `admin@cerebro.local` e `igor@refreshtech.com` em `/auth/team` e `/integrations/credentials` ✅
+- Documentation:
+- `wiki/features/2026-03-02-tenant-isolation-wave2-research-and-hardening.md`
+- `wiki/architecture/2026-03-02-tenant-id-explicit-enforcement-paths.md`
+- `wiki/decisions/2026-03-02-tenant-id-mandatory-in-every-authenticated-data-path.md`
+- `wiki/changelog/2026-03-02-tenant-isolation-wave2-full-route-scan.md`
+
+# Task: Hotfix crítico de isolamento tenant (Team + Connections)
+**Status**: completed
+**Started**: 2026-03-02T18:20:00-05:00
+
+## Plan
+- [x] Step 1: Reproduzir e confirmar vazamento cross-tenant em `Team` e `Connections`.
+- [x] Step 2: Corrigir queries sem `tenant_id` explícito nas superfícies afetadas.
+- [x] Step 3: Validar isolamento por tenant com chamadas autenticadas reais.
+- [x] Step 4: Executar verificação obrigatória (typecheck + testes de tenant scope).
+- [x] Step 5: Atualizar documentação obrigatória na wiki.
+
+## Open Questions
+- Permanecem superfícies legadas fora do escopo imediato que ainda usam fallback global por `.env` para integrações; precisa varredura completa dedicada.
+
+## Progress Notes
+- Causa raiz confirmada:
+  - `GET /auth/team` consultava `users` sem `WHERE tenant_id`.
+  - leituras de `integration_credentials` em múltiplos handlers filtravam apenas por `service`.
+- Correções aplicadas:
+  - `auth-route-handlers`: `team` agora exige `tenantId` e filtra por `tenant_id`.
+  - `integrations-route-handlers`: `credentials/health/delete` agora sempre usam `(tenant_id, service)`.
+  - `autotask/chat/playbook` route-handlers: lookup de credenciais agora tenant-scoped via `tenantContext`.
+- Evidência funcional após patch:
+  - tenant `igor@refreshtech.com` vê apenas si mesmo em `/auth/team`.
+  - tenant `igor@refreshtech.com` vê `configured=false` em `/integrations/credentials`.
+  - tenant `admin@cerebro.local` mantém credenciais do próprio tenant.
+
+## Review
+- What worked:
+- Hotfix eliminou o vazamento observado sem alterar contrato de endpoint.
+- What was tricky:
+- O código assumia RLS implícito, mas a camada de query atual não aplicava isolamento automático.
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/platform/tenant-scope.test.ts src/__tests__/platform/policy-audit.test.ts` ✅
+- validação manual de API por JWT de tenants distintos (`/auth/team`, `/integrations/credentials`, `/integrations/health`) ✅
+- Documentation:
+- `wiki/features/2026-03-02-hotfix-tenant-isolation-team-connections.md`
+- `wiki/architecture/2026-03-02-tenant-scoped-credentials-read-path.md`
+- `wiki/decisions/2026-03-02-explicit-tenant-filters-no-implicit-rls.md`
+- `wiki/changelog/2026-03-02-hotfix-cross-tenant-leak-team-and-connections.md`
+
 # Task: Auth Local robusto + SAML opcional por MSP (SP-initiated, sem JIT)
 **Status**: in_progress
 **Started**: 2026-03-02T15:10:00-05:00

@@ -41,28 +41,33 @@ function correlationFromRequest(req?: Request, fallbackTicketId?: string) {
     };
 }
 
-async function getAutotaskClientForSidebar(): Promise<AutotaskClient | null> {
+async function getAutotaskClientForSidebar(tenantId?: string): Promise<AutotaskClient | null> {
     try {
-        const row = await queryOne<{ credentials: AutotaskCreds }>(
-            `SELECT credentials
-             FROM integration_credentials
-             WHERE service = $1
-             ORDER BY updated_at DESC
-             LIMIT 1`,
-            ['autotask']
-        );
-        const creds = row?.credentials;
-        if (creds?.apiIntegrationCode && creds?.username && creds?.secret) {
-            return new AutotaskClient({
-                apiIntegrationCode: creds.apiIntegrationCode,
-                username: creds.username,
-                secret: creds.secret,
-                ...(creds.zoneUrl ? { zoneUrl: creds.zoneUrl } : {}),
-            });
+        if (tenantId) {
+            const row = await queryOne<{ credentials: AutotaskCreds }>(
+                `SELECT credentials
+                 FROM integration_credentials
+                 WHERE tenant_id = $1 AND service = $2
+                 ORDER BY updated_at DESC
+                 LIMIT 1`,
+                [tenantId, 'autotask']
+            );
+            const creds = row?.credentials;
+            if (creds?.apiIntegrationCode && creds?.username && creds?.secret) {
+                return new AutotaskClient({
+                    apiIntegrationCode: creds.apiIntegrationCode,
+                    username: creds.username,
+                    secret: creds.secret,
+                    ...(creds.zoneUrl ? { zoneUrl: creds.zoneUrl } : {}),
+                });
+            }
+            return null;
         }
     } catch {
         // Fallback to env vars below when DB credential lookup is unavailable.
     }
+
+    if (tenantId) return null;
 
     const code = String(process.env.AUTOTASK_API_INTEGRATION_CODE || '').trim();
     const username = String(process.env.AUTOTASK_USERNAME || '').trim();
@@ -117,7 +122,10 @@ function writeSidebarQueueCache(ticketId: string, queueId: number | null, queueN
     });
 }
 
-async function hydrateAutotaskQueueMetadataForSidebar(items: Array<Record<string, any>>): Promise<void> {
+async function hydrateAutotaskQueueMetadataForSidebar(
+    items: Array<Record<string, any>>,
+    tenantId?: string
+): Promise<void> {
     const candidates = items
         .filter((item) => {
             const ticketId = String(item?.ticket_id || item?.id || '').trim();
@@ -154,7 +162,7 @@ async function hydrateAutotaskQueueMetadataForSidebar(items: Array<Record<string
 
     if (remaining.length === 0) return;
 
-    const client = await getAutotaskClientForSidebar();
+    const client = await getAutotaskClientForSidebar(tenantId);
     if (!client) return;
 
     let queueCatalog = new Map<number, string>();
@@ -325,6 +333,8 @@ router.post('/ingest', async (req: Request, res: Response) => {
 
 router.get('/list', async (req: Request, res: Response) => {
     try {
+        const tenantId = String(req.auth?.tid || '').trim();
+        if (!tenantId) return res.status(401).json({ error: 'Tenant context required' });
         const { query } = await import('../../../db/index.js');
         const hasCompanyColumn = await query<{ exists: boolean }>(
             `SELECT EXISTS (
@@ -695,7 +705,7 @@ router.get('/list', async (req: Request, res: Response) => {
             .slice(0, 200);
 
         try {
-            await hydrateAutotaskQueueMetadataForSidebar(mapped as Array<Record<string, any>>);
+            await hydrateAutotaskQueueMetadataForSidebar(mapped as Array<Record<string, any>>, tenantId);
         } catch (hydrationError: any) {
             operationalLogger.warn('routes.email_ingestion.list.sidebar_hydration_failed', {
                 module: 'routes.email-ingestion',

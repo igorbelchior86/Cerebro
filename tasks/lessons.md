@@ -1,3 +1,15 @@
+## Lesson: 2026-03-02 (JWT tenant claim is not enough; SQL must still bind tenant_id)
+**Mistake**: Assumir que ter `tid` no token e middleware de auth já impediria qualquer vazamento.
+**Root cause**: Sem `tenant_id` no predicado SQL, uma query por chave funcional (`service`, `id`) pode atravessar tenants mesmo em rota autenticada.
+**Rule**: Em toda rota autenticada multi-tenant, o `tenant_id` do contexto deve aparecer explicitamente na query SQL de read/write sensível.
+**Pattern**: “`requireAuth` + query sem `tenant_id`” = anti-pattern de isolamento.
+
+## Lesson: 2026-03-02 (tenant isolation must never rely on implicit RLS assumptions)
+**Mistake**: Aceitei comentários de código que diziam “RLS filtra automaticamente”, mas várias queries reais não carregavam `tenant_id` explicitamente.
+**Root cause**: A camada `db.query/queryOne` atual não injeta tenant context no SQL; sem filtro explícito, consultas por `service` ou listagens de `users` cruzam tenants.
+**Rule**: Em rotas autenticadas multi-tenant, toda query de leitura/escrita sensível deve filtrar explicitamente por `tenant_id`, mesmo quando existir política RLS planejada.
+**Pattern**: Query com predicado apenas por chave funcional (`service`, `id`) em tabela tenant-owned = risco imediato de vazamento cross-tenant.
+
 ## Lesson: 2026-03-01 (performance fixes must preserve the existing UX contract when the user depends on suggestions)
 **Mistake**: Eu eliminei as sugestões iniciais do modal ao bloquear a busca vazia, melhorando custo mas quebrando um comportamento útil já existente.
 **Root cause**: Foquei só no custo do provider e não tratei “lista de sugestões ao abrir” como parte do contrato de UX do fluxo.

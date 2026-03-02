@@ -9,15 +9,18 @@ import { createLLMProvider, type Message } from '../../ai/llm-adapter.js';
 import { queryOne } from '../../../db/index.js';
 import { ITGlueClient } from '../../../clients/itglue.js';
 import { NinjaOneClient } from '../../../clients/ninjaone.js';
+import { tenantContext } from '../../../lib/tenantContext.js';
 
 const router: ExpressRouter = Router();
 
 // ─── Credential helpers ───────────────────────────────────────
 
 async function getStoredCreds<T>(service: string): Promise<T | null> {
+  const tenantId = String(tenantContext.getStore()?.tenantId || '').trim();
+  if (!tenantId) return null;
   const row = await queryOne<{ credentials: T }>(
-    'SELECT credentials FROM integration_credentials WHERE service = $1',
-    [service]
+    'SELECT credentials FROM integration_credentials WHERE tenant_id = $1 AND service = $2',
+    [tenantId, service]
   ).catch(() => null);
   return row?.credentials ?? null;
 }

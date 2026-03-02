@@ -8,6 +8,7 @@ import { query, queryOne } from '../../../db/index.js';
 import { pgStore } from '../../adapters/email/pg-store.js';
 import { triageOrchestrator } from '../../orchestration/triage-orchestrator.js';
 import { classifyQueueError } from '../../../platform/errors.js';
+import { tenantContext } from '../../../lib/tenantContext.js';
 import type { AutotaskTicket } from '@cerebro/types';
 
 const router: ExpressRouter = Router();
@@ -70,23 +71,28 @@ function getClient() {
 }
 
 async function getTenantScopedClient(): Promise<AutotaskClient | null> {
+  const tenantId = String(tenantContext.getStore()?.tenantId || '').trim();
   try {
-    const row = await queryOne<{ credentials: AutotaskCreds }>(
-      'SELECT credentials FROM integration_credentials WHERE service = $1 LIMIT 1',
-      ['autotask']
-    );
-    const creds = row?.credentials;
-    if (creds?.apiIntegrationCode && creds?.username && creds?.secret) {
-      return new AutotaskClient({
-        apiIntegrationCode: creds.apiIntegrationCode,
-        username: creds.username,
-        secret: creds.secret,
-        ...(creds.zoneUrl ? { zoneUrl: creds.zoneUrl } : {}),
-      });
+    if (tenantId) {
+      const row = await queryOne<{ credentials: AutotaskCreds }>(
+        'SELECT credentials FROM integration_credentials WHERE tenant_id = $1 AND service = $2 LIMIT 1',
+        [tenantId, 'autotask']
+      );
+      const creds = row?.credentials;
+      if (creds?.apiIntegrationCode && creds?.username && creds?.secret) {
+        return new AutotaskClient({
+          apiIntegrationCode: creds.apiIntegrationCode,
+          username: creds.username,
+          secret: creds.secret,
+          ...(creds.zoneUrl ? { zoneUrl: creds.zoneUrl } : {}),
+        });
+      }
+      return null;
     }
   } catch {
     // Fall back to env-based client below.
   }
+  if (tenantId) return null;
   return getClient();
 }
 

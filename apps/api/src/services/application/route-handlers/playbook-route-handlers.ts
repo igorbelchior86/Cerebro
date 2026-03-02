@@ -18,6 +18,7 @@ import { validateDiagnosis } from '../../domain/validate-policy.js';
 import { PrepareContextService } from '../../context/prepare-context.js';
 import { AutotaskClient } from '../../../clients/autotask.js';
 import { operationalLogger } from '../../../lib/operational-logger.js';
+import { tenantContext } from '../../../lib/tenantContext.js';
 
 const router: Router = Router();
 const fullFlowInFlight = new Set<string>();
@@ -40,12 +41,15 @@ type AuthoritativeFieldDiff = {
 };
 
 async function getAutotaskClientForReviewer(): Promise<AutotaskClient | null> {
+  const tenantId = String(tenantContext.getStore()?.tenantId || '').trim();
+  if (!tenantId) return null;
   const row = await queryOne<{ credentials: AutotaskCreds }>(
     `SELECT credentials
      FROM integration_credentials
-     WHERE service = 'autotask'
+     WHERE tenant_id = $1 AND service = 'autotask'
      ORDER BY updated_at DESC
-     LIMIT 1`
+     LIMIT 1`,
+    [tenantId]
   );
   const creds = row?.credentials;
   if (!creds?.apiIntegrationCode || !creds?.username || !creds?.secret) return null;

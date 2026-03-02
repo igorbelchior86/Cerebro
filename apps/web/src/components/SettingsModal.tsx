@@ -81,11 +81,11 @@ const ALL_NAV = [...USER_NAV, ...WORKSPACE_NAV];
 
 interface TeamMember { id: string; email: string; name?: string; role: string; created_at: string; }
 
-function SectionTeam({ canInvite }: { canInvite: boolean }) {
+function SectionTeam({ canInvite, isMasterAccount }: { canInvite: boolean; isMasterAccount: boolean }) {
   const API = process.env.NEXT_PUBLIC_API_URL || '/api';
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invEmail, setInvEmail] = useState('');
-  const [invRole, setInvRole] = useState<'member' | 'admin'>('member');
+  const [invRole, setInvRole] = useState<'owner' | 'member' | 'admin'>(isMasterAccount ? 'owner' : 'member');
   const [invLink, setInvLink] = useState('');
   const [invLoading, setInvLoading] = useState(false);
   const [invError, setInvError] = useState('');
@@ -112,7 +112,7 @@ function SectionTeam({ canInvite }: { canInvite: boolean }) {
       });
       const data = await res.json();
       if (!res.ok) { setInvError(data.error || 'Invite failed'); return; }
-      setInvLink(data.inviteLink);
+      setInvLink(data.inviteUrl || data.inviteLink || '');
       setInvEmail('');
     } catch {
       setInvError('Network error');
@@ -161,7 +161,9 @@ function SectionTeam({ canInvite }: { canInvite: boolean }) {
       {canInvite && (
         <>
           <Divider />
-          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Invite a new member</p>
+          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            {isMasterAccount ? 'Onboard a new tenant owner' : 'Invite a new member'}
+          </p>
           <div className="flex gap-2">
             <input
               type="email" placeholder="email@company.com" value={invEmail}
@@ -169,10 +171,11 @@ function SectionTeam({ canInvite }: { canInvite: boolean }) {
               className="flex-1 px-3 py-2 rounded-lg text-sm"
               style={{ background: 'var(--bg-root)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
             />
-            <select value={invRole} onChange={(e) => setInvRole(e.target.value as 'member' | 'admin')}
+            <select value={invRole} onChange={(e) => setInvRole(e.target.value as 'owner' | 'member' | 'admin')}
               className="px-3 py-2 rounded-lg text-sm"
               style={{ background: 'var(--bg-root)', border: '1px solid var(--border)', color: 'var(--text-primary)' }}
             >
+              {isMasterAccount && <option value="owner">Owner</option>}
               <option value="member">Member</option>
               <option value="admin">Admin</option>
             </select>
@@ -749,13 +752,14 @@ export default function SettingsModal({ open, onClose, theme, onToggleTheme }: S
   const [activeSection, setActiveSection] = useState('general');
   const { user } = useAuth();
   const canInvite = user?.role === 'owner' || user?.role === 'admin';
+  const isMasterAccount = (user?.email || '').toLowerCase() === 'admin@cerebro.local';
 
   const SECTION_MAP: Record<string, React.ReactNode> = {
     general: <SectionGeneral theme={theme} onToggleTheme={onToggleTheme} />,
     connections: <SectionConnections />,
     llm: <SectionLLM />,
     about: <SectionAbout />,
-    team: <SectionTeam canInvite={canInvite} />,
+    team: <SectionTeam canInvite={canInvite} isMasterAccount={isMasterAccount} />,
   };
   const modalRef = useRef<HTMLDivElement>(null);
 

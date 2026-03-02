@@ -35,52 +35,28 @@ export async function getIntegrationCredentials<T>(
     tenantId?: string | null
 ): Promise<T | null> {
     try {
-        if (tenantId) {
-            const tenantScoped = await queryOne<{ credentials: T }>(
-                `SELECT credentials
-         FROM integration_credentials
-         WHERE tenant_id = $1 AND service = $2
-         LIMIT 1`,
-                [tenantId, service]
-            );
-            if (tenantScoped?.credentials) return tenantScoped.credentials;
-        }
-
-        const latest = await queryOne<{ credentials: T }>(
+        if (!tenantId) return null;
+        const tenantScoped = await queryOne<{ credentials: T }>(
             `SELECT credentials
        FROM integration_credentials
-       WHERE service = $1
-       ORDER BY updated_at DESC
+       WHERE tenant_id = $1 AND service = $2
        LIMIT 1`,
-            [service]
+            [tenantId, service]
         );
-        return latest?.credentials ?? null;
+        return tenantScoped?.credentials ?? null;
     } catch {
         return null;
     }
 }
 
 export function buildAutotaskClient(creds: AutotaskCreds | null): AutotaskClient {
-    const apiIntegrationCode =
-        creds?.apiIntegrationCode ||
-        process.env.AUTOTASK_API_INTEGRATION_CODE ||
-        process.env.AUTOTASK_API_INTEGRATIONCODE ||
-        '';
-    const username =
-        creds?.username ||
-        process.env.AUTOTASK_USERNAME ||
-        process.env.AUTOTASK_API_USER ||
-        '';
-    const secret =
-        creds?.secret ||
-        process.env.AUTOTASK_SECRET ||
-        process.env.AUTOTASK_API_SECRET ||
-        '';
-    // Important: when using UI/DB credentials, avoid forcing a stale/placeholder env zone URL.
-    // Let Autotask zone discovery run unless the DB credential explicitly provides zoneUrl.
-    const zoneUrl = creds
-        ? (creds.zoneUrl || undefined)
-        : (process.env.AUTOTASK_ZONE_URL || undefined);
+    if (!creds?.apiIntegrationCode || !creds?.username || !creds?.secret) {
+        throw new Error('Autotask credentials not configured for tenant');
+    }
+    const apiIntegrationCode = creds.apiIntegrationCode;
+    const username = creds.username;
+    const secret = creds.secret;
+    const zoneUrl = creds.zoneUrl || undefined;
 
     return new AutotaskClient({
         apiIntegrationCode,
@@ -91,8 +67,11 @@ export function buildAutotaskClient(creds: AutotaskCreds | null): AutotaskClient
 }
 
 export function buildNinjaClient(creds: NinjaOneCreds | null): NinjaOneClient {
-    const clientId = creds?.clientId || process.env.NINJAONE_CLIENT_ID || '';
-    const clientSecret = creds?.clientSecret || process.env.NINJAONE_CLIENT_SECRET || '';
+    if (!creds?.clientId || !creds?.clientSecret) {
+        throw new Error('NinjaOne credentials not configured for tenant');
+    }
+    const clientId = creds.clientId;
+    const clientSecret = creds.clientSecret;
     const region: 'us' | 'eu' | 'oc' = creds?.region ?? 'us';
     const baseUrl = NINJAONE_BASE[region];
     return new NinjaOneClient({
@@ -103,7 +82,10 @@ export function buildNinjaClient(creds: NinjaOneCreds | null): NinjaOneClient {
 }
 
 export function buildITGlueClient(creds: ITGlueCreds | null): ITGlueClient {
-    const apiKey = creds?.apiKey || process.env.ITGLUE_API_KEY || '';
+    if (!creds?.apiKey) {
+        throw new Error('IT Glue credentials not configured for tenant');
+    }
+    const apiKey = creds.apiKey;
     const region: 'us' | 'eu' | 'au' = creds?.region ?? 'us';
     const baseUrl = ITGLUE_BASE[region];
     return new ITGlueClient({
@@ -120,6 +102,9 @@ export async function resolveClientsForSession(sessionId: string): Promise<{
     tenantId: string | null;
 }> {
     const tenantId = await getSessionTenantId(sessionId);
+    if (!tenantId) {
+        throw new Error(`Session ${sessionId} has no tenant_id; refusing cross-tenant credential fallback`);
+    }
     const [autotaskCreds, ninjaCreds, itglueCreds] = await Promise.all([
         getIntegrationCredentials<AutotaskCreds>('autotask', tenantId),
         getIntegrationCredentials<NinjaOneCreds>('ninjaone', tenantId),
@@ -130,7 +115,7 @@ export async function resolveClientsForSession(sessionId: string): Promise<{
         autotaskClient: buildAutotaskClient(autotaskCreds),
         ninjaoneClient: buildNinjaClient(ninjaCreds),
         itglueClient: buildITGlueClient(itglueCreds),
-        credentialScope: tenantId ? 'tenant' : 'workspace_fallback',
+        credentialScope: 'tenant',
         tenantId,
     };
 }

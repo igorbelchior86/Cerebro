@@ -1,3 +1,42 @@
+# Task: Auth Local robusto + SAML opcional por MSP (SP-initiated, sem JIT)
+**Status**: in_progress
+**Started**: 2026-03-02T15:10:00-05:00
+
+## Plan
+- [x] Step 1: Implementar Fase A (migrações de identidade + endpoints de super-admin + activation flow + deprecação do register legado por flag).
+- [x] Step 2: Hardening de login/invite (unicidade global de email normalizado, token one-time com hash + expiração + revogação + consumo atômico) com auditoria de identidade.
+- [x] Step 3: Implementar Fase B SAML tenant-scoped (config provider, SP-initiated start, ACS com validações rígidas, sem JIT, logout local).
+- [x] Step 4: Cobrir cenários críticos com testes automatizados (auth local hardening + SAML happy/failure paths essenciais).
+- [x] Step 5: Executar validação obrigatória (typecheck + testes relevantes) e publicar documentação wiki obrigatória (features/architecture/decisions/changelog).
+
+## Open Questions
+- Nenhuma bloqueante; execução segue decisões fechadas no plano.
+
+## Progress Notes
+- Mapeamento inicial concluído: fluxo atual depende de `SEED_ADMIN_*` e `register-tenant`; login atual consulta `users` por email sem unicidade global garantida em schema.
+- Dependência SAML validada com referência de implementação Node (`samlify`) para SP-init + ACS.
+- Migrações novas adicionadas: `015_auth_hardening_and_platform_admin.sql` e `016_tenant_saml_providers.sql` com constraints/novas tabelas/RLS para SAML.
+- Novos handlers adicionados: `platform-admin-route-handlers.ts` e `auth-saml-route-handlers.ts`; auth local hardening aplicado em `auth-route-handlers.ts`.
+- `register-tenant` agora legado por flag (`AUTH_ENABLE_LEGACY_REGISTER=false` default), `autoSeedAdmin` só roda com `AUTH_ENABLE_ENV_SEED=true`.
+- Testes novos adicionados: `security-utils.test.ts` e `saml-service.test.ts`.
+- Validação executada: `pnpm --filter @cerebro/api typecheck` ✅; testes focados de services/platform ✅.
+
+## Review
+- What worked:
+- Fluxo local ficou desacoplado do bootstrap automático por `.env` e migrou para provisioning control-plane.
+- SAML SP-initiated foi integrado com validações de issuer/audience/inResponseTo/janela temporal e replay guard.
+- What was tricky:
+- Validador XSD recomendado pelo ecossistema do `samlify` exigia Java no postinstall; removido para manter pipeline local estável.
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/security-utils.test.ts src/__tests__/services/saml-service.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/platform/tenant-scope.test.ts src/__tests__/platform/policy-audit.test.ts` ✅
+- Documentation:
+- `wiki/features/2026-03-02-auth-local-hardening-and-saml-sp-initiated.md`
+- `wiki/architecture/2026-03-02-auth-control-plane-and-saml-tenant-boundary.md`
+- `wiki/decisions/2026-03-02-local-auth-hardening-and-saml-without-jit.md`
+- `wiki/changelog/2026-03-02-auth-local-hardening-and-saml-sp-initiated.md`
+
 # Task: Phase 3 residual closure - thin controllers consistency
 **Status**: completed
 **Started**: 2026-03-02T13:25:00-05:00
@@ -2649,3 +2688,94 @@
 - `pnpm --filter @cerebro/web typecheck` ✅
 - Documentation:
 - `wiki/changelog/2026-03-02-replicate-87f4824-fetch-pattern-in-new-ticket.md`
+
+# Task: Corrigir erro 500 ao selecionar Primary Tech (assignedResourceRoleID ausente)
+**Status**: completed
+**Started**: 2026-03-02T16:38:00-05:00
+
+## Plan
+- [x] Step 1: Localizar write-path que envia assignment para Autotask e confirmar ausência de `assignedResourceRoleID`.
+- [x] Step 2: Corrigir gateway para resolver/enviar role obrigatório junto com `assignedResourceID` em create/assign/update.
+- [x] Step 3: Validar via testes unitários do gateway + restart da stack e documentar wiki.
+
+## Open Questions
+- Nenhuma bloqueante.
+
+## Progress Notes
+- Erro reproduzido pela mensagem da UI: Autotask exige par `assignedResourceID` + `assignedResourceRoleID`.
+- `apps/api/src/services/orchestration/autotask-ticket-workflow-gateway.ts` foi atualizado com resolução automática de role:
+  - usa role explícito do payload se enviado;
+  - fallback para `client.getResource(resourceId).defaultServiceDeskRoleID`.
+- Correção aplicada em três handlers: `create`, `assign` e `legacy_update`.
+- Testes do gateway atualizados para validar envio de `assignedResourceRoleID`.
+- Stack reiniciada e saudável (`api/web health ok`).
+
+## Review
+- What worked:
+- Corrigir no gateway central evita depender de frontend para preencher o role e cobre todos os caminhos write críticos.
+- What was tricky:
+- O teste de create original não mandava `assignee_resource_id`; foi ajustado para validar o cenário real de assignment.
+- Verification:
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/autotask-ticket-workflow-gateway.test.ts` ✅
+- `./scripts/stack.sh restart && ./scripts/stack.sh status` ✅
+- Documentation:
+- `wiki/changelog/2026-03-02-autotask-assignment-role-coupling-fix.md`
+
+# Task: Corrigir `createTicket returned no ticket` após seleção de Primary Tech
+**Status**: completed
+**Started**: 2026-03-02T16:49:00-05:00
+
+## Plan
+- [x] Step 1: Inspecionar parser de resposta do `createTicket` no client Autotask.
+- [x] Step 2: Implementar fallback para respostas com `itemId/id` sem `item/items/records`.
+- [x] Step 3: Adicionar teste unitário, validar suíte e reiniciar stack.
+
+## Open Questions
+- Nenhuma bloqueante.
+
+## Progress Notes
+- Causa raiz encontrada em `packages/integrations/src/autotask/client.ts:createTicket`: fallback inexistente para respostas de create com payload reduzido.
+- Correção aplicada: quando não houver coleção, tenta `itemId/id` e chama `getTicket(createdId)`.
+- Teste adicionado em `apps/api/src/__tests__/clients/autotask.test.ts` para garantir esse comportamento.
+
+## Review
+- What worked:
+- Fallback por ID mantém contrato do método (retorna ticket completo) sem quebrar callers existentes.
+- What was tricky:
+- Sem log bruto do provider no momento, a correção precisou ser robusta para múltiplos formatos de resposta de create.
+- Verification:
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/clients/autotask.test.ts src/__tests__/services/autotask-ticket-workflow-gateway.test.ts` ✅
+- `./scripts/stack.sh restart && ./scripts/stack.sh status` ✅
+- Documentation:
+- `wiki/changelog/2026-03-02-autotask-create-ticket-identifier-fallback.md`
+
+# Task: Corrigir troca de ticket ID para numérico e contato "Unknown user" após create
+**Status**: completed
+**Started**: 2026-03-02T16:56:00-05:00
+
+## Plan
+- [x] Step 1: Rastrear projeção pós-comando em `ticket-workflow-core` e snapshot do gateway para ticket number/requester.
+- [x] Step 2: Ajustar identidade canônica para priorizar `external_ticket_number` + enriquecer requester/contact no snapshot de create.
+- [x] Step 3: Validar testes de core/gateway/client, reiniciar stack e documentar wiki.
+
+## Open Questions
+- Nenhuma bloqueante.
+
+## Progress Notes
+- Causa 1: `processPendingCommands`/`applyLocalProjectionFromCommandResult` priorizavam `external_ticket_id` numérico no `ticket_id` projetado.
+- Causa 2: snapshot do gateway não carregava requester/contact com robustez em create/getTicket sem `contactName` direto.
+- Correções aplicadas:
+  - `ticket-workflow-core`: prioridade para `external_ticket_number` em projection/realtime/audit; persistência de `ticket_number` e `requester` no inbox/domain snapshots.
+  - `autotask-ticket-workflow-gateway`: leitura robusta de `ticketNumber` e requester; enrichment best-effort de contato via `getContact(contactID)` quando necessário.
+  - testes de fluxo e2e no core ajustados para usar ticket number canônico após create.
+
+## Review
+- What worked:
+- A projeção agora mantém identidade canônica `T...` e preserva requester, evitando regressão visual no header/context.
+- What was tricky:
+- O teste e2e antigo misturava `T...` no create e `5001` nos comandos seguintes, mascarando o problema de chave canônica.
+- Verification:
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/ticket-workflow-core.test.ts src/__tests__/services/autotask-ticket-workflow-gateway.test.ts src/__tests__/clients/autotask.test.ts` ✅
+- `./scripts/stack.sh restart && ./scripts/stack.sh status` ✅
+- Documentation:
+- `wiki/changelog/2026-03-02-workflow-create-canonical-ticket-number-and-requester-projection.md`

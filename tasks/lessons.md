@@ -984,3 +984,21 @@
 **Root cause**: Priorizei ajustes incrementais em vez de usar o commit indicado como baseline comportamental do fetch.
 **Rule**: Se o usuário exige "investigar commit X", primeiro extrair o fluxo concreto desse commit (deps, loading, chamadas) e replicar 1:1 no fluxo quebrado antes de qualquer otimização.
 **Pattern**: Regressão persistente após múltiplos patches costuma exigir rollback de estratégia para baseline comportamental comprovada.
+
+## Lesson: 2026-03-02 (resource assignment writes must include role coupling required by provider contract)
+**Mistake**: O fluxo de assignment/create enviava `assignedResourceID` sem garantir `assignedResourceRoleID`.
+**Root cause**: O gateway aceitava ID de técnico, mas não resolvia automaticamente o role default exigido pelo Autotask.
+**Rule**: Em writes de assignment para Autotask, sempre enviar `assignedResourceID` e `assignedResourceRoleID` juntos (explicitamente ou por resolução via metadata do resource).
+**Pattern**: Erro `Data violation ... must assign both assignedResourceID and assignedResourceRoleID` indica quebra de acoplamento obrigatório de campos no provider.
+
+## Lesson: 2026-03-02 (create endpoints may return identifier-only payloads)
+**Mistake**: Eu assumi que `POST /tickets` sempre retornaria `item/items/records` completos do ticket.
+**Root cause**: O parser de `createTicket` tratava ausência de coleção como erro terminal, sem fallback para respostas de confirmação com `itemId/id`.
+**Rule**: Em integrações REST de create, aceitar resposta identifier-only e fazer fetch de hidratação por ID antes de falhar.
+**Pattern**: Erro "createX returned no X" com create aparentemente aceito indica payload de confirmação reduzido do provider.
+
+## Lesson: 2026-03-02 (post-create identity must prioritize external ticket number and requester projection)
+**Mistake**: O core de workflow priorizava `external_ticket_id` numérico para `ticket_id` local/realtime e não propagava requester/contact do snapshot de criação.
+**Root cause**: Projeção local pós-comando estava centrada no ID interno e ignorava campos semânticos canônicos (`ticket_number`, `contact_name`).
+**Rule**: Em `kind: created`, sempre priorizar `external_ticket_number` para identidade de ticket e projetar requester/contact do snapshot para preservar UX e contexto.
+**Pattern**: Ticket muda de `T...` para numérico + contato vira `Unknown user` após create indica projeção local pós-comando incompleta.

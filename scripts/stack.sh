@@ -104,7 +104,7 @@ cmd_up() {
   : > "$LOG_DIR/web.log"
 
   echo "Starting API (detached)..."
-  screen -dmS "$API_SESSION" bash -lc "cd '$PROJECT_ROOT/apps/api' && npx --yes nodemon -w src -e ts,tsx --exec 'tsx src/index.ts' >> '$LOG_DIR/api.log' 2>&1"
+  screen -dmS "$API_SESSION" bash -lc "cd '$PROJECT_ROOT/apps/api' && if pnpm exec nodemon --version >/dev/null 2>&1; then pnpm exec nodemon -w src -e ts,tsx --exec 'tsx src/index.ts'; else pnpm exec tsx src/index.ts; fi >> '$LOG_DIR/api.log' 2>&1"
 
   echo "Building WEB (stable runtime)..."
   (

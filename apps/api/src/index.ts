@@ -18,6 +18,7 @@ import integrationsRoutes from './routes/integrations/integrations.js';
 import chatRoutes from './routes/workflow/chat.js';
 import emailIngestionRoutes from './routes/ingestion/email-ingestion.js';
 import authRoutes from './routes/identity/auth.js';
+import platformAdminRoutes from './routes/platform/admin.js';
 import workflowRoutes from './routes/workflow/workflow.js';
 import managerOpsRoutes from './routes/ops/manager-ops.js';
 import { requireAuth } from './middleware/auth.js';
@@ -37,6 +38,7 @@ const app: Express = express();
 
 // Middleware
 app.use(express.json({ limit: '12mb' }));
+app.use(express.urlencoded({ extended: true, limit: '12mb' }));
 app.use(cookieParser());
 app.use(requestContextMiddleware);
 app.use(createObservabilityMiddleware(observabilityRuntime));
@@ -86,6 +88,7 @@ app.get('/version', (req, res) => {
 
 // ─── Auth Routes (public — no requireAuth) ───────────────────
 app.use('/auth', authRoutes);
+app.use('/platform/admin', platformAdminRoutes);
 
 // ─── API Routes (protected) ──────────────────────────────────
 app.use('/autotask', requireAuth, autotaskRoutes);

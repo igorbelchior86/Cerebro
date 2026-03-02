@@ -153,6 +153,28 @@ describe('AutotaskClient', () => {
   });
 
   describe('write contracts', () => {
+    it('should resolve created ticket by itemId when POST /tickets omits item payload', async () => {
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ itemId: 1234 }),
+          headers: { get: () => 'application/json' },
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ item: { id: 1234, ticketNumber: 'T20260302.1234', title: 'Created ticket' } }),
+          headers: { get: () => 'application/json' },
+        });
+
+      const result = await client.createTicket({ title: 'Created ticket', companyID: 10 });
+
+      const createUrl = new URL((global.fetch as jest.Mock).mock.calls[0][0] as string);
+      expect(createUrl.pathname.toLowerCase()).toContain('/tickets');
+      const fetchByIdUrl = new URL((global.fetch as jest.Mock).mock.calls[1][0] as string);
+      expect(fetchByIdUrl.pathname.toLowerCase()).toContain('/tickets/1234');
+      expect((result as any).ticketNumber).toBe('T20260302.1234');
+    });
+
     it('should PATCH /tickets with body id when updating by ticket number', async () => {
       (global.fetch as jest.Mock)
         .mockResolvedValueOnce({

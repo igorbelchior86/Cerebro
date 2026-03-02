@@ -26,6 +26,7 @@ describe('AutotaskTicketWorkflowGateway', () => {
   it('executes create ticket operation from frozen matrix command type', async () => {
     const mockClient = {
       createTicket: jest.fn().mockResolvedValue({ id: 1200, ticketNumber: 'T20260227.1200', title: 'Printer down' }),
+      getResource: jest.fn().mockResolvedValue({ id: 42, defaultServiceDeskRoleID: 9 }),
     } as any;
 
     const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
@@ -35,11 +36,39 @@ describe('AutotaskTicketWorkflowGateway', () => {
         title: 'Printer down',
         description: 'Queue stuck',
         company_id: 10,
+        assignee_resource_id: 42,
       },
     }));
 
-    expect(mockClient.createTicket).toHaveBeenCalledWith(expect.objectContaining({ title: 'Printer down', companyID: 10 }));
+    expect(mockClient.getResource).toHaveBeenCalledWith(42);
+    expect(mockClient.createTicket).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Printer down',
+      companyID: 10,
+      assignedResourceID: 42,
+      assignedResourceRoleID: 9,
+    }));
     expect(result).toMatchObject({ kind: 'created', external_ticket_id: '1200', external_ticket_number: 'T20260227.1200' });
+  });
+
+  it('adds assignedResourceRoleID on assign command when only resource id is provided', async () => {
+    const mockClient = {
+      getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 333, ticketNumber: 'T20260226.0033' }),
+      getResource: jest.fn().mockResolvedValue({ id: 77, defaultServiceDeskRoleID: 12 }),
+      updateTicket: jest.fn().mockResolvedValue({}),
+      getTicket: jest.fn().mockResolvedValue({ id: 333, ticketNumber: 'T20260226.0033', status: 1 }),
+    } as any;
+
+    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    await gateway.executeCommand(buildCommand({
+      command_type: 'assign',
+      payload: { ticket_id: 'T20260226.0033', assignee_resource_id: 77 },
+    }));
+
+    expect(mockClient.getResource).toHaveBeenCalledWith(77);
+    expect(mockClient.updateTicket).toHaveBeenCalledWith(333, expect.objectContaining({
+      assignedResourceID: 77,
+      assignedResourceRoleID: 12,
+    }));
   });
 
   it('resolves ticket number to numeric id and maps status label before update', async () => {

@@ -620,13 +620,25 @@ export class AutotaskClient {
   }
 
   async createTicket(payload: Record<string, unknown>): Promise<AutotaskTicket> {
-    const response = await this.requestJson<{ item?: AutotaskTicket; items?: AutotaskTicket[]; records?: AutotaskTicket[] }>(
+    const response = await this.requestJson<{
+      item?: AutotaskTicket;
+      items?: AutotaskTicket[];
+      records?: AutotaskTicket[];
+      id?: number | string;
+      itemId?: number | string;
+    }>(
       'POST',
       '/tickets',
       { body: payload }
     );
     const rows = this.extractCollection(response);
-    if (!rows[0]) throw new Error('Autotask createTicket returned no ticket');
+    if (!rows[0]) {
+      const createdId = Number((response as any)?.itemId ?? (response as any)?.id);
+      if (Number.isFinite(createdId) && createdId > 0) {
+        return this.getTicket(createdId);
+      }
+      throw new Error('Autotask createTicket returned no ticket');
+    }
     return rows[0];
   }
 

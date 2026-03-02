@@ -128,8 +128,10 @@ export interface InboxTicketState {
   tenant_id: string;
   ticket_id: string;
   external_id?: string;
+  ticket_number?: string;
   title?: string;
   description?: string;
+  requester?: string;
   status?: string;
   assigned_to?: string;
   queue_id?: number;
@@ -747,6 +749,7 @@ export class TicketWorkflowCoreService {
         this.publishRealtime({
           tenant_id: attempt.command.tenant_id,
           ticket_id: String(
+            (result as any)?.external_ticket_number ||
             (result as any)?.external_ticket_id ||
             attempt.command.correlation.ticket_id ||
             attempt.command.payload.ticket_id ||
@@ -771,6 +774,7 @@ export class TicketWorkflowCoreService {
             'Autotask',
             'ticket',
             String(
+              (result as any)?.external_ticket_number ||
               (result as any)?.external_ticket_id ||
               attempt.command.correlation.ticket_id ||
               attempt.command.payload.ticket_id ||
@@ -860,7 +864,7 @@ export class TicketWorkflowCoreService {
   private async applyLocalProjectionFromCommandResult(attempt: WorkflowCommandAttempt, result: WorkflowExecutionResult): Promise<void> {
     const tenantId = attempt.command.tenant_id;
     const ticketId =
-      String((result as any)?.external_ticket_id || attempt.command.correlation.ticket_id || attempt.command.payload.ticket_id || '').trim();
+      String((result as any)?.external_ticket_number || (result as any)?.external_ticket_id || attempt.command.correlation.ticket_id || attempt.command.payload.ticket_id || '').trim();
     if (!ticketId) return;
 
     const existing = (await this.repo.getInboxTicket(tenantId, ticketId)) ?? {
@@ -875,9 +879,23 @@ export class TicketWorkflowCoreService {
     const next: InboxTicketState = {
       ...existing,
       external_id: String((result as any)?.external_ticket_id || existing.external_id || ticketId),
+      ...(String((result as any)?.external_ticket_number || (result as any)?.snapshot?.ticket_number || existing.ticket_number || '').trim()
+        ? {
+          ticket_number: String(
+            (result as any)?.external_ticket_number || (result as any)?.snapshot?.ticket_number || existing.ticket_number
+          ).trim(),
+        }
+        : {}),
       ...(String(patch.title ?? existing.title ?? '').trim() ? { title: String(patch.title ?? existing.title).trim() } : {}),
       ...(String(patch.description ?? existing.description ?? '').trim()
         ? { description: String(patch.description ?? existing.description).trim() }
+        : {}),
+      ...(String((result as any)?.snapshot?.contact_name ?? (result as any)?.snapshot?.requester ?? existing.requester ?? '').trim()
+        ? {
+          requester: String(
+            (result as any)?.snapshot?.contact_name ?? (result as any)?.snapshot?.requester ?? existing.requester
+          ).trim(),
+        }
         : {}),
       ...(String(patch.status ?? (result as any)?.status ?? existing.status ?? '').trim()
         ? { status: String(patch.status ?? (result as any)?.status ?? existing.status).trim() }
@@ -899,6 +917,13 @@ export class TicketWorkflowCoreService {
           ...(existing.domain_snapshots?.tickets || {}),
           ...(String((result as any)?.external_ticket_id || existing.external_id || ticketId).trim()
             ? { external_id: String((result as any)?.external_ticket_id || existing.external_id || ticketId).trim() }
+            : {}),
+          ...(String((result as any)?.external_ticket_number || (result as any)?.snapshot?.ticket_number || existing.ticket_number || '').trim()
+            ? {
+              ticket_number: String(
+                (result as any)?.external_ticket_number || (result as any)?.snapshot?.ticket_number || existing.ticket_number
+              ).trim(),
+            }
             : {}),
           ...(String(patch.status ?? (result as any)?.status ?? existing.status ?? '').trim()
             ? { status: String(patch.status ?? (result as any)?.status ?? existing.status).trim() }
@@ -924,6 +949,13 @@ export class TicketWorkflowCoreService {
         },
         'correlates.ticket_metadata': {
           ...(existing.domain_snapshots?.['correlates.ticket_metadata'] || {}),
+          ...(String((result as any)?.external_ticket_number || (result as any)?.snapshot?.ticket_number || existing.ticket_number || '').trim()
+            ? {
+              ticket_number: String(
+                (result as any)?.external_ticket_number || (result as any)?.snapshot?.ticket_number || existing.ticket_number
+              ).trim(),
+            }
+            : {}),
           ...(String(patch.status ?? (result as any)?.status ?? existing.status ?? '').trim()
             ? { status: String(patch.status ?? (result as any)?.status ?? existing.status).trim() }
             : {}),
@@ -965,6 +997,10 @@ export class TicketWorkflowCoreService {
       if (snapshot.description) next.description = String(snapshot.description);
       if (snapshot.status) next.status = String(snapshot.status);
       if (snapshot.assigned_to) next.assigned_to = String(snapshot.assigned_to);
+      if (snapshot.ticket_number) next.ticket_number = String(snapshot.ticket_number);
+      if (snapshot.contact_name || snapshot.requester) {
+        next.requester = String(snapshot.contact_name ?? snapshot.requester);
+      }
     }
 
     await this.repo.upsertInboxTicket(next);

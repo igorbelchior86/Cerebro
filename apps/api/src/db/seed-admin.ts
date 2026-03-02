@@ -18,6 +18,9 @@ import { operationalLogger } from '../lib/operational-logger.js';
 interface Tenant { id: string; }
 
 export async function autoSeedAdmin(): Promise<void> {
+  const enable = String(process.env.AUTH_ENABLE_ENV_SEED || 'false').toLowerCase() === 'true';
+  if (!enable) return;
+
   const email = process.env.SEED_ADMIN_EMAIL;
   const password = process.env.SEED_ADMIN_PASSWORD;
   const org = process.env.SEED_TENANT_NAME || 'My MSP';

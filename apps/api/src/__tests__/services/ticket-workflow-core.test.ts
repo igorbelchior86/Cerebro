@@ -130,10 +130,10 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
       tenantId,
       targetIntegration: 'Autotask',
       commandType: 'update_assign',
-      payload: { ticket_id: '5001', assignee_resource_id: '42', queue_id: 7, queue_name: 'Service Desk' },
+      payload: { ticket_id: 'T20260226.0007', assignee_resource_id: '42', queue_id: 7, queue_name: 'Service Desk' },
       actor,
       idempotencyKey: 'e2e-assign',
-      correlation: { trace_id: 'trace-e2e', ticket_id: '5001' },
+      correlation: { trace_id: 'trace-e2e', ticket_id: 'T20260226.0007' },
     });
     await service.submitCommand(assignCmd);
     await service.processPendingCommands();
@@ -143,12 +143,12 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
       targetIntegration: 'Autotask',
       commandType: 'status_update',
       payload: {
-        ticket_id: '5001',
+        ticket_id: 'T20260226.0007',
         status: 'In Progress',
       },
       actor,
       idempotencyKey: 'e2e-status',
-      correlation: { trace_id: 'trace-e2e', ticket_id: '5001' },
+      correlation: { trace_id: 'trace-e2e', ticket_id: 'T20260226.0007' },
     });
     await service.submitCommand(statusCmd);
     await service.processPendingCommands();
@@ -158,13 +158,13 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
       targetIntegration: 'Autotask',
       commandType: 'create_comment_note',
       payload: {
-        ticket_id: '5001',
+        ticket_id: 'T20260226.0007',
         comment_body: 'User called again. Escalating.',
         comment_visibility: 'internal',
       },
       actor,
       idempotencyKey: 'e2e-comment',
-      correlation: { trace_id: 'trace-e2e', ticket_id: '5001' },
+      correlation: { trace_id: 'trace-e2e', ticket_id: 'T20260226.0007' },
     });
     await service.submitCommand(commentCmd);
     await service.processPendingCommands();
@@ -172,7 +172,8 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     const inbox = await service.listInbox(tenantId);
     expect(inbox).toHaveLength(1);
     expect(inbox[0]).toMatchObject({
-      ticket_id: '5001',
+      ticket_id: 'T20260226.0007',
+      ticket_number: 'T20260226.0007',
       title: 'Printer down (urgent)',
       status: 'In Progress',
       assigned_to: '42',

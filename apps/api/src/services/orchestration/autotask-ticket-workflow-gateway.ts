@@ -11,6 +11,49 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
   constructor(private readonly clientFactory: (tenantId: string) => Promise<AutotaskClient | null>) { }
   private statusLabelCache = new Map<AutotaskClient, Map<string, string>>();
 
+  private readTicketNumber(ticket: any): string {
+    return String(
+      ticket?.ticketNumber ??
+      ticket?.ticketnumber ??
+      ticket?.ticket_number ??
+      ''
+    ).trim();
+  }
+
+  private readRequesterName(ticket: any): string {
+    return String(
+      ticket?.contactName ??
+      ticket?.requesterName ??
+      ticket?.requester ??
+      ''
+    ).trim();
+  }
+
+  private parsePositiveInt(value: unknown): number | null {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    return parsed > 0 ? Math.trunc(parsed) : null;
+  }
+
+  private async resolveAssignedResourceRoleId(
+    client: AutotaskClient,
+    assignedResourceId: unknown,
+    explicitRoleId: unknown
+  ): Promise<number | null> {
+    const providedRoleId = this.parsePositiveInt(explicitRoleId);
+    if (providedRoleId !== null) return providedRoleId;
+
+    const resourceId = this.parsePositiveInt(assignedResourceId);
+    if (resourceId === null) return null;
+
+    try {
+      const resource = await client.getResource(resourceId);
+      return this.parsePositiveInt((resource as any)?.defaultServiceDeskRoleID);
+    } catch {
+      return null;
+    }
+  }
+
   private async resolveWriteTicketId(client: AutotaskClient, ticketRef: string | number): Promise<string | number> {
     if (typeof ticketRef === 'number') return ticketRef;
     const raw = String(ticketRef || '').trim();
@@ -49,13 +92,20 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
     }
 
     if (operation.operation.handler === 'create') {
+      const assignedResourceId = payload.assignee_resource_id ?? payload.assignedResourceID;
+      const assignedResourceRoleId = await this.resolveAssignedResourceRoleId(
+        client,
+        assignedResourceId,
+        payload.assigned_resource_role_id ?? payload.assignedResourceRoleID
+      );
       const created = await client.createTicket({
         title: payload.title,
         description: payload.description,
         companyID: payload.company_id ?? payload.companyID,
         contactID: payload.contact_id ?? payload.contactID,
         queueID: payload.queue_id ?? payload.queueID,
-        assignedResourceID: payload.assignee_resource_id ?? payload.assignedResourceID,
+        assignedResourceID: assignedResourceId,
+        ...(assignedResourceRoleId !== null ? { assignedResourceRoleID: assignedResourceRoleId } : {}),
         secondaryResourceID: payload.secondary_resource_id ?? payload.secondaryResourceID,
         priority: payload.priority,
         issueType: payload.issue_type ?? payload.issueType,
@@ -66,15 +116,22 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
       return {
         kind: 'created',
         external_ticket_id: String((created as any)?.id ?? ''),
-        external_ticket_number: String((created as any)?.ticketNumber ?? ''),
+        external_ticket_number: this.readTicketNumber(created),
         snapshot: this.mapTicketSnapshot(created),
       };
     }
 
     if (operation.operation.handler === 'assign') {
       const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
+      const assignedResourceId = payload.assignee_resource_id ?? payload.assignedResourceID;
+      const assignedResourceRoleId = await this.resolveAssignedResourceRoleId(
+        client,
+        assignedResourceId,
+        payload.assigned_resource_role_id ?? payload.assignedResourceRoleID
+      );
       await client.updateTicket(ticketId, {
-        assignedResourceID: payload.assignee_resource_id ?? payload.assignedResourceID,
+        assignedResourceID: assignedResourceId,
+        ...(assignedResourceRoleId !== null ? { assignedResourceRoleID: assignedResourceRoleId } : {}),
         queueID: payload.queue_id ?? payload.queueID,
       });
       const snapshot = await this.safeFetchTicketSnapshot(client, ticketId);
@@ -101,8 +158,17 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
     if (operation.operation.handler === 'legacy_update') {
       const ticketId = await this.resolveWriteTicketId(client, this.requireTicketId(payload, command));
       const patch: Record<string, unknown> = {};
+      const assignedResourceId = payload.assignee_resource_id ?? payload.assignedResourceID;
       if (payload.assignee_resource_id !== undefined || payload.assignedResourceID !== undefined) {
-        patch.assignedResourceID = payload.assignee_resource_id ?? payload.assignedResourceID;
+        patch.assignedResourceID = assignedResourceId;
+        const assignedResourceRoleId = await this.resolveAssignedResourceRoleId(
+          client,
+          assignedResourceId,
+          payload.assigned_resource_role_id ?? payload.assignedResourceRoleID
+        );
+        if (assignedResourceRoleId !== null) {
+          patch.assignedResourceRoleID = assignedResourceRoleId;
+        }
       }
       if (payload.queue_id !== undefined || payload.queueID !== undefined) patch.queueID = payload.queue_id ?? payload.queueID;
       if (payload.status !== undefined) patch.status = await this.normalizeStatusForWrite(client, payload.status);
@@ -385,6 +451,26 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
 
   private async enrichTicketSnapshot(client: AutotaskClient, ticket: any): Promise<Record<string, unknown>> {
     const snapshot = this.mapTicketSnapshot(ticket);
+    const contactId = Number(ticket?.contactID ?? ticket?.contactId);
+    if (!String((snapshot as any).contact_name || '').trim() && Number.isFinite(contactId)) {
+      try {
+        const contact = await client.getContact(contactId);
+        const firstName = String((contact as any)?.firstName || '').trim();
+        const lastName = String((contact as any)?.lastName || '').trim();
+        const fullName = `${firstName} ${lastName}`.trim();
+        const contactName = fullName || String((contact as any)?.name || '').trim();
+        const email = String((contact as any)?.emailAddress || (contact as any)?.email || '').trim();
+        if (contactName) {
+          (snapshot as any).contact_name = contactName;
+          (snapshot as any).requester = contactName;
+        }
+        if (email) {
+          (snapshot as any).contact_email = email;
+        }
+      } catch {
+        // Contact enrichment is best-effort only.
+      }
+    }
     const status = String(ticket?.status ?? '').trim();
     if (!status) return snapshot;
     const labels = await this.getStatusLabelMap(client);
@@ -425,15 +511,19 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
   }
 
   private mapTicketSnapshot(ticket: any): Record<string, unknown> {
+    const ticketNumber = this.readTicketNumber(ticket);
+    const requesterName = this.readRequesterName(ticket);
     return {
       id: ticket?.id,
-      ticket_number: ticket?.ticketNumber,
+      ticket_number: ticketNumber || undefined,
       title: ticket?.title ?? ticket?.summary,
       description: ticket?.description,
       status: ticket?.status,
       assigned_to: ticket?.assignedResourceID,
       queue_id: ticket?.queueID,
       company_id: ticket?.companyID,
+      contact_id: ticket?.contactID,
+      ...(requesterName ? { contact_name: requesterName, requester: requesterName } : {}),
     };
   }
 }

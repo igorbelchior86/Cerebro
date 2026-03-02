@@ -954,3 +954,33 @@
 **Root cause**: Eu assumi que a mudança no handler e no modal era segura porque compilava, mas não validei o endpoint/runtime após alterar a lógica de busca.
 **Rule**: Em bug fixes que tocam rotas usadas pela UI, sempre reproduzir o request HTTP real (ou inspecionar logs ativos) antes de declarar concluído.
 **Pattern**: Alterações em rotas read-only de integração podem compilar e ainda falhar em runtime por payload/limites/comportamento do provider.
+
+## Lesson: 2026-03-02 (typed selector hydration must not monopolize loading state when local suggestions exist)
+**Mistake**: Eu mantive o `Primary/Secondary` em modo de hidratação remota com `contextEditorLoading` ativo mesmo já tendo sugestões locais renderizáveis.
+**Root cause**: O efeito priorizava o fetch completo e exibia spinner durante quase todo o ciclo, enquanto mudanças frequentes de dependências/timer causavam pisca da lista.
+**Rule**: Em seletores tipados com cache local, exibir sugestões locais imediatamente e fazer hidratação remota em background sem dominar o estado visual de loading.
+**Pattern**: “Lista aparece por um instante e volta para spinner” em modal de busca indica acoplamento excessivo entre background refresh e loading foreground.
+
+## Lesson: 2026-03-02 (never put non-memoized derived arrays into effect dependencies in hot UI loops)
+**Mistake**: Eu deixei `localContextEditorSuggestions` e `localContactEditorSuggestions` como arrays derivados não memoizados e os usei no dependency array do efeito de busca.
+**Root cause**: Esses arrays eram recriados a cada render (identidade nova), então o efeito reexecutava continuamente mesmo sem mudança semântica.
+**Rule**: Qualquer objeto/array derivado usado como dependência de `useEffect` precisa ser memoizado (`useMemo`) ou removido do dependency array por redesign.
+**Pattern**: Spinner persistente + lista piscando com requests repetidos em modal costuma indicar dependency churn por referência instável.
+
+## Lesson: 2026-03-02 (UI spinner bugs need deterministic in-flight/completed request guards, not only dependency tuning)
+**Mistake**: Eu tentei resolver o loop de spinner apenas com ajustes de dependência/memoização, sem travar explicitamente refetch repetido para a mesma chave de busca.
+**Root cause**: Em efeitos complexos de modal, pequenas mudanças de estado ainda podem religar o mesmo fetch e manter loading quase contínuo.
+**Rule**: Para seletores remotos de modal, implementar deduplicação determinística por chave (`editor+scope+query`) com guard de in-flight/completed.
+**Pattern**: Mesmo após estabilizar deps, se spinner persiste com consultas idênticas, falta guard de idempotência no cliente.
+
+## Lesson: 2026-03-02 (when user gives a known-good commit, anchor to that exact functional lineage immediately)
+**Mistake**: Eu continuei iterando patches no HEAD sem primeiro reconstruir o estado funcional baseado no commit de referência informado pelo usuário.
+**Root cause**: Falta de comparação histórica imediata entre o commit de referência e o arquivo real do fluxo problemático.
+**Rule**: Em regressão com commit conhecido, comparar primeiro o histórico exato do arquivo afetado e, se houver mismatch, restaurar da última versão comprovadamente funcional antes de novas hipóteses.
+**Pattern**: Múltiplas tentativas sem convergência geralmente indicam ausência de baseline histórico confiável.
+
+## Lesson: 2026-03-02 (when user asks to inspect a specific commit, extract and replicate its exact fetch pattern)
+**Mistake**: Eu tentei resolver por hipótese no `triage/home` sem replicar fielmente o padrão de fetch do commit de referência que o usuário exigiu investigar.
+**Root cause**: Priorizei ajustes incrementais em vez de usar o commit indicado como baseline comportamental do fetch.
+**Rule**: Se o usuário exige "investigar commit X", primeiro extrair o fluxo concreto desse commit (deps, loading, chamadas) e replicar 1:1 no fluxo quebrado antes de qualquer otimização.
+**Pattern**: Regressão persistente após múltiplos patches costuma exigir rollback de estratégia para baseline comportamental comprovada.

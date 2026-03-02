@@ -42,10 +42,6 @@ type EditableContextKey =
 type ContextEditorOption = { id: number; label: string; sublabel?: string };
 type TicketFieldOptionsCache = Partial<Record<AutotaskTicketFieldKey, AutotaskPicklistOption[]>>;
 
-function requiresTypedAutotaskSearch(key: EditableContextKey): boolean {
-  return key === 'Org' || key === 'Primary' || key === 'Secondary';
-}
-
 function mergeUniqueContextOptions(...groups: ContextEditorOption[][]): ContextEditorOption[] {
   const seen = new Set<number>();
   const merged: ContextEditorOption[] = [];
@@ -114,10 +110,10 @@ function mapTicketFieldEditorToOptions(
   return options
     .filter((row) => !needle || row.label.toLowerCase().includes(needle))
     .map((row) => ({
-      id: row.id,
-      label: row.label,
-      ...(typeof row.isActive === 'boolean' ? { sublabel: row.isActive ? 'Active' : 'Inactive' } : {}),
-    }));
+    id: row.id,
+    label: row.label,
+    ...(typeof row.isActive === 'boolean' ? { sublabel: row.isActive ? 'Active' : 'Inactive' } : {}),
+  }));
 }
 
 function mapEditorToTicketFieldKey(
@@ -397,21 +393,6 @@ export default function HomePage() {
   const primaryTech = draft.primaryTech?.name || 'Unassigned';
   const secondaryTech = draft.secondaryTech?.name || 'Unassigned';
   const isAwaitingSearchInput = false;
-  const localContextEditorSuggestions = (() => {
-    if (!activeContextEditor || !requiresTypedAutotaskSearch(activeContextEditor)) return [];
-    const seeded: ContextEditorOption[] = [];
-    if (activeContextEditor === 'Org' && typeof draft.org?.id === 'number') {
-      seeded.push({ id: draft.org.id, label: draft.org.name });
-    }
-    if (activeContextEditor === 'Primary' && typeof draft.primaryTech?.id === 'number') {
-      seeded.push({ id: draft.primaryTech.id, label: draft.primaryTech.name });
-    }
-    if (activeContextEditor === 'Secondary' && typeof draft.secondaryTech?.id === 'number') {
-      seeded.push({ id: draft.secondaryTech.id, label: draft.secondaryTech.name });
-    }
-    return mergeUniqueContextOptions(seeded, searchSuggestionCache[activeContextEditor] || []).slice(0, 8);
-  })();
-
   useEffect(() => {
     if (!isActive) return;
     const needsOrg = !searchSuggestionCache.Org?.length;
@@ -732,8 +713,8 @@ export default function HomePage() {
         auto_process: true,
       });
       const commandId = String(
-        (command as Record<string, unknown>)?.command_id ||
-        ((command as Record<string, unknown>)?.command as Record<string, unknown>)?.command_id ||
+        (command as any)?.command_id ||
+        (command as any)?.command?.command_id ||
         ''
       ).trim();
       if (!commandId) throw new Error('Workflow command id missing');
@@ -755,7 +736,7 @@ export default function HomePage() {
 
       const normalizedStatus = String(status?.status || '').trim().toLowerCase();
       if (normalizedStatus === 'failed' || normalizedStatus === 'dlq' || normalizedStatus === 'rejected') {
-        const detail = String((status as unknown as Record<string, unknown>)?.last_error || '').trim();
+        const detail = String((status as any)?.last_error || '').trim();
         throw new Error(detail || 'Ticket creation failed in Autotask.');
       }
       if (normalizedStatus !== 'completed') {
@@ -825,7 +806,6 @@ export default function HomePage() {
     if (!isActive || !activeContextEditor) return;
 
     let ignore = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
 
     if ((activeContextEditor === 'Contact' || activeContextEditor === 'Additional contacts') && activeOrgId === null) {
       setContextEditorOptions([]);
@@ -846,22 +826,6 @@ export default function HomePage() {
     }
 
     setContextEditorError('');
-
-    const shouldHydrateFullTechList =
-      (activeContextEditor === 'Primary' || activeContextEditor === 'Secondary') &&
-      !contextEditorQuery.trim();
-
-    if (
-      requiresTypedAutotaskSearch(activeContextEditor) &&
-      !contextEditorQuery.trim() &&
-      localContextEditorSuggestions.length > 0
-    ) {
-      setContextEditorOptions(localContextEditorSuggestions);
-      if (!shouldHydrateFullTechList) {
-        setContextEditorLoading(false);
-        return;
-      }
-    }
 
     if (
       (activeContextEditor === 'Contact' || activeContextEditor === 'Additional contacts') &&
@@ -885,10 +849,6 @@ export default function HomePage() {
           }));
           if (!ignore) {
             setContextEditorOptions(options);
-            setSearchSuggestionCache((prev) => ({
-              ...prev,
-              Org: mergeUniqueContextOptions(options, prev.Org || []).slice(0, 8),
-            }));
           }
           return;
         }
@@ -923,7 +883,7 @@ export default function HomePage() {
           return;
         }
 
-        const rows = await searchAutotaskResources(contextEditorQuery, contextEditorQuery.trim() ? 30 : 100);
+        const rows = await searchAutotaskResources(contextEditorQuery, 30);
         const options = rows.map((row: AutotaskResourceOption) => ({
           id: row.id,
           label: row.name,
@@ -931,15 +891,11 @@ export default function HomePage() {
         }));
         if (!ignore) {
           setContextEditorOptions(options);
-          setSearchSuggestionCache((prev) => ({
-            ...prev,
-            [activeContextEditor]: mergeUniqueContextOptions(options, prev[activeContextEditor] || []).slice(0, 8),
-          }));
         }
-      } catch (err: unknown) {
+      } catch (err: any) {
         if (!ignore) {
           setContextEditorOptions([]);
-          setContextEditorError(String((err as Error)?.message || 'Unable to load Autotask options'));
+          setContextEditorError(String(err?.message || 'Unable to load Autotask options'));
         }
       } finally {
         if (!ignore) {
@@ -948,20 +904,12 @@ export default function HomePage() {
       }
     };
 
-    if (ticketFieldKey) {
-      void run();
-    } else {
-      const delayMs = contextEditorQuery.trim() ? 220 : 320;
-      timer = setTimeout(() => {
-        void run();
-      }, delayMs);
-    }
+    void run();
 
     return () => {
       ignore = true;
-      if (timer) clearTimeout(timer);
     };
-  }, [activeContextEditor, activeOrgId, contactSuggestionCacheByCompany, contextEditorQuery, isActive, searchSuggestionCache, ticketFieldOptionsCache]);
+  }, [activeContextEditor, activeOrgId, contextEditorQuery, isActive, ticketFieldOptionsCache]);
 
   const handleSelectContextOption = (option: ContextEditorOption) => {
     if (!activeContextEditor) return;
@@ -1291,7 +1239,7 @@ export default function HomePage() {
                             ? 'Source: Autotask company search'
                             : activeContextEditor === 'Priority' || activeContextEditor === 'Issue Type' || activeContextEditor === 'Sub-Issue Type' || activeContextEditor === 'Service Level Agreement'
                               ? 'Source: Autotask ticket field metadata'
-                              : 'Source: Autotask resource search'}
+                            : 'Source: Autotask resource search'}
                       </p>
                     </div>
                     <button

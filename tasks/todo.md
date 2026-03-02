@@ -2486,3 +2486,166 @@
 - Documentation:
 - `wiki/changelog/2026-03-02-phase7-console-elimination-and-correlation-completion.md`
 - `wiki/architecture/2026-03-02-phase7-logging-standard-final.md`
+
+# Task: Corrigir spinner infinito no seletor Primary Tech do New Ticket
+**Status**: completed
+**Started**: 2026-03-02T13:45:00-05:00
+
+## Plan
+- [x] Step 1: Reproduzir/inspecionar o fluxo de seleção em `triage/home` e identificar por que o loading não estabiliza.
+- [x] Step 2: Aplicar correção mínima mantendo o comportamento de busca/sugestão existente.
+- [x] Step 3: Validar com typecheck do web e registrar documentação obrigatória na wiki.
+
+## Open Questions
+- Nenhuma bloqueante.
+
+## Progress Notes
+- Causa raiz localizada no `useEffect` do editor de contexto: o efeito dependia de `searchSuggestionCache` e também o atualizava durante busca de `Primary/Secondary` com query vazia, criando ciclo de reexecução e spinner contínuo.
+- Correção mínima aplicada: `setSearchSuggestionCache` agora evita update quando a lista mesclada de sugestões não mudou semanticamente (helper `areSameContextOptions`).
+- Com isso, a hidratação inicial continua funcionando, mas sem loop infinito de renders/fetches.
+
+## Review
+- What worked:
+- Guardar state updates idempotentes no cache de sugestões quebrou o ciclo sem alterar contrato de UX.
+- What was tricky:
+- O primeiro patch teve erro de sintaxe no callback do setter e precisou ajuste imediato antes da validação final.
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-02-new-ticket-primary-tech-spinner-loop-fix.md`
+
+# Task: Ajustar flicker + spinner persistente no Primary Tech (New Ticket)
+**Status**: completed
+**Started**: 2026-03-02T14:00:00-05:00
+
+## Plan
+- [x] Step 1: Reavaliar o efeito de busca do contexto para identificar por que o loading domina a UI com sugestões já presentes.
+- [x] Step 2: Ajustar controle de loading/timer/dependências para manter sugestões estáveis e hidratação em background.
+- [x] Step 3: Validar typecheck e atualizar wiki obrigatória.
+
+## Open Questions
+- Nenhuma bloqueante.
+
+## Progress Notes
+- Confirmado comportamento reportado: lista aparecia brevemente e o modal voltava para "Searching Autotask" na maior parte do tempo.
+- Ajuste aplicado no `triage/home`: quando há sugestões locais para seletor tipado com query vazia, o modal mantém `loading=false` e faz hidratação remota sem tomar a UI.
+- Debounce da hidratação vazia reduzido para `0ms` para evitar ciclo de timer cancelado mantendo loading visual.
+- Dependências do effect foram reduzidas para superfícies realmente necessárias, removendo churn por objetos inteiros de cache.
+
+## Review
+- What worked:
+- A separação entre "mostrar sugestões locais" e "hidratar catálogo completo" eliminou o comportamento de spinner dominante com flicker.
+- What was tricky:
+- Era necessário manter a hidratação completa sem quebrar o contrato de lista ampla de techs; a correção evitou retirar essa parte funcional.
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-02-new-ticket-primary-tech-loading-stability.md`
+
+# Task: Root-cause fix do loop de loading no Primary Tech (New Ticket)
+**Status**: completed
+**Started**: 2026-03-02T14:12:00-05:00
+
+## Plan
+- [x] Step 1: Re-inspecionar ciclo de render/dependências do efeito do editor de contexto com foco em identidade de referências.
+- [x] Step 2: Aplicar correção de causa raiz (estabilizar dependências derivadas) sem alterar contratos de busca.
+- [x] Step 3: Validar compilação e atualizar wiki/documentação obrigatória.
+
+## Open Questions
+- Nenhuma bloqueante.
+
+## Progress Notes
+- Causa raiz confirmada: `localContextEditorSuggestions` e `localContactEditorSuggestions` eram arrays criados inline em todo render e estavam no dependency array do `useEffect` de busca.
+- Isso provocava reruns contínuos do efeito (mesmo sem mudança de valor), mantendo spinner dominante e flicker.
+- Correção aplicada: ambos os arrays foram convertidos para `useMemo` com dependências explícitas e estáveis.
+
+## Review
+- What worked:
+- O ajuste atacou a origem de churn referencial no hook, não apenas sintomas de loading.
+- What was tricky:
+- O efeito anterior já tinha múltiplos caminhos de early-return/background hydration; era necessário preservar esse comportamento enquanto estabilizava as referências.
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-02-new-ticket-primary-tech-root-cause-effect-dependency-fix.md`
+
+# Task: Fix determinístico de refetch repetido no modal Primary Tech
+**Status**: completed
+**Started**: 2026-03-02T14:25:00-05:00
+
+## Plan
+- [x] Step 1: Eliminar refetch duplicado para a mesma combinação `editor/org/query`.
+- [x] Step 2: Aplicar guard de `in-flight` e `completed` no effect de busca do contexto.
+- [x] Step 3: Validar typecheck e atualizar wiki obrigatória.
+
+## Open Questions
+- Nenhuma bloqueante.
+
+## Progress Notes
+- Implementado guard determinístico com `useRef` para impedir novas buscas enquanto a mesma chave está em andamento e após conclusão.
+- A chave usada é `activeContextEditor|activeOrgId|contextEditorQuery`.
+- Reset de in-flight ao abrir/fechar modal para evitar estado pendente residual.
+
+## Review
+- What worked:
+- A proteção por chave elimina reexecução redundante do mesmo fetch e evita spinner recorrente.
+- What was tricky:
+- Era necessário manter comportamento atual de carregamento sem regressão de seleção/sugestões já exibidas.
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-02-new-ticket-primary-tech-deterministic-search-guard.md`
+
+# Task: Restaurar fluxo New Ticket Primary Tech para baseline funcional
+**Status**: completed
+**Started**: 2026-03-02T16:35:00-05:00
+
+## Plan
+- [x] Step 1: Validar commit de referência informado pelo usuário e mapear impacto no arquivo do fluxo real.
+- [x] Step 2: Restaurar `triage/home/page.tsx` para a versão do último commit funcional desse fluxo.
+- [x] Step 3: Validar typecheck e documentar mudança na wiki.
+
+## Open Questions
+- Nenhuma bloqueante.
+
+## Progress Notes
+- Commit indicado `87f4824` não altera `triage/home`; esse arquivo ainda não existia naquela revisão.
+- Histórico do arquivo mostra baseline funcional em `1a57c10` (commit de correção da lista de techs).
+- Arquivo `apps/web/src/app/[locale]/(chat)/triage/home/page.tsx` restaurado exatamente para a versão de `1a57c10`.
+
+## Review
+- What worked:
+- Voltar ao baseline funcional conhecido elimina deriva de patches acumulados sem evidência de runtime.
+- What was tricky:
+- O hash informado era válido para outro contexto (scroll/chat), não para `New Ticket`, exigindo rastreio histórico do arquivo correto.
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-02-restore-triage-home-to-1a57c10-baseline.md`
+
+# Task: Replicar padrão de fetch do commit 87f4824 no fluxo New Ticket
+**Status**: completed
+**Started**: 2026-03-02T16:45:00-05:00
+
+## Plan
+- [x] Step 1: Inspecionar `87f4824` e extrair o fluxo concreto de fetch da lista de contexto.
+- [x] Step 2: Portar o mesmo padrão de efeito para `triage/home` (New Ticket) com mudanças mínimas.
+- [x] Step 3: Validar typecheck e documentar wiki obrigatória.
+
+## Open Questions
+- Nenhuma bloqueante.
+
+## Progress Notes
+- Em `87f4824`, o fetch funcional está no `triage/[id]` com padrão direto: `setContextEditorLoading(true)` + `run()` imediato + `searchAutotaskResources(contextEditorQuery, 30)` + deps enxutas `[activeContextEditor, activeOrgId, contextEditorQuery]`.
+- O `triage/home` estava com lógica extra de hidratação/debounce/cache merge que mantinha churn de loading.
+- `triage/home` foi alinhado ao padrão direto do commit investigado: sem debounce/timer e sem merge de cache dentro do efeito de busca.
+
+## Review
+- What worked:
+- A réplica do padrão concreto do commit eliminou variáveis extras no caminho crítico do fetch.
+- What was tricky:
+- O commit informado não alterava `triage/home`; foi necessário extrair o comportamento do `triage/[id]` e aplicar no fluxo equivalente de New Ticket.
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-02-replicate-87f4824-fetch-pattern-in-new-ticket.md`

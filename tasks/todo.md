@@ -1,3 +1,32 @@
+# Task: Sidebar Global queue status filter button with checkbox visibility
+**Status**: completed
+**Started**: 2026-03-03T15:37:13-05:00
+
+## Plan
+- [x] Step 1: Map current sidebar controls/state and reuse existing status catalog source.
+- [x] Step 2: Add global queue filter button (right of queue dropdown) with checkbox popover listing ticket statuses.
+- [x] Step 3: Apply selected-status filtering to global sidebar tickets and keep personal behavior unchanged.
+- [x] Step 4: Validate with `@cerebro/web` typecheck and update wiki changelog.
+
+## Open Questions
+- Assumption: global status filter should apply only when `scope === global`.
+
+## Progress Notes
+- Reused `statusCatalog` from `useSidebarState` as source of available statuses.
+- Added global status selection model as hidden-key set (`globalHiddenStatusKeys`) to keep default behavior as "all selected".
+- Added global filter button and checkbox popover in `SidebarFilterBar` without changing personal view controls.
+- Applied status visibility filter only when `scope === global`.
+
+## Review
+- What worked:
+- Existing sidebar architecture already separated controls (`SidebarControls`) from filtering logic (`useSidebarState`), enabling low-coupling changes.
+- What was tricky:
+- Keeping canonical status keys stable across numeric (`ticket_status_value`) and textual labels required normalization to avoid duplicate checkbox entries.
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-03-sidebar-global-queue-status-checkbox-filter.md`
+
 # Task: Estabilizar API sob carga de orquestração + observabilidade + typecheck limpo
 **Status**: completed
 **Started**: 2026-03-03T14:56:00-05:00

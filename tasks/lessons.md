@@ -1080,3 +1080,15 @@
 **Root cause**: Em falhas de proxy/API (socket hang up), requests podem ficar pendentes tempo demais e parecer loading infinito para o usuário.
 **Rule**: Toda tela de auth e bootstrap de sessão (`/auth/me`) deve ter timeout + fallback de erro para não bloquear UI indefinidamente.
 **Pattern**: "Please wait" eterno durante incidente de backend é geralmente ausência de timeout no cliente.
+
+## Lesson: 2026-03-03 (new sidebar controls must be verified visually in light theme before handoff)
+**Mistake**: Entreguei o filtro global funcional sem validar legibilidade real do popover no tema claro.
+**Root cause**: Validação focada em typecheck/fluxo funcional, mas sem checagem visual pós-build no mesmo ambiente do usuário.
+**Rule**: Toda mudança de controle visual na sidebar deve passar por validação explícita de contraste e legibilidade em `light` e `dark` antes de concluir.
+**Pattern**: Popover com fundo translúcido sobre cards claros tende a ficar ilegível mesmo com lógica correta.
+
+## Lesson: 2026-03-03 (popover layering must be validated against sibling stacking contexts)
+**Mistake**: Assumi que aumentar `z-index` do popover seria suficiente sem elevar o `z-index` do container pai no mesmo nível de stacking.
+**Root cause**: O `ticket list` e o `filter bar` estavam em siblings com `z-index` equivalente; o sibling posterior (cards) ficava na frente.
+**Rule**: Para overlays ancorados em toolbar acima de listas, ajustar o `z-index` da toolbar (stacking context pai), não só do overlay filho.
+**Pattern**: Popover “por trás” de cards mesmo com `z-index` alto no filho indica limite de stacking context do pai.

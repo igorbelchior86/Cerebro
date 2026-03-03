@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FILTERS } from './utils';
 import type { QueueOption } from './types';
 
@@ -21,11 +22,19 @@ interface SidebarFilterBarProps {
     suppressedCount: number;
     selectedGlobalQueue: string;
     queueOptions: QueueOption[];
+    globalStatusFilterOptions: Array<{ key: string; label: string; count: number }>;
+    globalHiddenStatusKeys: Record<string, true>;
     onFilterChange: (f: string) => void;
     onToggleHideSuppressed: () => void;
     onQueueChange: (q: string) => void;
+    onToggleGlobalStatusFilter: (key: string) => void;
+    onResetGlobalStatusFilter: () => void;
     labelQueueSelect: string;
     labelQueueSelectAria: string;
+    labelGlobalStatusFilterAria: string;
+    labelGlobalStatusFilterTitle: string;
+    labelGlobalStatusFilterReset: string;
+    labelGlobalStatusFilterNoStatus: string;
     labelHideSuppressedEnabled: string;
     labelHideSuppressedDisabled: string;
     getFilterLabel: (localeKey: string) => string;
@@ -120,17 +129,44 @@ export function SidebarFilterBar({
     suppressedCount,
     selectedGlobalQueue,
     queueOptions,
+    globalStatusFilterOptions,
+    globalHiddenStatusKeys,
     onFilterChange,
     onToggleHideSuppressed,
     onQueueChange,
+    onToggleGlobalStatusFilter,
+    onResetGlobalStatusFilter,
     labelQueueSelect,
     labelQueueSelectAria,
+    labelGlobalStatusFilterAria,
+    labelGlobalStatusFilterTitle,
+    labelGlobalStatusFilterReset,
+    labelGlobalStatusFilterNoStatus,
     labelHideSuppressedEnabled,
     labelHideSuppressedDisabled,
     getFilterLabel,
 }: SidebarFilterBarProps) {
+    const [globalStatusFilterOpen, setGlobalStatusFilterOpen] = useState(false);
+    const globalStatusFilterRef = useRef<HTMLDivElement>(null);
+    const hiddenStatusCount = useMemo(() => Object.keys(globalHiddenStatusKeys).length, [globalHiddenStatusKeys]);
+
+    useEffect(() => {
+        if (!globalStatusFilterOpen) return;
+        const onPointerDown = (event: MouseEvent) => {
+            if (!globalStatusFilterRef.current) return;
+            if (globalStatusFilterRef.current.contains(event.target as Node)) return;
+            setGlobalStatusFilterOpen(false);
+        };
+        window.addEventListener('mousedown', onPointerDown);
+        return () => window.removeEventListener('mousedown', onPointerDown);
+    }, [globalStatusFilterOpen]);
+
+    useEffect(() => {
+        if (scope !== 'global') setGlobalStatusFilterOpen(false);
+    }, [scope]);
+
     return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 12px 8px', position: 'relative', zIndex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 12px 8px', position: 'relative', zIndex: 8 }}>
             {scope === 'personal' ? (
                 <>
                     {/* Status filter tabs */}
@@ -210,6 +246,90 @@ export function SidebarFilterBar({
                         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ position: 'absolute', right: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }}>
                             <path d="M4.5 6.5L8 10l3.5-3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
+                    </div>
+                    <div ref={globalStatusFilterRef} style={{ position: 'relative', flexShrink: 0 }}>
+                        <button
+                            type="button"
+                            aria-label={labelGlobalStatusFilterAria}
+                            title={labelGlobalStatusFilterTitle}
+                            onClick={() => setGlobalStatusFilterOpen((prev) => !prev)}
+                            style={{
+                                width: '30px', height: '30px', borderRadius: '10px',
+                                border: `1px solid ${globalStatusFilterOpen ? 'var(--border-accent)' : 'var(--bento-outline)'}`,
+                                background: globalStatusFilterOpen ? 'var(--accent-muted)' : 'var(--bg-card)',
+                                color: globalStatusFilterOpen ? 'var(--accent)' : 'var(--text-muted)',
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                position: 'relative', cursor: 'pointer', transition: 'var(--transition)',
+                            }}
+                        >
+                            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                                <path d="M2.5 4h11M5 8h6M7 12h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                            </svg>
+                            {hiddenStatusCount > 0 && (
+                                <span style={{
+                                    position: 'absolute', top: '-4px', right: '-4px', minWidth: '14px', height: '14px', padding: '0 3px',
+                                    borderRadius: '999px', background: 'var(--accent)', border: '1px solid var(--border-accent)', color: '#fff',
+                                    fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8px', fontWeight: 700, lineHeight: '12px', textAlign: 'center',
+                                }}>
+                                    {hiddenStatusCount > 99 ? '99+' : hiddenStatusCount}
+                                </span>
+                            )}
+                        </button>
+
+                        {globalStatusFilterOpen && (
+                            <div
+                                style={{
+                                    position: 'absolute', top: '34px', right: 0, width: '260px', maxHeight: '280px', overflowY: 'auto',
+                                    borderRadius: '12px', border: '1px solid var(--modal-border)', background: 'var(--modal-surface)',
+                                    boxShadow: '0 12px 30px rgba(0,0,0,0.18)', backdropFilter: 'blur(10px)', padding: '10px', zIndex: 50,
+                                }}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '8px' }}>
+                                    <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                        {labelGlobalStatusFilterTitle}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={onResetGlobalStatusFilter}
+                                        style={{
+                                            border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', textDecoration: 'underline',
+                                            color: 'var(--accent)', fontSize: '10px', fontWeight: 600,
+                                        }}
+                                    >
+                                        {labelGlobalStatusFilterReset}
+                                    </button>
+                                </div>
+                                {globalStatusFilterOptions.length === 0 ? (
+                                    <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{labelGlobalStatusFilterNoStatus}</div>
+                                ) : (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        {globalStatusFilterOptions.map((option) => {
+                                            const checked = !globalHiddenStatusKeys[option.key];
+                                            return (
+                                                <label
+                                                    key={option.key}
+                                                    style={{
+                                                        display: 'grid', gridTemplateColumns: '16px minmax(0, 1fr) auto', alignItems: 'center', gap: '8px', cursor: 'pointer',
+                                                        borderRadius: '8px', padding: '4px 6px', background: checked ? 'var(--accent-muted)' : 'transparent',
+                                                    }}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={checked}
+                                                        onChange={() => onToggleGlobalStatusFilter(option.key)}
+                                                        style={{ margin: 0 }}
+                                                    />
+                                                    <span style={{ fontSize: '11px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {option.label}
+                                                    </span>
+                                                    <span style={{ fontSize: '10px', color: 'var(--text-secondary)', fontWeight: 600 }}>{option.count}</span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

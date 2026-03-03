@@ -39,6 +39,10 @@ export default function ChatSidebar(props: ChatSidebarProps) {
         suppressedCount, processing,
         visibleTickets,
         queueOptions,
+        globalStatusFilterOptions,
+        globalHiddenStatusKeys,
+        toggleGlobalStatusFilter,
+        resetGlobalStatusFilter,
         persistSidebarState,
     } = useSidebarState(props);
 
@@ -110,6 +114,8 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                             suppressedCount={suppressedCount}
                             selectedGlobalQueue={selectedGlobalQueue}
                             queueOptions={queueOptions}
+                            globalStatusFilterOptions={globalStatusFilterOptions}
+                            globalHiddenStatusKeys={globalHiddenStatusKeys}
                             onFilterChange={setFilter}
                             onToggleHideSuppressed={() => setHideSuppressed((prev) => {
                                 const next = !prev;
@@ -117,8 +123,14 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                                 return next;
                             })}
                             onQueueChange={setSelectedGlobalQueue}
+                            onToggleGlobalStatusFilter={toggleGlobalStatusFilter}
+                            onResetGlobalStatusFilter={resetGlobalStatusFilter}
                             labelQueueSelect={t('globalQueueLabel')}
                             labelQueueSelectAria={t('globalQueueSelectAria')}
+                            labelGlobalStatusFilterAria={t('globalStatusFilterAria')}
+                            labelGlobalStatusFilterTitle={t('globalStatusFilterTitle')}
+                            labelGlobalStatusFilterReset={t('globalStatusFilterReset')}
+                            labelGlobalStatusFilterNoStatus={t('globalStatusFilterNoStatus')}
                             labelHideSuppressedEnabled={t('hideSuppressedEnabled')}
                             labelHideSuppressedDisabled={t('hideSuppressedDisabled')}
                             getFilterLabel={(key) => t(key)}

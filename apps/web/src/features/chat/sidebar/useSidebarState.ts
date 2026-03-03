@@ -63,6 +63,10 @@ export interface SidebarState {
     statusEditorError: string;
     statusOverrides: Record<string, { id: number; label: string }>;
     filteredStatusOptions: AutotaskPicklistOption[];
+    globalStatusFilterOptions: Array<{ key: string; label: string; count: number }>;
+    globalHiddenStatusKeys: Record<string, true>;
+    toggleGlobalStatusFilter: (key: string) => void;
+    resetGlobalStatusFilter: () => void;
     openStatusEditor: (ticket: ActiveTicket) => void;
     closeStatusEditor: () => void;
     handleSelectStatus: (option: AutotaskPicklistOption) => Promise<void>;
@@ -105,6 +109,7 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
     const [statusEditorSaving, setStatusEditorSaving] = useState(false);
     const [statusEditorError, setStatusEditorError] = useState('');
     const [statusOverrides, setStatusOverrides] = useState<Record<string, { id: number; label: string }>>({});
+    const [globalHiddenStatusKeys, setGlobalHiddenStatusKeys] = useState<Record<string, true>>({});
     const listRef = useRef<HTMLDivElement>(null);
     const restoredRef = useRef(false);
 
@@ -189,7 +194,7 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
 
     // Fetch Autotask status catalog
     useEffect(() => {
-        if (!statusEditorTarget && tickets.length === 0 && !draftTicket) return;
+        if (!statusEditorTarget && tickets.length === 0 && globalQueueTickets.length === 0 && !draftTicket && scope !== 'global') return;
         if (statusCatalog.length > 0) return;
 
         let ignore = false;
@@ -211,7 +216,7 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         })();
 
         return () => { ignore = true; };
-    }, [draftTicket, statusCatalog.length, statusEditorTarget, tickets.length]);
+    }, [draftTicket, globalQueueTickets.length, scope, statusCatalog.length, statusEditorTarget, tickets.length]);
 
     const resolveTicketStatusLabel = useCallback((ticket: ActiveTicket): string => {
         const override = statusOverrides[ticket.id];
@@ -535,8 +540,16 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
     });
 
     const visible = useMemo(() => scopedTickets.filter((t) => {
+        const statusFilterKey = (() => {
+            const rawValue = String(t.ticket_status_value ?? '').trim();
+            const numeric = Number.parseInt(rawValue, 10);
+            if (Number.isFinite(numeric)) return `id:${numeric}`;
+            const label = resolveTicketStatusLabel(t).trim().toLowerCase();
+            if (label) return `label:${label}`;
+            return `workflow:${String(t.status || '').trim().toLowerCase()}`;
+        })();
         const statusMatch = scope === 'global'
-            ? true
+            ? !globalHiddenStatusKeys[statusFilterKey]
             : filter === 'all' ? true
                 : filter === 'processing' ? t.status === 'processing' || t.status === 'pending'
                     : t.status === filter;
@@ -550,9 +563,72 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         ].map((v) => normalizeText(v, '')).join(' ').toLowerCase();
 
         return haystack.includes(normalizedSearch);
-    }), [scopedTickets, scope, filter, normalizedSearch]);
+    }), [scopedTickets, scope, globalHiddenStatusKeys, resolveTicketStatusLabel, filter, normalizedSearch]);
 
     const visibleTickets = listDraftTicket ? [listDraftTicket, ...visible] : visible;
+
+    const globalStatusFilterOptions = useMemo(() => {
+        const counts = new Map<string, number>();
+        const labels = new Map<string, string>();
+
+        for (const option of statusCatalog) {
+            const key = `id:${option.id}`;
+            labels.set(key, option.label);
+            if (!counts.has(key)) counts.set(key, 0);
+        }
+
+        for (const ticket of scopedTickets) {
+            const rawValue = String(ticket.ticket_status_value ?? '').trim();
+            const numeric = Number.parseInt(rawValue, 10);
+            if (Number.isFinite(numeric)) {
+                const key = `id:${numeric}`;
+                const current = counts.get(key) || 0;
+                counts.set(key, current + 1);
+                if (!labels.has(key)) labels.set(key, resolveTicketStatusLabel(ticket));
+                continue;
+            }
+            const resolvedLabel = resolveTicketStatusLabel(ticket);
+            const normalizedLabel = resolvedLabel.trim().toLowerCase();
+            const key = normalizedLabel ? `label:${normalizedLabel}` : `workflow:${String(ticket.status || '').trim().toLowerCase()}`;
+            const current = counts.get(key) || 0;
+            counts.set(key, current + 1);
+            if (!labels.has(key)) labels.set(key, resolvedLabel || 'Unknown');
+        }
+
+        return Array.from(labels.entries())
+            .map(([key, label]) => ({ key, label, count: counts.get(key) || 0 }))
+            .sort((a, b) => a.label.localeCompare(b.label));
+    }, [scopedTickets, statusCatalog, resolveTicketStatusLabel]);
+
+    useEffect(() => {
+        if (scope !== 'global') return;
+        const valid = new Set(globalStatusFilterOptions.map((option) => option.key));
+        setGlobalHiddenStatusKeys((prev) => {
+            const next: Record<string, true> = {};
+            let changed = false;
+            for (const key of Object.keys(prev)) {
+                if (valid.has(key)) next[key] = true;
+                else changed = true;
+            }
+            if (!changed && Object.keys(next).length === Object.keys(prev).length) return prev;
+            return next;
+        });
+    }, [scope, globalStatusFilterOptions]);
+
+    const toggleGlobalStatusFilter = useCallback((key: string) => {
+        setGlobalHiddenStatusKeys((prev) => {
+            if (prev[key]) {
+                const rest = { ...prev };
+                delete rest[key];
+                return rest;
+            }
+            return { ...prev, [key]: true };
+        });
+    }, []);
+
+    const resetGlobalStatusFilter = useCallback(() => {
+        setGlobalHiddenStatusKeys({});
+    }, []);
 
     const filteredStatusOptions = useMemo(() => {
         const needle = statusEditorQuery.trim().toLowerCase();
@@ -596,6 +672,10 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         statusEditorError,
         statusOverrides,
         filteredStatusOptions,
+        globalStatusFilterOptions,
+        globalHiddenStatusKeys,
+        toggleGlobalStatusFilter,
+        resetGlobalStatusFilter,
         openStatusEditor,
         closeStatusEditor,
         handleSelectStatus,

@@ -58,6 +58,9 @@
     "suppressedBadge": "Suppressed",
     "suppressedReasonNoise": "Noise (heuristic)",
     "noTickets": "No tickets in this view",
+    "dateToday": "Today",
+    "dateYesterday": "Yesterday",
+    "dateNoDate": "No date",
     "defaultIssue": "Network issue",
     "unknownOrg": "Unknown org",
     "justNow": "just now"

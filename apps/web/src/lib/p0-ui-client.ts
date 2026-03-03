@@ -20,8 +20,11 @@ export interface WorkflowInboxTicket {
   ticket_id: string;
   external_id?: string;
   ticket_number?: string;
+  created_at?: string;
   title?: string;
   description?: string;
+  company?: string;
+  requester?: string;
   status?: string;
   domain_snapshots?: Partial<Record<string, Record<string, unknown>>>;
   assigned_to?: string;

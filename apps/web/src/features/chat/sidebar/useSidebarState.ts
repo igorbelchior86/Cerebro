@@ -21,6 +21,8 @@ import {
 } from './utils';
 import type { ActiveTicket, AutotaskQueueCatalogItem, QueueOption, ChatSidebarProps } from './types';
 
+const GLOBAL_QUEUE_REMOVAL_GRACE_MS = 4000;
+
 export interface SidebarState {
     // Auth / user
     user: ReturnType<typeof useAuth>['user'];
@@ -417,7 +419,7 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         Boolean(getTicketQueueLabelResolved(ticket)) || getTicketQueueId(ticket) !== null
     );
 
-    const queueOptions: QueueOption[] = [
+    const baseQueueOptions: QueueOption[] = [
         { id: 'all', label: 'All Queues' },
         ...(hasQueueCatalog
             ? globalQueuesCatalog
@@ -429,6 +431,22 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
                 label,
             }))),
     ];
+    const queueOptions: QueueOption[] = useMemo(() => {
+        if (baseQueueOptions.some((option) => option.id === selectedGlobalQueue)) return baseQueueOptions;
+        if (!selectedGlobalQueue.startsWith('queue:')) return baseQueueOptions;
+        const queueId = Number(selectedGlobalQueue.slice('queue:'.length));
+        if (!Number.isFinite(queueId)) return baseQueueOptions;
+
+        const selectedOption: QueueOption = {
+            id: selectedGlobalQueue,
+            label: queueCatalogById.get(queueId) || `Queue ${queueId}`,
+            queueId,
+        };
+
+        const [allOption, ...restOptions] = baseQueueOptions;
+        if (!allOption) return [selectedOption];
+        return [allOption, selectedOption, ...restOptions];
+    }, [baseQueueOptions, selectedGlobalQueue, queueCatalogById]);
     const queueOptionIds = queueOptions.map((o) => o.id).join('|');
 
     const hasAssignmentMetadata = ticketsBySuppression.some((ticket) =>
@@ -454,10 +472,28 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
     );
 
     useEffect(() => {
-        if (!queueOptions.some((o) => o.id === selectedGlobalQueue)) {
-            setSelectedGlobalQueue('all');
-        }
+        if (queueOptions.some((o) => o.id === selectedGlobalQueue)) return;
+        const isDeterministicQueueSelection = selectedGlobalQueue.startsWith('queue:')
+            && Number.isFinite(Number(selectedGlobalQueue.slice('queue:'.length)));
+        if (isDeterministicQueueSelection) return;
+        setSelectedGlobalQueue('all');
     }, [queueOptionIds, selectedGlobalQueue]);
+
+    useEffect(() => {
+        if (!selectedGlobalQueue.startsWith('queue:')) return;
+        if (!hasQueueCatalog) return;
+        const selectedQueueId = Number(selectedGlobalQueue.slice('queue:'.length));
+        if (!Number.isFinite(selectedQueueId)) return;
+        const queueStillActive = globalQueuesCatalog.some((queue) =>
+            queue.isActive !== false && Number(queue.id) === selectedQueueId
+        );
+        if (queueStillActive) return;
+
+        const timeoutId = window.setTimeout(() => {
+            setSelectedGlobalQueue('all');
+        }, GLOBAL_QUEUE_REMOVAL_GRACE_MS);
+        return () => window.clearTimeout(timeoutId);
+    }, [selectedGlobalQueue, hasQueueCatalog, globalQueuesCatalog]);
 
     // Fetch tickets for a specific global queue
     useEffect(() => {
@@ -565,7 +601,23 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         return haystack.includes(normalizedSearch);
     }), [scopedTickets, scope, globalHiddenStatusKeys, resolveTicketStatusLabel, filter, normalizedSearch]);
 
-    const visibleTickets = listDraftTicket ? [listDraftTicket, ...visible] : visible;
+    const sortedVisible = useMemo(() => {
+        const ranked = visible.map((ticket, index) => {
+            const timestamp = Date.parse(String(ticket.created_at || ''));
+            return {
+                ticket,
+                index,
+                timestamp: Number.isFinite(timestamp) ? timestamp : Number.NEGATIVE_INFINITY,
+            };
+        });
+        ranked.sort((a, b) => {
+            if (a.timestamp !== b.timestamp) return b.timestamp - a.timestamp;
+            return a.index - b.index;
+        });
+        return ranked.map((entry) => entry.ticket);
+    }, [visible]);
+
+    const visibleTickets = listDraftTicket ? [listDraftTicket, ...sortedVisible] : sortedVisible;
 
     const globalStatusFilterOptions = useMemo(() => {
         const counts = new Map<string, number>();

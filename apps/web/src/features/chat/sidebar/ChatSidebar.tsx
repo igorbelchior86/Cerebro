@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import SettingsModal from '@/components/SettingsModal';
 import UserProfileDropdown from '@/components/UserProfileDropdown';
 import ProfileModal from '@/components/ProfileModal';
@@ -9,14 +10,43 @@ import { SidebarHeader } from './SidebarHeader';
 import { SidebarStats, SidebarFilterBar } from './SidebarControls';
 import { SidebarTicketCard } from './SidebarTicketCard';
 import { StatusEditorModal } from './StatusEditorModal';
-import type { ChatSidebarProps } from './types';
-import { useTranslations } from 'next-intl';
+import type { ActiveTicket, ChatSidebarProps } from './types';
+import { useLocale, useTranslations } from 'next-intl';
 
 export type { ActiveTicket } from './types';
 export type { ChatSidebarProps } from './types';
 
+type TicketGroup = {
+    key: string;
+    label: string;
+    tickets: ActiveTicket[];
+};
+
+function toLocalDayStart(date: Date): Date {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function buildTicketDayGroupLabel(
+    createdAtRaw: string | undefined,
+    locale: string,
+    labels: { today: string; yesterday: string; noDate: string }
+): { key: string; label: string } {
+    const timestamp = Date.parse(String(createdAtRaw || ''));
+    if (!Number.isFinite(timestamp)) return { key: 'undated', label: labels.noDate };
+    const ticketDate = new Date(timestamp);
+    const ticketDay = toLocalDayStart(ticketDate);
+    const today = toLocalDayStart(new Date());
+    const dayDiff = Math.round((today.getTime() - ticketDay.getTime()) / 86_400_000);
+    const key = `${ticketDay.getFullYear()}-${String(ticketDay.getMonth() + 1).padStart(2, '0')}-${String(ticketDay.getDate()).padStart(2, '0')}`;
+    if (dayDiff === 0) return { key, label: labels.today };
+    if (dayDiff === 1) return { key, label: labels.yesterday };
+    const full = new Intl.DateTimeFormat(locale, { month: 'long', day: 'numeric' }).format(ticketDate);
+    return { key, label: full };
+}
+
 export default function ChatSidebar(props: ChatSidebarProps) {
     const t = useTranslations('ChatSidebar');
+    const locale = useLocale();
     const {
         user, userName, userInitials, jobTitle, avatar, updateProfile,
         settingsOpen, setSettingsOpen,
@@ -47,6 +77,23 @@ export default function ChatSidebar(props: ChatSidebarProps) {
     } = useSidebarState(props);
 
     const { onSelectTicket, onCreateTicket, currentTicketId } = props;
+    const groupedTickets = useMemo<TicketGroup[]>(() => {
+        const groups: TicketGroup[] = [];
+        for (const ticket of visibleTickets) {
+            const grouping = buildTicketDayGroupLabel(ticket.created_at, locale, {
+                today: t('dateToday'),
+                yesterday: t('dateYesterday'),
+                noDate: t('dateNoDate'),
+            });
+            const currentGroup = groups[groups.length - 1];
+            if (currentGroup && currentGroup.key === grouping.key) {
+                currentGroup.tickets.push(ticket);
+                continue;
+            }
+            groups.push({ key: grouping.key, label: grouping.label, tickets: [ticket] });
+        }
+        return groups;
+    }, [locale, t, visibleTickets]);
 
     return (
         <>
@@ -146,26 +193,53 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                                 [1, 2].map((i) => <div key={i} style={{ height: '80px', borderRadius: '9px', background: 'var(--bg-card)', border: '1px solid var(--border)', opacity: 0.6 }} />)
                             ) : visibleTickets.length === 0 ? (
                                 <p style={{ marginTop: '20px', fontSize: '11px', color: 'var(--text-faint)', textAlign: 'center' }}>{t('noTickets')}</p>
-                            ) : visibleTickets.map((ticket, idx) => (
-                                <SidebarTicketCard
-                                    key={ticket.id}
-                                    ticket={ticket}
-                                    idx={idx}
-                                    isActive={currentTicketId === ticket.id}
-                                    resolveTicketStatusLabel={resolveTicketStatusLabel}
-                                    onSelect={() => {
-                                        persistSidebarState(filter);
-                                        onSelectTicket?.(ticket.id);
-                                    }}
-                                    onOpenStatusEditor={openStatusEditor}
-                                    hideSuppressed={hideSuppressed}
-                                    labelDefaultIssue={t('defaultIssue')}
-                                    labelUnknownOrg={t('unknownOrg')}
-                                    labelSuppressedBadge={t('suppressedBadge')}
-                                    labelSuppressedReasonNoise={t('suppressedReasonNoise')}
-                                    labelJustNow={t('justNow')}
-                                />
-                            ))}
+                            ) : (() => {
+                                let runningIndex = 0;
+                                return groupedTickets.map((group) => (
+                                    <div key={group.key} style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                                        <div
+                                            style={{
+                                                position: 'sticky',
+                                                top: 0,
+                                                zIndex: 4,
+                                                background: 'var(--bg-bento-panel)',
+                                                color: 'var(--text-muted)',
+                                                fontSize: '10px',
+                                                fontWeight: 700,
+                                                letterSpacing: '0.02em',
+                                                padding: '6px 4px',
+                                                borderBottom: '1px solid var(--bento-outline)',
+                                            }}
+                                        >
+                                            {group.label}
+                                        </div>
+                                        {group.tickets.map((ticket) => {
+                                            const idx = runningIndex;
+                                            runningIndex += 1;
+                                            return (
+                                                <SidebarTicketCard
+                                                    key={ticket.id}
+                                                    ticket={ticket}
+                                                    idx={idx}
+                                                    isActive={currentTicketId === ticket.id}
+                                                    resolveTicketStatusLabel={resolveTicketStatusLabel}
+                                                    onSelect={() => {
+                                                        persistSidebarState(filter);
+                                                        onSelectTicket?.(ticket.id);
+                                                    }}
+                                                    onOpenStatusEditor={openStatusEditor}
+                                                    hideSuppressed={hideSuppressed}
+                                                    labelDefaultIssue={t('defaultIssue')}
+                                                    labelUnknownOrg={t('unknownOrg')}
+                                                    labelSuppressedBadge={t('suppressedBadge')}
+                                                    labelSuppressedReasonNoise={t('suppressedReasonNoise')}
+                                                    labelJustNow={t('justNow')}
+                                                />
+                                            );
+                                        })}
+                                    </div>
+                                ));
+                            })()}
                         </div>
 
                         {/* Footer */}

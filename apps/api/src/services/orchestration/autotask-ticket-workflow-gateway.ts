@@ -451,6 +451,19 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
 
   private async enrichTicketSnapshot(client: AutotaskClient, ticket: any): Promise<Record<string, unknown>> {
     const snapshot = this.mapTicketSnapshot(ticket);
+    const companyId = Number(ticket?.companyID ?? ticket?.companyId);
+    if (!String((snapshot as any).company_name || (snapshot as any).company || '').trim() && Number.isFinite(companyId)) {
+      try {
+        const company = await client.getCompany(companyId);
+        const companyName = String((company as any)?.companyName || (company as any)?.name || '').trim();
+        if (companyName) {
+          (snapshot as any).company_name = companyName;
+          (snapshot as any).company = companyName;
+        }
+      } catch {
+        // Company enrichment is best-effort only.
+      }
+    }
     const contactId = Number(ticket?.contactID ?? ticket?.contactId);
     if (!String((snapshot as any).contact_name || '').trim() && Number.isFinite(contactId)) {
       try {
@@ -513,9 +526,12 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
   private mapTicketSnapshot(ticket: any): Record<string, unknown> {
     const ticketNumber = this.readTicketNumber(ticket);
     const requesterName = this.readRequesterName(ticket);
+    const companyName = String(ticket?.companyName ?? ticket?.company ?? '').trim();
+    const createdAt = String(ticket?.createDate ?? ticket?.created_at ?? '').trim();
     return {
       id: ticket?.id,
       ticket_number: ticketNumber || undefined,
+      ...(createdAt ? { created_at: createdAt } : {}),
       title: ticket?.title ?? ticket?.summary,
       description: ticket?.description,
       status: ticket?.status,
@@ -523,6 +539,7 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
       queue_id: ticket?.queueID,
       company_id: ticket?.companyID,
       contact_id: ticket?.contactID,
+      ...(companyName ? { company_name: companyName, company: companyName } : {}),
       ...(requesterName ? { contact_name: requesterName, requester: requesterName } : {}),
     };
   }

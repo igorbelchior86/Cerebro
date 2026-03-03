@@ -129,8 +129,10 @@ export interface InboxTicketState {
   ticket_id: string;
   external_id?: string;
   ticket_number?: string;
+  created_at?: string;
   title?: string;
   description?: string;
+  company?: string;
   requester?: string;
   status?: string;
   assigned_to?: string;
@@ -352,11 +354,16 @@ function fingerprintText(input: unknown): string {
 function normalizeEventDomainSnapshots(payload: Record<string, unknown>) {
   const ticketId = String(payload.external_id ?? payload.ticket_id ?? '').trim();
   const ticketNumber = String(payload.ticket_number ?? '').trim();
+  const createdAt = String(payload.created_at ?? '').trim();
+  const companyName = String(payload.company_name ?? payload.company ?? '').trim();
+  const requesterName = String(payload.requester ?? payload.contact_name ?? '').trim();
   const status = String(payload.status ?? '').trim();
   const statusLabel = String(payload.status_label ?? '').trim();
   const assignedTo = String(payload.assigned_to ?? '').trim();
   const queueIdRaw = payload.queue_id ?? payload.queueID;
   const queueId = Number(queueIdRaw);
+  const companyId = Number(payload.company_id ?? payload.companyID);
+  const contactId = Number(payload.contact_id ?? payload.contactID);
   const queueName = String(payload.queue_name ?? '').trim();
   const commentBody = extractCommentBodyForProjection(payload);
   const commentVisibility = String(payload.comment_visibility ?? '').trim().toLowerCase();
@@ -366,6 +373,11 @@ function normalizeEventDomainSnapshots(payload: Record<string, unknown>) {
     tickets: {
       ...(ticketId ? { external_id: ticketId } : {}),
       ...(ticketNumber ? { ticket_number: ticketNumber } : {}),
+      ...(createdAt ? { created_at: createdAt } : {}),
+      ...(companyName ? { company_name: companyName } : {}),
+      ...(Number.isFinite(companyId) ? { company_id: companyId } : {}),
+      ...(requesterName ? { requester_name: requesterName } : {}),
+      ...(Number.isFinite(contactId) ? { contact_id: contactId } : {}),
       ...(status ? { status } : {}),
       ...(assignedTo ? { assigned_to: assignedTo } : {}),
       ...(Number.isFinite(queueId) ? { queue_id: queueId } : {}),
@@ -379,6 +391,11 @@ function normalizeEventDomainSnapshots(payload: Record<string, unknown>) {
     },
     'correlates.ticket_metadata': {
       ...(ticketNumber ? { ticket_number: ticketNumber } : {}),
+      ...(createdAt ? { created_at: createdAt } : {}),
+      ...(companyName ? { company_name: companyName } : {}),
+      ...(Number.isFinite(companyId) ? { company_id: companyId } : {}),
+      ...(requesterName ? { requester_name: requesterName } : {}),
+      ...(Number.isFinite(contactId) ? { contact_id: contactId } : {}),
       ...(status ? { status } : {}),
       ...(statusLabel ? { status_label: statusLabel } : {}),
       ...(Number.isFinite(queueId) ? { queue_id: queueId } : {}),
@@ -396,12 +413,57 @@ function isTicketNumberLike(value: unknown): boolean {
   return /^T[0-9]{8}\.[0-9]{4}$/i.test(v);
 }
 
+function ticketNumberToIsoDate(value: unknown): string | undefined {
+  const raw = String(value ?? '').trim();
+  const match = /^T(\d{4})(\d{2})(\d{2})\.\d{4}$/i.exec(raw);
+  if (!match) return undefined;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return undefined;
+  const utc = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  if (
+    utc.getUTCFullYear() !== year ||
+    utc.getUTCMonth() !== month - 1 ||
+    utc.getUTCDate() !== day
+  ) {
+    return undefined;
+  }
+  return utc.toISOString();
+}
+
+function normalizeIsoTimestamp(value: unknown): string | undefined {
+  const raw = String(value ?? '').trim();
+  if (!raw) return undefined;
+  const timestamp = Date.parse(raw);
+  if (!Number.isFinite(timestamp)) return undefined;
+  return new Date(timestamp).toISOString();
+}
+
+function inferCreatedAt(...candidates: unknown[]): string | undefined {
+  for (const candidate of candidates) {
+    const fromIso = normalizeIsoTimestamp(candidate);
+    if (fromIso) return fromIso;
+    const fromTicketNumber = ticketNumberToIsoDate(candidate);
+    if (fromTicketNumber) return fromTicketNumber;
+  }
+  return undefined;
+}
+
 function aggregateReconciliationClassification(rows: ReconciliationDomainResult[]): ReconciliationClassification {
   if (rows.some((r) => r.classification === 'fetch_failed')) return 'fetch_failed';
   if (rows.some((r) => r.classification === 'mismatch')) return 'mismatch';
   if (rows.some((r) => r.classification === 'missing_snapshot')) return 'missing_snapshot';
   if (rows.length > 0 && rows.every((r) => r.classification === 'skipped')) return 'skipped';
   return 'match';
+}
+
+function selectFirstNonEmpty(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    const normalized = String(value ?? '').trim();
+    if (normalized) return normalized;
+  }
+  return undefined;
 }
 
 function auditTarget(
@@ -1007,6 +1069,15 @@ export class TicketWorkflowCoreService {
       source_of_truth: 'Autotask' as const,
       updated_at: nowIso(),
     };
+    const resolvedCreatedAt = inferCreatedAt(
+      existing.created_at,
+      (result as any)?.snapshot?.created_at,
+      (attempt.command.payload as any)?.created_at,
+      (result as any)?.external_ticket_number,
+      (result as any)?.snapshot?.ticket_number,
+      existing.ticket_number,
+      ticketId
+    );
 
     const patch = attempt.command.payload as any;
     const next: InboxTicketState = {
@@ -1022,6 +1093,14 @@ export class TicketWorkflowCoreService {
       ...(String(patch.title ?? existing.title ?? '').trim() ? { title: String(patch.title ?? existing.title).trim() } : {}),
       ...(String(patch.description ?? existing.description ?? '').trim()
         ? { description: String(patch.description ?? existing.description).trim() }
+        : {}),
+      ...(resolvedCreatedAt ? { created_at: resolvedCreatedAt } : {}),
+      ...(String((result as any)?.snapshot?.company_name ?? (result as any)?.snapshot?.company ?? patch.company_name ?? patch.company ?? existing.company ?? '').trim()
+        ? {
+          company: String(
+            (result as any)?.snapshot?.company_name ?? (result as any)?.snapshot?.company ?? patch.company_name ?? patch.company ?? existing.company
+          ).trim(),
+        }
         : {}),
       ...(String((result as any)?.snapshot?.contact_name ?? (result as any)?.snapshot?.requester ?? existing.requester ?? '').trim()
         ? {
@@ -1058,6 +1137,21 @@ export class TicketWorkflowCoreService {
               ).trim(),
             }
             : {}),
+          ...(String((result as any)?.snapshot?.company_name ?? (result as any)?.snapshot?.company ?? patch.company_name ?? patch.company ?? existing.company ?? '').trim()
+            ? {
+              company_name: String(
+                (result as any)?.snapshot?.company_name ?? (result as any)?.snapshot?.company ?? patch.company_name ?? patch.company ?? existing.company
+              ).trim(),
+            }
+            : {}),
+          ...(resolvedCreatedAt ? { created_at: resolvedCreatedAt } : {}),
+          ...(String((result as any)?.snapshot?.contact_name ?? (result as any)?.snapshot?.requester ?? patch.requester ?? existing.requester ?? '').trim()
+            ? {
+              requester_name: String(
+                (result as any)?.snapshot?.contact_name ?? (result as any)?.snapshot?.requester ?? patch.requester ?? existing.requester
+              ).trim(),
+            }
+            : {}),
           ...(String(patch.status ?? (result as any)?.status ?? existing.status ?? '').trim()
             ? { status: String(patch.status ?? (result as any)?.status ?? existing.status).trim() }
             : {}),
@@ -1086,6 +1180,21 @@ export class TicketWorkflowCoreService {
             ? {
               ticket_number: String(
                 (result as any)?.external_ticket_number || (result as any)?.snapshot?.ticket_number || existing.ticket_number
+              ).trim(),
+            }
+            : {}),
+          ...(String((result as any)?.snapshot?.company_name ?? (result as any)?.snapshot?.company ?? patch.company_name ?? patch.company ?? existing.company ?? '').trim()
+            ? {
+              company_name: String(
+                (result as any)?.snapshot?.company_name ?? (result as any)?.snapshot?.company ?? patch.company_name ?? patch.company ?? existing.company
+              ).trim(),
+            }
+            : {}),
+          ...(resolvedCreatedAt ? { created_at: resolvedCreatedAt } : {}),
+          ...(String((result as any)?.snapshot?.contact_name ?? (result as any)?.snapshot?.requester ?? patch.requester ?? existing.requester ?? '').trim()
+            ? {
+              requester_name: String(
+                (result as any)?.snapshot?.contact_name ?? (result as any)?.snapshot?.requester ?? patch.requester ?? existing.requester
               ).trim(),
             }
             : {}),
@@ -1128,9 +1237,16 @@ export class TicketWorkflowCoreService {
       const snapshot = (result as any).snapshot as Record<string, unknown>;
       if (snapshot.title) next.title = String(snapshot.title);
       if (snapshot.description) next.description = String(snapshot.description);
+      if (snapshot.company_name || snapshot.company) {
+        next.company = String(snapshot.company_name ?? snapshot.company);
+      }
       if (snapshot.status) next.status = String(snapshot.status);
       if (snapshot.assigned_to) next.assigned_to = String(snapshot.assigned_to);
       if (snapshot.ticket_number) next.ticket_number = String(snapshot.ticket_number);
+      if (!next.created_at && snapshot.created_at) {
+        const snapshotCreatedAt = inferCreatedAt(snapshot.created_at);
+        if (snapshotCreatedAt) next.created_at = snapshotCreatedAt;
+      }
       if (snapshot.contact_name || snapshot.requester) {
         next.requester = String(snapshot.contact_name ?? snapshot.requester);
       }
@@ -1202,6 +1318,14 @@ export class TicketWorkflowCoreService {
     }
 
     const domainSnapshots = normalizeEventDomainSnapshots(payload);
+    const resolvedCreatedAt = inferCreatedAt(
+      existing?.created_at,
+      payload.created_at,
+      (domainSnapshots.tickets as any)?.created_at,
+      payload.ticket_number,
+      existing?.ticket_number,
+      ticketId
+    );
     const next: InboxTicketState = {
       tenant_id: event.tenant_id,
       ticket_id: ticketId,
@@ -1209,9 +1333,16 @@ export class TicketWorkflowCoreService {
       ...(String(payload.ticket_number ?? existing?.ticket_number ?? '').trim()
         ? { ticket_number: String(payload.ticket_number ?? existing?.ticket_number).trim() }
         : {}),
+      ...(resolvedCreatedAt ? { created_at: resolvedCreatedAt } : {}),
       ...(String(payload.title ?? existing?.title ?? '').trim() ? { title: String(payload.title ?? existing?.title).trim() } : {}),
       ...(String(payload.description ?? existing?.description ?? '').trim()
         ? { description: String(payload.description ?? existing?.description).trim() }
+        : {}),
+      ...(String(payload.company_name ?? payload.company ?? existing?.company ?? '').trim()
+        ? { company: String(payload.company_name ?? payload.company ?? existing?.company).trim() }
+        : {}),
+      ...(String(payload.requester ?? payload.contact_name ?? existing?.requester ?? '').trim()
+        ? { requester: String(payload.requester ?? payload.contact_name ?? existing?.requester).trim() }
         : {}),
       ...(String(payload.status ?? existing?.status ?? '').trim()
         ? { status: String(payload.status ?? existing?.status).trim() }
@@ -1615,8 +1746,9 @@ export class TicketWorkflowCoreService {
 
   async listInbox(tenantId: string): Promise<InboxTicketState[]> {
     const rows = await this.repo.listInboxTickets(tenantId);
+    const hydratedRows = await this.hydrateMissingOrgRequester(rows);
     const grouped = new Map<string, InboxTicketState[]>();
-    for (const row of rows) {
+    for (const row of hydratedRows) {
       const key =
         String(row.external_id || '').trim()
           ? `ext:${String(row.external_id).trim()}`
@@ -1647,11 +1779,80 @@ export class TicketWorkflowCoreService {
         ...(acc.ticket_number ? {} : item.ticket_number ? { ticket_number: item.ticket_number } : {}),
         ...(acc.title ? {} : item.title ? { title: item.title } : {}),
         ...(acc.description ? {} : item.description ? { description: item.description } : {}),
+        ...(acc.company ? {} : item.company ? { company: item.company } : {}),
+        ...(acc.requester ? {} : item.requester ? { requester: item.requester } : {}),
       }), preferred);
       deduped.push(merged);
 
     }
     return deduped.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+  }
+
+  private async hydrateMissingOrgRequester(rows: InboxTicketState[]): Promise<InboxTicketState[]> {
+    if (!this.gateway.fetchTicketSnapshot || rows.length === 0) return rows;
+
+    const candidates = rows
+      .filter((row) => {
+        const company = String(row.company || '').trim();
+        const requester = String(row.requester || '').trim();
+        return !company || !requester;
+      })
+      .slice(0, 25);
+    if (candidates.length === 0) return rows;
+
+    const updates = await Promise.allSettled(
+      candidates.map(async (row) => {
+        const ticketRef =
+          selectFirstNonEmpty(row.ticket_number, row.external_id, row.ticket_id);
+        if (!ticketRef) return null;
+        const snapshot = await this.gateway.fetchTicketSnapshot?.(row.tenant_id, ticketRef);
+        if (!snapshot) return null;
+
+        const companyName = selectFirstNonEmpty(
+          row.company,
+          (snapshot as any).company_name,
+          (snapshot as any).company,
+        );
+        const requesterName = selectFirstNonEmpty(
+          row.requester,
+          (snapshot as any).contact_name,
+          (snapshot as any).requester,
+        );
+        if (!companyName && !requesterName) return null;
+
+        const next: InboxTicketState = {
+          ...row,
+          ...(companyName ? { company: companyName } : {}),
+          ...(requesterName ? { requester: requesterName } : {}),
+          domain_snapshots: {
+            ...(row.domain_snapshots || {}),
+            tickets: {
+              ...(row.domain_snapshots?.tickets || {}),
+              ...(companyName ? { company_name: companyName } : {}),
+              ...(requesterName ? { requester_name: requesterName } : {}),
+            },
+            'correlates.ticket_metadata': {
+              ...(row.domain_snapshots?.['correlates.ticket_metadata'] || {}),
+              ...(companyName ? { company_name: companyName } : {}),
+              ...(requesterName ? { requester_name: requesterName } : {}),
+            },
+          },
+          updated_at: nowIso(),
+        };
+        await this.repo.upsertInboxTicket(next);
+        return next;
+      })
+    );
+
+    if (updates.length === 0) return rows;
+    const hydratedByTicketId = new Map<string, InboxTicketState>();
+    for (const result of updates) {
+      if (result.status !== 'fulfilled' || !result.value) continue;
+      hydratedByTicketId.set(result.value.ticket_id, result.value);
+    }
+    if (hydratedByTicketId.size === 0) return rows;
+
+    return rows.map((row) => hydratedByTicketId.get(row.ticket_id) || row);
   }
 
   async removeInboxTicket(

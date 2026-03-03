@@ -4,7 +4,7 @@
 
 import { Router, type Router as ExpressRouter } from 'express';
 import { AutotaskClient } from '../../../clients/index.js';
-import { query, queryOne } from '../../../db/index.js';
+import { query, queryOne, withTryAdvisoryLock } from '../../../db/index.js';
 import { pgStore } from '../../adapters/email/pg-store.js';
 import { triageOrchestrator } from '../../orchestration/triage-orchestrator.js';
 import { classifyQueueError } from '../../../platform/errors.js';
@@ -55,6 +55,21 @@ const ticketFieldOptionCache = new Map<TicketFieldKey, { expiresAt: number; data
 let ticketDraftDefaultsCache: unknown = null;
 const READ_ONLY_SEARCH_CACHE_TTL_MS = 30_000;
 const readOnlySearchCache = new Map<string, { expiresAt: number; data: unknown[] }>();
+const SIDEBAR_TICKETS_CACHE_TTL_MS = 5_000;
+const SIDEBAR_TICKETS_LOCK_NAMESPACE = 41024;
+const SIDEBAR_TICKETS_LOCK_WAIT_TIMEOUT_MS = 2_500;
+const SIDEBAR_TICKETS_LOCK_RETRY_INTERVAL_MS = 200;
+const SIDEBAR_TICKETS_RATE_LIMIT_COOLDOWN_MS = 15_000;
+const sidebarTicketsCache = new Map<string, {
+  expiresAt: number;
+  payload: { rows: SidebarTicketRow[]; queueId: number; lookbackHours: number };
+}>();
+const sidebarTicketsInFlight = new Map<string, Promise<{ rows: SidebarTicketRow[]; queueId: number; lookbackHours: number }>>();
+const sidebarTicketsRateLimitCooldown = new Map<string, number>();
+const SIDEBAR_ENRICHMENT_CACHE_TTL_MS = 60_000;
+const SIDEBAR_ENRICHMENT_CONCURRENCY_LIMIT = 4;
+const sidebarEnrichmentNameCache = new Map<string, { expiresAt: number; name: string }>();
+const sidebarEnrichmentInFlight = new Map<string, Promise<string>>();
 
 // Lazy client — only created when a request arrives; avoids startup crash if env vars are absent.
 function getClient() {
@@ -108,6 +123,27 @@ function sanitizeSearchTerm(value: unknown): string {
 
 function classifyAutotaskReadDegradedReason(error: unknown): 'rate_limited' | 'provider_error' {
   return classifyQueueError(error).code === 'RATE_LIMIT' ? 'rate_limited' : 'provider_error';
+}
+
+function classifySidebarTicketsDegradedReason(error: unknown): 'rate_limited' | 'provider_error' | null {
+  const classification = classifyQueueError(error);
+  const reason = String(classification.reason || '').toLowerCase();
+  if (classification.code === 'RATE_LIMIT') return 'rate_limited';
+  if (classification.code === 'TIMEOUT' || classification.code === 'DEPENDENCY') return 'provider_error';
+  if (classification.code === 'UNKNOWN') {
+    if (
+      reason.includes('thread threshold') ||
+      reason.includes('too many requests') ||
+      reason.includes('429') ||
+      reason.includes('rate limit')
+    ) {
+      return 'rate_limited';
+    }
+    if (reason.includes('autotask api error')) {
+      return 'provider_error';
+    }
+  }
+  return null;
 }
 
 async function loadCachedReadOnlyArray(
@@ -178,6 +214,73 @@ function writeCachedReadOnlySearch(key: string, data: unknown[]) {
   });
 }
 
+function hashToPositiveInt32(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) & 0x7fffffff;
+}
+
+function buildSidebarTicketsCacheKey(input: {
+  tenantScope: string;
+  queueId: number;
+  maxRecords: number;
+  lookbackHours: number;
+}): string {
+  return [
+    'sidebar_tickets',
+    input.tenantScope.trim().toLowerCase(),
+    String(input.queueId),
+    String(input.maxRecords),
+    String(input.lookbackHours),
+  ].join(':');
+}
+
+function readCachedSidebarTickets(cacheKey: string): { rows: SidebarTicketRow[]; queueId: number; lookbackHours: number } | null {
+  const cached = sidebarTicketsCache.get(cacheKey);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    sidebarTicketsCache.delete(cacheKey);
+    return null;
+  }
+  return cached.payload;
+}
+
+function readSidebarTicketsStale(cacheKey: string): { rows: SidebarTicketRow[]; queueId: number; lookbackHours: number } | null {
+  const cached = sidebarTicketsCache.get(cacheKey);
+  return cached?.payload || null;
+}
+
+function writeCachedSidebarTickets(
+  cacheKey: string,
+  payload: { rows: SidebarTicketRow[]; queueId: number; lookbackHours: number }
+) {
+  sidebarTicketsCache.set(cacheKey, {
+    expiresAt: Date.now() + SIDEBAR_TICKETS_CACHE_TTL_MS,
+    payload,
+  });
+}
+
+function readSidebarTicketsRateLimitCooldown(cacheKey: string): number | null {
+  const cooldownUntil = sidebarTicketsRateLimitCooldown.get(cacheKey);
+  if (!cooldownUntil) return null;
+  if (cooldownUntil <= Date.now()) {
+    sidebarTicketsRateLimitCooldown.delete(cacheKey);
+    return null;
+  }
+  return cooldownUntil;
+}
+
+function setSidebarTicketsRateLimitCooldown(cacheKey: string) {
+  sidebarTicketsRateLimitCooldown.set(cacheKey, Date.now() + SIDEBAR_TICKETS_RATE_LIMIT_COOLDOWN_MS);
+}
+
+function clearSidebarTicketsRateLimitCooldown(cacheKey: string) {
+  sidebarTicketsRateLimitCooldown.delete(cacheKey);
+}
+
 function mapAutotaskStatusToSidebar(statusValue: unknown): SidebarTicketRow['status'] {
   const normalized = String(statusValue ?? '').trim().toLowerCase();
   if (!normalized) return 'pending';
@@ -204,6 +307,72 @@ function sortTicketsByCreateDateDesc(a: AutotaskTicket, b: AutotaskTicket): numb
   return String((b as any)?.ticketNumber || b.id || '').localeCompare(String((a as any)?.ticketNumber || a.id || ''));
 }
 
+function buildSidebarEnrichmentKey(
+  tenantId: string | null | undefined,
+  kind: 'company' | 'contact',
+  id: number
+): string {
+  const tenantScope = String(tenantId || '').trim() || 'env';
+  return `${tenantScope}:${kind}:${id}`;
+}
+
+function readSidebarEnrichmentName(key: string): string | null {
+  const cached = sidebarEnrichmentNameCache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    sidebarEnrichmentNameCache.delete(key);
+    return null;
+  }
+  return cached.name;
+}
+
+function writeSidebarEnrichmentName(key: string, name: string) {
+  if (!name) return;
+  sidebarEnrichmentNameCache.set(key, {
+    expiresAt: Date.now() + SIDEBAR_ENRICHMENT_CACHE_TTL_MS,
+    name,
+  });
+}
+
+async function getOrCreateSidebarEnrichmentName(
+  key: string,
+  loader: () => Promise<string>
+): Promise<string> {
+  const cached = readSidebarEnrichmentName(key);
+  if (cached) return cached;
+  const inFlight = sidebarEnrichmentInFlight.get(key);
+  if (inFlight) return inFlight;
+
+  const pending = (async () => {
+    try {
+      const name = String((await loader()) || '').trim();
+      writeSidebarEnrichmentName(key, name);
+      return name;
+    } finally {
+      sidebarEnrichmentInFlight.delete(key);
+    }
+  })();
+
+  sidebarEnrichmentInFlight.set(key, pending);
+  return pending;
+}
+
+async function mapWithConcurrencyLimit<T, R>(
+  items: T[],
+  limit: number,
+  mapper: (item: T) => Promise<R>
+): Promise<Array<PromiseSettledResult<R>>> {
+  if (items.length === 0) return [];
+  const safeLimit = Math.max(1, Math.floor(limit));
+  const results: Array<PromiseSettledResult<R>> = [];
+  for (let index = 0; index < items.length; index += safeLimit) {
+    const batch = items.slice(index, index + safeLimit);
+    const settled = await Promise.allSettled(batch.map((item) => mapper(item)));
+    results.push(...settled);
+  }
+  return results;
+}
+
 async function getQueueCatalogMap(client: AutotaskClient): Promise<Map<number, string>> {
   const queues = await client.getTicketQueues();
   const map = new Map<number, string>();
@@ -215,15 +384,89 @@ async function getQueueCatalogMap(client: AutotaskClient): Promise<Map<number, s
   return map;
 }
 
-function toSidebarTicketFromAutotask(ticket: AutotaskTicket, queueLabelMap: Map<number, string>): SidebarTicketRow {
+async function resolveTicketOrgRequesterFallbacks(
+  client: AutotaskClient,
+  tickets: AutotaskTicket[],
+  tenantId?: string | null
+): Promise<{ companyNameById: Map<number, string>; requesterNameByContactId: Map<number, string> }> {
+  const companyIds = new Set<number>();
+  const contactIds = new Set<number>();
+
+  for (const ticket of tickets) {
+    const raw = ticket as any;
+    const companyName = String(raw.companyName || raw.company || '').trim();
+    const requesterName = String(raw.contactName || raw.requesterName || '').trim();
+    const companyId = Number(raw.companyID);
+    const contactId = Number(raw.contactID);
+    if (!companyName && Number.isFinite(companyId)) companyIds.add(companyId);
+    if (!requesterName && Number.isFinite(contactId)) contactIds.add(contactId);
+  }
+
+  const companyNameById = new Map<number, string>();
+  const requesterNameByContactId = new Map<number, string>();
+
+  const [companyResults, contactResults] = await Promise.all([
+    mapWithConcurrencyLimit(
+      Array.from(companyIds.values()),
+      SIDEBAR_ENRICHMENT_CONCURRENCY_LIMIT,
+      async (id) => {
+        const key = buildSidebarEnrichmentKey(tenantId, 'company', id);
+        const name = await getOrCreateSidebarEnrichmentName(key, async () => {
+          const row = await client.getCompany(id);
+          return String((row as any)?.companyName || (row as any)?.name || '').trim();
+        });
+        return { id, name };
+      }
+    ),
+    mapWithConcurrencyLimit(
+      Array.from(contactIds.values()),
+      SIDEBAR_ENRICHMENT_CONCURRENCY_LIMIT,
+      async (id) => {
+        const key = buildSidebarEnrichmentKey(tenantId, 'contact', id);
+        const name = await getOrCreateSidebarEnrichmentName(key, async () => {
+          const row = await client.getContact(id);
+          const first = String((row as any)?.firstName || '').trim();
+          const last = String((row as any)?.lastName || '').trim();
+          const fallback = `${first} ${last}`.trim();
+          return String((row as any)?.fullName || (row as any)?.displayName || fallback).trim();
+        });
+        return { id, name };
+      }
+    ),
+  ]);
+
+  for (const result of companyResults) {
+    if (result.status !== 'fulfilled') continue;
+    if (!result.value.name) continue;
+    companyNameById.set(result.value.id, result.value.name);
+  }
+  for (const result of contactResults) {
+    if (result.status !== 'fulfilled') continue;
+    if (!result.value.name) continue;
+    requesterNameByContactId.set(result.value.id, result.value.name);
+  }
+
+  return { companyNameById, requesterNameByContactId };
+}
+
+function toSidebarTicketFromAutotask(
+  ticket: AutotaskTicket,
+  queueLabelMap: Map<number, string>,
+  companyNameById: Map<number, string>,
+  requesterNameByContactId: Map<number, string>
+): SidebarTicketRow {
   const raw = ticket as any;
   const internalId = String(raw.id ?? '').trim();
   const ticketNumber = String(raw.ticketNumber || '').trim();
   const displayId = ticketNumber || internalId;
   const queueId = Number(raw.queueID);
+  const companyId = Number(raw.companyID);
+  const contactId = Number(raw.contactID);
   const queueName = Number.isFinite(queueId) ? String(queueLabelMap.get(queueId) || '').trim() : '';
-  const companyName = String(raw.companyName || raw.company || '').trim();
-  const requesterName = String(raw.contactName || raw.requesterName || '').trim();
+  const companyName = String(raw.companyName || raw.company || '').trim()
+    || (Number.isFinite(companyId) ? String(companyNameById.get(companyId) || '').trim() : '');
+  const requesterName = String(raw.contactName || raw.requesterName || '').trim()
+    || (Number.isFinite(contactId) ? String(requesterNameByContactId.get(contactId) || '').trim() : '');
 
   return {
     id: internalId || displayId,
@@ -256,6 +499,147 @@ function buildAutotaskTicketSearch(options: {
       : []),
   ];
   return JSON.stringify({ MaxRecords: options.maxRecords, filter });
+}
+
+async function fetchSidebarTicketsPayload(input: {
+  client: AutotaskClient;
+  maxRecords: number;
+  queueId: number;
+  lookbackHours: number;
+  tenantId?: string | null | undefined;
+}): Promise<{ rows: SidebarTicketRow[]; queueId: number; lookbackHours: number }> {
+  const createDateAfterIso = input.lookbackHours > 0
+    ? new Date(Date.now() - input.lookbackHours * 60 * 60 * 1000).toISOString()
+    : undefined;
+  const search = buildAutotaskTicketSearch({
+    maxRecords: input.maxRecords,
+    queueId: input.queueId,
+    ...(createDateAfterIso ? { createDateAfterIso } : {}),
+  });
+  const [tickets, queueLabelMap] = await Promise.all([
+    input.client.searchTickets(search, input.maxRecords, 0),
+    getQueueCatalogMap(input.client).catch(() => new Map<number, string>()),
+  ]);
+  const { companyNameById, requesterNameByContactId } = await resolveTicketOrgRequesterFallbacks(
+    input.client,
+    tickets,
+    input.tenantId
+  );
+  const rows = tickets
+    .slice()
+    .sort(sortTicketsByCreateDateDesc)
+    .map((ticket) => toSidebarTicketFromAutotask(ticket, queueLabelMap, companyNameById, requesterNameByContactId));
+  return {
+    rows,
+    queueId: input.queueId,
+    lookbackHours: input.lookbackHours,
+  };
+}
+
+async function waitForSidebarTicketsCache(
+  cacheKey: string,
+  timeoutMs: number
+): Promise<{ rows: SidebarTicketRow[]; queueId: number; lookbackHours: number } | null> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const cached = readCachedSidebarTickets(cacheKey);
+    if (cached) return cached;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return null;
+}
+
+async function loadSidebarTicketsUnderAdvisoryLock(input: {
+  cacheKey: string;
+  lockKey: number;
+  client: AutotaskClient;
+  maxRecords: number;
+  queueId: number;
+  lookbackHours: number;
+  tenantId?: string | null | undefined;
+}): Promise<{ acquired: false } | { acquired: true; payload: { rows: SidebarTicketRow[]; queueId: number; lookbackHours: number } }> {
+  const lockResult = await withTryAdvisoryLock(
+    SIDEBAR_TICKETS_LOCK_NAMESPACE,
+    input.lockKey,
+    async () => {
+      const lockCached = readCachedSidebarTickets(input.cacheKey);
+      if (lockCached) return lockCached;
+      const computed = await fetchSidebarTicketsPayload({
+        client: input.client,
+        maxRecords: input.maxRecords,
+        queueId: input.queueId,
+        lookbackHours: input.lookbackHours,
+        tenantId: input.tenantId,
+      });
+      writeCachedSidebarTickets(input.cacheKey, computed);
+      return computed;
+    }
+  );
+  if (!lockResult.acquired) return { acquired: false };
+  return { acquired: true, payload: lockResult.result };
+}
+
+async function loadSidebarTicketsWithCoordination(input: {
+  cacheKey: string;
+  lockKey: number;
+  client: AutotaskClient;
+  maxRecords: number;
+  queueId: number;
+  lookbackHours: number;
+  tenantId?: string | null | undefined;
+}): Promise<{ rows: SidebarTicketRow[]; queueId: number; lookbackHours: number }> {
+  const cached = readCachedSidebarTickets(input.cacheKey);
+  if (cached) return cached;
+
+  const inFlight = sidebarTicketsInFlight.get(input.cacheKey);
+  if (inFlight) return inFlight;
+
+  const requestPromise = (async () => {
+    const secondCached = readCachedSidebarTickets(input.cacheKey);
+    if (secondCached) return secondCached;
+
+    try {
+      const coordinationDeadline = Date.now() + SIDEBAR_TICKETS_LOCK_WAIT_TIMEOUT_MS;
+      while (Date.now() < coordinationDeadline) {
+        const lockLoad = await loadSidebarTicketsUnderAdvisoryLock(input);
+        if (lockLoad.acquired) return lockLoad.payload;
+
+        const cachedAfterMiss = readCachedSidebarTickets(input.cacheKey);
+        if (cachedAfterMiss) return cachedAfterMiss;
+
+        const remainingMs = coordinationDeadline - Date.now();
+        if (remainingMs <= 0) break;
+        const waitedCache = await waitForSidebarTicketsCache(
+          input.cacheKey,
+          Math.min(remainingMs, SIDEBAR_TICKETS_LOCK_RETRY_INTERVAL_MS)
+        );
+        if (waitedCache) return waitedCache;
+      }
+    } catch (error) {
+      // Provider throttling/dependency failures must not trigger a second immediate upstream retry.
+      if (classifySidebarTicketsDegradedReason(error)) {
+        throw error;
+      }
+      // Lock coordination failures can still fall back to direct provider read.
+    }
+
+    const computed = await fetchSidebarTicketsPayload({
+      client: input.client,
+      maxRecords: input.maxRecords,
+      queueId: input.queueId,
+      lookbackHours: input.lookbackHours,
+      tenantId: input.tenantId,
+    });
+    writeCachedSidebarTickets(input.cacheKey, computed);
+    return computed;
+  })();
+
+  sidebarTicketsInFlight.set(input.cacheKey, requestPromise);
+  try {
+    return await requestPromise;
+  } finally {
+    sidebarTicketsInFlight.delete(input.cacheKey);
+  }
 }
 
 async function getExistingTicketCoverageMap(ticketIds: string[]) {
@@ -793,6 +1177,7 @@ router.get('/resources/search', async (req, res, next) => {
  */
 router.get('/sidebar-tickets', async (req, res, next) => {
   try {
+    const tenantScope = String(req.auth?.tid || tenantContext.getStore()?.tenantId || 'global').trim().toLowerCase();
     const client = await getTenantScopedClient(req.auth?.tid);
     if (!client) {
       res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
@@ -807,35 +1192,82 @@ router.get('/sidebar-tickets', async (req, res, next) => {
       res.status(400).json({ error: 'queueId query parameter is required for direct sidebar tickets' });
       return;
     }
-    // Without a recency window, Autotask query paging can return old historical rows first.
-    // Default to a recent window for sidebar UX; callers may override.
     const lookbackHours = parseIntParam(req.query.lookbackHours, 24 * 30, { min: 1, max: 24 * 365 });
-    const createDateAfterIso = lookbackHours > 0
-      ? new Date(Date.now() - lookbackHours * 60 * 60 * 1000).toISOString()
-      : undefined;
-
-    const search = buildAutotaskTicketSearch({
+    const cacheKey = buildSidebarTicketsCacheKey({
+      tenantScope,
+      queueId,
       maxRecords,
-      ...(hasQueueId ? { queueId } : {}),
-      ...(createDateAfterIso ? { createDateAfterIso } : {}),
+      lookbackHours,
     });
-    const [tickets, queueLabelMap] = await Promise.all([
-      client.searchTickets(search, maxRecords, 0),
-      getQueueCatalogMap(client).catch(() => new Map<number, string>()),
-    ]);
-
-    const rows = tickets
-      .slice()
-      .sort(sortTicketsByCreateDateDesc)
-      .map((ticket) => toSidebarTicketFromAutotask(ticket, queueLabelMap));
+    const activeCooldownUntil = readSidebarTicketsRateLimitCooldown(cacheKey);
+    if (activeCooldownUntil) {
+      const cooldownPayload = readSidebarTicketsStale(cacheKey) || {
+        rows: [],
+        queueId,
+        lookbackHours,
+      };
+      res.json({
+        success: true,
+        data: cooldownPayload.rows,
+        count: cooldownPayload.rows.length,
+        source: 'autotask_direct',
+        queueId: cooldownPayload.queueId,
+        lookbackHours: cooldownPayload.lookbackHours,
+        degraded: {
+          provider: 'Autotask',
+          reason: 'rate_limited',
+          cooldownUntil: new Date(activeCooldownUntil).toISOString(),
+        },
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+    const lockKey = hashToPositiveInt32(cacheKey);
+    let payload: { rows: SidebarTicketRow[]; queueId: number; lookbackHours: number };
+    let degradedReason: 'rate_limited' | 'provider_error' | undefined;
+    let cooldownUntilIso: string | undefined;
+    try {
+      payload = await loadSidebarTicketsWithCoordination({
+        cacheKey,
+        lockKey,
+        client,
+        maxRecords,
+        queueId,
+        lookbackHours,
+        tenantId: req.auth?.tid,
+      });
+      clearSidebarTicketsRateLimitCooldown(cacheKey);
+    } catch (error) {
+      degradedReason = classifySidebarTicketsDegradedReason(error) || undefined;
+      if (!degradedReason) throw error;
+      if (degradedReason === 'rate_limited') {
+        setSidebarTicketsRateLimitCooldown(cacheKey);
+        const cooldownUntil = readSidebarTicketsRateLimitCooldown(cacheKey);
+        cooldownUntilIso = cooldownUntil ? new Date(cooldownUntil).toISOString() : undefined;
+      }
+      payload = readSidebarTicketsStale(cacheKey) || {
+        rows: [],
+        queueId,
+        lookbackHours,
+      };
+    }
 
     res.json({
       success: true,
-      data: rows,
-      count: rows.length,
+      data: payload.rows,
+      count: payload.rows.length,
       source: 'autotask_direct',
-      queueId,
-      lookbackHours,
+      queueId: payload.queueId,
+      lookbackHours: payload.lookbackHours,
+      ...(degradedReason
+        ? {
+          degraded: {
+            provider: 'Autotask',
+            reason: degradedReason,
+            ...(cooldownUntilIso ? { cooldownUntil: cooldownUntilIso } : {}),
+          },
+        }
+        : {}),
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

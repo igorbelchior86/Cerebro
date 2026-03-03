@@ -1,3 +1,21 @@
+## Lesson: 2026-03-03 (lock-path errors must not trigger same-request direct retry under provider throttling)
+**Mistake**: No endpoint `/autotask/sidebar-tickets`, falhas do provider dentro do bloco com advisory lock eram tratadas genericamente como falha de coordenação e disparavam nova leitura direta no mesmo request.
+**Root cause**: `catch` amplo no fluxo de coordenação sem distinguir erro de lock vs erro de dependência (rate-limit/thread-threshold).
+**Rule**: Em read paths com coordenação + fallback direto, erros classificados como `rate_limited/provider_error` devem sair para degradação controlada, nunca disparar segundo hit imediato no provider.
+**Pattern**: Se a telemetria mostra 1 request HTTP causando 2 chamadas upstream em janela de throttling, revisar `catch` de fallback para eliminar retry duplicado.
+
+## Lesson: 2026-03-03 (identical read-heavy endpoints need cross-instance coordination)
+**Mistake**: Mantive `/autotask/sidebar-tickets` sem coordenação inter-processo, deixando requests equivalentes recomputarem busca/enriquecimento em paralelo.
+**Root cause**: Mitigação anterior focou no fanout interno (enrichment) e não fechou a superfície multi-instância do endpoint completo.
+**Rule**: Para endpoints read-heavy com custo alto e parâmetros repetíveis, aplicar padrão completo: cache TTL curto tenant-scoped + in-flight local + lock distribuído por chave.
+**Pattern**: Picos de carga com múltiplas instâncias e variação de latência entre nós para mesma query indicam ausência de singleflight distribuído.
+
+## Lesson: 2026-03-03 (thundering herd mitigation is incomplete without cross-instance coordination)
+**Mistake**: Encerrar a mitigação de herd só com cache/dedupe in-memory no processo da API.
+**Root cause**: O ajuste inicial focou concorrência intra-instância e não fechou imediatamente o cenário multi-instância no endpoint de alta disputa.
+**Rule**: Para endpoints de leitura pesada com fanout externo, mitigação só está completa com coordenação inter-processo (ex.: advisory lock por chave de workload) + cache curto.
+**Pattern**: “In-flight Map local” sem mecanismo distribuído deixa brecha de duplicação quando há múltiplos pods/processos.
+
 ## Lesson: 2026-03-03 (avoid synchronous full-snapshot persistence in hot workflow paths)
 **Mistake**: O runtime de workflow persistia snapshot completo em disco (JSON stringify + write sync) em quase toda mutação e até no caminho de leitura da inbox.
 **Root cause**: Repositório in-memory com `persistState()` síncrono, sem debounce/limites, e `listInbox` com side effects de escrita durante GET.
@@ -1092,3 +1110,43 @@
 **Root cause**: O `ticket list` e o `filter bar` estavam em siblings com `z-index` equivalente; o sibling posterior (cards) ficava na frente.
 **Rule**: Para overlays ancorados em toolbar acima de listas, ajustar o `z-index` da toolbar (stacking context pai), não só do overlay filho.
 **Pattern**: Popover “por trás” de cards mesmo com `z-index` alto no filho indica limite de stacking context do pai.
+
+## Lesson: 2026-03-03 (when user confirms intent emphatically, execute immediately without offering optional next patch)
+**Mistake**: Respondi com proposta condicional de próximo patch para `Unknown org/requester` em vez de executar correção completa imediatamente.
+**Root cause**: Mantive modo consultivo em problema já diagnosticado e com impacto visível no fluxo principal.
+**Rule**: Quando a causa raiz já está clara e o usuário pede correção, implementar diretamente no mesmo ciclo sem pedir confirmação adicional.
+**Pattern**: “Se você quiser, no próximo patch...” após bug confirmado aumenta fricção e retrabalho.
+## Lesson: 2026-03-03T16:22:00-05:00
+**Mistake**: Declarei correção de `Unknown org/requester` antes de validar o estado real do runtime inbox ativo.
+**Root cause**: O patch anterior cobria propagação futura, mas não resolvia tickets já ativos sem dados canônicos e o dedupe ainda podia descartar `company/requester`.
+**Rule**: Para bugs de paridade de dados, sempre verificar snapshot runtime de produção local e validar caminho retroativo (dados já existentes), não só ingestão futura.
+**Pattern**: Fluxos com alias/dedupe devem preservar campos de identidade (`company/requester`) no merge e ter hidratação limitada para backlog ativo.
+
+## Lesson: 2026-03-03 (do not reset deterministic queue selection on transient option drift)
+**Mistake**: A seleção global de fila era resetada para `all` quando `queueOptions` mudava e removia temporariamente a opção selecionada.
+**Root cause**: Efeito de validação tratava ausência transitória da option como estado inválido definitivo.
+**Rule**: Para seleções determinísticas (`queue:<id>`), preservar estado e só aplicar fallback quando a seleção for realmente inválida e não determinística.
+**Pattern**: Mudança assíncrona de catálogo/opções + `setSelected(...'all')` em `useEffect` pode alternar fonte de dados no meio do fluxo.
+
+## Lesson: 2026-03-03 (stability fixes need bounded recovery for permanently invalid selections)
+**Mistake**: Após estabilizar `queue:<id>` contra oscilações transitórias, deixei sem estratégia de recuperação para fila removida permanentemente.
+**Root cause**: O critério de preservação da seleção determinística não tinha condição temporal de expiração quando catálogo autoritativo confirmava ausência contínua.
+**Rule**: Seleções preservadas por estabilidade assíncrona devem ter fallback bounded quando o estado inválido persiste sob fonte autoritativa.
+**Pattern**: `synthetic option + no expiry` em seleção persistida pode gerar estado órfão indefinido.
+## Lesson: 2026-03-03T16:58:00-05:00
+**Mistake**: Primeira auditoria de concorrência da queue Global ficou inconclusiva por falta de carga autenticada.
+**Root cause**: Teste inicial foi executado sem sessão (401), então não exercitou o caminho crítico real do endpoint protegido.
+**Rule**: Em auditoria de concorrência de rota protegida, sempre validar sessão/cookie primeiro e só então medir burst.
+**Pattern**: “Resultado limpo com 401” é falso positivo para estabilidade; é obrigatório reproduzir no path autenticado.
+
+## Lesson: 2026-03-03
+**Mistake**: aceitar coordenação parcial em rota de alta concorrência sem validar caminho de fallback quando lock não é adquirido.
+**Root cause**: foco em deduplicação intra-processo (`inFlight`) sem cobrir explicitamente competição inter-processo após timeout de espera de cache.
+**Rule**: para operações upstream caras, evitar fetch direto fora do mecanismo de coordenação por chave; re-tentar coordenação antes de qualquer degradação.
+**Pattern**: `try-lock -> wait cache timeout -> direct upstream fetch` pode reintroduzir fanout em concorrência real.
+
+## Lesson: 2026-03-03 (read-only sidebar route must degrade on provider 429 instead of returning 500)
+**Mistake**: Mantive `/autotask/sidebar-tickets` propagando exceções do provider para middleware global, causando `500` em rajadas concorrentes.
+**Root cause**: Tratamento de erro da rota não diferenciava falha transitória de dependência (Autotask 429/thread-threshold) de falha interna da aplicação.
+**Rule**: Endpoints read-only dependentes de integração externa devem responder em modo degradado para `RATE_LIMIT/TIMEOUT/DEPENDENCY`, preservando `500` apenas para falhas internas/inesperadas.
+**Pattern**: Se burst concorrente retorna `500` massivo com logs `Autotask API error: 429`, falta política de degradação no handler da rota.

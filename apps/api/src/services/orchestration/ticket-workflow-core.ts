@@ -251,6 +251,7 @@ export interface TicketWorkflowRepository {
   listAuditByTicket(tenantId: string, ticketId: string): Promise<WorkflowAuditRecord[]>;
   markSyncEventProcessed(tenantId: string, eventId: string): Promise<boolean>;
   upsertInboxTicket(state: InboxTicketState): Promise<void>;
+  deleteInboxTicket(tenantId: string, ticketId: string): Promise<void>;
   getInboxTicket(tenantId: string, ticketId: string): Promise<InboxTicketState | null>;
   listInboxTickets(tenantId: string): Promise<InboxTicketState[]>;
   addReconciliationIssue(issue: ReconciliationIssue): Promise<void>;
@@ -376,6 +377,11 @@ function normalizeEventDomainSnapshots(payload: Record<string, unknown>) {
       ...(commentCreatedAt ? { latest_note_created_at: commentCreatedAt } : {}),
     },
   } satisfies Partial<Record<ReconciliationDomain, Record<string, unknown>>>;
+}
+
+function isTicketNumberLike(value: unknown): boolean {
+  const v = String(value ?? '').trim();
+  return /^T[0-9]{8}\.[0-9]{4}$/i.test(v);
 }
 
 function aggregateReconciliationClassification(rows: ReconciliationDomainResult[]): ReconciliationClassification {
@@ -505,6 +511,11 @@ export class InMemoryTicketWorkflowRepository implements TicketWorkflowRepositor
     this.persistState();
   }
 
+  async deleteInboxTicket(tenantId: string, ticketId: string): Promise<void> {
+    this.inbox.delete(this.inboxKey(tenantId, ticketId));
+    this.persistState();
+  }
+
   async getInboxTicket(tenantId: string, ticketId: string): Promise<InboxTicketState | null> {
     const row = this.inbox.get(this.inboxKey(tenantId, ticketId));
     return row ? structuredClone(row) : null;
@@ -599,6 +610,46 @@ export class TicketWorkflowCoreService {
       timestamp: nowIso(),
       ...args,
     });
+  }
+
+  private async resolveCanonicalInboxIdentity(
+    tenantId: string,
+    eventTicketId: string,
+    payload: Record<string, unknown>,
+  ): Promise<{ canonicalTicketId: string; aliasesToDelete: string[]; existing: InboxTicketState | null }> {
+    const incomingExternalId = String(payload.external_id ?? '').trim();
+    const incomingTicketNumber = String(payload.ticket_number ?? '').trim();
+    const rows = await this.repo.listInboxTickets(tenantId);
+    const matching = rows.filter((row) => {
+      if (incomingExternalId && (String(row.external_id || '').trim() === incomingExternalId || row.ticket_id === incomingExternalId)) return true;
+      if (incomingTicketNumber && (String(row.ticket_number || '').trim() === incomingTicketNumber || row.ticket_id === incomingTicketNumber)) return true;
+      return row.ticket_id === eventTicketId;
+    });
+    if (matching.length === 0) {
+      const existing = await this.repo.getInboxTicket(tenantId, eventTicketId);
+      return { canonicalTicketId: eventTicketId, aliasesToDelete: [], existing };
+    }
+
+    const preferred = matching
+      .slice()
+      .sort((a, b) => {
+        const aScore =
+          (incomingTicketNumber && String(a.ticket_number || '').trim() === incomingTicketNumber ? 100 : 0) +
+          (incomingExternalId && String(a.external_id || '').trim() === incomingExternalId ? 50 : 0) +
+          (isTicketNumberLike(a.ticket_id) ? 20 : 0);
+        const bScore =
+          (incomingTicketNumber && String(b.ticket_number || '').trim() === incomingTicketNumber ? 100 : 0) +
+          (incomingExternalId && String(b.external_id || '').trim() === incomingExternalId ? 50 : 0) +
+          (isTicketNumberLike(b.ticket_id) ? 20 : 0);
+        if (aScore !== bScore) return bScore - aScore;
+        return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+      })[0];
+    const canonicalTicketId = preferred?.ticket_id || eventTicketId;
+    const aliasesToDelete = matching
+      .map((row) => row.ticket_id)
+      .filter((id) => id !== canonicalTicketId);
+    const existing = (await this.repo.getInboxTicket(tenantId, canonicalTicketId)) || preferred || null;
+    return { canonicalTicketId, aliasesToDelete, existing };
   }
 
   async submitCommand(command: WorkflowCommandEnvelope): Promise<WorkflowCommandAttempt> {
@@ -1043,9 +1094,14 @@ export class TicketWorkflowCoreService {
       return { duplicate: true, applied: false };
     }
 
-    const ticketId = String(event.correlation.ticket_id || event.entity_id || '').trim();
+    const eventTicketId = String(event.correlation.ticket_id || event.entity_id || '').trim();
+    const payload = event.payload || {};
+    const {
+      canonicalTicketId: ticketId,
+      aliasesToDelete,
+      existing,
+    } = await this.resolveCanonicalInboxIdentity(event.tenant_id, eventTicketId, payload);
     if (!ticketId) return { duplicate: false, applied: false };
-    const existing = await this.repo.getInboxTicket(event.tenant_id, ticketId);
 
     const eventTimeMs = new Date(event.occurred_at).getTime();
     const currentTimeMs = new Date(existing?.last_event_occurred_at || 0).getTime();
@@ -1063,12 +1119,14 @@ export class TicketWorkflowCoreService {
       return { duplicate: false, applied: false };
     }
 
-    const payload = event.payload || {};
     const domainSnapshots = normalizeEventDomainSnapshots(payload);
     const next: InboxTicketState = {
       tenant_id: event.tenant_id,
       ticket_id: ticketId,
       external_id: String((payload.external_id ?? existing?.external_id ?? ticketId) || ticketId),
+      ...(String(payload.ticket_number ?? existing?.ticket_number ?? '').trim()
+        ? { ticket_number: String(payload.ticket_number ?? existing?.ticket_number).trim() }
+        : {}),
       ...(String(payload.title ?? existing?.title ?? '').trim() ? { title: String(payload.title ?? existing?.title).trim() } : {}),
       ...(String(payload.description ?? existing?.description ?? '').trim()
         ? { description: String(payload.description ?? existing?.description).trim() }
@@ -1106,6 +1164,9 @@ export class TicketWorkflowCoreService {
     }
 
     await this.repo.upsertInboxTicket(next);
+    for (const aliasId of aliasesToDelete) {
+      await this.repo.deleteInboxTicket(event.tenant_id, aliasId);
+    }
     const syncedComment = commentBody
       ? {
         visibility: normalizeVisibility(payload.comment_visibility),
@@ -1470,7 +1531,75 @@ export class TicketWorkflowCoreService {
   }
 
   async listInbox(tenantId: string): Promise<InboxTicketState[]> {
-    return this.repo.listInboxTickets(tenantId);
+    const rows = await this.repo.listInboxTickets(tenantId);
+    const grouped = new Map<string, InboxTicketState[]>();
+    for (const row of rows) {
+      const key =
+        String(row.external_id || '').trim()
+          ? `ext:${String(row.external_id).trim()}`
+          : String(row.ticket_number || '').trim()
+            ? `num:${String(row.ticket_number).trim()}`
+            : isTicketNumberLike(row.ticket_id)
+              ? `num:${row.ticket_id}`
+              : `id:${row.ticket_id}`;
+      const current = grouped.get(key) || [];
+      current.push(row);
+      grouped.set(key, current);
+    }
+
+    const deduped: InboxTicketState[] = [];
+    for (const entries of grouped.values()) {
+      const preferred = entries
+        .slice()
+        .sort((a, b) => {
+          const aScore = (isTicketNumberLike(a.ticket_id) ? 10 : 0) + (a.ticket_number ? 5 : 0) + (a.external_id ? 2 : 0);
+          const bScore = (isTicketNumberLike(b.ticket_id) ? 10 : 0) + (b.ticket_number ? 5 : 0) + (b.external_id ? 2 : 0);
+          if (aScore !== bScore) return bScore - aScore;
+          return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+        })[0];
+      if (!preferred) continue;
+      const merged = entries.reduce((acc, item) => ({
+        ...acc,
+        ...(acc.external_id ? {} : item.external_id ? { external_id: item.external_id } : {}),
+        ...(acc.ticket_number ? {} : item.ticket_number ? { ticket_number: item.ticket_number } : {}),
+        ...(acc.title ? {} : item.title ? { title: item.title } : {}),
+        ...(acc.description ? {} : item.description ? { description: item.description } : {}),
+      }), preferred);
+      deduped.push(merged);
+
+      for (const item of entries) {
+        if (item.ticket_id !== preferred.ticket_id) {
+          await this.repo.deleteInboxTicket(tenantId, item.ticket_id);
+        }
+      }
+      await this.repo.upsertInboxTicket(merged);
+    }
+    return deduped.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+  }
+
+  async removeInboxTicket(
+    tenantId: string,
+    ticketId: string,
+    input: { reason: string; correlation?: WorkflowCorrelation; metadata?: Record<string, unknown> },
+  ): Promise<void> {
+    await this.repo.deleteInboxTicket(tenantId, ticketId);
+    await this.writeAudit({
+      tenant_id: tenantId,
+      actor: { kind: 'system', id: 'autotask-reconcile', origin: 'autotask_reconcile' },
+      action: 'workflow.sync.ticket_removed',
+      target: auditTarget('Autotask', 'ticket', ticketId),
+      result: 'success',
+      reason: input.reason,
+      correlation: input.correlation || { trace_id: randomUUID(), ticket_id: ticketId },
+      metadata: input.metadata || {},
+    });
+    this.publishRealtime({
+      tenant_id: tenantId,
+      ticket_id: ticketId,
+      trace_id: input.correlation?.trace_id || randomUUID(),
+      occurred_at: nowIso(),
+      change_kind: 'sync',
+    });
   }
 
   async listReconciliationIssues(tenantId: string, ticketId?: string): Promise<ReconciliationIssue[]> {

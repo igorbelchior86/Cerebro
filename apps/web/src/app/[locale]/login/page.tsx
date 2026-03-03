@@ -110,8 +110,14 @@ export default function LoginPage() {
             <form onSubmit={handleCredentials} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <Field label={t('emailLabel')} type="email" value={email} onChange={setEmail} placeholder={t('emailPlaceholder')} />
               <Field label={t('passwordLabel')} type="password" value={password} onChange={setPassword} placeholder={t('passwordPlaceholder')} />
+              <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-muted)' }}>
+                You can also sign in with <strong>MASTER</strong> in the email field.
+              </p>
               {error && <ErrorBanner message={error} />}
               <SubmitButton loading={loading} label={t('signIn')} tWait={t('pleaseWait')} />
+              <a href="/reset-password" style={{ fontSize: '12px', color: 'var(--text-muted)', textDecoration: 'none', textAlign: 'center' }}>
+                Forgot password?
+              </a>
             </form>
           </>
         ) : (

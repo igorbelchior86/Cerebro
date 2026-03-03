@@ -8,6 +8,10 @@ type InviteMailInput = {
   inviterEmail: string;
   tenantName: string;
 };
+type PasswordResetMailInput = {
+  to: string;
+  resetUrl: string;
+};
 
 function smtpEnabled(): boolean {
   return String(process.env.SMTP_ENABLED || 'true').toLowerCase() === 'true';
@@ -55,3 +59,32 @@ export async function sendInviteEmail(input: InviteMailInput): Promise<{ sent: b
   }
 }
 
+export async function sendPasswordResetEmail(input: PasswordResetMailInput): Promise<{ sent: boolean; reason?: string }> {
+  if (!smtpEnabled()) {
+    return { sent: false, reason: 'smtp_disabled' };
+  }
+  try {
+    const transporter = smtpTransport();
+    const from = process.env.SMTP_FROM || 'Cerebro <no-reply@cerebro.local>';
+    await transporter.sendMail({
+      from,
+      to: input.to,
+      subject: 'Cerebro password reset',
+      text:
+        'A password reset was requested for your account.\n\n' +
+        `Reset your password here:\n${input.resetUrl}\n\n` +
+        'If you did not request this, you can ignore this email.',
+      html:
+        '<p>A password reset was requested for your account.</p>' +
+        `<p><a href="${input.resetUrl}">Reset password</a></p>` +
+        '<p>If you did not request this, you can ignore this email.</p>',
+    });
+    return { sent: true };
+  } catch (error) {
+    operationalLogger.error('identity.mailer.send_password_reset.failed', error, {
+      module: 'services.identity.mailer',
+      operation: 'sendPasswordResetEmail',
+    });
+    return { sent: false, reason: 'smtp_send_failed' };
+  }
+}

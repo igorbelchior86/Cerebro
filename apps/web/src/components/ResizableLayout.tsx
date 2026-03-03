@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useRouter } from '@/i18n/routing';
 
 interface ResizableLayoutProps {
   sidebarContent: React.ReactNode;
@@ -16,7 +17,8 @@ export default function ResizableLayout({
   rightContent,
   transparentSidebar = false
 }: ResizableLayoutProps) {
-  const { user, updateProfile } = useAuth();
+  const { user, loading, updateProfile } = useAuth();
+  const router = useRouter();
 
   // Configured defaults: 20 / 40 / 40 roughly maps to 272px / rest / rest
   const [sidebarWidth, setSidebarWidth] = useState(272);
@@ -41,6 +43,12 @@ export default function ResizableLayout({
       }
     }
   }, [user?.preferences?.sidebarWidth, user?.preferences?.rightWidth]);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace('/login');
+    }
+  }, [loading, user, router]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {

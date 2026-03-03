@@ -4,6 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from '@/i18n/routing';
 import { useTranslations } from 'next-intl';
 
+const API = process.env.NEXT_PUBLIC_API_URL || '/api';
+
 interface UserProfileDropdownProps {
     userName: string;
     userRole?: string;
@@ -39,9 +41,8 @@ export default function UserProfileDropdown({
 
     const handleLogout = async () => {
         try {
-            await fetch('/api/auth/logout', { method: 'POST' }); // adjust if your Next route or API handles logout this way
-            // Or fallback: Just delete cookie via document.cookie
-            document.cookie = 'pb_session=; Max-Age=0; path=/; domain=' + window.location.hostname;
+            await fetch(`${API}/auth/logout`, { method: 'POST', credentials: 'include' });
+            document.cookie = 'pb_session=; Max-Age=0; path=/';
             router.push('/login');
         } catch (err) {
             console.error(t('logoutFailed'), err);

@@ -19,6 +19,7 @@ export interface WorkflowInboxTicket {
   tenant_id: string;
   ticket_id: string;
   external_id?: string;
+  ticket_number?: string;
   title?: string;
   description?: string;
   status?: string;

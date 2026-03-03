@@ -1014,3 +1014,21 @@
 **Root cause**: Projeção local pós-comando estava centrada no ID interno e ignorava campos semânticos canônicos (`ticket_number`, `contact_name`).
 **Rule**: Em `kind: created`, sempre priorizar `external_ticket_number` para identidade de ticket e projetar requester/contact do snapshot para preservar UX e contexto.
 **Pattern**: Ticket muda de `T...` para numérico + contato vira `Unknown user` após create indica projeção local pós-comando incompleta.
+
+## Lesson: 2026-03-03 (auth regressions must include middleware/public-route and unauth shell fallback checks)
+**Mistake**: Entreguei o fluxo de reset/login sem validar se a nova rota era pública no middleware e sem garantir fallback de redirecionamento quando `auth/me` falha na shell.
+**Root cause**: Foquei no backend de autenticação e na UI de formulário, mas não fechei a validação fim-a-fim do route guard + shell auth state.
+**Rule**: Em qualquer mudança de auth web, validar obrigatoriamente: (1) `PUBLIC_PATHS` no middleware, (2) comportamento de logout real com backend correto, (3) redirecionamento para `/login` quando `auth/me` retorna não-OK.
+**Pattern**: Sintoma "bypass login" + "stuck in triage shell" geralmente indica sessão/cookie stale aceita no edge ou ausência de fallback de redirect no shell após falha de `auth/me`.
+
+## Lesson: 2026-03-03 (AT parity requires canonical ticket identity and deletion reconciliation)
+**Mistake**: Assumi que backfill temporal sozinho garantiria paridade, sem unificar identidade de ticket entre `external_id` e `ticket_number` nem tratar exclusões no provider.
+**Root cause**: O core aceitava `ticket_id` variável por evento (`numeric id` vs `T...`) e não tinha rotina para remover entidades apagadas no AT.
+**Rule**: Para paridade provider↔read-model, sempre implementar (1) chave canônica/alias merge, (2) dedupe de legado persistido, (3) purge/reconcile de deletados.
+**Pattern**: Sintoma "ticket duplicado com ID numérico + ticket number" + "ticket deletado no provider continua no app" indica divergência de identidade canônica e ausência de tombstone reconciliation.
+
+## Lesson: 2026-03-03 (optional parity paths must fail-open and never block primary sync)
+**Mistake**: Introduzi queue snapshot de paridade no poller sem garantir compatibilidade com clientes/mocks que não implementam `getTicketQueues`.
+**Root cause**: Assumi capability uniforme no client e deixei exceção da trilha opcional interromper o ciclo principal de polling.
+**Rule**: Caminhos opcionais de reconciliação/paridade devem ser capability-checked e isolados por `try/catch`; o fluxo principal de ingestão nunca pode parar por falha auxiliar.
+**Pattern**: Feature de paridade opcional que roda antes do core loop sem guard explícito = risco de regressão de sincronização.

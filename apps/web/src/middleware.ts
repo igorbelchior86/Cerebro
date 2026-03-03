@@ -13,7 +13,7 @@ import { routing } from './i18n/routing';
 const handleI18nRouting = createMiddleware(routing);
 
 // Routes that do NOT require auth
-const PUBLIC_PATHS = ['/login', '/register', '/accept-invite', '/activate-account'];
+const PUBLIC_PATHS = ['/login', '/register', '/accept-invite', '/activate-account', '/reset-password'];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

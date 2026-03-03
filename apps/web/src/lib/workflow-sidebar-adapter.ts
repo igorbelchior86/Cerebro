@@ -18,15 +18,16 @@ function fallbackPriority(status?: string): NonNullable<ActiveTicket['priority']
 }
 
 function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
-  const title = String(row.title || '').trim() || `Ticket ${row.ticket_id}`;
+  const displayTicketNumber = String(row.ticket_number || row.ticket_id || '').trim();
+  const title = String(row.title || '').trim() || `Ticket ${displayTicketNumber || row.ticket_id}`;
   const description = String(row.description || '').trim() || undefined;
   const createdAt = row.updated_at || row.last_event_occurred_at || row.last_sync_at;
   const assignedRaw = String(row.assigned_to || '').trim();
   const assignedNumeric = Number.parseInt(assignedRaw, 10);
   return {
     id: row.ticket_id,
-    ticket_id: row.ticket_id,
-    ticket_number: row.ticket_id,
+    ticket_id: displayTicketNumber || row.ticket_id,
+    ticket_number: displayTicketNumber || row.ticket_id,
     status: mapWorkflowStatusToSidebarStatus(row.status),
     ...(row.status ? { ticket_status_value: row.status } : {}),
     ...((() => {

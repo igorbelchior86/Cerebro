@@ -5,6 +5,7 @@ import { triageOrchestrator } from '../orchestration/triage-orchestrator.js';
 import { workflowService } from '../orchestration/workflow-runtime.js';
 import { classifyQueueError } from '../../platform/errors.js';
 import { operationalLogger } from '../../lib/operational-logger.js';
+import { readJsonFileSafe, writeJsonFileAtomic } from '../read-models/runtime-json-file.js';
 
 interface AutotaskCreds {
   apiIntegrationCode: string;
@@ -30,6 +31,20 @@ type SyncRetryEntry = {
   errorCode: string;
 };
 
+type ParityBackfillTenantState = {
+  cursor_iso: string;
+  completed: boolean;
+  updated_at: string;
+};
+
+type ParityBackfillStateFile = {
+  tenants: Record<string, ParityBackfillTenantState>;
+};
+
+function looksLikeNumericId(value: string): boolean {
+  return /^[0-9]+$/.test(value.trim());
+}
+
 export class AutotaskPollingService {
   private intervalId: NodeJS.Timeout | null = null;
   private isPolling = false;
@@ -46,6 +61,16 @@ export class AutotaskPollingService {
   private readonly syncRetryMaxAttempts: number;
   private readonly syncRetryQueue = new Map<string, SyncRetryEntry>();
   private readonly syncDlq = new Map<string, SyncRetryEntry>();
+  private readonly parityBackfillEnabled: boolean;
+  private readonly parityBackfillStateFilePath: string;
+  private readonly parityBackfillStartIso: string;
+  private readonly parityBackfillChunkHours: number;
+  private readonly parityBackfillWindowsPerRun: number;
+  private readonly parityPurgeEnabled: boolean;
+  private readonly parityPurgeMaxChecksPerRun: number;
+  private readonly parityQueueSnapshotEnabled: boolean;
+  private readonly parityQueueSnapshotMaxRecords: number;
+  private parityBackfillStateCache: ParityBackfillStateFile | null = null;
 
   constructor(input?: {
     pollIntervalMs?: number;
@@ -56,6 +81,7 @@ export class AutotaskPollingService {
     now?: () => number;
     retryBackoffMs?: (attempt: number) => number;
     syncRetryMaxAttempts?: number;
+    parityBackfillEnabled?: boolean;
   }) {
     if (Number.isFinite(Number(input?.pollIntervalMs))) {
       this.pollIntervalMs = Math.max(5_000, Number(input?.pollIntervalMs));
@@ -74,6 +100,15 @@ export class AutotaskPollingService {
       return Math.min(base * Math.pow(2, exponent), 60_000);
     });
     this.syncRetryMaxAttempts = Math.max(1, Number(input?.syncRetryMaxAttempts ?? 5));
+    this.parityBackfillEnabled = Boolean(input?.parityBackfillEnabled ?? false);
+    this.parityBackfillStateFilePath = process.env.AUTOTASK_PARITY_STATE_FILE || `${process.cwd()}/.run/autotask-parity-state.json`;
+    this.parityBackfillStartIso = String(process.env.AUTOTASK_PARITY_START_DATE || '2000-01-01T00:00:00.000Z');
+    this.parityBackfillChunkHours = Math.max(1, Number(process.env.AUTOTASK_PARITY_CHUNK_HOURS || 168));
+    this.parityBackfillWindowsPerRun = Math.max(1, Number(process.env.AUTOTASK_PARITY_WINDOWS_PER_RUN || 48));
+    this.parityPurgeEnabled = String(process.env.AUTOTASK_PARITY_PURGE_ENABLED || 'true').toLowerCase() === 'true';
+    this.parityPurgeMaxChecksPerRun = Math.max(1, Number(process.env.AUTOTASK_PARITY_PURGE_MAX_CHECKS || 25));
+    this.parityQueueSnapshotEnabled = String(process.env.AUTOTASK_PARITY_QUEUE_SNAPSHOT_ENABLED || 'true').toLowerCase() === 'true';
+    this.parityQueueSnapshotMaxRecords = Math.max(25, Math.min(500, Number(process.env.AUTOTASK_PARITY_QUEUE_SNAPSHOT_MAX_RECORDS || 200)));
   }
 
   private async getAutotaskCredentials(): Promise<{ tenantId?: string; credentials: AutotaskCreds } | null> {
@@ -97,6 +132,28 @@ export class AutotaskPollingService {
             ...(latest.tenant_id ? { tenantId: String(latest.tenant_id) } : {}),
             credentials: latest.credentials,
           };
+        }
+      } else {
+        const candidates = await queryOne<{ rows: Array<{ tenant_id?: string | null; credentials: AutotaskCreds }> }>(
+          `SELECT json_agg(x) AS rows
+           FROM (
+             SELECT tenant_id, credentials
+             FROM integration_credentials
+             WHERE service = 'autotask' AND tenant_id IS NOT NULL
+             ORDER BY updated_at DESC
+             LIMIT 2
+           ) x`
+        );
+        const rows = Array.isArray(candidates?.rows) ? candidates.rows : [];
+        const uniqueTenants = Array.from(new Set(rows.map((r) => String(r.tenant_id || '').trim()).filter(Boolean)));
+        if (uniqueTenants.length === 1) {
+          const row = rows.find((r) => String(r.tenant_id || '').trim() === uniqueTenants[0]);
+          if (row?.credentials?.apiIntegrationCode && row.credentials?.username && row.credentials?.secret) {
+            return {
+              ...(uniqueTenants[0] ? { tenantId: uniqueTenants[0] } : {}),
+              credentials: row.credentials,
+            };
+          }
         }
       }
     } catch {
@@ -216,6 +273,23 @@ export class AutotaskPollingService {
           return;
         }
 
+        if (this.parityBackfillEnabled) {
+          await this.runParityBackfill(context);
+        }
+        if (this.parityQueueSnapshotEnabled) {
+          try {
+            await this.runQueueParitySnapshot(context);
+          } catch (error) {
+            operationalLogger.warn('adapters.autotask_polling.parity_queue_snapshot_failed', {
+              module: 'adapters.autotask-polling',
+              integration: 'autotask',
+              signal: 'integration_failure',
+              degraded_mode: true,
+              reason: String((error as Error)?.message || error || 'unknown_error'),
+            }, { tenant_id: context.tenantId || null });
+          }
+        }
+
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
         const filter = `{"op": "gt", "field": "createDate", "value": "${oneHourAgo}"}`;
         const tickets = await context.client.searchTickets(filter, 50, 0);
@@ -240,6 +314,10 @@ export class AutotaskPollingService {
               degraded_mode: true,
             }, { ticket_id: ticketIdStr });
           }
+        }
+
+        if (this.parityPurgeEnabled) {
+          await this.purgeMissingAutotaskTickets(context);
         }
       });
       if (!lock.acquired) {
@@ -272,7 +350,221 @@ export class AutotaskPollingService {
     }
   }
 
-  private async ingestWorkflowSyncEvent(ticket: Record<string, unknown>, tenantId?: string): Promise<void> {
+  private getParityState(): ParityBackfillStateFile {
+    if (this.parityBackfillStateCache) return this.parityBackfillStateCache;
+    const loaded = readJsonFileSafe<ParityBackfillStateFile>(this.parityBackfillStateFilePath);
+    this.parityBackfillStateCache = loaded && loaded.tenants ? loaded : { tenants: {} };
+    return this.parityBackfillStateCache;
+  }
+
+  private saveParityState(): void {
+    writeJsonFileAtomic(this.parityBackfillStateFilePath, this.getParityState());
+  }
+
+  private getTenantBackfillState(tenantId: string): ParityBackfillTenantState {
+    const state = this.getParityState();
+    const existing = state.tenants[tenantId];
+    if (existing) return existing;
+    const created: ParityBackfillTenantState = {
+      cursor_iso: this.parityBackfillStartIso,
+      completed: false,
+      updated_at: new Date().toISOString(),
+    };
+    state.tenants[tenantId] = created;
+    this.saveParityState();
+    return created;
+  }
+
+  private updateTenantBackfillState(tenantId: string, next: ParityBackfillTenantState): void {
+    const state = this.getParityState();
+    state.tenants[tenantId] = next;
+    this.saveParityState();
+  }
+
+  private async fetchTicketsByCreateDateWindow(
+    context: AutotaskPollContext,
+    startIso: string,
+    endIso: string,
+    maxRecords = 200,
+    depth = 0,
+  ): Promise<Record<string, unknown>[]> {
+    const filter = JSON.stringify({
+      MaxRecords: maxRecords,
+      filter: [
+        { op: 'gte', field: 'createDate', value: startIso },
+        { op: 'lt', field: 'createDate', value: endIso },
+      ],
+    });
+    const rows = (await context.client.searchTickets(filter, maxRecords, 0)) as unknown as Record<string, unknown>[];
+    if (rows.length < maxRecords) return rows;
+
+    // Split dense windows to avoid truncation and guarantee reconciliation coverage.
+    if (depth >= 8) return rows;
+    const startMs = Date.parse(startIso);
+    const endMs = Date.parse(endIso);
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs - startMs <= 60_000) return rows;
+
+    const midMs = Math.floor((startMs + endMs) / 2);
+    const midIso = new Date(midMs).toISOString();
+    const left = await this.fetchTicketsByCreateDateWindow(context, startIso, midIso, maxRecords, depth + 1);
+    const right = await this.fetchTicketsByCreateDateWindow(context, midIso, endIso, maxRecords, depth + 1);
+    const dedup = new Map<string, Record<string, unknown>>();
+    for (const row of [...left, ...right]) {
+      const key = String((row as any).ticketNumber || (row as any).id || '').trim();
+      if (!key) continue;
+      dedup.set(key, row);
+    }
+    return Array.from(dedup.values());
+  }
+
+  private async runParityBackfill(context: AutotaskPollContext): Promise<void> {
+    const tenantId = String(context.tenantId || '').trim();
+    if (!tenantId) return;
+
+    const now = this.nowFn();
+    const catchupTargetMs = now - 5 * 60 * 1000;
+    const tenantState = this.getTenantBackfillState(tenantId);
+    if (tenantState.completed) return;
+
+    const cursorMs = Date.parse(tenantState.cursor_iso);
+    if (!Number.isFinite(cursorMs)) {
+      this.updateTenantBackfillState(tenantId, {
+        cursor_iso: this.parityBackfillStartIso,
+        completed: false,
+        updated_at: new Date().toISOString(),
+      });
+      return;
+    }
+    if (cursorMs >= catchupTargetMs) {
+      this.updateTenantBackfillState(tenantId, {
+        cursor_iso: tenantState.cursor_iso,
+        completed: true,
+        updated_at: new Date().toISOString(),
+      });
+      operationalLogger.info('adapters.autotask_polling.parity_backfill_completed', {
+        module: 'adapters.autotask-polling',
+        tenant_id: tenantId,
+      }, { tenant_id: tenantId });
+      return;
+    }
+
+    let currentCursorMs = cursorMs;
+    let windowsProcessed = 0;
+    while (currentCursorMs < catchupTargetMs && windowsProcessed < this.parityBackfillWindowsPerRun) {
+      const nextMs = Math.min(currentCursorMs + this.parityBackfillChunkHours * 60 * 60 * 1000, catchupTargetMs);
+      const windowStartIso = new Date(currentCursorMs).toISOString();
+      const windowEndIso = new Date(nextMs).toISOString();
+      const tickets = await this.fetchTicketsByCreateDateWindow(context, windowStartIso, windowEndIso);
+      for (const ticket of tickets) {
+        await this.ingestWorkflowSyncEvent(ticket, tenantId, 'autotask_reconcile');
+      }
+      this.updateTenantBackfillState(tenantId, {
+        cursor_iso: windowEndIso,
+        completed: nextMs >= catchupTargetMs,
+        updated_at: new Date().toISOString(),
+      });
+      operationalLogger.info('adapters.autotask_polling.parity_backfill_window_applied', {
+        module: 'adapters.autotask-polling',
+        tenant_id: tenantId,
+        window_start: windowStartIso,
+        window_end: windowEndIso,
+        ticket_count: tickets.length,
+        completed: nextMs >= catchupTargetMs,
+      }, { tenant_id: tenantId });
+      currentCursorMs = nextMs;
+      windowsProcessed += 1;
+    }
+  }
+
+  private async runQueueParitySnapshot(context: AutotaskPollContext): Promise<void> {
+    const tenantId = String(context.tenantId || '').trim();
+    if (!tenantId) return;
+    if (typeof (context.client as { getTicketQueues?: unknown }).getTicketQueues !== 'function') return;
+
+    const queues = await context.client.getTicketQueues().catch(() => []);
+    if (!Array.isArray(queues) || queues.length === 0) return;
+
+    for (const queue of queues) {
+      const queueId = Number((queue as { id?: number }).id);
+      if (!Number.isFinite(queueId)) continue;
+      const search = JSON.stringify({
+        MaxRecords: this.parityQueueSnapshotMaxRecords,
+        filter: [{ op: 'eq', field: 'queueID', value: queueId }],
+      });
+      const rows = (await context.client.searchTickets(search, this.parityQueueSnapshotMaxRecords, 0)) as unknown as Record<string, unknown>[];
+      for (const ticket of rows) {
+        await this.ingestWorkflowSyncEvent(ticket, tenantId, 'autotask_reconcile');
+      }
+    }
+  }
+
+  private async purgeMissingAutotaskTickets(context: AutotaskPollContext): Promise<void> {
+    const tenantId = String(context.tenantId || '').trim();
+    if (!tenantId) return;
+
+    const inbox = await workflowService.listInbox(tenantId);
+    const candidates = inbox.slice(0, this.parityPurgeMaxChecksPerRun);
+    for (const row of candidates) {
+      const externalId = String(row.external_id || '').trim();
+      const ticketNumber = String(
+        row.ticket_number ||
+        (row.domain_snapshots?.tickets?.ticket_number as string) ||
+        '',
+      ).trim();
+      const ticketId = String(row.ticket_id || '').trim();
+
+      let exists = false;
+      try {
+        if (externalId && looksLikeNumericId(externalId)) {
+          await context.client.getTicket(Number(externalId));
+          exists = true;
+        } else if (ticketNumber) {
+          await context.client.getTicketByTicketNumber(ticketNumber);
+          exists = true;
+        } else if (ticketId && looksLikeNumericId(ticketId)) {
+          await context.client.getTicket(Number(ticketId));
+          exists = true;
+        } else if (ticketId) {
+          await context.client.getTicketByTicketNumber(ticketId);
+          exists = true;
+        }
+      } catch (error) {
+        const message = String((error as Error)?.message || error || '').toLowerCase();
+        if (message.includes('not found')) {
+          exists = false;
+        } else {
+          continue;
+        }
+      }
+      if (exists) continue;
+
+      await workflowService.removeInboxTicket(tenantId, ticketId, {
+        reason: 'autotask_ticket_not_found',
+        correlation: {
+          trace_id: `autotask-purge-${Date.now()}`,
+          ticket_id: ticketId,
+        },
+        metadata: {
+          external_id: externalId || undefined,
+          ticket_number: ticketNumber || undefined,
+        },
+      });
+      operationalLogger.info('adapters.autotask_polling.parity_purge_ticket_removed', {
+        module: 'adapters.autotask-polling',
+        tenant_id: tenantId,
+        ticket_id: ticketId,
+      }, {
+        tenant_id: tenantId,
+        ticket_id: ticketId,
+      });
+    }
+  }
+
+  private async ingestWorkflowSyncEvent(
+    ticket: Record<string, unknown>,
+    tenantId?: string,
+    source: 'autotask_poller' | 'autotask_reconcile' = 'autotask_poller',
+  ): Promise<void> {
     if (!tenantId) {
       operationalLogger.warn('adapters.autotask_polling.workflow_sync_skipped_missing_tenant', {
         module: 'adapters.autotask-polling',
@@ -286,8 +578,8 @@ export class AutotaskPollingService {
     const rawId = String(ticket.id ?? '').trim();
     const ticketRef = String(ticket.ticketNumber || rawId).trim();
     if (!ticketRef) return;
-    const occurredAt = String(ticket.createDate || new Date().toISOString());
-    const eventId = `autotask-poller:${rawId || ticketRef}:ticket.created:${occurredAt}`;
+    const occurredAt = String(ticket.lastActivityDate || ticket.createDate || new Date().toISOString());
+    const eventId = `${source}:${rawId || ticketRef}:ticket.created:${occurredAt}`;
 
     const event: WorkflowEventEnvelope = {
       event_id: eventId,
@@ -311,7 +603,7 @@ export class AutotaskPollingService {
         ticket_id: ticketRef,
       },
       provenance: {
-        source: 'autotask_poller',
+        source,
         fetched_at: new Date().toISOString(),
       },
     };
@@ -378,4 +670,6 @@ export class AutotaskPollingService {
   }
 }
 
-export const autotaskPollingService = new AutotaskPollingService();
+export const autotaskPollingService = new AutotaskPollingService({
+  parityBackfillEnabled: String(process.env.AUTOTASK_PARITY_ENFORCED || 'true').toLowerCase() === 'true',
+});

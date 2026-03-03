@@ -1,3 +1,35 @@
+# Task: Paridade AT/Cerebro - estabilizar queue snapshot sem quebrar polling principal
+**Status**: completed
+**Started**: 2026-03-03T11:20:00-05:00
+
+## Plan
+- [x] Step 1: Reproduzir a falha de regressão no `autotask-polling` após ativar queue snapshot parity.
+- [x] Step 2: Aplicar hardening fail-open para queue snapshot (`getTicketQueues`) sem interromper ingestão principal.
+- [x] Step 3: Executar testes focados de poller/core + typecheck web para validar ausência de regressão.
+- [x] Step 4: Atualizar wiki obrigatória e registrar revisão em `tasks/todo.md`.
+
+## Open Questions
+- Nenhuma bloqueante para este patch; reconciliação operacional de contagem AT vs Cerebro segue monitorada em runtime.
+
+## Progress Notes
+- Causa raiz: `runQueueParitySnapshot` assumia que todo client teria `getTicketQueues`; mocks e alguns caminhos degradados têm apenas `searchTickets`.
+- Efeito: exceção no snapshot abortava `runOnce`, impedindo caminho principal de sync/triage e causando drift de paridade.
+- Correção aplicada em `autotask-polling`:
+- Guard clause por capability (`typeof client.getTicketQueues === 'function'`).
+- Isolamento de falha do snapshot via `try/catch` em `runOnce` com log `parity_queue_snapshot_failed`, mantendo o restante do poll.
+
+## Review
+- What worked:
+- Poller voltou a operar em modo resiliente mesmo sem suporte de queue snapshot no client/mocks.
+- What was tricky:
+- Garantir que o fail-open ficasse restrito ao snapshot, sem mascarar falhas reais do caminho principal.
+- Verification:
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/autotask-polling.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/ticket-workflow-core.test.ts` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-03-autotask-parity-queue-snapshot-fail-open-hardening.md`
+
 # Task: Corrigir queues vazias + aba Personal sem tickets no tenant igor@refreshtech.com
 **Status**: completed
 **Started**: 2026-03-02T19:00:00-05:00
@@ -2907,3 +2939,120 @@
 - `./scripts/stack.sh restart && ./scripts/stack.sh status` ✅
 - Documentation:
 - `wiki/changelog/2026-03-02-workflow-create-canonical-ticket-number-and-requester-projection.md`
+
+# Task: Hotfix login MASTER + fluxo de reset de senha
+**Status**: verifying
+**Started**: 2026-03-03
+
+## Plan
+- [x] Step 1: Mapear fluxo atual de autenticação/login e identificar ausência de reset de senha.
+- [x] Step 2: Implementar alias `MASTER` no login e endpoints de reset (`request` + `confirm`) com token one-time e expiração.
+- [x] Step 3: Expor fluxo no frontend com página de recuperação de senha e acesso via tela de login.
+- [x] Step 4: Executar validação técnica (typecheck) e registrar revisão.
+
+## Progress Notes
+- Login atual exige email; `MASTER` era tratado como email literal e falhava por credencial inválida.
+- Projeto já possuía token one-time (`user_invites` + `token_hash`) e auditoria, então o reset foi implementado reutilizando esse contrato com novo `invite_type=password_reset`.
+- Novo fluxo backend evita enumeração de contas no endpoint de request (`202` genérico).
+
+## Review
+- What worked:
+- Reaproveitar `user_invites` com `token_hash` permitiu reset one-time sem introduzir nova tabela.
+- What was tricky:
+- O `typecheck` completo do `@cerebro/api` já falha por débitos prévios fora do escopo; foi necessário validar o patch com lint direcionado e `typecheck` do `@cerebro/web`.
+- Verification evidence:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/api exec eslint src/services/application/route-handlers/auth-route-handlers.ts src/services/identity/mailer.ts` ✅ (apenas warnings preexistentes)
+- `pnpm --filter @cerebro/api typecheck` ❌ (falhas legadas fora do escopo em múltiplos serviços não alterados, ex.: `diagnose.ts`, `prepare-context.ts`, imports `@playbook-brain/types`)
+
+# Task: Fix bypass de login + tela triage stuck após hotfix auth/reset
+**Status**: verifying
+**Started**: 2026-03-03
+
+## Plan
+- [x] Step 1: Reproduzir e mapear guard de auth web (middleware + shell + logout).
+- [x] Step 2: Corrigir regressões de roteamento/sessão (rota pública reset, logout backend correto, fallback redirect quando user inválido).
+- [x] Step 3: Validar fluxo `/login` e bloqueio de tela stuck; documentar wiki.
+
+## Progress Notes
+- `reset-password` não estava incluída em `PUBLIC_PATHS`, quebrando o fluxo de recuperação para usuário não autenticado.
+- Logout do dropdown usava endpoint inconsistente (`/api/auth/logout`) e podia manter sessão ativa.
+- Shell principal renderizava mesmo com `auth/me` inválido (`user=null`), causando tela “stuck” sem redirecionar para login.
+
+## Review
+- What worked:
+- Correção mínima em 3 pontos (middleware, logout, shell fallback) eliminou o comportamento de “stuck” sem alterar o fluxo de negócio.
+- What was tricky:
+- O primeiro smoke usou runtime antigo; foi necessário `stack restart` para validar middleware atualizado.
+- Verification evidence:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/web exec eslint src/middleware.ts src/components/UserProfileDropdown.tsx src/components/ResizableLayout.tsx` ✅
+- `curl -I http://localhost:3000/en/reset-password` -> `200` ✅
+- `curl -I http://localhost:3000/en/triage/home` (sem sessão) -> `307 /en/login?...` ✅
+- Documentation:
+- `wiki/changelog/2026-03-03-auth-guard-reset-password-public-route-and-shell-redirect-fix.md`
+
+# Task: Garantir paridade AT->Cerebro para tickets (todos os tickets AT no inbox Cerebro)
+**Status**: verifying
+**Started**: 2026-03-03
+
+## Plan
+- [x] Step 1: Auditar ingestão atual de tickets AT e identificar gaps de paridade.
+- [x] Step 2: Implementar reconciliação histórica idempotente no poller (backfill por janela + cursor persistido por tenant).
+- [x] Step 3: Validar com testes/typecheck e documentar wiki obrigatória.
+
+## Open Questions
+- Nenhuma bloqueante. Execução usa `AUTOTASK_PARITY_ENFORCED=true` por padrão para ativar reconciliação contínua.
+
+## Progress Notes
+- Gap principal confirmado: poller buscava apenas tickets criados na última hora (`createDate > now-1h`, `MaxRecords=50`), sem mecanismo de histórico.
+- Implementado backfill por janela temporal (`createDate`), com divisão adaptativa de janelas densas para evitar truncamento por `MaxRecords` e cursor persistido em `.run/autotask-parity-state.json`.
+- Reconciliação é tenant-scoped e usa ingestão idempotente existente (`workflowService.processAutotaskSyncEvent`).
+
+## Review
+- What worked:
+- A reconciliação por janelas + cursor persistido removeu a dependência da janela fixa de 1h e passou a cobrir histórico completo de criação.
+- What was tricky:
+- Evitar impacto nos testes existentes do poller exigiu ativação explícita da paridade no singleton de runtime (sem forçar na construção de testes).
+- Verification evidence:
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/autotask-polling.test.ts` ✅
+- `pnpm --filter @cerebro/api exec eslint src/services/adapters/autotask-polling.ts` ✅ (sem erros; warnings preexistentes de `any`)
+- Documentation:
+- `wiki/changelog/2026-03-03-autotask-cerebro-ticket-parity-backfill.md`
+
+# Task: Corrigir paridade AT/Cerebro (missing, mismatch realtime, duplicados e deletados)
+**Status**: completed
+**Started**: 2026-03-03
+
+## Plan
+- [x] Step 1: Reproduzir e localizar causa raiz de duplicidade/mismatch de identidade (ticketNumber vs externalId).
+- [x] Step 2: Implementar canonicidade e dedupe no workflow core + persistir `ticket_number` no inbox.
+- [x] Step 3: Implementar purge no poller para remover tickets inexistentes no AT.
+- [x] Step 4: Ajustar adapter web para exibir `ticket_number` real do inbox.
+- [x] Step 5: Validar com testes focados e documentar wiki.
+
+## Open Questions
+- Nenhuma bloqueante para esta correção; purge por execução é limitado por `AUTOTASK_PARITY_PURGE_MAX_CHECKS` para controlar custo de API.
+
+## Progress Notes
+- Causa raiz 1: eventos podiam entrar com IDs diferentes para o mesmo ticket (ex.: `132859` vs `T20260302.0025`), gerando entradas duplicadas no inbox.
+- Causa raiz 2: `processAutotaskSyncEvent` não populava `ticket_number` no estado de inbox, e o adapter web exibia `row.ticket_id` sempre.
+- Causa raiz 3: não havia remoção automática de tickets que já foram deletados no AT.
+- Correções:
+  - `ticket-workflow-core`: resolução de identidade canônica por `external_id`/`ticket_number`, merge e remoção de aliases duplicados.
+  - `ticket-workflow-core`: `listInbox` passa a deduplicar e auto-limpar duplicatas legadas persistidas.
+  - `ticket-workflow-core`: novo `removeInboxTicket` para tombstone por paridade.
+  - `autotask-polling`: purge tenant-scoped de tickets não encontrados no AT.
+  - web adapter: prioridade para `ticket_number` real.
+
+## Review
+- What worked:
+- Dedupe no núcleo (e não só na UI) corrige origem do problema e evita reocorrência em sync realtime.
+- What was tricky:
+- Preservar idempotência/event ordering sem quebrar testes de workflow existentes.
+- Verification evidence:
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/ticket-workflow-core.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/autotask-polling.test.ts` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-03-autotask-cerebro-parity-identity-dedupe-and-purge.md`

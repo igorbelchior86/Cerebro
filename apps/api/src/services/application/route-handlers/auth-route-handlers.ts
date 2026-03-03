@@ -31,7 +31,7 @@ import { tenantContext } from '../../../lib/tenantContext.js';
 import { applyWorkspaceRuntimeSettings } from '../../read-models/runtime-settings.js';
 import { generateOpaqueToken, hashOpaqueToken, normalizeEmail } from '../../identity/security-utils.js';
 import samlRouter from './auth-saml-route-handlers.js';
-import { sendInviteEmail } from '../../identity/mailer.js';
+import { sendInviteEmail, sendPasswordResetEmail } from '../../identity/mailer.js';
 
 const router: IRouter = Router();
 
@@ -45,7 +45,8 @@ interface User {
 }
 interface Invite {
   id: string; tenant_id: string; email: string; token: string;
-  role: 'admin' | 'member'; expires_at: string; used_at: string | null;
+  role: 'owner' | 'admin' | 'member'; expires_at: string; used_at: string | null;
+  invite_type?: 'activation' | 'add_member' | 'password_reset';
 }
 
 // ─── Helpers ─────────────────────────────────────────────────
@@ -206,7 +207,9 @@ router.post('/login', async (req: Request, res: Response) => {
       if (!email || !password) {
         return res.status(400).json({ error: 'email and password are required' });
       }
-      const normalizedEmail = normalizeEmail(email);
+      const inputEmail = normalizeEmail(email);
+      const masterEmail = normalizeEmail(process.env.PLATFORM_MASTER_EMAIL || 'admin@cerebro.local');
+      const normalizedEmail = inputEmail === 'master' ? masterEmail : inputEmail;
 
       const user = await queryOne<User>(
         'SELECT * FROM users WHERE lower(trim(email)) = $1',
@@ -263,6 +266,142 @@ router.post('/login', async (req: Request, res: Response) => {
         route: 'POST /auth/login',
       }, correlationFromRequest(req));
       res.status(500).json({ error: 'Login failed' });
+    }
+  });
+});
+
+// ─── POST /auth/password/reset-request ───────────────────────
+// Always returns 202 to avoid account enumeration.
+
+router.post('/password/reset-request', async (req: Request, res: Response) => {
+  return tenantContext.run({ bypassRLS: true }, async () => {
+    try {
+      const { email } = req.body as { email?: string };
+      if (!email) {
+        return res.status(400).json({ error: 'email is required' });
+      }
+      const normalizedEmail = normalizeEmail(email);
+      const user = await queryOne<User>(
+        'SELECT * FROM users WHERE lower(trim(email)) = $1',
+        [normalizedEmail],
+      );
+      if (!user) {
+        return res.status(202).json({
+          message: 'If this email exists, a password reset link was sent',
+        });
+      }
+
+      const token = generateOpaqueToken();
+      const tokenHash = hashOpaqueToken(token);
+      await query(
+        `INSERT INTO user_invites (tenant_id, email, token, token_hash, role, created_by, invite_type, max_uses, used_count, expires_at)
+         VALUES ($1, $2, $3, $4, $5, NULL, 'password_reset', 1, 0, NOW() + INTERVAL '30 minutes')`,
+        [user.tenant_id, normalizedEmail, token, tokenHash, user.role],
+      );
+      const resetUrl = `${process.env.APP_URL || 'http://localhost:3000'}/reset-password?token=${token}`;
+      const mail = await sendPasswordResetEmail({
+        to: normalizedEmail,
+        resetUrl,
+      });
+      await writeIdentityAudit({
+        req,
+        tenantId: user.tenant_id,
+        actorId: user.id,
+        action: 'identity.password_reset.requested',
+        detail: {
+          email: normalizedEmail,
+          smtp_sent: mail.sent,
+        },
+      });
+      return res.status(202).json({
+        message: 'If this email exists, a password reset link was sent',
+      });
+    } catch (err) {
+      operationalLogger.error('routes.auth.password_reset_request.failed', err, {
+        module: 'routes.auth',
+        route: 'POST /auth/password/reset-request',
+      }, correlationFromRequest(req));
+      return res.status(500).json({ error: 'Failed to process password reset request' });
+    }
+  });
+});
+
+// ─── POST /auth/password/reset-confirm ───────────────────────
+
+router.post('/password/reset-confirm', async (req: Request, res: Response) => {
+  return tenantContext.run({ bypassRLS: true }, async () => {
+    try {
+      const { token, password } = req.body as { token?: string; password?: string };
+      if (!token || !password) {
+        return res.status(400).json({ error: 'token and password are required' });
+      }
+      if (password.length < 12) {
+        return res.status(400).json({ error: 'Password must be at least 12 characters' });
+      }
+
+      const tokenHash = hashOpaqueToken(token);
+      const resetInvite = await queryOne<Invite>(
+        `SELECT * FROM user_invites
+         WHERE (token_hash = $1 OR token = $2)
+           AND invite_type = 'password_reset'
+           AND revoked_at IS NULL
+           AND used_count < max_uses
+           AND used_at IS NULL
+           AND expires_at > NOW()`,
+        [tokenHash, token],
+      );
+      if (!resetInvite) {
+        return res.status(404).json({ error: 'Reset token not found or expired' });
+      }
+
+      const user = await queryOne<User>(
+        'SELECT * FROM users WHERE lower(trim(email)) = $1 AND tenant_id = $2',
+        [normalizeEmail(resetInvite.email), resetInvite.tenant_id],
+      );
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const passwordHash = await bcrypt.hash(password, 12);
+      await query('BEGIN');
+      try {
+        await query(
+          'UPDATE users SET password_hash = $1 WHERE id = $2 AND tenant_id = $3',
+          [passwordHash, user.id, user.tenant_id],
+        );
+        const consume = await query<{ id: string }>(
+          `UPDATE user_invites
+           SET used_at = NOW(), used_count = used_count + 1
+           WHERE id = $1 AND used_at IS NULL AND used_count < max_uses
+           RETURNING id`,
+          [resetInvite.id],
+        );
+        if (consume.length === 0) {
+          throw new Error('Reset token already consumed');
+        }
+        await query('COMMIT');
+      } catch (error) {
+        await query('ROLLBACK');
+        throw error;
+      }
+
+      await writeIdentityAudit({
+        req,
+        tenantId: user.tenant_id,
+        actorId: user.id,
+        action: 'identity.password_reset.completed',
+        detail: {
+          email: normalizeEmail(user.email),
+          reset_token_id: resetInvite.id,
+        },
+      });
+      return res.status(200).json({ message: 'Password reset successfully' });
+    } catch (err) {
+      operationalLogger.error('routes.auth.password_reset_confirm.failed', err, {
+        module: 'routes.auth',
+        route: 'POST /auth/password/reset-confirm',
+      }, correlationFromRequest(req));
+      return res.status(500).json({ error: 'Failed to reset password' });
     }
   });
 });

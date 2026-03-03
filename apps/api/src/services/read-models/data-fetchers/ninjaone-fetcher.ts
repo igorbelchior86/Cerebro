@@ -100,16 +100,20 @@ export class NinjaOneFetcher implements DataSourceFetcher {
     }
 
     private async getCredentials(context: DataSourceContext): Promise<any | null> {
-        const tenantClause = context.tenantId ? `tenant_id = $1 AND` : '';
-        const queryStr = `
-      SELECT config
-      FROM integrations
-      WHERE ${tenantClause} provider = 'ninjaone' AND status = 'active'
-      LIMIT 1
-    `;
-        const params = context.tenantId ? [context.tenantId] : [];
+        const tenantId = String(context.tenantId || '').trim();
+        if (!tenantId) return null;
 
-        const row = await queryOne<{ config: any }>(queryStr, params);
-        return row?.config || null;
+        try {
+            const row = await queryOne<{ credentials: any }>(`
+      SELECT credentials
+      FROM integration_credentials
+      WHERE tenant_id = $1 AND service = 'ninjaone'
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `, [tenantId]);
+            return row?.credentials || null;
+        } catch {
+            return null;
+        }
     }
 }

@@ -16,9 +16,12 @@ export interface AuthUser {
   tenant: { id: string; name: string; slug: string };
 }
 
+export type AuthSessionState = 'loading' | 'authenticated' | 'unauthenticated' | 'unavailable';
+
 interface UseAuthReturn {
   user: AuthUser | null;
   loading: boolean;
+  sessionState: AuthSessionState;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   updateProfile: (data: Partial<AuthUser>) => Promise<void>;
@@ -27,18 +30,29 @@ interface UseAuthReturn {
 export function useAuth(): UseAuthReturn {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionState, setSessionState] = useState<AuthSessionState>('loading');
 
   const fetchUser = useCallback(async () => {
+    setLoading(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10_000);
     try {
-      const res = await fetch(`${API}/auth/me`, { credentials: 'include' });
+      const res = await fetch(`${API}/auth/me`, { credentials: 'include', signal: controller.signal });
       if (res.ok) {
         setUser(await res.json() as AuthUser);
+        setSessionState('authenticated');
       } else {
-        setUser(null);
+        if (res.status === 401 || res.status === 403) {
+          setUser(null);
+          setSessionState('unauthenticated');
+        } else {
+          setSessionState('unavailable');
+        }
       }
     } catch {
-      setUser(null);
+      setSessionState('unavailable');
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   }, []);
@@ -48,6 +62,7 @@ export function useAuth(): UseAuthReturn {
   const logout = useCallback(async () => {
     await fetch(`${API}/auth/logout`, { method: 'POST', credentials: 'include' });
     setUser(null);
+    setSessionState('unauthenticated');
     window.location.href = '/login';
   }, []);
 
@@ -68,5 +83,5 @@ export function useAuth(): UseAuthReturn {
     }
   }, []);
 
-  return { user, loading, logout, refresh: fetchUser, updateProfile };
+  return { user, loading, sessionState, logout, refresh: fetchUser, updateProfile };
 }

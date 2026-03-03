@@ -1,3 +1,261 @@
+# Task: Estabilizar API sob carga de orquestração + observabilidade + typecheck limpo
+**Status**: completed
+**Started**: 2026-03-03T14:56:00-05:00
+
+## Plan
+- [x] Step 1: Reproduzir causa do timeout em `/health` e confirmar hot path de bloqueio.
+- [x] Step 2: Aplicar guard de concorrência/timeout na orquestração para evitar monopolização do event loop.
+- [x] Step 3: Reduzir custo de serialização síncrona no runtime/inbox de workflow.
+- [x] Step 4: Adicionar observabilidade objetiva (lag de event loop + fases de `prepare-context`).
+- [x] Step 5: Corrigir erros legados de `@cerebro/api typecheck` e validar com testes críticos.
+- [x] Step 6: Atualizar wiki obrigatória + review completo.
+
+## Open Questions
+- Nenhuma bloqueante.
+
+## Progress Notes
+- Perfil de processo mostrou CPU sustentada com `/health` timeout.
+- Sample do processo apontou forte concentração em `Builtin_JsonStringify`.
+- Sample mostrou também `fs.WriteFileUtf8` no hot path de workflow runtime.
+- Root cause confirmado: persistência síncrona e volumosa do `InMemoryTicketWorkflowRepository` + efeitos de dedupe com escrita durante leitura de inbox.
+- Guard de pipeline no orquestrador aplicado (`pipelineQueue` + `withStageTimeout`) e observabilidade de fases adicionada.
+- Persistência do workflow runtime endurecida com debounce, limites de histórico, cap de comentários e remoção de escrita no read path de `listInbox`.
+- Ajuste final para previsibilidade de testes: em `NODE_ENV=test`, debounce de persistência do workflow runtime fica em `0` (flush imediato), evitando falso negativo de reload por atraso de write.
+- Imports legados `@playbook/types` migrados para `@cerebro/types`; `typecheck` voltou a verde.
+
+## Review
+- What worked:
+- Telemetria de event loop e fases permitiu confirmar rapidamente a regressão e validar redução de bloqueio após patch.
+- Guard de persistência no runtime de workflow reduziu drasticamente custo síncrono em fluxo de inbox/sync.
+- What was tricky:
+- Havia múltiplos pontos de serialização síncrona no mesmo fluxo (orquestrador + runtime de workflow), exigindo correção combinada para estabilizar `/health`.
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/ticket-workflow-core.test.ts src/__tests__/services/workflow-realtime.test.ts src/__tests__/services/prepare-context.test.ts src/__tests__/services/autotask-polling.test.ts src/__tests__/services/read-model-fetchers-credentials.test.ts` ✅
+- `scripts/stack.sh restart` ✅
+- Runtime:
+- health loop local: `ok=120 fail=0 max_s=0.130642`
+- logs: `/inbox` em `104-210ms` (antes ~`118057ms`)
+- logs: `api.runtime.event_loop_lag` com `event_loop_max_ms` em `31-59ms` (sem `event_loop_lag_high`)
+- logs: `context.prepare_context.phase_completed` e `orchestration.triage.stage_completed` emitidos
+- Documentation:
+- `wiki/changelog/2026-03-03-orchestration-health-stability-observability-and-typecheck.md`
+
+# Task: Corrigir falhas de background (tabela integrations legada + healthcheck Postgres)
+**Status**: completed
+**Started**: 2026-03-03T14:34:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar origem dos erros `relation "integrations" does not exist` e `database "playbook" does not exist`.
+- [x] Step 2: Migrar fetchers legados para `integration_credentials` tenant-scoped.
+- [x] Step 3: Ajustar `pg_isready` para um DB válido e silencioso no healthcheck.
+- [x] Step 4: Reiniciar stack e validar ausência dos erros em logs + checks focados.
+- [x] Step 5: Atualizar wiki obrigatória e fechar review.
+
+## Open Questions
+- Nenhuma bloqueante.
+
+## Progress Notes
+- Root cause 1: `autotask/itglue/ninjaone` fetchers de read-model ainda consultavam `FROM integrations`.
+- Root cause 2: healthcheck do compose usava `pg_isready -U playbook` (sem `-d`), caindo no DB padrão `playbook`, inexistente no ambiente atual.
+- Patch aplicado:
+- `apps/api/src/services/read-models/data-fetchers/{autotask,itglue,ninjaone}-fetcher.ts` -> lookup em `integration_credentials`.
+- `docker-compose.yml` -> `pg_isready -U playbook -d postgres`.
+
+## Review
+- What worked:
+- A troca para `integration_credentials` removeu o erro estrutural sem exigir migration.
+- O ajuste de `pg_isready` eliminou o spam de `database "playbook" does not exist` no Postgres.
+- What was tricky:
+- `pnpm --filter @cerebro/api typecheck` segue falhando por erros legados fora do escopo da correção.
+- A API apresentou degradação intermitente de health por fluxo pesado de orquestração, não relacionado aos dois erros corrigidos.
+- Verification:
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/read-model-fetchers-credentials.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/prepare-context.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/p0-readonly-enrichment.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/autotask-polling.test.ts` ✅
+- Runtime logs após restart:
+- sem `relation "integrations" does not exist` em `.run/logs/api.log` ✅
+- sem `database "playbook" does not exist` em logs do `cerebro-postgres-1` ✅
+- `pnpm --filter @cerebro/api typecheck` ⚠️ falha por problemas pré-existentes não relacionados.
+- Documentation:
+- `wiki/changelog/2026-03-03-background-errors-integrations-table-and-postgres-healthcheck.md`
+
+# Task: Evitar logout forçado quando `/auth/me` falha transientemente
+**Status**: completed
+**Started**: 2026-03-03T14:21:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar gatilho de redirect para login no frontend.
+- [x] Step 2: Diferenciar sessão inválida (401/403) de indisponibilidade transitória (timeout/5xx).
+- [x] Step 3: Ajustar guard de rota client-side para redirecionar apenas em não autenticado real.
+- [x] Step 4: Executar verificação (`typecheck`) e documentar na wiki obrigatória.
+
+## Open Questions
+- Nenhuma bloqueante.
+
+## Progress Notes
+- `ResizableLayout` redirecionava para `/login` em qualquer estado `user=null`.
+- `useAuth` zerava usuário em qualquer erro de fetch (`/auth/me`), inclusive timeout/socket/5xx.
+- Patch aplicado para introduzir `sessionState` no hook e restringir redirect ao estado `unauthenticated`.
+
+## Review
+- What worked:
+- Separar `sessionState` no hook permitiu corrigir comportamento sem refatoração ampla dos consumidores.
+- What was tricky:
+- Evitar regressão de segurança: redirect continua obrigatório para `401/403`.
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-03-auth-session-state-guarded-redirect.md`
+
+# Task: Corrigir "Please wait" infinito na tela de login
+**Status**: completed
+**Started**: 2026-03-03T13:45:00-05:00
+
+## Plan
+- [x] Step 1: Reproduzir e confirmar causa no fluxo web de auth/login.
+- [x] Step 2: Adicionar timeout em requests críticos de login e bootstrap de sessão.
+- [x] Step 3: Tornar parse de resposta resiliente para payload não-JSON em erro de proxy.
+- [x] Step 4: Validar com typecheck web e atualizar wiki obrigatória.
+
+## Open Questions
+- Backend ainda apresenta instabilidade intermitente de DB/proxy; esta correção garante UX fail-fast no frontend.
+
+## Progress Notes
+- Logs do web mostravam `socket hang up` e falhas de proxy para `/auth/login` e `/auth/me`.
+- Em cenário degradado, usuário percebia loading infinito de sessão/login.
+- Correções aplicadas em `login/page.tsx` e `useAuth.ts` com timeout + safe JSON parsing.
+
+## Review
+- What worked:
+- Frontend deixou de depender de fetch sem timeout no path de autenticação.
+- What was tricky:
+- Distinguir bug de UX (loading infinito) da instabilidade de backend subjacente.
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-03-login-loading-timeout-and-safe-json.md`
+
+# Task: Corrigir fallback de perfil preso em "John Technician" no login
+**Status**: completed
+**Started**: 2026-03-03T13:43:00-05:00
+
+## Plan
+- [x] Step 1: Reproduzir origem do nome "John Technician" após login.
+- [x] Step 2: Corrigir fallback de display name no sidebar para usar identidade real do usuário autenticado.
+- [x] Step 3: Validar sem regressão com typecheck web.
+- [x] Step 4: Atualizar wiki obrigatória e registrar lição.
+
+## Open Questions
+- Nenhuma; causa raiz isolada no fallback de UI.
+
+## Progress Notes
+- Causa raiz encontrada em `useSidebarState`: `userName = user?.name || 'John Technician'`.
+- Para contas com `name` nulo (caso comum em onboarding), o UI sempre mostrava "John Technician", dando impressão de sessão travada.
+- Correção: fallback agora usa `name` -> prefixo do email -> `Account`.
+
+## Review
+- What worked:
+- Patch pequeno e direto no ponto de projeção da identidade da sidebar.
+- What was tricky:
+- Distinguir bug de sessão/auth de bug de render fallback.
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-03-sidebar-profile-display-name-fallback-fix.md`
+
+# Task: Limpar warnings do stack restart (compose version + orphan)
+**Status**: completed
+**Started**: 2026-03-03T13:40:00-05:00
+
+## Plan
+- [x] Step 1: Reproduzir warnings no `scripts/stack.sh restart`.
+- [x] Step 2: Remover causa do warning de `version` obsoleta no compose.
+- [x] Step 3: Ajustar `start_db` para remover orphans automaticamente.
+- [x] Step 4: Validar restart sem warnings e documentar na wiki.
+
+## Open Questions
+- Nenhuma.
+
+## Progress Notes
+- Warning `version is obsolete` vinha de `docker-compose.yml` com `version: '3.9'`.
+- Warning de orphan vinha de container legado `cerebro-postfix-relay-1`.
+- Correções aplicadas:
+- `docker-compose.yml`: removido campo `version`.
+- `scripts/stack.sh`: `docker compose up -d` atualizado com `--remove-orphans` no `start_db`.
+
+## Review
+- What worked:
+- Restart voltou limpo e removeu automaticamente o orphan legado.
+- What was tricky:
+- Nenhum bloqueio técnico; ajuste direto e de baixo risco.
+- Verification:
+- `scripts/stack.sh restart` ✅ (sem warnings anteriores; orphan removido automaticamente)
+- Documentation:
+- `wiki/changelog/2026-03-03-stack-restart-compose-warning-cleanup.md`
+
+# Task: Paridade ativa por exclusão da queue Complete
+**Status**: completed
+**Started**: 2026-03-03T13:30:00-05:00
+
+## Plan
+- [x] Step 1: Ajustar semântica de ativo para excluir tickets em queue `Complete`.
+- [x] Step 2: Aplicar filtro no snapshot de filas e no polling recente.
+- [x] Step 3: Adicionar teste de regressão para garantir exclusão consistente.
+- [x] Step 4: Validar testes focados e atualizar wiki/documentação obrigatória.
+
+## Open Questions
+- Assunção atual: exclusão por nome de queue normalizado (`complete`) via catálogo de filas do Autotask.
+
+## Progress Notes
+- Implementado `parityActiveExcludedQueueNames` com env `AUTOTASK_PARITY_ACTIVE_EXCLUDED_QUEUES` (default `complete`).
+- `resolveParityQueueScope` identifica IDs de queues excluídas e compartilha escopo para snapshot/polling.
+- Snapshot não ingere queues excluídas; polling recente filtra tickets cujo `queueID` pertence ao conjunto excluído.
+- Teste novo cobre queue `Complete` sendo ignorada em ambos os caminhos.
+
+## Review
+- What worked:
+- Mudança isolada no poller, sem alterar contratos de rotas/UI.
+- What was tricky:
+- Garantir uma única fonte de verdade do filtro para snapshot + recent poll sem duplicar fetch desnecessário.
+- Verification:
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/autotask-polling.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/ticket-workflow-core.test.ts` ✅
+- Documentation:
+- `wiki/changelog/2026-03-03-autotask-active-parity-exclude-complete-queue.md`
+
+# Task: Paridade AT/Cerebro somente para tickets ativos
+**Status**: completed
+**Started**: 2026-03-03T13:21:36-05:00
+
+## Plan
+- [x] Step 1: Confirmar causa de lentidão/paridade infinita no intake (backfill histórico multi-ano).
+- [x] Step 2: Implementar modo `active-only` no poller para desabilitar backfill histórico por padrão.
+- [x] Step 3: Validar com testes focados (`autotask-polling`) e sanity checks de typecheck.
+- [x] Step 4: Atualizar wiki obrigatória e fechar revisão no `tasks/todo.md`.
+
+## Open Questions
+- Assunção adotada: “tickets ativos” = snapshot de filas atuais + polling recente; sem ingestão histórica retroativa.
+
+## Progress Notes
+- Causa confirmada por logs: `parity_backfill_window_applied` avançando por janelas desde 2000, com alto custo e convergência lenta.
+- Implementado `AUTOTASK_PARITY_ACTIVE_ONLY` (default `true`) no poller.
+- Quando `active-only=true`, `runParityBackfill` não é executado; ingestão fica restrita ao snapshot de filas + polling recente.
+- Cobertura de teste adicionada para garantir bloqueio de backfill em `active-only=true` e preservação do caminho quando `active-only=false`.
+
+## Review
+- What worked:
+- Mudança mínima no ponto correto (`autotask-polling`) sem alterar contratos de API/UI.
+- What was tricky:
+- `pnpm --filter @cerebro/api typecheck` está quebrando por erros legados fora do escopo do patch.
+- Verification:
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/autotask-polling.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/services/ticket-workflow-core.test.ts` ✅
+- `pnpm --filter @cerebro/api typecheck` ⚠️ falhou por erros pré-existentes não relacionados ao intake/paridade.
+- Documentation:
+- `wiki/changelog/2026-03-03-autotask-parity-active-only-intake.md`
+
 # Task: Paridade AT/Cerebro - estabilizar queue snapshot sem quebrar polling principal
 **Status**: completed
 **Started**: 2026-03-03T11:20:00-05:00

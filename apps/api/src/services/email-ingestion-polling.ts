@@ -1,4 +1,4 @@
-import { backfillPendingEmailTickets, ingestSupportMailboxOnce } from '../routes/email-ingestion.js';
+import { backfillPendingEmailTickets, ingestSupportMailboxOnce } from './application/route-handlers/email-ingestion-route-handlers.js';
 import { withTryAdvisoryLock } from '../db/index.js';
 
 export class EmailIngestionPollingService {

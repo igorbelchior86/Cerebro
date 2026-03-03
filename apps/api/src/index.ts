@@ -28,6 +28,7 @@ import { autotaskPollingService } from './services/adapters/autotask-polling.js'
 import { bootstrapWorkspaceRuntimeSettings } from './services/read-models/runtime-settings.js';
 import { createObservabilityMiddleware, requestContextMiddleware } from './platform/index.js';
 import { observabilityRuntime, operationalLogger } from './lib/operational-logger.js';
+import { startEventLoopMonitor } from './lib/event-loop-monitor.js';
 
 // Load environment variables — look for .env at monorepo root (../../../ relative to dist/)
 const __filename = fileURLToPath(import.meta.url);
@@ -144,6 +145,7 @@ app.listen(PORT, '0.0.0.0', async () => {
   });
   await autoSeedAdmin();
   await bootstrapWorkspaceRuntimeSettings();
+  startEventLoopMonitor();
 
   // Start Triage Retry Listener (retries pending/stale sessions)
   triageOrchestrator.startRetryListener();

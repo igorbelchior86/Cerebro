@@ -22,7 +22,7 @@ export function writeJsonFileAtomic(filePath: string, data: unknown): void {
   const dir = dirname(filePath);
   mkdirSync(dir, { recursive: true });
   const tmpPath = `${filePath}.tmp`;
-  const payload = JSON.stringify(data, null, 2);
+  const payload = JSON.stringify(data);
   writeFileSync(tmpPath, payload, 'utf8');
   renameSync(tmpPath, filePath);
 }

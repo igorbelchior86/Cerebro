@@ -18,22 +18,40 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 12_000): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(input, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  async function safeJson(res: Response): Promise<Record<string, unknown>> {
+    try {
+      return await res.json() as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+
   async function handleCredentials(e: FormEvent) {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`${API}/auth/login`, {
+      const res = await fetchWithTimeout(`${API}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ email, password }),
       });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error || t('loginFailed')); return; }
+      const data = await safeJson(res);
+      if (!res.ok) { setError(String(data.error || t('loginFailed'))); return; }
 
       if (data.mfaRequired) {
-        setTempToken(data.tempToken);
+        setTempToken(String(data.tempToken || ''));
         setStep('mfa');
       } else {
         router.replace('/');
@@ -50,14 +68,14 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch(`${API}/auth/mfa/validate`, {
+      const res = await fetchWithTimeout(`${API}/auth/mfa/validate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ tempToken, code }),
       });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error || t('invalidCode')); return; }
+      const data = await safeJson(res);
+      if (!res.ok) { setError(String(data.error || t('invalidCode'))); return; }
       router.replace('/');
     } catch {
       setError(t('networkError'));

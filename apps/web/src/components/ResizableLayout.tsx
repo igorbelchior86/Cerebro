@@ -17,7 +17,7 @@ export default function ResizableLayout({
   rightContent,
   transparentSidebar = false
 }: ResizableLayoutProps) {
-  const { user, loading, updateProfile } = useAuth();
+  const { user, loading, sessionState, updateProfile } = useAuth();
   const router = useRouter();
 
   // Configured defaults: 20 / 40 / 40 roughly maps to 272px / rest / rest
@@ -45,10 +45,10 @@ export default function ResizableLayout({
   }, [user?.preferences?.sidebarWidth, user?.preferences?.rightWidth]);
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && sessionState === 'unauthenticated' && !user) {
       router.replace('/login');
     }
-  }, [loading, user, router]);
+  }, [loading, sessionState, user, router]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {

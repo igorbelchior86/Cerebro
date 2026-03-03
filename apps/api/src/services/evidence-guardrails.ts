@@ -1,4 +1,4 @@
-import type { DiagnosisOutput, EvidencePack } from '@playbook-brain/types';
+import type { DiagnosisOutput, EvidencePack } from '@cerebro/types';
 
 const HIGH_RISK_TERMS = [
   'malware',

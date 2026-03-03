@@ -1,6 +1,105 @@
 import { AutotaskPollingService } from '../../services/adapters/autotask-polling.js';
 
 describe('AutotaskPollingService P0 hardening', () => {
+  it('disables historical parity backfill when active-only mode is enabled', async () => {
+    const service = new AutotaskPollingService({
+      parityBackfillEnabled: true,
+      parityActiveOnly: true,
+      buildPollContext: async () => ({
+        tenantId: 'tenant-1',
+        client: {
+          searchTickets: jest.fn().mockResolvedValue([]),
+        } as any,
+      }),
+      runWithLock: async (fn) => {
+        await fn();
+        return { acquired: true };
+      },
+    });
+    const backfillSpy = jest.spyOn(service as any, 'runParityBackfill').mockResolvedValue(undefined);
+
+    await service.runOnce();
+
+    expect(backfillSpy).not.toHaveBeenCalled();
+  });
+
+  it('keeps historical parity backfill available when active-only mode is disabled', async () => {
+    const service = new AutotaskPollingService({
+      parityBackfillEnabled: true,
+      parityActiveOnly: false,
+      buildPollContext: async () => ({
+        tenantId: 'tenant-1',
+        client: {
+          searchTickets: jest.fn().mockResolvedValue([]),
+        } as any,
+      }),
+      runWithLock: async (fn) => {
+        await fn();
+        return { acquired: true };
+      },
+    });
+    const backfillSpy = jest.spyOn(service as any, 'runParityBackfill').mockResolvedValue(undefined);
+
+    await service.runOnce();
+
+    expect(backfillSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('excludes tickets from Complete queue in active-only mode', async () => {
+    const workflowSync = jest.fn().mockResolvedValue(undefined);
+    const triageRun = jest.fn().mockResolvedValue(undefined);
+    const searchTickets = jest.fn(async (filter: string) => {
+      const raw = JSON.parse(filter);
+      const queueFilter = Array.isArray(raw?.filter)
+        ? raw.filter.find((entry: any) => String(entry?.field || '') === 'queueID')
+        : null;
+      if (queueFilter) {
+        if (Number(queueFilter.value) === 10) {
+          return [
+            { id: 1001, ticketNumber: 'T-COMPLETE-1', queueID: 10, createDate: '2026-03-03T12:00:00.000Z' },
+          ];
+        }
+        if (Number(queueFilter.value) === 20) {
+          return [
+            { id: 2001, ticketNumber: 'T-ACTIVE-1', queueID: 20, createDate: '2026-03-03T12:01:00.000Z' },
+          ];
+        }
+      }
+      return [
+        { id: 3001, ticketNumber: 'T-COMPLETE-RECENT', queueID: 10, createDate: '2026-03-03T12:02:00.000Z' },
+        { id: 3002, ticketNumber: 'T-ACTIVE-RECENT', queueID: 20, createDate: '2026-03-03T12:03:00.000Z' },
+      ];
+    });
+    const service = new AutotaskPollingService({
+      parityBackfillEnabled: true,
+      parityActiveOnly: true,
+      buildPollContext: async () => ({
+        tenantId: 'tenant-1',
+        client: {
+          getTicketQueues: jest.fn().mockResolvedValue([
+            { id: 10, name: 'Complete' },
+            { id: 20, name: 'Service Desk' },
+          ]),
+          searchTickets,
+        } as any,
+      }),
+      workflowSync,
+      triageRun,
+      runWithLock: async (fn) => {
+        await fn();
+        return { acquired: true };
+      },
+    });
+
+    await service.runOnce();
+
+    const entityIds = workflowSync.mock.calls.map((call) => String(call?.[0]?.entity_id || ''));
+    expect(entityIds).toEqual(expect.arrayContaining(['T-ACTIVE-1', 'T-ACTIVE-RECENT']));
+    expect(entityIds).not.toEqual(expect.arrayContaining(['T-COMPLETE-1', 'T-COMPLETE-RECENT']));
+    expect(triageRun).toHaveBeenCalledTimes(1);
+    expect(triageRun).toHaveBeenCalledWith('3002');
+  });
+
   it('feeds polled Autotask tickets into workflow sync path and triage pipeline', async () => {
     const workflowSync = jest.fn().mockResolvedValue(undefined);
     const triageRun = jest.fn().mockResolvedValue(undefined);

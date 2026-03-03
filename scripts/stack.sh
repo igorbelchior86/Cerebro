@@ -51,7 +51,7 @@ install_if_needed() {
 start_db() {
   cd "$PROJECT_ROOT"
   echo "Starting postgres/redis/mailpit..."
-  "${COMPOSE_CMD[@]}" up -d postgres redis mailpit >/dev/null
+  "${COMPOSE_CMD[@]}" up -d --remove-orphans postgres redis mailpit >/dev/null
 }
 
 stop_sessions() {

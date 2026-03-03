@@ -6,7 +6,7 @@ import type {
   EvidencePack,
   ProvenanceRef,
   ValidationOutput,
-} from '@playbook-brain/types';
+} from '@cerebro/types';
 import type { InMemoryP0TrustStore } from './p0-trust-store.js';
 import type {
   TrustAIDecisionRecord,

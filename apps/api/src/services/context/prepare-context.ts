@@ -286,8 +286,23 @@ export class PrepareContextService {
       await this.resolveClientsForSession(input.sessionId);
 
     const sourceWorkspace = tenantId ? `tenant:${tenantId}` : 'workspace:latest';
+    const phaseDurationsMs: Record<string, number> = {};
+    const markPhaseDuration = (phase: string, phaseStartedAt: number) => {
+      const durationMs = Date.now() - phaseStartedAt;
+      phaseDurationsMs[phase] = durationMs;
+      operationalLogger.info('context.prepare_context.phase_completed', {
+        module: 'services.context.prepare-context',
+        ticket_id: input.ticketId,
+        phase,
+        duration_ms: durationMs,
+      }, {
+        tenant_id: tenantId ?? null,
+        ticket_id: input.ticketId,
+      });
+    };
 
     const autotaskFetcher = new AutotaskFetcher();
+    const intakePhaseStartedAt = Date.now();
 
     const fetchContext = {
       sessionId: input.sessionId,
@@ -675,6 +690,7 @@ export class PrepareContextService {
       org_id: input.orgId || null,
       source_workspace: sourceWorkspace,
     };
+    markPhaseDuration('intake_normalization', intakePhaseStartedAt);
 
     // round state
     let relatedCases: RelatedCase[] = [];
@@ -713,6 +729,7 @@ export class PrepareContextService {
     let itglueEnriched: ItglueEnrichedPayload | null = null;
 
     // ROUND 1: AT/Intake -> IT Glue (Targeting Org/Contacts/Standards)
+    const itgluePhaseStartedAt = Date.now();
     try {
       const orgSeed = normalizedTicket?.organizationHint || companyName || '';
 
@@ -890,9 +907,12 @@ export class PrepareContextService {
         org_id: null,
         source_workspace: sourceWorkspace,
       });
+    } finally {
+      markPhaseDuration('itglue_round', itgluePhaseStartedAt);
     }
 
     // ROUND 3: AT+ITG -> Ninja (Targeting Devices, Health, Alerts)
+    const ninjaPhaseStartedAt = Date.now();
     try {
       const orgSeed = normalizedTicket?.organizationHint || itglueOrgMatch?.name || companyName || '';
       if (orgSeed) {
@@ -1044,6 +1064,8 @@ export class PrepareContextService {
         org_id: null,
         source_workspace: sourceWorkspace,
       });
+    } finally {
+      markPhaseDuration('ninja_round', ninjaPhaseStartedAt);
     }
 
     const inferredPhoneProvider = this.inferPhoneProvider({
@@ -1075,6 +1097,7 @@ export class PrepareContextService {
     }
 
     // ROUND 4: AT+ITG+Ninja -> History (Similar Tickets, Previous Fixes, Known Issues)
+    const historyRefinementPhaseStartedAt = Date.now();
     const historyTerms = [
       ticket.title || '',
       normalizedTicket?.descriptionUi || '',
@@ -1318,6 +1341,7 @@ export class PrepareContextService {
         });
       }
     }
+    markPhaseDuration('history_refinement', historyRefinementPhaseStartedAt);
 
     // Original Intake summary finding
     sourceFindings.unshift({
@@ -1530,6 +1554,7 @@ export class PrepareContextService {
     // ROUND 8: Fused Context -> Broad History Correlation (Autotask / email fallback)
     let historyAppendixCorrelation: TicketContextAppendix['history_correlation'] | undefined;
     let historyCalibrationAppendix: TicketContextAppendix['history_confidence_calibration'] | undefined;
+    const broadHistoryPhaseStartedAt = Date.now();
     try {
       const historySearchPlan = buildBroadHistorySearchPlan({
         ticket,
@@ -1659,10 +1684,13 @@ export class PrepareContextService {
         org_id: resolvedOrgId || input.orgId || null,
         source_workspace: sourceWorkspace,
       });
+    } finally {
+      markPhaseDuration('broad_history_correlation', broadHistoryPhaseStartedAt);
     }
 
     // ROUND 9: Final ITG + Ninja pass guided by gaps/conflicts/history calibration (2f)
     let finalRefinementAppendix: TicketContextAppendix['final_refinement'] | undefined;
+    const finalRefinementPhaseStartedAt = Date.now();
     try {
       const finalRefinementPlan = buildFinalRefinementPlan({
         sections: iterativeEnrichment.sections,
@@ -1901,8 +1929,11 @@ export class PrepareContextService {
         org_id: resolvedOrgId || null,
         source_workspace: sourceWorkspace,
       });
+    } finally {
+      markPhaseDuration('final_refinement', finalRefinementPhaseStartedAt);
     }
 
+    const finalizeEvidencePhaseStartedAt = Date.now();
     const networkStack = this.buildNetworkStackFromEnrichment(iterativeEnrichment.sections);
     const ssot = this.applyIntakeAntiRegressionToSSOT(
       this.buildTicketSSOT(iterativeEnrichment.sections),
@@ -1985,12 +2016,14 @@ export class PrepareContextService {
         this.resolveDeviceOsLabel.bind(this)
       )
       .build();
+    markPhaseDuration('finalize_evidence_pack', finalizeEvidencePhaseStartedAt);
 
     const duration = Date.now() - startTime;
     operationalLogger.info('context.prepare_context.completed', {
       module: 'services.context.prepare-context',
       ticket_id: input.ticketId,
       duration_ms: duration,
+      phase_durations_ms: phaseDurationsMs,
     }, {
       tenant_id: tenantId ?? null,
       ticket_id: input.ticketId,

@@ -21,7 +21,7 @@ import type {
   IterativeEnrichmentProfile,
   IterativeEnrichmentSections,
   SecurityAgentSummary,
-} from '@playbook-brain/types';
+} from '@cerebro/types';
 import { AutotaskClient } from '../clients/autotask.js';
 import { NinjaOneClient } from '../clients/ninjaone.js';
 import { ITGlueClient } from '../clients/itglue.js';

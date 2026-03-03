@@ -41,8 +41,21 @@ type ParityBackfillStateFile = {
   tenants: Record<string, ParityBackfillTenantState>;
 };
 
+type ParityQueueScope = {
+  queues: Array<Record<string, unknown>>;
+  excludedQueueIds: Set<number>;
+};
+
 function looksLikeNumericId(value: string): boolean {
   return /^[0-9]+$/.test(value.trim());
+}
+
+function normalizeQueueName(value: unknown): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
 }
 
 export class AutotaskPollingService {
@@ -62,6 +75,7 @@ export class AutotaskPollingService {
   private readonly syncRetryQueue = new Map<string, SyncRetryEntry>();
   private readonly syncDlq = new Map<string, SyncRetryEntry>();
   private readonly parityBackfillEnabled: boolean;
+  private readonly parityActiveOnly: boolean;
   private readonly parityBackfillStateFilePath: string;
   private readonly parityBackfillStartIso: string;
   private readonly parityBackfillChunkHours: number;
@@ -70,6 +84,7 @@ export class AutotaskPollingService {
   private readonly parityPurgeMaxChecksPerRun: number;
   private readonly parityQueueSnapshotEnabled: boolean;
   private readonly parityQueueSnapshotMaxRecords: number;
+  private readonly parityActiveExcludedQueueNames: Set<string>;
   private parityBackfillStateCache: ParityBackfillStateFile | null = null;
 
   constructor(input?: {
@@ -82,6 +97,7 @@ export class AutotaskPollingService {
     retryBackoffMs?: (attempt: number) => number;
     syncRetryMaxAttempts?: number;
     parityBackfillEnabled?: boolean;
+    parityActiveOnly?: boolean;
   }) {
     if (Number.isFinite(Number(input?.pollIntervalMs))) {
       this.pollIntervalMs = Math.max(5_000, Number(input?.pollIntervalMs));
@@ -101,6 +117,10 @@ export class AutotaskPollingService {
     });
     this.syncRetryMaxAttempts = Math.max(1, Number(input?.syncRetryMaxAttempts ?? 5));
     this.parityBackfillEnabled = Boolean(input?.parityBackfillEnabled ?? false);
+    this.parityActiveOnly = Boolean(
+      input?.parityActiveOnly ??
+      (String(process.env.AUTOTASK_PARITY_ACTIVE_ONLY || 'true').toLowerCase() === 'true'),
+    );
     this.parityBackfillStateFilePath = process.env.AUTOTASK_PARITY_STATE_FILE || `${process.cwd()}/.run/autotask-parity-state.json`;
     this.parityBackfillStartIso = String(process.env.AUTOTASK_PARITY_START_DATE || '2000-01-01T00:00:00.000Z');
     this.parityBackfillChunkHours = Math.max(1, Number(process.env.AUTOTASK_PARITY_CHUNK_HOURS || 168));
@@ -109,6 +129,12 @@ export class AutotaskPollingService {
     this.parityPurgeMaxChecksPerRun = Math.max(1, Number(process.env.AUTOTASK_PARITY_PURGE_MAX_CHECKS || 25));
     this.parityQueueSnapshotEnabled = String(process.env.AUTOTASK_PARITY_QUEUE_SNAPSHOT_ENABLED || 'true').toLowerCase() === 'true';
     this.parityQueueSnapshotMaxRecords = Math.max(25, Math.min(500, Number(process.env.AUTOTASK_PARITY_QUEUE_SNAPSHOT_MAX_RECORDS || 200)));
+    this.parityActiveExcludedQueueNames = new Set(
+      String(process.env.AUTOTASK_PARITY_ACTIVE_EXCLUDED_QUEUES || 'complete')
+        .split(',')
+        .map((entry) => normalizeQueueName(entry))
+        .filter(Boolean),
+    );
   }
 
   private async getAutotaskCredentials(): Promise<{ tenantId?: string; credentials: AutotaskCreds } | null> {
@@ -202,6 +228,7 @@ export class AutotaskPollingService {
     operationalLogger.info('adapters.autotask_polling.started', {
       module: 'adapters.autotask-polling',
       poll_interval_ms: this.pollIntervalMs,
+      parity_active_only: this.parityActiveOnly,
     });
 
     this.runOnce().catch((error) => operationalLogger.error(
@@ -273,12 +300,14 @@ export class AutotaskPollingService {
           return;
         }
 
-        if (this.parityBackfillEnabled) {
+        if (this.parityBackfillEnabled && !this.parityActiveOnly) {
           await this.runParityBackfill(context);
         }
+
+        const queueScope = await this.resolveParityQueueScope(context);
         if (this.parityQueueSnapshotEnabled) {
           try {
-            await this.runQueueParitySnapshot(context);
+            await this.runQueueParitySnapshot(context, queueScope);
           } catch (error) {
             operationalLogger.warn('adapters.autotask_polling.parity_queue_snapshot_failed', {
               module: 'adapters.autotask-polling',
@@ -292,7 +321,13 @@ export class AutotaskPollingService {
 
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
         const filter = `{"op": "gt", "field": "createDate", "value": "${oneHourAgo}"}`;
-        const tickets = await context.client.searchTickets(filter, 50, 0);
+        let tickets = await context.client.searchTickets(filter, 50, 0);
+        if (this.parityActiveOnly && queueScope) {
+          tickets = tickets.filter((ticket) => {
+            const queueId = Number((ticket as any)?.queueID);
+            return !Number.isFinite(queueId) || !queueScope.excludedQueueIds.has(queueId);
+          });
+        }
 
         if (!tickets || tickets.length === 0) return;
 
@@ -476,17 +511,40 @@ export class AutotaskPollingService {
     }
   }
 
-  private async runQueueParitySnapshot(context: AutotaskPollContext): Promise<void> {
-    const tenantId = String(context.tenantId || '').trim();
-    if (!tenantId) return;
-    if (typeof (context.client as { getTicketQueues?: unknown }).getTicketQueues !== 'function') return;
+  private async resolveParityQueueScope(context: AutotaskPollContext): Promise<ParityQueueScope | null> {
+    if (typeof (context.client as { getTicketQueues?: unknown }).getTicketQueues !== 'function') return null;
 
     const queues = await context.client.getTicketQueues().catch(() => []);
+    if (!Array.isArray(queues)) return null;
+
+    const excludedQueueIds = new Set<number>();
+    for (const queue of queues) {
+      const queueId = Number((queue as { id?: number }).id);
+      const queueName = normalizeQueueName(
+        (queue as { name?: string; label?: string; value?: string }).name ||
+        (queue as { label?: string }).label ||
+        (queue as { value?: string }).value ||
+        '',
+      );
+      if (Number.isFinite(queueId) && queueName && this.parityActiveExcludedQueueNames.has(queueName)) {
+        excludedQueueIds.add(queueId);
+      }
+    }
+
+    return { queues: queues as Array<Record<string, unknown>>, excludedQueueIds };
+  }
+
+  private async runQueueParitySnapshot(context: AutotaskPollContext, scope?: ParityQueueScope | null): Promise<void> {
+    const tenantId = String(context.tenantId || '').trim();
+    if (!tenantId) return;
+    const queues = scope?.queues || await this.resolveParityQueueScope(context).then((resolved) => resolved?.queues || []);
     if (!Array.isArray(queues) || queues.length === 0) return;
+    const excludedQueueIds = scope?.excludedQueueIds || new Set<number>();
 
     for (const queue of queues) {
       const queueId = Number((queue as { id?: number }).id);
       if (!Number.isFinite(queueId)) continue;
+      if (this.parityActiveOnly && excludedQueueIds.has(queueId)) continue;
       const search = JSON.stringify({
         MaxRecords: this.parityQueueSnapshotMaxRecords,
         filter: [{ op: 'eq', field: 'queueID', value: queueId }],
@@ -672,4 +730,5 @@ export class AutotaskPollingService {
 
 export const autotaskPollingService = new AutotaskPollingService({
   parityBackfillEnabled: String(process.env.AUTOTASK_PARITY_ENFORCED || 'true').toLowerCase() === 'true',
+  parityActiveOnly: String(process.env.AUTOTASK_PARITY_ACTIVE_ONLY || 'true').toLowerCase() === 'true',
 });

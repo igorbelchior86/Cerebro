@@ -7,7 +7,7 @@ import type {
   ValidationOutput,
   Violation,
   EvidencePack,
-} from '@playbook-brain/types';
+} from '@cerebro/types';
 
 export type GatingProfile = 'strict' | 'standard' | 'lenient';
 

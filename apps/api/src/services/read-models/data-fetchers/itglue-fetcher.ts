@@ -112,23 +112,20 @@ export class ITGlueFetcher implements DataSourceFetcher {
     }
 
     private async getCredentials(context: DataSourceContext): Promise<any | null> {
-        if (!context.tenantId) {
-            const row = await queryOne<{ config: any }>(`
-                SELECT config
-                FROM integrations
-                WHERE provider = 'itglue'
-                AND status = 'active'
+        const tenantId = String(context.tenantId || '').trim();
+        if (!tenantId) return null;
+
+        try {
+            const row = await queryOne<{ credentials: any }>(`
+                SELECT credentials
+                FROM integration_credentials
+                WHERE tenant_id = $1 AND service = 'itglue'
+                ORDER BY updated_at DESC
                 LIMIT 1
-            `);
-            return row?.config || null;
+            `, [tenantId]);
+            return row?.credentials || null;
+        } catch {
+            return null;
         }
-
-        const row = await queryOne<{ config: any }>(`
-            SELECT config
-            FROM integrations
-            WHERE tenant_id = $1 AND provider = 'itglue' AND status = 'active'
-        `, [context.tenantId]);
-
-        return row?.config || null;
     }
 }

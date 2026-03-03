@@ -7,6 +7,12 @@ import { ValidatePolicyService } from '../domain/validate-policy.js';
 import { PlaybookWriterService } from '../ai/playbook-writer.js';
 import { operationalLogger } from '../../lib/operational-logger.js';
 
+function readPositiveMs(raw: string | undefined, fallback: number): number {
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return Math.floor(parsed);
+}
+
 export class TriageOrchestrator {
     private prepareService: PrepareContextService;
     private diagnoseService: DiagnoseService;
@@ -17,7 +23,11 @@ export class TriageOrchestrator {
     private readonly retryBaseDelayMs = 2 * 60 * 1000;
     private readonly retryMaxDelayMs = 30 * 60 * 1000;
     private readonly advisoryLockNamespace = 41021;
+    private readonly stageTimeoutMs = readPositiveMs(process.env.TRIAGE_STAGE_TIMEOUT_MS, 90_000);
+    private readonly queueWaitWarnMs = readPositiveMs(process.env.TRIAGE_QUEUE_WAIT_WARN_MS, 5_000);
     private hasManualSuppressedColumnCache: boolean | null = null;
+    private pipelineQueue: Promise<void> = Promise.resolve();
+    private queuedPipelines = 0;
 
     constructor() {
         this.prepareService = new PrepareContextService();
@@ -123,6 +133,56 @@ export class TriageOrchestrator {
      * System-triggered pipeline always bypasses tenant RLS checks.
      */
     async runPipeline(ticketId: string, orgId?: string, source: 'email' | 'autotask' = 'autotask') {
+        const enqueuedAt = Date.now();
+        this.queuedPipelines += 1;
+        const runCore = async () => {
+            this.queuedPipelines = Math.max(0, this.queuedPipelines - 1);
+            const queueWaitMs = Date.now() - enqueuedAt;
+            if (queueWaitMs >= this.queueWaitWarnMs) {
+                operationalLogger.warn('orchestration.triage.pipeline_queue_wait_detected', {
+                    module: 'orchestration.triage-orchestrator',
+                    queue_wait_ms: queueWaitMs,
+                    queue_wait_warn_ms: this.queueWaitWarnMs,
+                    queued_pipelines: this.queuedPipelines,
+                    degraded_mode: true,
+                }, { ticket_id: ticketId });
+            }
+            await this.runPipelineCore(ticketId, orgId, source);
+        };
+
+        const scheduled = this.pipelineQueue.then(runCore, runCore);
+        this.pipelineQueue = scheduled.then(() => undefined, () => undefined);
+        return scheduled;
+    }
+
+    private async withStageTimeout<T>(
+        stage: 'prepare_context' | 'diagnose' | 'playbook',
+        operation: Promise<T>,
+        ticketId: string,
+        sessionId: string
+    ): Promise<T> {
+        const startedAt = Date.now();
+        let timeoutHandle: NodeJS.Timeout | null = null;
+        try {
+            const timeoutPromise = new Promise<never>((_, reject) => {
+                timeoutHandle = setTimeout(() => {
+                    reject(new Error(`triage_stage_timeout:${stage}:${this.stageTimeoutMs}ms`));
+                }, this.stageTimeoutMs);
+            });
+            const result = await Promise.race([operation, timeoutPromise]);
+            operationalLogger.info('orchestration.triage.stage_completed', {
+                module: 'orchestration.triage-orchestrator',
+                session_id: sessionId,
+                stage,
+                duration_ms: Date.now() - startedAt,
+            }, { ticket_id: ticketId });
+            return result as T;
+        } finally {
+            if (timeoutHandle) clearTimeout(timeoutHandle);
+        }
+    }
+
+    private async runPipelineCore(ticketId: string, orgId?: string, source: 'email' | 'autotask' = 'autotask') {
         return tenantContext.run({ tenantId: undefined, bypassRLS: true }, async () => {
             operationalLogger.info('orchestration.triage.pipeline_started', {
                 module: 'orchestration.triage-orchestrator',
@@ -145,11 +205,16 @@ export class TriageOrchestrator {
                     module: 'orchestration.triage-orchestrator',
                     session_id: sid,
                 }, { ticket_id: ticketId });
-                const pack = await this.prepareService.prepare({
-                    sessionId: sid,
+                const pack = await this.withStageTimeout(
+                    'prepare_context',
+                    this.prepareService.prepare({
+                        sessionId: sid,
+                        ticketId,
+                        ...(orgId ? { orgId } : {}),
+                    }),
                     ticketId,
-                    ...(orgId ? { orgId } : {}),
-                });
+                    sid
+                );
                 await persistEvidencePack(sid, pack);
 
                 // PHASE 2: Diagnose
@@ -157,7 +222,12 @@ export class TriageOrchestrator {
                     module: 'orchestration.triage-orchestrator',
                     session_id: sid,
                 }, { ticket_id: ticketId });
-                const diagnosis = await this.diagnoseService.diagnose(pack);
+                const diagnosis = await this.withStageTimeout(
+                    'diagnose',
+                    this.diagnoseService.diagnose(pack),
+                    ticketId,
+                    sid
+                );
                 await execute(
                     `INSERT INTO llm_outputs (id, session_id, step, model, payload, created_at)
                      VALUES ($1, $2, $3, $4, $5, NOW())
@@ -234,7 +304,12 @@ export class TriageOrchestrator {
                     module: 'orchestration.triage-orchestrator',
                     session_id: sid,
                 }, { ticket_id: ticketId });
-                const playbook = await this.playbookService.generatePlaybook(diagnosis, validation, pack);
+                const playbook = await this.withStageTimeout(
+                    'playbook',
+                    this.playbookService.generatePlaybook(diagnosis, validation, pack),
+                    ticketId,
+                    sid
+                );
 
                 await execute(
                     `INSERT INTO playbooks (id, session_id, content_md, content_json, created_at)

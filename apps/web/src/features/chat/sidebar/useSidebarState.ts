@@ -108,8 +108,9 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
     const listRef = useRef<HTMLDivElement>(null);
     const restoredRef = useRef(false);
 
-    // Fallback user data
-    const userName = user?.name || 'John Technician';
+    // Resolve identity display deterministically from authenticated user payload.
+    const emailDerivedName = normalizeText(String(user?.email || '').split('@')[0] || '', '');
+    const userName = normalizeText(user?.name || '', '') || emailDerivedName || 'Account';
     const userInitials = userName.substring(0, 2).toUpperCase();
     const jobTitle = String(user?.preferences?.jobTitle || '') || (user?.role === 'owner' ? 'Owner' : user?.role === 'admin' ? 'Admin' : 'L2 Technician');
     const avatar = user?.avatar || undefined;

@@ -262,6 +262,18 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function readPositiveInt(raw: string | undefined, fallback: number): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.floor(parsed);
+}
+
+function readNonNegativeInt(raw: string | undefined, fallback: number): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return Math.floor(parsed);
+}
+
 function normalizeVisibility(input: unknown): 'internal' | 'public' {
   return String(input || '').toLowerCase() === 'internal' ? 'internal' : 'public';
 }
@@ -412,6 +424,15 @@ export class InMemoryTicketWorkflowRepository implements TicketWorkflowRepositor
   private inbox = new Map<string, InboxTicketState>();
   private reconciliationIssues: ReconciliationIssue[] = [];
   private readonly persistenceFilePath: string | undefined;
+  private readonly persistDebounceMs =
+    process.env.NODE_ENV === 'test'
+      ? 0
+      : readNonNegativeInt(process.env.P0_WORKFLOW_PERSIST_DEBOUNCE_MS, 2_000);
+  private readonly maxAuditEntries = readPositiveInt(process.env.P0_WORKFLOW_MAX_AUDIT_ENTRIES, 5_000);
+  private readonly maxReconciliationIssues = readPositiveInt(process.env.P0_WORKFLOW_MAX_RECON_ISSUES, 2_000);
+  private readonly maxProcessedSyncEvents = readPositiveInt(process.env.P0_WORKFLOW_MAX_PROCESSED_EVENTS, 20_000);
+  private readonly maxCommentsPerTicket = readPositiveInt(process.env.P0_WORKFLOW_MAX_COMMENTS_PER_TICKET, 25);
+  private persistTimer: NodeJS.Timeout | null = null;
 
   constructor(input?: { persistenceFilePath?: string }) {
     this.persistenceFilePath = input?.persistenceFilePath;
@@ -441,12 +462,19 @@ export class InMemoryTicketWorkflowRepository implements TicketWorkflowRepositor
     this.commandsByIdempotency = new Map(snapshot.commandsByIdempotency || []);
     this.audits = Array.isArray(snapshot.audits) ? snapshot.audits : [];
     this.processedSyncEvents = new Set(snapshot.processedSyncEvents || []);
-    this.inbox = new Map(snapshot.inbox || []);
+    this.inbox = new Map((snapshot.inbox || []).map(([key, value]) => {
+      const comments = Array.isArray(value?.comments) ? value.comments.slice(-this.maxCommentsPerTicket) : [];
+      return [key, { ...value, comments } as InboxTicketState];
+    }));
     this.reconciliationIssues = Array.isArray(snapshot.reconciliationIssues) ? snapshot.reconciliationIssues : [];
+    this.trimAudits();
+    this.trimProcessedSyncEvents();
+    this.trimReconciliationIssues();
   }
 
   private persistState(): void {
     if (!this.persistenceFilePath) return;
+    const startedAt = Date.now();
     writeJsonFileAtomic(this.persistenceFilePath, {
       commandsById: Array.from(this.commandsById.entries()),
       commandsByIdempotency: Array.from(this.commandsByIdempotency.entries()),
@@ -455,6 +483,49 @@ export class InMemoryTicketWorkflowRepository implements TicketWorkflowRepositor
       inbox: Array.from(this.inbox.entries()),
       reconciliationIssues: this.reconciliationIssues,
     });
+    const durationMs = Date.now() - startedAt;
+    if (durationMs >= 1_000) {
+      operationalLogger.warn('workflow.runtime.persistence_slow_write', {
+        module: 'orchestration.ticket-workflow-core',
+        persistence_file_path: this.persistenceFilePath,
+        duration_ms: durationMs,
+        command_count: this.commandsById.size,
+        inbox_count: this.inbox.size,
+        audit_count: this.audits.length,
+      });
+    }
+  }
+
+  private requestPersistState(): void {
+    if (!this.persistenceFilePath) return;
+    if (this.persistDebounceMs <= 0) {
+      this.persistState();
+      return;
+    }
+    if (this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.persistState();
+    }, this.persistDebounceMs);
+    this.persistTimer.unref();
+  }
+
+  private trimAudits(): void {
+    if (this.audits.length <= this.maxAuditEntries) return;
+    this.audits = this.audits.slice(this.audits.length - this.maxAuditEntries);
+  }
+
+  private trimReconciliationIssues(): void {
+    if (this.reconciliationIssues.length <= this.maxReconciliationIssues) return;
+    this.reconciliationIssues = this.reconciliationIssues.slice(this.reconciliationIssues.length - this.maxReconciliationIssues);
+  }
+
+  private trimProcessedSyncEvents(): void {
+    while (this.processedSyncEvents.size > this.maxProcessedSyncEvents) {
+      const oldest = this.processedSyncEvents.values().next().value;
+      if (!oldest) break;
+      this.processedSyncEvents.delete(oldest);
+    }
   }
 
   async getCommandByIdempotencyKey(tenantId: string, idempotencyKey: string): Promise<WorkflowCommandAttempt | null> {
@@ -469,7 +540,7 @@ export class InMemoryTicketWorkflowRepository implements TicketWorkflowRepositor
       this.commandKey(attempt.command.tenant_id, attempt.command.idempotency_key),
       attempt.command.command_id
     );
-    this.persistState();
+    this.requestPersistState();
   }
 
   async getCommandById(commandId: string): Promise<WorkflowCommandAttempt | null> {
@@ -491,7 +562,8 @@ export class InMemoryTicketWorkflowRepository implements TicketWorkflowRepositor
 
   async saveAudit(record: WorkflowAuditRecord): Promise<void> {
     this.audits.push(structuredClone(record));
-    this.persistState();
+    this.trimAudits();
+    this.requestPersistState();
   }
 
   async listAuditByTicket(tenantId: string, ticketId: string): Promise<WorkflowAuditRecord[]> {
@@ -502,18 +574,23 @@ export class InMemoryTicketWorkflowRepository implements TicketWorkflowRepositor
     const key = `${tenantId}::${eventId}`;
     if (this.processedSyncEvents.has(key)) return false;
     this.processedSyncEvents.add(key);
-    this.persistState();
+    this.trimProcessedSyncEvents();
+    this.requestPersistState();
     return true;
   }
 
   async upsertInboxTicket(state: InboxTicketState): Promise<void> {
-    this.inbox.set(this.inboxKey(state.tenant_id, state.ticket_id), structuredClone(state));
-    this.persistState();
+    const normalizedState: InboxTicketState = {
+      ...state,
+      comments: Array.isArray(state.comments) ? state.comments.slice(-this.maxCommentsPerTicket) : [],
+    };
+    this.inbox.set(this.inboxKey(state.tenant_id, state.ticket_id), structuredClone(normalizedState));
+    this.requestPersistState();
   }
 
   async deleteInboxTicket(tenantId: string, ticketId: string): Promise<void> {
     this.inbox.delete(this.inboxKey(tenantId, ticketId));
-    this.persistState();
+    this.requestPersistState();
   }
 
   async getInboxTicket(tenantId: string, ticketId: string): Promise<InboxTicketState | null> {
@@ -525,12 +602,16 @@ export class InMemoryTicketWorkflowRepository implements TicketWorkflowRepositor
     return Array.from(this.inbox.values())
       .filter((row) => row.tenant_id === tenantId)
       .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
-      .map((row) => structuredClone(row));
+      .map((row) => ({
+        ...row,
+        comments: Array.isArray(row.comments) ? row.comments.slice(-this.maxCommentsPerTicket) : [],
+      }));
   }
 
   async addReconciliationIssue(issue: ReconciliationIssue): Promise<void> {
     this.reconciliationIssues.push(structuredClone(issue));
-    this.persistState();
+    this.trimReconciliationIssues();
+    this.requestPersistState();
   }
 
   async listReconciliationIssues(tenantId: string, ticketId?: string): Promise<ReconciliationIssue[]> {
@@ -545,6 +626,7 @@ export class TicketWorkflowCoreService {
     string,
     { attempts: number; max_attempts: number; disposition: 'retry_pending' | 'dlq'; next_retry_at?: string }
   >();
+  private readonly maxCommentsPerTicket = readPositiveInt(process.env.P0_WORKFLOW_MAX_COMMENTS_PER_TICKET, 25);
 
   constructor(
     private readonly repo: TicketWorkflowRepository,
@@ -1026,7 +1108,7 @@ export class TicketWorkflowCoreService {
           body: commentBody,
           created_at: nowIso(),
         },
-      ];
+      ].slice(-this.maxCommentsPerTicket);
       next.domain_snapshots = {
         ...(next.domain_snapshots || {}),
         ticket_notes: {
@@ -1161,6 +1243,7 @@ export class TicketWorkflowCoreService {
         body: commentBody,
         created_at: String(payload.comment_created_at || nowIso()),
       });
+      next.comments = next.comments.slice(-this.maxCommentsPerTicket);
     }
 
     await this.repo.upsertInboxTicket(next);
@@ -1567,12 +1650,6 @@ export class TicketWorkflowCoreService {
       }), preferred);
       deduped.push(merged);
 
-      for (const item of entries) {
-        if (item.ticket_id !== preferred.ticket_id) {
-          await this.repo.deleteInboxTicket(tenantId, item.ticket_id);
-        }
-      }
-      await this.repo.upsertInboxTicket(merged);
     }
     return deduped.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
   }

@@ -1,3 +1,27 @@
+## Lesson: 2026-03-03 (avoid synchronous full-snapshot persistence in hot workflow paths)
+**Mistake**: O runtime de workflow persistia snapshot completo em disco (JSON stringify + write sync) em quase toda mutação e até no caminho de leitura da inbox.
+**Root cause**: Repositório in-memory com `persistState()` síncrono, sem debounce/limites, e `listInbox` com side effects de escrita durante GET.
+**Rule**: Em fluxos quentes (sync/orquestração), persistência local deve ser desacoplada (debounce), limitada (histórico/comentários) e nunca executada em read paths.
+**Pattern**: `Builtin_JsonStringify` + `fs.WriteFileUtf8` com `/health` timeout e `/inbox` lento indica serialização síncrona volumosa no main thread.
+
+## Lesson: 2026-03-03 (when user asks for full closure, finish correlated runtime + typecheck debt in same cycle)
+**Mistake**: Entreguei correção parcial antes de atacar no mesmo ciclo os problemas correlatos já explicitados (`/health` intermitente e `typecheck` quebrado).
+**Root cause**: Escopo executado por fatias técnicas separadas sem fechar o pacote operacional completo pedido pelo usuário.
+**Rule**: Quando o pedido for “fazer tudo”, fechar sintomas + causas correlatas + verificação de build/typecheck antes de concluir.
+**Pattern**: Fix localizado com pendências técnicas conhecidas mantém o sistema instável e reduz confiança de entrega.
+
+## Lesson: 2026-03-03 (when reporting a fix, explicitly separate resolved scope from known backend blockers)
+**Mistake**: Entreguei o patch de login sem atacar no mesmo ciclo os erros de background já identificados (`integrations` inexistente e healthcheck de DB ruidoso).
+**Root cause**: Execução focada em um sintoma (logout loop) sem consolidar os blockers técnicos correlatos já observados no runtime.
+**Rule**: Se existem erros recorrentes conhecidos no mesmo fluxo operacional, fechar ou agendar correção imediata no mesmo ciclo e declarar claramente o que ficou pendente.
+**Pattern**: “fix de UX entregue, mas logs continuam com erro estrutural” gera retrabalho e baixa confiança operacional.
+
+## Lesson: 2026-03-03 (auth guard must not equate transient fetch failure with unauthenticated session)
+**Mistake**: O frontend invalidava sessão local quando `/auth/me` falhava por timeout/rede/erro 5xx.
+**Root cause**: `useAuth` tratava qualquer resposta não-OK e qualquer exceção como logout (`user = null`), e o layout redirecionava imediatamente para `/login`.
+**Rule**: Redirecionamento de auth client-side só pode ocorrer para estados explicitamente não autenticados (`401/403`), nunca para indisponibilidade transitória.
+**Pattern**: “login entra e segundos depois volta para login” com backend oscilando geralmente indica guard de sessão sem distinção entre `unauthenticated` e `unavailable`.
+
 ## Lesson: 2026-03-02 (JWT tenant claim is not enough; SQL must still bind tenant_id)
 **Mistake**: Assumir que ter `tid` no token e middleware de auth já impediria qualquer vazamento.
 **Root cause**: Sem `tenant_id` no predicado SQL, uma query por chave funcional (`service`, `id`) pode atravessar tenants mesmo em rota autenticada.
@@ -1032,3 +1056,27 @@
 **Root cause**: Assumi capability uniforme no client e deixei exceção da trilha opcional interromper o ciclo principal de polling.
 **Rule**: Caminhos opcionais de reconciliação/paridade devem ser capability-checked e isolados por `try/catch`; o fluxo principal de ingestão nunca pode parar por falha auxiliar.
 **Pattern**: Feature de paridade opcional que roda antes do core loop sem guard explícito = risco de regressão de sincronização.
+
+## Lesson: 2026-03-03 (parity scope must be explicit: active vs historical)
+**Mistake**: Interpretei “paridade de tickets” como reconciliação histórica completa por padrão.
+**Root cause**: Falta de delimitação explícita de escopo operacional no intake inicial (ativo vs histórico).
+**Rule**: Para paridade com providers grandes, definir escopo temporal/operacional explícito no início; default deve priorizar tickets ativos e backfill histórico deve ser opt-in.
+**Pattern**: Backfill começando em datas antigas (`2000...`) com janelas contínuas indica escopo mal calibrado para objetivo operacional atual.
+
+## Lesson: 2026-03-03 ("active" must be encoded with explicit business rule, not inferred)
+**Mistake**: Implementei "active-only" inicialmente como recorte de ingestão (sem histórico) sem codificar o critério de negócio pedido: excluir queue `Complete`.
+**Root cause**: Interpretação incompleta do termo "ativo" antes de mapear para uma regra operacional explícita no provider.
+**Rule**: Sempre traduzir termos de produto (ex.: ativo) para predicado técnico explícito na origem (`queue != Complete` ou status-set definido) antes de fechar patch.
+**Pattern**: Quando o usuário precisa corrigir semântica após entrega, faltou contrato de critério no código/configuração.
+
+## Lesson: 2026-03-03 (hardcoded identity fallbacks can masquerade as auth/session bugs)
+**Mistake**: Eu assumi inicialmente risco de sessão presa sem validar primeiro se o nome exibido era fallback de UI.
+**Root cause**: Existia string fixa (`John Technician`) para `user.name` ausente, o que simula usuário incorreto mesmo com sessão válida.
+**Rule**: Em bugs de identidade exibida, auditar projeção de fallback de UI antes de alterar lógica de autenticação/cookie.
+**Pattern**: Nome fixo recorrente em contas diferentes indica fallback hardcoded, não necessariamente sessão compartilhada.
+
+## Lesson: 2026-03-03 (auth UX must timeout network-bound session bootstrap)
+**Mistake**: Deixei login/bootstrap de sessão dependentes de fetch sem timeout explícito.
+**Root cause**: Em falhas de proxy/API (socket hang up), requests podem ficar pendentes tempo demais e parecer loading infinito para o usuário.
+**Rule**: Toda tela de auth e bootstrap de sessão (`/auth/me`) deve ter timeout + fallback de erro para não bloquear UI indefinidamente.
+**Pattern**: "Please wait" eterno durante incidente de backend é geralmente ausência de timeout no cliente.

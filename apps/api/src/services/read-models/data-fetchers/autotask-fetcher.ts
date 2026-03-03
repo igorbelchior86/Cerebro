@@ -108,25 +108,20 @@ export class AutotaskFetcher implements DataSourceFetcher {
     }
 
     private async getCredentials(context: DataSourceContext): Promise<any | null> {
-        if (!context.tenantId) {
-            // In Cerebro, the single tenant config is often used if no tenantId is provided, or we query by org.
-            // For this fetcher, we try to load the default integration config or tenant specific.
-            const row = await queryOne<{ config: any }>(`
-        SELECT config
-        FROM integrations
-        WHERE provider = 'autotask'
-        AND status = 'active'
+        const tenantId = String(context.tenantId || '').trim();
+        if (!tenantId) return null;
+
+        try {
+            const row = await queryOne<{ credentials: any }>(`
+        SELECT credentials
+        FROM integration_credentials
+        WHERE tenant_id = $1 AND service = 'autotask'
+        ORDER BY updated_at DESC
         LIMIT 1
-       `);
-            return row?.config || null;
+      `, [tenantId]);
+            return row?.credentials || null;
+        } catch {
+            return null;
         }
-
-        const row = await queryOne<{ config: any }>(`
-      SELECT config
-      FROM integrations
-      WHERE tenant_id = $1 AND provider = 'autotask' AND status = 'active'
-    `, [context.tenantId]);
-
-        return row?.config || null;
     }
 }

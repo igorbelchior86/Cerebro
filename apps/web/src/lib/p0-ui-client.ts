@@ -7,6 +7,22 @@ import type {
 
 const API = process.env.NEXT_PUBLIC_API_URL || '/api';
 
+type RequestCacheOptions = {
+  cacheKey?: string;
+  staleTimeMs?: number;
+  staleWhileRevalidateMs?: number;
+  bypassCache?: boolean;
+};
+
+type CachedResponseEntry = {
+  value: unknown;
+  freshUntil: number;
+  staleUntil: number;
+};
+
+const readResponseCache = new Map<string, CachedResponseEntry>();
+const readResponseInFlight = new Map<string, Promise<unknown>>();
+
 export interface ApiEnvelope<T> {
   success?: boolean;
   data?: T;
@@ -338,7 +354,7 @@ export function mapHttpErrorToFrontendState(error: unknown, fallbackSummary = 'R
   };
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function executeRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API}${path}`, {
     credentials: 'include',
     headers: {
@@ -363,8 +379,88 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+function buildReadCacheKey(path: string, init?: RequestInit, explicitKey?: string): string {
+  if (explicitKey) return explicitKey;
+  const method = String(init?.method || 'GET').toUpperCase();
+  return `${method}:${path}`;
+}
+
+async function request<T>(path: string, init?: RequestInit, cacheOptions?: RequestCacheOptions): Promise<T> {
+  const method = String(init?.method || 'GET').toUpperCase();
+  const isGet = method === 'GET';
+  const staleTimeMs = Math.max(0, Number(cacheOptions?.staleTimeMs || 0));
+  const staleWhileRevalidateMs = Math.max(0, Number(cacheOptions?.staleWhileRevalidateMs || 0));
+  const useReadCache = isGet && !cacheOptions?.bypassCache;
+  if (!useReadCache) {
+    return executeRequest<T>(path, init);
+  }
+
+  const cacheKey = buildReadCacheKey(path, init, cacheOptions?.cacheKey);
+  const now = Date.now();
+  const cached = readResponseCache.get(cacheKey);
+  if (cached) {
+    if (cached.freshUntil > now) {
+      return cached.value as T;
+    }
+    if (cached.staleUntil > now) {
+      if (!readResponseInFlight.has(cacheKey)) {
+        const background = executeRequest<T>(path, init)
+          .then((nextValue) => {
+            if (staleTimeMs > 0 || staleWhileRevalidateMs > 0) {
+              const ts = Date.now();
+              readResponseCache.set(cacheKey, {
+                value: nextValue,
+                freshUntil: ts + staleTimeMs,
+                staleUntil: ts + staleTimeMs + staleWhileRevalidateMs,
+              });
+            } else {
+              readResponseCache.delete(cacheKey);
+            }
+            return nextValue;
+          })
+          .catch(() => cached.value as T)
+          .finally(() => {
+            readResponseInFlight.delete(cacheKey);
+          });
+        readResponseInFlight.set(cacheKey, background as Promise<unknown>);
+      }
+      return cached.value as T;
+    }
+    readResponseCache.delete(cacheKey);
+  }
+
+  const inFlight = readResponseInFlight.get(cacheKey);
+  if (inFlight) {
+    return inFlight as Promise<T>;
+  }
+
+  const pending = executeRequest<T>(path, init)
+    .then((value) => {
+      if (staleTimeMs > 0 || staleWhileRevalidateMs > 0) {
+        const ts = Date.now();
+        readResponseCache.set(cacheKey, {
+          value,
+          freshUntil: ts + staleTimeMs,
+          staleUntil: ts + staleTimeMs + staleWhileRevalidateMs,
+        });
+      } else {
+        readResponseCache.delete(cacheKey);
+      }
+      return value;
+    })
+    .finally(() => {
+      readResponseInFlight.delete(cacheKey);
+    });
+
+  readResponseInFlight.set(cacheKey, pending as Promise<unknown>);
+  return pending;
+}
+
 export function listWorkflowInbox() {
-  return request<WorkflowInboxTicket[]>('/workflow/inbox');
+  return request<WorkflowInboxTicket[]>('/workflow/inbox', undefined, {
+    staleTimeMs: 2_000,
+    staleWhileRevalidateMs: 13_000,
+  });
 }
 
 export function searchAutotaskCompanies(query: string, limit = 25) {
@@ -372,7 +468,10 @@ export function searchAutotaskCompanies(query: string, limit = 25) {
     q: query,
     limit: String(limit),
   });
-  return request<AutotaskCompanyOption[]>(`/autotask/companies/search?${search.toString()}`);
+  return request<AutotaskCompanyOption[]>(`/autotask/companies/search?${search.toString()}`, undefined, {
+    staleTimeMs: 60_000,
+    staleWhileRevalidateMs: 9 * 60_000,
+  });
 }
 
 export function searchAutotaskContacts(query: string, companyId: number, limit = 25) {
@@ -381,7 +480,10 @@ export function searchAutotaskContacts(query: string, companyId: number, limit =
     companyId: String(companyId),
     limit: String(limit),
   });
-  return request<AutotaskContactOption[]>(`/autotask/contacts/search?${search.toString()}`);
+  return request<AutotaskContactOption[]>(`/autotask/contacts/search?${search.toString()}`, undefined, {
+    staleTimeMs: 60_000,
+    staleWhileRevalidateMs: 9 * 60_000,
+  });
 }
 
 export function searchAutotaskResources(query: string, limit = 25) {
@@ -389,20 +491,32 @@ export function searchAutotaskResources(query: string, limit = 25) {
     q: query,
     limit: String(limit),
   });
-  return request<AutotaskResourceOption[]>(`/autotask/resources/search?${search.toString()}`);
+  return request<AutotaskResourceOption[]>(`/autotask/resources/search?${search.toString()}`, undefined, {
+    staleTimeMs: 60_000,
+    staleWhileRevalidateMs: 9 * 60_000,
+  });
 }
 
 export function listAutotaskTicketFieldOptions() {
-  return request<AutotaskTicketFieldOptions>('/autotask/ticket-field-options');
+  return request<AutotaskTicketFieldOptions>('/autotask/ticket-field-options', undefined, {
+    staleTimeMs: 10 * 60_000,
+    staleWhileRevalidateMs: 6 * 60 * 60_000,
+  });
 }
 
 export function listAutotaskTicketFieldOptionsByField(field: AutotaskTicketFieldKey) {
   const search = new URLSearchParams({ field });
-  return request<AutotaskPicklistOption[]>(`/autotask/ticket-field-options?${search.toString()}`);
+  return request<AutotaskPicklistOption[]>(`/autotask/ticket-field-options?${search.toString()}`, undefined, {
+    staleTimeMs: 10 * 60_000,
+    staleWhileRevalidateMs: 6 * 60 * 60_000,
+  });
 }
 
 export function getAutotaskTicketDraftDefaults() {
-  return request<AutotaskTicketDraftDefaults>('/autotask/ticket-draft-defaults');
+  return request<AutotaskTicketDraftDefaults>('/autotask/ticket-draft-defaults', undefined, {
+    staleTimeMs: 10 * 60_000,
+    staleWhileRevalidateMs: 2 * 60 * 60_000,
+  });
 }
 
 export function updateAutotaskTicketContext(

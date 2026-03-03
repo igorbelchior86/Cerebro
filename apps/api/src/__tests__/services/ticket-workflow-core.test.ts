@@ -367,6 +367,46 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     expect(inferredCreated?.created_at).toBe('2020-02-02T12:00:00.000Z');
   });
 
+  it('hydrates missing org/requester beyond legacy 25-item cap', async () => {
+    const previousRemoteBatchSize = process.env.P0_WORKFLOW_INBOX_HYDRATION_REMOTE_BATCH_SIZE;
+    process.env.P0_WORKFLOW_INBOX_HYDRATION_REMOTE_BATCH_SIZE = '50';
+    const fetchTicketSnapshot = jest.fn().mockImplementation(async (_tenantId: string, ticketRef: string) => ({
+      company_name: `Org ${ticketRef}`,
+      contact_name: `Requester ${ticketRef}`,
+    }));
+    try {
+      const gateway: TicketWorkflowGateway = {
+        executeCommand: jest.fn(),
+        fetchTicketSnapshot,
+      };
+      const { service, repo } = createService(gateway);
+
+      for (let i = 1; i <= 30; i += 1) {
+        const ticketNumber = `T20260303.${String(i).padStart(4, '0')}`;
+        await repo.upsertInboxTicket({
+          tenant_id: tenantId,
+          ticket_id: ticketNumber,
+          ticket_number: ticketNumber,
+          title: `Ticket ${i}`,
+          description: `Description ${i}`,
+          status: 'New',
+          comments: [],
+          source_of_truth: 'Autotask',
+          updated_at: `2026-03-03T20:${String(i).padStart(2, '0')}:00.000Z`,
+        });
+      }
+
+      const inbox = await service.listInbox(tenantId);
+      const unresolved = inbox.filter((row) => !String(row.company || '').trim() || !String(row.requester || '').trim());
+
+      expect(unresolved).toHaveLength(0);
+      expect(fetchTicketSnapshot).toHaveBeenCalledTimes(30);
+    } finally {
+      if (previousRemoteBatchSize === undefined) delete process.env.P0_WORKFLOW_INBOX_HYDRATION_REMOTE_BATCH_SIZE;
+      else process.env.P0_WORKFLOW_INBOX_HYDRATION_REMOTE_BATCH_SIZE = previousRemoteBatchSize;
+    }
+  });
+
   it('retries transient failures and sends to DLQ after max attempts', async () => {
     const gateway: TicketWorkflowGateway = {
       executeCommand: jest

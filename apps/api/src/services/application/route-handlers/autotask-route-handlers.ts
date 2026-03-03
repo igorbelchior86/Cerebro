@@ -9,6 +9,7 @@ import { pgStore } from '../../adapters/email/pg-store.js';
 import { triageOrchestrator } from '../../orchestration/triage-orchestrator.js';
 import { classifyQueueError } from '../../../platform/errors.js';
 import { tenantContext } from '../../../lib/tenantContext.js';
+import { buildTenantCacheKey, buildTenantDomainTag, distributedCache } from '../../cache/distributed-cache.js';
 import type { AutotaskTicket } from '@cerebro/types';
 
 const router: ExpressRouter = Router();
@@ -52,9 +53,6 @@ type TicketFieldKey = (typeof ticketFieldKeys)[number];
 
 const TICKET_FIELD_OPTIONS_CACHE_TTL_MS = 30_000;
 const ticketFieldOptionCache = new Map<TicketFieldKey, { expiresAt: number; data: unknown[] }>();
-let ticketDraftDefaultsCache: unknown = null;
-const READ_ONLY_SEARCH_CACHE_TTL_MS = 30_000;
-const readOnlySearchCache = new Map<string, { expiresAt: number; data: unknown[] }>();
 const SIDEBAR_TICKETS_CACHE_TTL_MS = 5_000;
 const SIDEBAR_TICKETS_LOCK_NAMESPACE = 41024;
 const SIDEBAR_TICKETS_LOCK_WAIT_TIMEOUT_MS = 2_500;
@@ -119,6 +117,20 @@ function parseIntParam(value: unknown, fallback: number, { min, max }: { min: nu
 
 function sanitizeSearchTerm(value: unknown): string {
   return String(value ?? '').trim().replace(/'/g, "''");
+}
+
+function resolveTenantScope(tenantIdFromRequest?: string | null): string {
+  return String(tenantIdFromRequest || tenantContext.getStore()?.tenantId || 'global')
+    .trim()
+    .toLowerCase();
+}
+
+function metadataTag(tenantScope: string): string {
+  return buildTenantDomainTag({ tenantId: tenantScope, domain: 'autotask_metadata' });
+}
+
+function searchTag(tenantScope: string): string {
+  return buildTenantDomainTag({ tenantId: tenantScope, domain: 'autotask_search' });
 }
 
 function classifyAutotaskReadDegradedReason(error: unknown): 'rate_limited' | 'provider_error' {
@@ -190,27 +202,6 @@ function stringifyStructuredSearch(filter: Array<Record<string, unknown>>, maxRe
   return JSON.stringify({
     MaxRecords: maxRecords,
     filter,
-  });
-}
-
-function buildReadOnlySearchCacheKey(scope: 'companies' | 'contacts' | 'resources', parts: Array<string | number | null>) {
-  return `${scope}:${parts.map((part) => String(part ?? '')).join(':').toLowerCase()}`;
-}
-
-function readCachedReadOnlySearch(key: string): unknown[] | null {
-  const cached = readOnlySearchCache.get(key);
-  if (!cached) return null;
-  if (cached.expiresAt <= Date.now()) {
-    readOnlySearchCache.delete(key);
-    return null;
-  }
-  return cached.data;
-}
-
-function writeCachedReadOnlySearch(key: string, data: unknown[]) {
-  readOnlySearchCache.set(key, {
-    expiresAt: Date.now() + READ_ONLY_SEARCH_CACHE_TTL_MS,
-    data,
   });
 }
 
@@ -810,6 +801,7 @@ router.get('/ticket-field-options', async (req, res, next) => {
       res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
       return;
     }
+    const tenantScope = resolveTenantScope(req.auth?.tid);
 
     const requestedField = String(req.query.field || '').trim();
     const fieldLoaders = {
@@ -826,53 +818,93 @@ router.get('/ticket-field-options', async (req, res, next) => {
         res.status(400).json({ error: 'Unsupported ticket field options request' });
         return;
       }
-      const loader = fieldLoaders[requestedField as TicketFieldKey];
-      const result = await loadCachedReadOnlyArray(requestedField as TicketFieldKey, loader);
+      const cacheKey = buildTenantCacheKey({
+        tenantId: tenantScope,
+        domain: 'autotask',
+        resource: `ticket_field_options_${requestedField}`,
+        params: { field: requestedField },
+      });
+      const cached = await distributedCache.getOrLoad({
+        key: cacheKey,
+        resource: 'autotask_ticket_field_options',
+        tags: [metadataTag(tenantScope)],
+        ttlMs: 15 * 60 * 1000,
+        staleMs: 2 * 60 * 60 * 1000,
+        negativeTtlMs: 30 * 1000,
+        loader: async () => {
+          const loader = fieldLoaders[requestedField as TicketFieldKey];
+          const result = await loadCachedReadOnlyArray(requestedField as TicketFieldKey, loader);
+          return {
+            data: result.data,
+            count: result.data.length,
+            field: requestedField,
+            ...(result.degradedReason
+              ? { degraded: { provider: 'Autotask', reason: result.degradedReason } }
+              : {}),
+          };
+        },
+      });
       res.json({
         success: true,
-        data: result.data,
-        count: result.data.length,
-        field: requestedField,
-        ...(result.degradedReason
-          ? { degraded: { provider: 'Autotask', reason: result.degradedReason } }
-          : {}),
+        ...cached.value,
+        cache: cached.meta,
         timestamp: new Date().toISOString(),
       });
       return;
     }
 
-    const queueResult = await loadCachedReadOnlyArray('queue', fieldLoaders.queue);
-    const priorityResult = await loadCachedReadOnlyArray('priority', fieldLoaders.priority);
-    const statusResult = await loadCachedReadOnlyArray('status', fieldLoaders.status);
-    const issueTypeResult = await loadCachedReadOnlyArray('issueType', fieldLoaders.issueType);
-    const subIssueTypeResult = await loadCachedReadOnlyArray('subIssueType', fieldLoaders.subIssueType);
-    const serviceLevelAgreementResult = await loadCachedReadOnlyArray(
-      'serviceLevelAgreement',
-      fieldLoaders.serviceLevelAgreement
-    );
+    const cacheKey = buildTenantCacheKey({
+      tenantId: tenantScope,
+      domain: 'autotask',
+      resource: 'ticket_field_options',
+      params: { field: 'all' },
+    });
+    const cached = await distributedCache.getOrLoad({
+      key: cacheKey,
+      resource: 'autotask_ticket_field_options',
+      tags: [metadataTag(tenantScope)],
+      ttlMs: 15 * 60 * 1000,
+      staleMs: 2 * 60 * 60 * 1000,
+      loader: async () => {
+        const queueResult = await loadCachedReadOnlyArray('queue', fieldLoaders.queue);
+        const priorityResult = await loadCachedReadOnlyArray('priority', fieldLoaders.priority);
+        const statusResult = await loadCachedReadOnlyArray('status', fieldLoaders.status);
+        const issueTypeResult = await loadCachedReadOnlyArray('issueType', fieldLoaders.issueType);
+        const subIssueTypeResult = await loadCachedReadOnlyArray('subIssueType', fieldLoaders.subIssueType);
+        const serviceLevelAgreementResult = await loadCachedReadOnlyArray(
+          'serviceLevelAgreement',
+          fieldLoaders.serviceLevelAgreement
+        );
 
-    const degraded = [
-      queueResult,
-      priorityResult,
-      statusResult,
-      issueTypeResult,
-      subIssueTypeResult,
-      serviceLevelAgreementResult,
-    ].some((result) => Boolean(result.degradedReason));
+        const degraded = [
+          queueResult,
+          priorityResult,
+          statusResult,
+          issueTypeResult,
+          subIssueTypeResult,
+          serviceLevelAgreementResult,
+        ].some((result) => Boolean(result.degradedReason));
+
+        return {
+          data: {
+            queue: queueResult.data,
+            priority: priorityResult.data,
+            status: statusResult.data,
+            issueType: issueTypeResult.data,
+            subIssueType: subIssueTypeResult.data,
+            serviceLevelAgreement: serviceLevelAgreementResult.data,
+          },
+          ...(degraded
+            ? { degraded: { provider: 'Autotask', reason: 'read_only_provider_unavailable_or_rate_limited' } }
+            : {}),
+        };
+      },
+    });
 
     res.json({
       success: true,
-      data: {
-        queue: queueResult.data,
-        priority: priorityResult.data,
-        status: statusResult.data,
-        issueType: issueTypeResult.data,
-        subIssueType: subIssueTypeResult.data,
-        serviceLevelAgreement: serviceLevelAgreementResult.data,
-      },
-      ...(degraded
-        ? { degraded: { provider: 'Autotask', reason: 'read_only_provider_unavailable_or_rate_limited' } }
-        : {}),
+      ...cached.value,
+      cache: cached.meta,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -887,19 +919,34 @@ router.get('/ticket-draft-defaults', async (req, res, next) => {
       res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
       return;
     }
-
-    let data: unknown;
+    const tenantScope = resolveTenantScope(req.auth?.tid);
+    const cacheKey = buildTenantCacheKey({
+      tenantId: tenantScope,
+      domain: 'autotask',
+      resource: 'ticket_draft_defaults',
+      params: {},
+    });
+    let data: unknown = null;
+    let cacheMeta: unknown;
     let degradedReason: 'rate_limited' | 'provider_error' | undefined;
     try {
-      data = await client.getTicketDraftDefaults();
-      ticketDraftDefaultsCache = data;
+      const cached = await distributedCache.getOrLoad<unknown>({
+        key: cacheKey,
+        resource: 'autotask_ticket_draft_defaults',
+        tags: [metadataTag(tenantScope)],
+        ttlMs: 15 * 60 * 1000,
+        staleMs: 2 * 60 * 60 * 1000,
+        loader: async () => client.getTicketDraftDefaults(),
+      });
+      data = cached.value;
+      cacheMeta = cached.meta;
     } catch (error) {
-      data = ticketDraftDefaultsCache;
       degradedReason = classifyAutotaskReadDegradedReason(error);
     }
     res.json({
       success: true,
       data,
+      ...(cacheMeta ? { cache: cacheMeta } : {}),
       ...(degradedReason
         ? { degraded: { provider: 'Autotask', reason: degradedReason } }
         : {}),
@@ -921,11 +968,39 @@ router.get('/queues', async (req, res, next) => {
       res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
       return;
     }
-    const queues = await client.getTicketQueues();
+    const tenantScope = resolveTenantScope(req.auth?.tid);
+    const cacheKey = buildTenantCacheKey({
+      tenantId: tenantScope,
+      domain: 'autotask',
+      resource: 'queues',
+      params: {},
+    });
+    let rows: unknown[] = [];
+    let cacheMeta: unknown;
+    let degradedReason: 'rate_limited' | 'provider_error' | undefined;
+    try {
+      const cached = await distributedCache.getOrLoad<unknown[]>({
+        key: cacheKey,
+        resource: 'autotask_queues',
+        tags: [metadataTag(tenantScope)],
+        ttlMs: 10 * 60 * 1000,
+        staleMs: 2 * 60 * 60 * 1000,
+        negativeTtlMs: 30 * 1000,
+        loader: async () => client.getTicketQueues(),
+      });
+      rows = Array.isArray(cached.value) ? cached.value : [];
+      cacheMeta = cached.meta;
+    } catch (error) {
+      degradedReason = classifyAutotaskReadDegradedReason(error);
+    }
     res.json({
       success: true,
-      data: queues,
-      count: queues.length,
+      data: rows,
+      count: rows.length,
+      ...(cacheMeta ? { cache: cacheMeta } : {}),
+      ...(degradedReason
+        ? { degraded: { provider: 'Autotask', reason: degradedReason } }
+        : {}),
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
@@ -947,63 +1022,68 @@ router.get('/companies/search', async (req, res, next) => {
 
     const q = sanitizeSearchTerm(req.query.q);
     const limit = parseIntParam(req.query.limit, 25, { min: 1, max: 100 });
-    const cacheKey = buildReadOnlySearchCacheKey('companies', [q, limit]);
-    const cached = readCachedReadOnlySearch(cacheKey);
-    if (cached) {
-      res.json({
-        success: true,
-        data: cached,
-        count: cached.length,
-        timestamp: new Date().toISOString(),
-      });
-      return;
-    }
-    let rows: Array<Record<string, unknown>> = [];
+    const tenantScope = resolveTenantScope(req.auth?.tid);
+    const normalizedQuery = q.toLowerCase();
+    const cacheKey = buildTenantCacheKey({
+      tenantId: tenantScope,
+      domain: 'autotask',
+      resource: 'companies_search',
+      params: { q: normalizedQuery, limit },
+    });
+    let finalData: Array<{ id: number; name: string }> = [];
+    let cacheMeta: unknown;
     let degradedReason: 'rate_limited' | 'provider_error' | undefined;
     try {
-      const filter = q
-        ? [{ op: 'contains', field: 'companyName', value: q }]
-        : [{ op: 'eq', field: 'isActive', value: true }];
-      rows = await client.searchCompanies(
-        stringifyStructuredSearch(filter, limit),
-        limit
-      );
+      const cached = await distributedCache.getOrLoad<Array<{ id: number; name: string }>>({
+        key: cacheKey,
+        resource: 'autotask_companies_search',
+        tags: [searchTag(tenantScope)],
+        ttlMs: 90 * 1000,
+        staleMs: 10 * 60 * 1000,
+        negativeTtlMs: 30 * 1000,
+        loader: async () => {
+          const filter = q
+            ? [{ op: 'contains', field: 'companyName', value: q }]
+            : [{ op: 'eq', field: 'isActive', value: true }];
+          const rows = await client.searchCompanies(
+            stringifyStructuredSearch(filter, limit),
+            limit
+          );
+          return rows
+            .map((row) => {
+              const id = Number((row as any)?.id);
+              const name = String((row as any)?.companyName || '').trim();
+              const isActiveRaw = (row as any)?.isActive;
+              const isInactiveRaw = (row as any)?.isInactive;
+              const isActive = typeof isActiveRaw === 'boolean'
+                ? isActiveRaw
+                : typeof isInactiveRaw === 'boolean'
+                  ? !isInactiveRaw
+                  : false;
+              if (!Number.isFinite(id) || !name) return null;
+              return { id, name, isActive };
+            })
+            .filter((item) => {
+              if (!item) return false;
+              const isRefreshException = item.name.toLowerCase().includes('refresh');
+              return item.isActive || isRefreshException;
+            })
+            .map((item) => item ? ({ id: item.id, name: item.name }) : null)
+            .filter((item): item is { id: number; name: string } => Boolean(item))
+            .slice(0, limit);
+        },
+      });
+      finalData = cached.value;
+      cacheMeta = cached.meta;
     } catch (error) {
       degradedReason = classifyAutotaskReadDegradedReason(error);
-    }
-
-    const data = rows
-      .map((row) => {
-        const id = Number((row as any)?.id);
-        const name = String((row as any)?.companyName || '').trim();
-        const isActiveRaw = (row as any)?.isActive;
-        const isInactiveRaw = (row as any)?.isInactive;
-        const isActive = typeof isActiveRaw === 'boolean'
-          ? isActiveRaw
-          : typeof isInactiveRaw === 'boolean'
-            ? !isInactiveRaw
-            : false;
-        if (!Number.isFinite(id) || !name) return null;
-        return { id, name, isActive };
-      })
-      .filter((item) => {
-        if (!item) return false;
-        const isRefreshException = item.name.toLowerCase().includes('refresh');
-        return item.isActive || isRefreshException;
-      })
-      .map((item) => item ? ({ id: item.id, name: item.name }) : null)
-      .filter((item): item is { id: number; name: string } => Boolean(item))
-      .slice(0, limit);
-    const fallbackData = degradedReason ? readCachedReadOnlySearch(cacheKey) : null;
-    const finalData = Array.isArray(fallbackData) ? fallbackData : data;
-    if (!degradedReason || Array.isArray(fallbackData)) {
-      writeCachedReadOnlySearch(cacheKey, finalData);
     }
 
     res.json({
       success: true,
       data: finalData,
       count: finalData.length,
+      ...(cacheMeta ? { cache: cacheMeta } : {}),
       ...(degradedReason
         ? { degraded: { provider: 'Autotask', reason: degradedReason } }
         : {}),
@@ -1030,59 +1110,77 @@ router.get('/contacts/search', async (req, res, next) => {
     const limit = parseIntParam(req.query.limit, 25, { min: 1, max: 100 });
     const maybeCompanyId = Number.parseInt(String(req.query.companyId ?? ''), 10);
     const companyId = Number.isFinite(maybeCompanyId) ? maybeCompanyId : null;
-    const cacheKey = buildReadOnlySearchCacheKey('contacts', [companyId, q, limit]);
-    const cached = readCachedReadOnlySearch(cacheKey);
-    if (cached) {
-      res.json({
-        success: true,
-        data: cached,
-        count: cached.length,
-        timestamp: new Date().toISOString(),
-      });
-      return;
-    }
-    const filter: Array<Record<string, unknown>> = [];
-    if (companyId !== null) filter.push({ op: 'eq', field: 'companyID', value: companyId });
-    let rows: Array<Record<string, unknown>> = [];
+    const tenantScope = resolveTenantScope(req.auth?.tid);
+    const normalizedQuery = q.toLowerCase();
+    const cacheKey = buildTenantCacheKey({
+      tenantId: tenantScope,
+      domain: 'autotask',
+      resource: 'contacts_search',
+      params: { companyId, q: normalizedQuery, limit },
+    });
+    let finalData: Array<{
+      id: number;
+      name: string;
+      companyId?: number;
+      email?: string;
+    }> = [];
+    let cacheMeta: unknown;
     let degradedReason: 'rate_limited' | 'provider_error' | undefined;
     try {
-      rows = await client.searchContacts(stringifyStructuredSearch(filter, limit), limit);
+      const cached = await distributedCache.getOrLoad<Array<{
+        id: number;
+        name: string;
+        companyId?: number;
+        email?: string;
+      }>>({
+        key: cacheKey,
+        resource: 'autotask_contacts_search',
+        tags: [searchTag(tenantScope)],
+        ttlMs: 90 * 1000,
+        staleMs: 10 * 60 * 1000,
+        negativeTtlMs: 30 * 1000,
+        loader: async () => {
+          const filter: Array<Record<string, unknown>> = [];
+          if (companyId !== null) filter.push({ op: 'eq', field: 'companyID', value: companyId });
+          const rows = await client.searchContacts(stringifyStructuredSearch(filter, limit), limit);
+          return rows
+            .map((row) => {
+              const id = Number((row as any)?.id);
+              const firstName = String((row as any)?.firstName || '').trim();
+              const lastName = String((row as any)?.lastName || '').trim();
+              const fullName = `${firstName} ${lastName}`.trim();
+              const name = fullName || String((row as any)?.displayName || '').trim();
+              const rowCompanyId = Number((row as any)?.companyID);
+              if (!Number.isFinite(id) || !name) return null;
+              return {
+                id,
+                name,
+                ...(Number.isFinite(rowCompanyId) ? { companyId: rowCompanyId } : {}),
+                ...(typeof (row as any)?.emailAddress === 'string'
+                  ? { email: String((row as any).emailAddress).trim() }
+                  : {}),
+              };
+            })
+            .filter((item) => {
+              if (!item) return false;
+              if (!q) return true;
+              const needle = q.toLowerCase();
+              return item.name.toLowerCase().includes(needle) || String(item.email || '').toLowerCase().includes(needle);
+            })
+            .filter((item): item is { id: number; name: string; companyId?: number; email?: string } => Boolean(item));
+        },
+      });
+      finalData = cached.value;
+      cacheMeta = cached.meta;
     } catch (error) {
       degradedReason = classifyAutotaskReadDegradedReason(error);
-    }
-    const data = rows
-      .map((row) => {
-        const id = Number((row as any)?.id);
-        const firstName = String((row as any)?.firstName || '').trim();
-        const lastName = String((row as any)?.lastName || '').trim();
-        const fullName = `${firstName} ${lastName}`.trim();
-        const name = fullName || String((row as any)?.displayName || '').trim();
-        const rowCompanyId = Number((row as any)?.companyID);
-        if (!Number.isFinite(id) || !name) return null;
-        return {
-          id,
-          name,
-          ...(Number.isFinite(rowCompanyId) ? { companyId: rowCompanyId } : {}),
-          ...(typeof (row as any)?.emailAddress === 'string' ? { email: String((row as any).emailAddress).trim() } : {}),
-        };
-      })
-      .filter((item) => {
-        if (!item) return false;
-        if (!q) return true;
-        const needle = q.toLowerCase();
-        return item.name.toLowerCase().includes(needle) || String(item.email || '').toLowerCase().includes(needle);
-      })
-      .filter((item): item is { id: number; name: string; companyId?: number; email?: string } => Boolean(item));
-    const fallbackData = degradedReason ? readCachedReadOnlySearch(cacheKey) : null;
-    const finalData = Array.isArray(fallbackData) ? fallbackData : data;
-    if (!degradedReason || Array.isArray(fallbackData)) {
-      writeCachedReadOnlySearch(cacheKey, finalData);
     }
 
     res.json({
       success: true,
       data: finalData,
       count: finalData.length,
+      ...(cacheMeta ? { cache: cacheMeta } : {}),
       ...(degradedReason
         ? { degraded: { provider: 'Autotask', reason: degradedReason } }
         : {}),
@@ -1107,60 +1205,66 @@ router.get('/resources/search', async (req, res, next) => {
 
     const q = sanitizeSearchTerm(req.query.q);
     const limit = parseIntParam(req.query.limit, 25, { min: 1, max: 100 });
-    const cacheKey = buildReadOnlySearchCacheKey('resources', [q, limit]);
-    const cached = readCachedReadOnlySearch(cacheKey);
-    if (cached) {
-      res.json({
-        success: true,
-        data: cached,
-        count: cached.length,
-        timestamp: new Date().toISOString(),
-      });
-      return;
-    }
-    const providerLimit = q ? Math.max(limit, 100) : limit;
-    const filter: Array<Record<string, unknown>> = [{ op: 'eq', field: 'isActive', value: true }];
-    let rows: Array<Record<string, unknown>> = [];
+    const tenantScope = resolveTenantScope(req.auth?.tid);
+    const normalizedQuery = q.toLowerCase();
+    const cacheKey = buildTenantCacheKey({
+      tenantId: tenantScope,
+      domain: 'autotask',
+      resource: 'resources_search',
+      params: { q: normalizedQuery, limit },
+    });
+    let finalData: Array<{ id: number; name: string; email?: string }> = [];
+    let cacheMeta: unknown;
     let degradedReason: 'rate_limited' | 'provider_error' | undefined;
     try {
-      rows = await client.searchResources(stringifyStructuredSearch(filter, providerLimit), providerLimit);
+      const cached = await distributedCache.getOrLoad<Array<{ id: number; name: string; email?: string }>>({
+        key: cacheKey,
+        resource: 'autotask_resources_search',
+        tags: [searchTag(tenantScope)],
+        ttlMs: 90 * 1000,
+        staleMs: 10 * 60 * 1000,
+        negativeTtlMs: 30 * 1000,
+        loader: async () => {
+          const providerLimit = q ? Math.max(limit, 100) : limit;
+          const filter: Array<Record<string, unknown>> = [{ op: 'eq', field: 'isActive', value: true }];
+          const rows = await client.searchResources(stringifyStructuredSearch(filter, providerLimit), providerLimit);
+          const data = rows
+            .map((row) => {
+              const id = Number((row as any)?.id);
+              const defaultRoleId = Number((row as any)?.defaultServiceDeskRoleID);
+              const firstName = String((row as any)?.firstName || '').trim();
+              const lastName = String((row as any)?.lastName || '').trim();
+              const fullName = `${firstName} ${lastName}`.trim();
+              const name = fullName || String((row as any)?.userName || '').trim();
+              // Assignment flow requires a valid default service desk role for the resource.
+              if (!Number.isFinite(id) || !name || !Number.isFinite(defaultRoleId)) return null;
+              return {
+                id,
+                name,
+                ...(typeof (row as any)?.email === 'string' ? { email: String((row as any).email).trim() } : {}),
+              };
+            })
+            .filter((item) => {
+              if (!item) return false;
+              if (!q) return true;
+              const needle = q.toLowerCase();
+              return item.name.toLowerCase().includes(needle) || String(item.email || '').toLowerCase().includes(needle);
+            })
+            .filter((item): item is { id: number; name: string; email?: string } => Boolean(item));
+          return data.slice(0, limit);
+        },
+      });
+      finalData = cached.value;
+      cacheMeta = cached.meta;
     } catch (error) {
       degradedReason = classifyAutotaskReadDegradedReason(error);
-    }
-    const data = rows
-      .map((row) => {
-        const id = Number((row as any)?.id);
-        const defaultRoleId = Number((row as any)?.defaultServiceDeskRoleID);
-        const firstName = String((row as any)?.firstName || '').trim();
-        const lastName = String((row as any)?.lastName || '').trim();
-        const fullName = `${firstName} ${lastName}`.trim();
-        const name = fullName || String((row as any)?.userName || '').trim();
-        // Assignment flow requires a valid default service desk role for the resource.
-        if (!Number.isFinite(id) || !name || !Number.isFinite(defaultRoleId)) return null;
-        return {
-          id,
-          name,
-          ...(typeof (row as any)?.email === 'string' ? { email: String((row as any).email).trim() } : {}),
-        };
-      })
-      .filter((item) => {
-        if (!item) return false;
-        if (!q) return true;
-        const needle = q.toLowerCase();
-        return item.name.toLowerCase().includes(needle) || String(item.email || '').toLowerCase().includes(needle);
-      })
-      .filter((item): item is { id: number; name: string; email?: string } => Boolean(item));
-    const limitedData = data.slice(0, limit);
-    const fallbackData = degradedReason ? readCachedReadOnlySearch(cacheKey) : null;
-    const finalData = Array.isArray(fallbackData) ? fallbackData : limitedData;
-    if (!degradedReason || Array.isArray(fallbackData)) {
-      writeCachedReadOnlySearch(cacheKey, finalData);
     }
 
     res.json({
       success: true,
       data: finalData,
       count: finalData.length,
+      ...(cacheMeta ? { cache: cacheMeta } : {}),
       ...(degradedReason
         ? { degraded: { provider: 'Autotask', reason: degradedReason } }
         : {}),

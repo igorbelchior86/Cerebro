@@ -1,6 +1,7 @@
 import { Router, type Request, type Response, type Router as ExpressRouter } from 'express';
 import { operationalLogger } from '../../../lib/operational-logger.js';
 import { classifyQueueError } from '../../../platform/errors.js';
+import { buildTenantCacheKey, buildTenantDomainTag, distributedCache } from '../../cache/distributed-cache.js';
 import {
   WorkflowPolicyError,
   WorkflowReconcileFetchError,
@@ -31,12 +32,52 @@ function correlationFromRequest(req: Request, fallbackTicketId?: string) {
   };
 }
 
+function workflowDomainTag(tenantId: string): string {
+  return buildTenantDomainTag({
+    tenantId,
+    domain: 'workflow',
+  });
+}
+
+async function invalidateWorkflowDomainCache(tenantId: string): Promise<void> {
+  try {
+    await distributedCache.invalidateByTag(workflowDomainTag(tenantId));
+  } catch (error) {
+    operationalLogger.warn('routes.workflow.cache.invalidate_failed', {
+      module: 'routes.workflow',
+      tenant_id: tenantId,
+      error_message: String((error as any)?.message || error || 'unknown'),
+    }, {
+      tenant_id: tenantId,
+    });
+  }
+}
+
 router.get('/inbox', async (req, res, next) => {
   try {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
-    const rows = await workflowService.listInbox(tenantId);
-    res.json({ success: true, data: rows, count: rows.length, timestamp: new Date().toISOString() });
+    const cacheKey = buildTenantCacheKey({
+      tenantId,
+      domain: 'workflow',
+      resource: 'inbox',
+      params: {},
+    });
+    const cached = await distributedCache.getOrLoad({
+      key: cacheKey,
+      resource: 'workflow_inbox',
+      tags: [workflowDomainTag(tenantId)],
+      ttlMs: 10 * 1000,
+      staleMs: 60 * 1000,
+      loader: async () => workflowService.listInbox(tenantId),
+    });
+    res.json({
+      success: true,
+      data: cached.value,
+      count: cached.value.length,
+      cache: cached.meta,
+      timestamp: new Date().toISOString(),
+    });
   } catch (error) {
     next(error);
   }
@@ -137,6 +178,7 @@ router.post('/commands', async (req, res, next) => {
     if (autoProcess) {
       processResult = await workflowService.processPendingCommands(10);
     }
+    await invalidateWorkflowDomainCache(tenantId);
 
     res.status(202).json({
       success: true,
@@ -157,9 +199,9 @@ router.post('/commands/process', async (req, res, next) => {
   try {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
-    void tenantId;
     const limit = Number.isFinite(Number(req.body?.limit)) ? Math.max(1, Math.min(100, Number(req.body.limit))) : 20;
     const result = await workflowService.processPendingCommands(limit);
+    await invalidateWorkflowDomainCache(tenantId);
     res.json({ success: true, data: result, timestamp: new Date().toISOString() });
   } catch (error) {
     next(error);
@@ -216,6 +258,7 @@ router.post('/sync/autotask', async (req, res, next) => {
     };
 
     const result = await workflowService.processAutotaskSyncEvent(event);
+    await invalidateWorkflowDomainCache(tenantId);
     res.json({ success: true, data: result, timestamp: new Date().toISOString() });
   } catch (error) {
     next(error);
@@ -235,6 +278,7 @@ router.post('/reconcile/:ticketId', async (req, res, next) => {
       trace_id: String(req.header('x-correlation-id') || `reconcile-${Date.now()}`),
       ticket_id: ticketId,
     });
+    await invalidateWorkflowDomainCache(tenantId);
     res.json({ success: true, data: result, timestamp: new Date().toISOString() });
   } catch (error) {
     if (error instanceof WorkflowReconcileFetchError) {

@@ -466,6 +466,22 @@ function selectFirstNonEmpty(...values: unknown[]): string | undefined {
   return undefined;
 }
 
+async function mapWithConcurrencyLimit<T, R>(
+  items: T[],
+  limit: number,
+  mapper: (item: T) => Promise<R>
+): Promise<Array<PromiseSettledResult<R>>> {
+  if (items.length === 0) return [];
+  const safeLimit = Math.max(1, Math.floor(limit));
+  const results: Array<PromiseSettledResult<R>> = [];
+  for (let index = 0; index < items.length; index += safeLimit) {
+    const batch = items.slice(index, index + safeLimit);
+    const settled = await Promise.allSettled(batch.map((item) => mapper(item)));
+    results.push(...settled);
+  }
+  return results;
+}
+
 function auditTarget(
   integration: WorkflowTargetIntegration | 'workflow',
   entity_type: string,
@@ -689,6 +705,13 @@ export class TicketWorkflowCoreService {
     { attempts: number; max_attempts: number; disposition: 'retry_pending' | 'dlq'; next_retry_at?: string }
   >();
   private readonly maxCommentsPerTicket = readPositiveInt(process.env.P0_WORKFLOW_MAX_COMMENTS_PER_TICKET, 25);
+  private readonly inboxHydrationBatchSize = readPositiveInt(process.env.P0_WORKFLOW_INBOX_HYDRATION_BATCH_SIZE, 250);
+  private readonly inboxHydrationConcurrency = Math.min(
+    16,
+    readPositiveInt(process.env.P0_WORKFLOW_INBOX_HYDRATION_CONCURRENCY, 5)
+  );
+  private readonly inboxHydrationRemoteBatchSize = readPositiveInt(process.env.P0_WORKFLOW_INBOX_HYDRATION_REMOTE_BATCH_SIZE, 25);
+  private readonly inboxHydrationRemoteTimeoutMs = readPositiveInt(process.env.P0_WORKFLOW_INBOX_HYDRATION_REMOTE_TIMEOUT_MS, 1500);
 
   constructor(
     private readonly repo: TicketWorkflowRepository,
@@ -1789,7 +1812,7 @@ export class TicketWorkflowCoreService {
   }
 
   private async hydrateMissingOrgRequester(rows: InboxTicketState[]): Promise<InboxTicketState[]> {
-    if (!this.gateway.fetchTicketSnapshot || rows.length === 0) return rows;
+    if (rows.length === 0) return rows;
 
     const candidates = rows
       .filter((row) => {
@@ -1797,15 +1820,59 @@ export class TicketWorkflowCoreService {
         const requester = String(row.requester || '').trim();
         return !company || !requester;
       })
-      .slice(0, 25);
+      .slice(0, this.inboxHydrationBatchSize);
     if (candidates.length === 0) return rows;
 
-    const updates = await Promise.allSettled(
-      candidates.map(async (row) => {
+    // First, promote names already present in domain snapshots (zero provider round-trips).
+    const localSnapshotUpdates = await mapWithConcurrencyLimit(
+      candidates,
+      this.inboxHydrationConcurrency,
+      async (row) => {
+        const existingSnapshotCompany = selectFirstNonEmpty(
+          row.domain_snapshots?.tickets?.company_name,
+          row.domain_snapshots?.['correlates.ticket_metadata']?.company_name,
+        );
+        const existingSnapshotRequester = selectFirstNonEmpty(
+          row.domain_snapshots?.tickets?.requester_name,
+          row.domain_snapshots?.['correlates.ticket_metadata']?.requester_name,
+        );
+        if (existingSnapshotCompany || existingSnapshotRequester) {
+          const nextFromSnapshot: InboxTicketState = {
+            ...row,
+            ...(existingSnapshotCompany ? { company: existingSnapshotCompany } : {}),
+            ...(existingSnapshotRequester ? { requester: existingSnapshotRequester } : {}),
+            updated_at: nowIso(),
+          };
+          await this.repo.upsertInboxTicket(nextFromSnapshot);
+          return nextFromSnapshot;
+        }
+        return null;
+      }
+    );
+
+    const updates: Array<PromiseSettledResult<InboxTicketState | null>> = [...localSnapshotUpdates];
+    const hydratedTicketIds = new Set<string>();
+    for (const result of localSnapshotUpdates) {
+      if (result.status !== 'fulfilled' || !result.value) continue;
+      hydratedTicketIds.add(result.value.ticket_id);
+    }
+
+    if (this.gateway.fetchTicketSnapshot && this.inboxHydrationRemoteBatchSize > 0) {
+      const remoteCandidates = candidates
+        .filter((row) => !hydratedTicketIds.has(row.ticket_id))
+        .slice(0, this.inboxHydrationRemoteBatchSize);
+
+      const remoteUpdates = await mapWithConcurrencyLimit(
+        remoteCandidates,
+        this.inboxHydrationConcurrency,
+        async (row) => {
         const ticketRef =
           selectFirstNonEmpty(row.ticket_number, row.external_id, row.ticket_id);
         if (!ticketRef) return null;
-        const snapshot = await this.gateway.fetchTicketSnapshot?.(row.tenant_id, ticketRef);
+        const snapshot = await Promise.race([
+          this.gateway.fetchTicketSnapshot?.(row.tenant_id, ticketRef),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), this.inboxHydrationRemoteTimeoutMs)),
+        ]);
         if (!snapshot) return null;
 
         const companyName = selectFirstNonEmpty(
@@ -1841,8 +1908,10 @@ export class TicketWorkflowCoreService {
         };
         await this.repo.upsertInboxTicket(next);
         return next;
-      })
-    );
+      }
+      );
+      updates.push(...remoteUpdates);
+    }
 
     if (updates.length === 0) return rows;
     const hydratedByTicketId = new Map<string, InboxTicketState>();

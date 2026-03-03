@@ -1,3 +1,9 @@
+## Lesson: 2026-03-03 (cache strategy fails if frontend forces timestamp cache busting)
+**Mistake**: Manter `_ts=Date.now()` em polling de leitura (`full-flow`) enquanto implementava cache em backend/frontend.
+**Root cause**: Query param variável invalida dedupe/cache local e reduz drasticamente hit ratio mesmo com arquitetura de cache correta no servidor.
+**Rule**: Em reads de polling, usar chaves estáveis e controlar frescor por TTL/SWR; reservar cache-busting explícito apenas para ações de refresh forçado/debug.
+**Pattern**: Se o tráfego continua “live” após implantar cache, procurar primeiro parâmetros de bypass (`_ts`, nonce, random) no cliente.
+
 ## Lesson: 2026-03-03 (lock-path errors must not trigger same-request direct retry under provider throttling)
 **Mistake**: No endpoint `/autotask/sidebar-tickets`, falhas do provider dentro do bloco com advisory lock eram tratadas genericamente como falha de coordenação e disparavam nova leitura direta no mesmo request.
 **Root cause**: `catch` amplo no fluxo de coordenação sem distinguir erro de lock vs erro de dependência (rate-limit/thread-threshold).
@@ -1150,3 +1156,15 @@
 **Root cause**: Tratamento de erro da rota não diferenciava falha transitória de dependência (Autotask 429/thread-threshold) de falha interna da aplicação.
 **Rule**: Endpoints read-only dependentes de integração externa devem responder em modo degradado para `RATE_LIMIT/TIMEOUT/DEPENDENCY`, preservando `500` apenas para falhas internas/inesperadas.
 **Pattern**: Se burst concorrente retorna `500` massivo com logs `Autotask API error: 429`, falta política de degradação no handler da rota.
+
+## Lesson: 2026-03-03 (backfill coverage for identity fields must match backlog size)
+**Mistake**: Corrigi a propagação futura de `company/requester`, mas mantive hidratação retroativa com limite fixo de 25 tickets por chamada.
+**Root cause**: O limite hardcoded foi adequado para mitigação inicial, porém insuficiente para backlog real de milhares de tickets sem `org/requester`.
+**Rule**: Quando bug envolve backlog acumulado, limites de backfill devem ser configuráveis e compatíveis com a ordem de grandeza observada em runtime.
+**Pattern**: `source of truth correto` + `Unknown em massa contínuo` normalmente indica cobertura de hidratação/backfill abaixo do volume pendente.
+
+## Lesson: 2026-03-03 (read-path hydration must be bounded to protect inbox latency)
+**Mistake**: Aumentei cobertura de hidratação no `listInbox` sem separar custo local de custo remoto no mesmo path síncrono.
+**Root cause**: O read-path passou a executar round-trips externos demais por request sob backlog, elevando latência e empurrando UI para fallback.
+**Rule**: Em rotas críticas de leitura, hidratação remota deve ser bounded (batch + timeout) e dados locais persistidos devem ter prioridade.
+**Pattern**: “Após backfill em massa, tudo cai no fallback” sinaliza regressão de latência no caminho síncrono de leitura.

@@ -807,7 +807,7 @@ export default function SessionDetail({
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
         const res = await axios.get(`${apiUrl}/playbook/full-flow`, {
-          params: { sessionId: selectedTicketId, _ts: Date.now() },
+          params: { sessionId: selectedTicketId },
           withCredentials: true,
         });
         if (cancelled || reqSeq !== flowRequestSeqRef.current) return;
@@ -1329,7 +1329,7 @@ export default function SessionDetail({
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
       await axios.get(`${apiUrl}/playbook/full-flow`, {
-        params: { sessionId: ticket, refresh: 1, _ts: Date.now() },
+        params: { sessionId: ticket, refresh: 1 },
         withCredentials: true,
       });
     } catch (err) {

@@ -360,6 +360,7 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
     const normalizedSearch = searchQuery.trim().toLowerCase();
     const currentUserEmail = String(user?.email || '').trim().toLowerCase();
     const currentUserName = normalizeText(user?.name || '', '').toLowerCase();
+    const currentUserAutotaskResourceId = String((user?.preferences as Record<string, unknown> | undefined)?.autotaskResourceId || '').trim();
 
     const getTicketQueueLabel = (ticket: ActiveTicket) => {
         const normalized = normalizeText(ticket.queue_name ?? ticket.queue ?? '', '');
@@ -372,14 +373,34 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         const value = Number(ticket.queue_id);
         return Number.isFinite(value) ? value : null;
     };
+    const queueCatalogById = useMemo(() => {
+        const map = new Map<number, string>();
+        for (const q of globalQueuesCatalog) {
+            const id = Number(q.id);
+            const label = normalizeText(q.label, '');
+            if (Number.isFinite(id) && label) map.set(id, label);
+        }
+        return map;
+    }, [globalQueuesCatalog]);
+
+    const getTicketQueueLabelResolved = (ticket: ActiveTicket) => {
+        const direct = getTicketQueueLabel(ticket);
+        if (direct) return direct;
+        const id = getTicketQueueId(ticket);
+        if (id === null) return '';
+        return queueCatalogById.get(id) || '';
+    };
+
+    const getTicketAssigneeId = (ticket: ActiveTicket) =>
+        String(ticket.assigned_resource_id ?? '').trim();
     const getTicketAssigneeEmail = (ticket: ActiveTicket) =>
         normalizeText(ticket.assigned_resource_email, '').toLowerCase();
     const getTicketAssigneeName = (ticket: ActiveTicket) =>
         normalizeText(ticket.assigned_resource_name, '').toLowerCase();
 
     const queueLabelsFromTickets = useMemo(() => Array.from(
-        new Set(ticketsBySuppression.map(getTicketQueueLabel).filter((v) => v !== ''))
-    ).sort((a, b) => a.localeCompare(b)), [ticketsBySuppression]);
+        new Set(ticketsBySuppression.map(getTicketQueueLabelResolved).filter((v) => v !== ''))
+    ).sort((a, b) => a.localeCompare(b)), [ticketsBySuppression, queueCatalogById]);
 
     const queueLabelsFromCatalog = globalQueuesCatalog
         .filter((q) => q.isActive !== false)
@@ -387,7 +408,7 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         .sort((a, b) => a.localeCompare(b));
     const hasQueueCatalog = queueLabelsFromCatalog.length > 0;
     const hasTicketQueueMetadata = ticketsBySuppression.some((ticket) =>
-        Boolean(getTicketQueueLabel(ticket)) || getTicketQueueId(ticket) !== null
+        Boolean(getTicketQueueLabelResolved(ticket)) || getTicketQueueId(ticket) !== null
     );
 
     const queueOptions: QueueOption[] = [
@@ -405,9 +426,26 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
     const queueOptionIds = queueOptions.map((o) => o.id).join('|');
 
     const hasAssignmentMetadata = ticketsBySuppression.some((ticket) =>
-        Boolean(getTicketAssigneeEmail(ticket) || getTicketAssigneeName(ticket))
+        Boolean(getTicketAssigneeId(ticket) || getTicketAssigneeEmail(ticket) || getTicketAssigneeName(ticket))
     );
-    const canResolveCurrentTechnician = Boolean(currentUserEmail || currentUserName);
+    const canResolveCurrentTechnician = Boolean(currentUserAutotaskResourceId || currentUserEmail || currentUserName);
+
+    const matchesCurrentTechnician = useCallback((ticket: ActiveTicket): boolean => {
+        const assignedId = getTicketAssigneeId(ticket);
+        if (currentUserAutotaskResourceId && assignedId) {
+            return assignedId === currentUserAutotaskResourceId;
+        }
+        const assignedEmail = getTicketAssigneeEmail(ticket);
+        if (currentUserEmail && assignedEmail) return assignedEmail === currentUserEmail;
+        const assignedName = getTicketAssigneeName(ticket);
+        if (currentUserName && assignedName) return assignedName === currentUserName;
+        return false;
+    }, [currentUserAutotaskResourceId, currentUserEmail, currentUserName]);
+
+    const hasAnyPersonalMatch = useMemo(
+        () => ticketsBySuppression.some((ticket) => matchesCurrentTechnician(ticket)),
+        [ticketsBySuppression, matchesCurrentTechnician]
+    );
 
     useEffect(() => {
         if (!queueOptions.some((o) => o.id === selectedGlobalQueue)) {
@@ -482,11 +520,8 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
     const scopedTickets = ticketsBySuppression.filter((ticket) => {
         if (scope === 'personal') {
             if (!hasAssignmentMetadata || !canResolveCurrentTechnician) return true;
-            const assignedEmail = getTicketAssigneeEmail(ticket);
-            const assignedName = getTicketAssigneeName(ticket);
-            if (currentUserEmail && assignedEmail) return assignedEmail === currentUserEmail;
-            if (currentUserName && assignedName) return assignedName === currentUserName;
-            return false;
+            if (!hasAnyPersonalMatch) return true;
+            return matchesCurrentTechnician(ticket);
         }
         if (selectedGlobalQueue === 'all') return true;
         if (!hasTicketQueueMetadata) return true;
@@ -494,8 +529,8 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         const selectedOption = queueOptions.find((o) => o.id === selectedGlobalQueue);
         const ticketQueueId = getTicketQueueId(ticket);
         if (selectedOption?.queueId !== undefined && ticketQueueId !== null) return ticketQueueId === selectedOption.queueId;
-        if (selectedOption?.queueId !== undefined) return getTicketQueueLabel(ticket).toLowerCase() === selectedOption.label.toLowerCase();
-        return getTicketQueueLabel(ticket).toLowerCase() === selectedGlobalQueue;
+        if (selectedOption?.queueId !== undefined) return getTicketQueueLabelResolved(ticket).toLowerCase() === selectedOption.label.toLowerCase();
+        return getTicketQueueLabelResolved(ticket).toLowerCase() === selectedGlobalQueue;
     });
 
     const visible = useMemo(() => scopedTickets.filter((t) => {

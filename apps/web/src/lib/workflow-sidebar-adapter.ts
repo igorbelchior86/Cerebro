@@ -21,6 +21,8 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
   const title = String(row.title || '').trim() || `Ticket ${row.ticket_id}`;
   const description = String(row.description || '').trim() || undefined;
   const createdAt = row.updated_at || row.last_event_occurred_at || row.last_sync_at;
+  const assignedRaw = String(row.assigned_to || '').trim();
+  const assignedNumeric = Number.parseInt(assignedRaw, 10);
   return {
     id: row.ticket_id,
     ticket_id: row.ticket_id,
@@ -42,7 +44,11 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
     ...(createdAt ? { created_at: createdAt } : {}),
     ...(row.queue_name ? { queue_name: row.queue_name, queue: row.queue_name } : {}),
     ...(typeof row.queue_id === 'number' ? { queue_id: row.queue_id } : {}),
-    ...(row.assigned_to ? { assigned_resource_name: row.assigned_to, assigned_resource_id: row.assigned_to } : {}),
+    ...(assignedRaw
+      ? (Number.isFinite(assignedNumeric)
+        ? { assigned_resource_id: assignedNumeric }
+        : { assigned_resource_name: assignedRaw })
+      : {}),
   };
 }
 

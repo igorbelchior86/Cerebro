@@ -1,3 +1,47 @@
+# Task: Corrigir queues vazias + aba Personal sem tickets no tenant igor@refreshtech.com
+**Status**: completed
+**Started**: 2026-03-02T19:00:00-05:00
+
+## Plan
+- [x] Step 1: Reproduzir os dois sintomas com evidência de payload (`/workflow/inbox`) e lógica UI de filtro.
+- [x] Step 2: Corrigir origem de dados para queue label (`queue_name`) no inbox tenant atual.
+- [x] Step 3: Corrigir regra de “Personal” para usar paridade assignee (resource id/email/nome) de forma determinística.
+- [x] Step 4: Validar com API + UI-path (`igor@refreshtech.com`) que queues e personal aparecem corretamente.
+- [x] Step 5: Atualizar wiki obrigatória (`features`, `architecture`, `decisions`, `changelog`) e revisão no `tasks/todo.md`.
+
+## Open Questions
+- Fallback definido: quando não houver metadado de paridade suficiente para match (resource id/email/nome), a scope `personal` degrada para não esconder tickets.
+
+## Progress Notes
+- Tarefa iniciada após relato de que conectores aparecem conectados mas tickets pessoais/queues não refletem corretamente.
+- Causa raiz 1: handlers de Autotask route-level dependiam de `tenantContext` implícito; foi aplicado tenant explícito por request (`req.auth.tid`) na resolução de credenciais.
+- Causa raiz 2: `assigned_to` chegava como resource ID numérico; adapter da sidebar tratava como nome, quebrando matching de Personal.
+- Correções aplicadas:
+- `autotask-route-handlers`: lookup tenant-scoped explícito em endpoints read-only de Autotask.
+- `workflow-sidebar-adapter`: separação correta de `assigned_resource_id` (numérico) vs `assigned_resource_name`.
+- `useSidebarState`: matching de personal por `autotaskResourceId`/email/nome + resolução de label de queue por catálogo.
+- Paridade operacional aplicada para o usuário de demo: `igor@refreshtech.com` recebeu `preferences.autotaskResourceId=30684582`.
+
+## Review
+- What worked:
+- Queue catalog e inbox voltaram a resolver por tenant corretamente.
+- Personal filtering passou a considerar assignee ID real do Autotask.
+- What was tricky:
+- Processo antigo da API estava em execução sem reload dos patches; validação exigiu restart do processo em `:3001`.
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand src/__tests__/platform/tenant-scope.test.ts` ✅
+- Runtime com JWT de `igor@refreshtech.com`:
+- `GET /autotask/queues` => `success=true`, `count=26`
+- `GET /workflow/inbox` => `count=64`, tenant único `9439a8d1-6858-4a9d-a132-a1569b9da5f7`
+- `GET /auth/me` => `preferences.autotaskResourceId=30684582`
+- Documentation:
+- `wiki/features/2026-03-03-queues-personal-parity-fix.md`
+- `wiki/architecture/2026-03-03-tenant-scoped-autotask-read-path-and-personal-matching.md`
+- `wiki/decisions/2026-03-03-personal-scope-matches-provider-resource-id-first.md`
+- `wiki/changelog/2026-03-03-queues-and-personal-ticket-visibility-fix.md`
+
 # Task: Tenant isolation hardening wave 2 (research-backed + full route scan)
 **Status**: completed
 **Started**: 2026-03-02T18:27:00-05:00

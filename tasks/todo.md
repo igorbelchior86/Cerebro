@@ -516,3 +516,35 @@
 - `python3 .codex/skills/cerebro-concurrency-race-auditor/scripts/concurrency_hotspots.py --json` ✅
 - Documentation:
 - `wiki/changelog/2026-03-04-autotask-canonical-created-at.md`
+
+---
+
+# Task: Exibir data+hora no card da sidebar (não apenas hora)
+**Status**: completed
+**Started**: 2026-03-04T09:35:00-05:00
+
+## Plan
+- [x] Step 1: Definir regra de UX para timestamp do card (hoje vs dias anteriores).
+- [x] Step 2: Implementar no formatter compartilhado do sidebar.
+- [x] Step 3: Executar gates de validação solicitados pelo playbook.
+- [x] Step 4: Documentar mudança na wiki.
+
+## Open Questions
+- Nenhuma.
+
+## Progress Notes
+- `formatCreatedAt` agora mostra apenas hora para tickets de hoje.
+- Para tickets de dias anteriores, mostra `MM/DD/YYYY HH:MM`.
+- Campo `age` continua como fallback quando `created_at` não existe ou é inválido.
+
+## Review
+- What worked:
+- Alteração localizada em util compartilhado sem mudar contrato de componentes.
+- What was tricky:
+- Garantir compatibilidade com fallback existente (`age`/`just now`).
+- Verification:
+- `pnpm -r lint` ✅ (somente warnings existentes no repositório)
+- `pnpm -r typecheck` ✅
+- `pnpm -r test` ❌ (falhas pré-existentes/independentes em `apps/api src/__tests__/routes/autotask.sidebar-tickets.test.ts`)
+- Documentation:
+- `wiki/changelog/2026-03-04-sidebar-card-date-time.md`

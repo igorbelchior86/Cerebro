@@ -63,9 +63,23 @@ export function normalizeTicketTitle(value?: string, fallback = ''): string {
 }
 
 export function formatCreatedAt(createdAt?: string, age?: string, justNowFallback = 'just now'): string {
-    if (age && age.trim() !== '') return normalizeText(age, justNowFallback);
-    if (!createdAt) return justNowFallback;
+    if (!createdAt) {
+        if (age && age.trim() !== '') return normalizeText(age, justNowFallback);
+        return justNowFallback;
+    }
     const date = new Date(createdAt);
-    if (Number.isNaN(date.getTime())) return justNowFallback;
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (Number.isNaN(date.getTime())) {
+        if (age && age.trim() !== '') return normalizeText(age, justNowFallback);
+        return justNowFallback;
+    }
+    const now = new Date();
+    const isToday =
+        date.getFullYear() === now.getFullYear()
+        && date.getMonth() === now.getMonth()
+        && date.getDate() === now.getDate();
+
+    const timeLabel = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (isToday) return timeLabel;
+    const dateLabel = date.toLocaleDateString([], { month: '2-digit', day: '2-digit', year: 'numeric' });
+    return `${dateLabel} ${timeLabel}`;
 }

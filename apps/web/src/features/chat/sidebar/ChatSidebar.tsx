@@ -4,7 +4,6 @@ import { useMemo } from 'react';
 import SettingsModal from '@/components/SettingsModal';
 import UserProfileDropdown from '@/components/UserProfileDropdown';
 import ProfileModal from '@/components/ProfileModal';
-import { SIDEBAR_HIDE_SUPPRESSED_KEY } from './utils';
 import { useSidebarState } from './useSidebarState';
 import { SidebarHeader } from './SidebarHeader';
 import { SidebarStats, SidebarFilterBar } from './SidebarControls';
@@ -51,11 +50,11 @@ export default function ChatSidebar(props: ChatSidebarProps) {
         user, userName, userInitials, jobTitle, avatar, updateProfile,
         settingsOpen, setSettingsOpen,
         profileOpen, setProfileOpen,
-        filter, setFilter,
         scope, setScope,
         searchQuery, setSearchQuery,
+        selectedPersonalQueue, setSelectedPersonalQueue,
         selectedGlobalQueue, setSelectedGlobalQueue,
-        hideSuppressed, setHideSuppressed,
+        hideSuppressed,
         theme, toggleTheme,
         clock,
         statusEditorTarget,
@@ -66,13 +65,13 @@ export default function ChatSidebar(props: ChatSidebarProps) {
         resolveTicketStatusLabel,
         listRef,
         listLoading,
-        suppressedCount, processing,
+        processing,
         visibleTickets,
         queueOptions,
-        globalStatusFilterOptions,
-        globalHiddenStatusKeys,
-        toggleGlobalStatusFilter,
-        resetGlobalStatusFilter,
+        statusFilterOptions,
+        hiddenStatusKeys,
+        toggleStatusFilter,
+        resetStatusFilter,
         persistSidebarState,
     } = useSidebarState(props);
 
@@ -156,31 +155,25 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                         {/* Filter Bar */}
                         <SidebarFilterBar
                             scope={scope}
-                            filter={filter}
-                            hideSuppressed={hideSuppressed}
-                            suppressedCount={suppressedCount}
-                            selectedGlobalQueue={selectedGlobalQueue}
+                            selectedQueue={scope === 'personal' ? selectedPersonalQueue : selectedGlobalQueue}
                             queueOptions={queueOptions}
-                            globalStatusFilterOptions={globalStatusFilterOptions}
-                            globalHiddenStatusKeys={globalHiddenStatusKeys}
-                            onFilterChange={setFilter}
-                            onToggleHideSuppressed={() => setHideSuppressed((prev) => {
-                                const next = !prev;
-                                localStorage.setItem(SIDEBAR_HIDE_SUPPRESSED_KEY, next ? '1' : '0');
-                                return next;
-                            })}
-                            onQueueChange={setSelectedGlobalQueue}
-                            onToggleGlobalStatusFilter={toggleGlobalStatusFilter}
-                            onResetGlobalStatusFilter={resetGlobalStatusFilter}
+                            statusFilterOptions={statusFilterOptions}
+                            hiddenStatusKeys={hiddenStatusKeys}
+                            onQueueChange={(nextQueue) => {
+                                if (scope === 'personal') {
+                                    setSelectedPersonalQueue(nextQueue);
+                                    return;
+                                }
+                                setSelectedGlobalQueue(nextQueue);
+                            }}
+                            onToggleStatusFilter={toggleStatusFilter}
+                            onResetStatusFilter={resetStatusFilter}
                             labelQueueSelect={t('globalQueueLabel')}
                             labelQueueSelectAria={t('globalQueueSelectAria')}
                             labelGlobalStatusFilterAria={t('globalStatusFilterAria')}
                             labelGlobalStatusFilterTitle={t('globalStatusFilterTitle')}
                             labelGlobalStatusFilterReset={t('globalStatusFilterReset')}
                             labelGlobalStatusFilterNoStatus={t('globalStatusFilterNoStatus')}
-                            labelHideSuppressedEnabled={t('hideSuppressedEnabled')}
-                            labelHideSuppressedDisabled={t('hideSuppressedDisabled')}
-                            getFilterLabel={(key) => t(key)}
                         />
 
                         {/* Ticket list */}
@@ -188,7 +181,7 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                             ref={listRef}
                             onScroll={(e) => {
                                 const nextTop = (e.currentTarget as HTMLDivElement).scrollTop;
-                                persistSidebarState(filter, nextTop);
+                                persistSidebarState(nextTop);
                             }}
                             style={{ flex: 1, overflowY: 'auto', padding: '4px 10px 10px', display: 'flex', flexDirection: 'column', gap: '7px', position: 'relative', zIndex: 1 }}
                         >
@@ -227,7 +220,7 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                                                     isActive={currentTicketId === ticket.id}
                                                     resolveTicketStatusLabel={resolveTicketStatusLabel}
                                                     onSelect={() => {
-                                                        persistSidebarState(filter);
+                                                        persistSidebarState();
                                                         onSelectTicket?.(ticket.id);
                                                     }}
                                                     onOpenStatusEditor={openStatusEditor}

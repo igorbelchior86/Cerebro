@@ -995,3 +995,51 @@
 ## Progress Notes (update)
 - Root cause adicional identificado: o loop de polling aguardava `triageRun` sequencialmente por ticket, reduzindo throughput de ingestão e atrasando visibilidade de tickets recentes.
 - Ajuste: ingestão de todos os tickets recentes ocorre primeiro; disparo de triage é feito depois, com concorrência controlada (`AUTOTASK_POLLER_TRIAGE_CONCURRENCY`, default 3), sem bloquear o preenchimento do inbox.
+
+---
+
+# Task: Unified queue/status controls for Personal and Global sidebar scopes
+**Status**: completed
+**Started**: 2026-03-04T18:10:00-05:00
+
+## Plan
+- [x] Step 1: Remover barra antiga de Personal (tabs ALL/PROCESSING/DONE/FAILED + toggle) e unificar layout de controles com Global.
+- [x] Step 2: Implementar estado separado por escopo para seleção de fila e filtro de status (`personal` e `global`).
+- [x] Step 3: Validar `@cerebro/web` (typecheck/lint/test).
+- [x] Step 4: Documentar a mudança na wiki/changelog.
+
+## Progress Notes
+- `SidebarFilterBar` foi unificado: agora ambos os escopos usam `Queue` dropdown + botão de filtro de status.
+- Foi adicionado estado de fila por escopo (`selectedPersonalQueue` + `selectedGlobalQueue`) e filtros de status por escopo (`personalHiddenStatusKeys` + `globalHiddenStatusKeys`).
+- A filtragem de tickets no `useSidebarState` agora aplica a mesma mecânica de status (checkbox por status) em ambos os escopos, mantendo separação de itens por seção.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/web lint` ✅ (warnings preexistentes fora do escopo em `apps/web/src/app/[locale]/(chat)/triage/home/page.tsx`)
+- Documentation:
+- `wiki/changelog/2026-03-04-sidebar-personal-global-unified-controls.md`
+
+---
+
+# Task: Dynamic Active counter reflects selected sidebar view
+**Status**: completed
+**Started**: 2026-03-04T18:26:00-05:00
+
+## Plan
+- [x] Step 1: Identificar origem do valor do counter em `SidebarStats`.
+- [x] Step 2: Trocar para contagem dinâmica da lista visível após filtros atuais (scope + queue + status).
+- [x] Step 3: Garantir que o menu de filtro continue funcional em Personal e Global.
+- [x] Step 4: Validar `@cerebro/web` e documentar wiki.
+
+## Progress Notes
+- O valor exibido em `ACTIVE` agora deriva de `sortedVisible.length` (tickets realmente exibidos no recorte atual, sem draft).
+- Ajuste adicional no `SidebarFilterBar`: popover de filtro fecha ao trocar escopo, mas abre/funciona em ambos os escopos.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/web lint` ✅ (warnings preexistentes fora do escopo em `apps/web/src/app/[locale]/(chat)/triage/home/page.tsx`)
+- `pnpm --filter @cerebro/web test` ✅
+- Documentation:
+- `wiki/changelog/2026-03-04-sidebar-dynamic-active-counter-by-selected-view.md`

@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { FILTERS } from './utils';
 import type { QueueOption } from './types';
 
 interface SidebarStatsProps {
@@ -17,27 +16,19 @@ interface SidebarStatsProps {
 
 interface SidebarFilterBarProps {
     scope: 'personal' | 'global';
-    filter: string;
-    hideSuppressed: boolean;
-    suppressedCount: number;
-    selectedGlobalQueue: string;
+    selectedQueue: string;
     queueOptions: QueueOption[];
-    globalStatusFilterOptions: Array<{ key: string; label: string; count: number }>;
-    globalHiddenStatusKeys: Record<string, true>;
-    onFilterChange: (f: string) => void;
-    onToggleHideSuppressed: () => void;
+    statusFilterOptions: Array<{ key: string; label: string; count: number }>;
+    hiddenStatusKeys: Record<string, true>;
     onQueueChange: (q: string) => void;
-    onToggleGlobalStatusFilter: (key: string) => void;
-    onResetGlobalStatusFilter: () => void;
+    onToggleStatusFilter: (key: string) => void;
+    onResetStatusFilter: () => void;
     labelQueueSelect: string;
     labelQueueSelectAria: string;
     labelGlobalStatusFilterAria: string;
     labelGlobalStatusFilterTitle: string;
     labelGlobalStatusFilterReset: string;
     labelGlobalStatusFilterNoStatus: string;
-    labelHideSuppressedEnabled: string;
-    labelHideSuppressedDisabled: string;
-    getFilterLabel: (localeKey: string) => string;
 }
 
 export function SidebarStats({
@@ -124,31 +115,23 @@ export function SidebarStats({
 
 export function SidebarFilterBar({
     scope,
-    filter,
-    hideSuppressed,
-    suppressedCount,
-    selectedGlobalQueue,
+    selectedQueue,
     queueOptions,
-    globalStatusFilterOptions,
-    globalHiddenStatusKeys,
-    onFilterChange,
-    onToggleHideSuppressed,
+    statusFilterOptions,
+    hiddenStatusKeys,
     onQueueChange,
-    onToggleGlobalStatusFilter,
-    onResetGlobalStatusFilter,
+    onToggleStatusFilter,
+    onResetStatusFilter,
     labelQueueSelect,
     labelQueueSelectAria,
     labelGlobalStatusFilterAria,
     labelGlobalStatusFilterTitle,
     labelGlobalStatusFilterReset,
     labelGlobalStatusFilterNoStatus,
-    labelHideSuppressedEnabled,
-    labelHideSuppressedDisabled,
-    getFilterLabel,
 }: SidebarFilterBarProps) {
     const [globalStatusFilterOpen, setGlobalStatusFilterOpen] = useState(false);
     const globalStatusFilterRef = useRef<HTMLDivElement>(null);
-    const hiddenStatusCount = useMemo(() => Object.keys(globalHiddenStatusKeys).length, [globalHiddenStatusKeys]);
+    const hiddenStatusCount = useMemo(() => Object.keys(hiddenStatusKeys).length, [hiddenStatusKeys]);
 
     useEffect(() => {
         if (!globalStatusFilterOpen) return;
@@ -162,121 +145,65 @@ export function SidebarFilterBar({
     }, [globalStatusFilterOpen]);
 
     useEffect(() => {
-        if (scope !== 'global') setGlobalStatusFilterOpen(false);
+        setGlobalStatusFilterOpen(false);
     }, [scope]);
 
     return (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '10px 12px 8px', position: 'relative', zIndex: 8 }}>
-            {scope === 'personal' ? (
-                <>
-                    {/* Status filter tabs */}
-                    <div style={{ display: 'flex', gap: '3px', flex: 1, minWidth: 0, padding: '3px', borderRadius: '10px', background: 'var(--bg-card)', border: '1px solid var(--bento-outline)' }}>
-                        {FILTERS.map((f) => (
-                            <button
-                                type="button"
-                                key={f.id}
-                                onClick={() => onFilterChange(f.id)}
-                                style={{
-                                    flex: 1, padding: '6px 0', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                                    fontSize: '9.5px', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase',
-                                    background: filter === f.id ? 'var(--accent-muted)' : 'transparent',
-                                    color: filter === f.id ? 'var(--accent)' : 'var(--text-muted)',
-                                    transition: 'var(--transition)',
-                                }}
-                            >
-                                {getFilterLabel(f.localeKey)}
-                            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', minWidth: 0 }}>
+                <span style={{ fontSize: '8px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0 }}>
+                    {labelQueueSelect}
+                </span>
+                <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                    <select
+                        value={selectedQueue}
+                        onChange={(e) => onQueueChange(e.target.value)}
+                        aria-label={labelQueueSelectAria}
+                        style={{
+                            width: '100%', height: '30px', borderRadius: '10px', border: '1px solid var(--bento-outline)',
+                            background: 'var(--bg-card)', color: 'var(--text-primary)', padding: '0 28px 0 10px',
+                            fontSize: '10px', fontWeight: 600, outline: 'none', appearance: 'none',
+                            textOverflow: 'ellipsis', cursor: 'pointer',
+                        }}
+                    >
+                        {queueOptions.map((option) => (
+                            <option key={option.id} value={option.id}>{option.label}</option>
                         ))}
-                    </div>
-                    {/* Hide suppressed toggle */}
+                    </select>
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ position: 'absolute', right: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }}>
+                        <path d="M4.5 6.5L8 10l3.5-3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                </div>
+                <div ref={globalStatusFilterRef} style={{ position: 'relative', flexShrink: 0 }}>
                     <button
                         type="button"
-                        aria-pressed={hideSuppressed}
-                        title={hideSuppressed ? labelHideSuppressedEnabled : labelHideSuppressedDisabled}
-                        onClick={onToggleHideSuppressed}
+                        aria-label={labelGlobalStatusFilterAria}
+                        title={labelGlobalStatusFilterTitle}
+                        onClick={() => setGlobalStatusFilterOpen((prev) => !prev)}
                         style={{
-                            width: '28px', height: '28px', borderRadius: '8px',
-                            border: `1px solid ${hideSuppressed ? 'var(--border-accent)' : 'var(--bento-outline)'}`,
-                            background: hideSuppressed ? 'var(--accent-muted)' : 'var(--bg-card)',
-                            color: hideSuppressed ? 'var(--accent)' : 'var(--text-muted)',
+                            width: '30px', height: '30px', borderRadius: '10px',
+                            border: `1px solid ${globalStatusFilterOpen ? 'var(--border-accent)' : 'var(--bento-outline)'}`,
+                            background: globalStatusFilterOpen ? 'var(--accent-muted)' : 'var(--bg-card)',
+                            color: globalStatusFilterOpen ? 'var(--accent)' : 'var(--text-muted)',
                             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                            position: 'relative', flexShrink: 0, cursor: 'pointer', transition: 'var(--transition)',
+                            position: 'relative', cursor: 'pointer', transition: 'var(--transition)',
                         }}
                     >
                         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                             <path d="M2.5 4h11M5 8h6M7 12h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
                         </svg>
-                        {suppressedCount > 0 && (
+                        {hiddenStatusCount > 0 && (
                             <span style={{
                                 position: 'absolute', top: '-4px', right: '-4px', minWidth: '14px', height: '14px', padding: '0 3px',
-                                borderRadius: '999px',
-                                background: hideSuppressed ? 'var(--accent)' : 'var(--bg-card)',
-                                border: `1px solid ${hideSuppressed ? 'var(--border-accent)' : 'var(--bento-outline)'}`,
-                                color: hideSuppressed ? '#fff' : 'var(--text-muted)',
-                                fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8px', fontWeight: 700,
-                                lineHeight: '12px', textAlign: 'center',
+                                borderRadius: '999px', background: 'var(--accent)', border: '1px solid var(--border-accent)', color: '#fff',
+                                fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8px', fontWeight: 700, lineHeight: '12px', textAlign: 'center',
                             }}>
-                                {suppressedCount > 99 ? '99+' : suppressedCount}
+                                {hiddenStatusCount > 99 ? '99+' : hiddenStatusCount}
                             </span>
                         )}
                     </button>
-                </>
-            ) : (
-                /* Global queue selector */
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', minWidth: 0 }}>
-                    <span style={{ fontSize: '8px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0 }}>
-                        {labelQueueSelect}
-                    </span>
-                    <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-                        <select
-                            value={selectedGlobalQueue}
-                            onChange={(e) => onQueueChange(e.target.value)}
-                            aria-label={labelQueueSelectAria}
-                            style={{
-                                width: '100%', height: '30px', borderRadius: '10px', border: '1px solid var(--bento-outline)',
-                                background: 'var(--bg-card)', color: 'var(--text-primary)', padding: '0 28px 0 10px',
-                                fontSize: '10px', fontWeight: 600, outline: 'none', appearance: 'none',
-                                textOverflow: 'ellipsis', cursor: 'pointer',
-                            }}
-                        >
-                            {queueOptions.map((option) => (
-                                <option key={option.id} value={option.id}>{option.label}</option>
-                            ))}
-                        </select>
-                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{ position: 'absolute', right: '9px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none' }}>
-                            <path d="M4.5 6.5L8 10l3.5-3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                        </svg>
-                    </div>
-                    <div ref={globalStatusFilterRef} style={{ position: 'relative', flexShrink: 0 }}>
-                        <button
-                            type="button"
-                            aria-label={labelGlobalStatusFilterAria}
-                            title={labelGlobalStatusFilterTitle}
-                            onClick={() => setGlobalStatusFilterOpen((prev) => !prev)}
-                            style={{
-                                width: '30px', height: '30px', borderRadius: '10px',
-                                border: `1px solid ${globalStatusFilterOpen ? 'var(--border-accent)' : 'var(--bento-outline)'}`,
-                                background: globalStatusFilterOpen ? 'var(--accent-muted)' : 'var(--bg-card)',
-                                color: globalStatusFilterOpen ? 'var(--accent)' : 'var(--text-muted)',
-                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                position: 'relative', cursor: 'pointer', transition: 'var(--transition)',
-                            }}
-                        >
-                            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                                <path d="M2.5 4h11M5 8h6M7 12h2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                            </svg>
-                            {hiddenStatusCount > 0 && (
-                                <span style={{
-                                    position: 'absolute', top: '-4px', right: '-4px', minWidth: '14px', height: '14px', padding: '0 3px',
-                                    borderRadius: '999px', background: 'var(--accent)', border: '1px solid var(--border-accent)', color: '#fff',
-                                    fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '8px', fontWeight: 700, lineHeight: '12px', textAlign: 'center',
-                                }}>
-                                    {hiddenStatusCount > 99 ? '99+' : hiddenStatusCount}
-                                </span>
-                            )}
-                        </button>
 
-                        {globalStatusFilterOpen && (
+                    {globalStatusFilterOpen && (
                             <div
                                 style={{
                                     position: 'absolute', top: '34px', right: 0, width: '260px', maxHeight: '280px', overflowY: 'auto',
@@ -290,7 +217,7 @@ export function SidebarFilterBar({
                                     </span>
                                     <button
                                         type="button"
-                                        onClick={onResetGlobalStatusFilter}
+                                        onClick={onResetStatusFilter}
                                         style={{
                                             border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', textDecoration: 'underline',
                                             color: 'var(--accent)', fontSize: '10px', fontWeight: 600,
@@ -299,12 +226,12 @@ export function SidebarFilterBar({
                                         {labelGlobalStatusFilterReset}
                                     </button>
                                 </div>
-                                {globalStatusFilterOptions.length === 0 ? (
+                                {statusFilterOptions.length === 0 ? (
                                     <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{labelGlobalStatusFilterNoStatus}</div>
                                 ) : (
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                        {globalStatusFilterOptions.map((option) => {
-                                            const checked = !globalHiddenStatusKeys[option.key];
+                                        {statusFilterOptions.map((option) => {
+                                            const checked = !hiddenStatusKeys[option.key];
                                             return (
                                                 <label
                                                     key={option.key}
@@ -316,7 +243,7 @@ export function SidebarFilterBar({
                                                     <input
                                                         type="checkbox"
                                                         checked={checked}
-                                                        onChange={() => onToggleGlobalStatusFilter(option.key)}
+                                                        onChange={() => onToggleStatusFilter(option.key)}
                                                         style={{ margin: 0 }}
                                                     />
                                                     <span style={{ fontSize: '11px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -329,10 +256,9 @@ export function SidebarFilterBar({
                                     </div>
                                 )}
                             </div>
-                        )}
-                    </div>
+                    )}
                 </div>
-            )}
+            </div>
         </div>
     );
 }

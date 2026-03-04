@@ -1174,3 +1174,9 @@
 **Root cause**: Faltava regra determinística de precedência temporal entre writers assíncronos (`full-flow` 3s e `workflow inbox` 10s), então o valor “mais recente” visualmente alternava.
 **Rule**: Campo de horário exibido no card deve usar somente tempo canônico de criação do ticket; quando houver múltiplas fontes, aplicar merge determinístico (earliest válido) e bloquear fallback de campos operacionais.
 **Pattern**: Oscilação entre “hora antiga” e “hora recente de evento” em polling indica mistura de semântica temporal e write contention no estado da sidebar.
+
+## Lesson: 2026-03-04 (não inferir horário de criação a partir de ticket number)
+**Mistake**: Mantive fallback de `created_at` derivado de `ticket_number` (`TYYYYMMDD.*`), gerando horário sintético (`12:00Z` -> `7:00 AM` ET) que não corresponde ao Autotask.
+**Root cause**: Fallback heurístico foi útil para ordenação histórica, mas conflita com requisito de fonte canônica do horário.
+**Rule**: Para `ticket created time`, usar exclusivamente dados explícitos do provider canônico (`createDateTime/createDate` no AT); na ausência, deixar vazio em vez de inventar horário.
+**Pattern**: Quando horário exibido é “consistente, porém errado”, normalmente existe fallback heurístico semânticamente incorreto.

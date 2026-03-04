@@ -354,7 +354,13 @@ function fingerprintText(input: unknown): string {
 function normalizeEventDomainSnapshots(payload: Record<string, unknown>) {
   const ticketId = String(payload.external_id ?? payload.ticket_id ?? '').trim();
   const ticketNumber = String(payload.ticket_number ?? '').trim();
-  const createdAt = String(payload.created_at ?? '').trim();
+  const createdAt = String(
+    payload.created_at ??
+    payload.createDateTime ??
+    payload.createDate ??
+    payload.createdAt ??
+    ''
+  ).trim();
   const companyName = String(payload.company_name ?? payload.company ?? '').trim();
   const requesterName = String(payload.requester ?? payload.contact_name ?? '').trim();
   const status = String(payload.status ?? '').trim();
@@ -413,25 +419,6 @@ function isTicketNumberLike(value: unknown): boolean {
   return /^T[0-9]{8}\.[0-9]{4}$/i.test(v);
 }
 
-function ticketNumberToIsoDate(value: unknown): string | undefined {
-  const raw = String(value ?? '').trim();
-  const match = /^T(\d{4})(\d{2})(\d{2})\.\d{4}$/i.exec(raw);
-  if (!match) return undefined;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return undefined;
-  const utc = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  if (
-    utc.getUTCFullYear() !== year ||
-    utc.getUTCMonth() !== month - 1 ||
-    utc.getUTCDate() !== day
-  ) {
-    return undefined;
-  }
-  return utc.toISOString();
-}
-
 function normalizeIsoTimestamp(value: unknown): string | undefined {
   const raw = String(value ?? '').trim();
   if (!raw) return undefined;
@@ -444,8 +431,6 @@ function inferCreatedAt(...candidates: unknown[]): string | undefined {
   for (const candidate of candidates) {
     const fromIso = normalizeIsoTimestamp(candidate);
     if (fromIso) return fromIso;
-    const fromTicketNumber = ticketNumberToIsoDate(candidate);
-    if (fromTicketNumber) return fromTicketNumber;
   }
   return undefined;
 }
@@ -1103,7 +1088,11 @@ export class TicketWorkflowCoreService {
     const resolvedCreatedAt = inferCreatedAt(
       existing.created_at,
       (result as any)?.snapshot?.created_at,
+      (result as any)?.snapshot?.createDateTime,
+      (result as any)?.snapshot?.createDate,
       (attempt.command.payload as any)?.created_at,
+      (attempt.command.payload as any)?.createDateTime,
+      (attempt.command.payload as any)?.createDate,
       (result as any)?.external_ticket_number,
       (result as any)?.snapshot?.ticket_number,
       existing.ticket_number,
@@ -1352,6 +1341,8 @@ export class TicketWorkflowCoreService {
     const resolvedCreatedAt = inferCreatedAt(
       existing?.created_at,
       payload.created_at,
+      payload.createDateTime,
+      payload.createDate,
       (domainSnapshots.tickets as any)?.created_at,
       payload.ticket_number,
       existing?.ticket_number,
@@ -1828,7 +1819,8 @@ export class TicketWorkflowCoreService {
         const requester = String(row.requester || '').trim();
         const status = String(row.status || '').trim();
         const assignedTo = String(row.assigned_to || '').trim();
-        return !company || !requester || !status || !assignedTo;
+        const createdAt = String(row.created_at || '').trim();
+        return !company || !requester || !status || !assignedTo || !createdAt;
       })
       .slice(0, this.inboxHydrationBatchSize);
     if (candidates.length === 0) return rows;
@@ -1867,7 +1859,12 @@ export class TicketWorkflowCoreService {
           row.domain_snapshots?.tickets?.queue_name,
           row.domain_snapshots?.['correlates.ticket_metadata']?.queue_name,
         );
-        if (existingSnapshotCompany || existingSnapshotRequester || existingSnapshotStatus || existingSnapshotAssignedTo || existingSnapshotQueueName || existingSnapshotQueueId !== undefined) {
+        const existingSnapshotCreatedAt = inferCreatedAt(
+          row.created_at,
+          row.domain_snapshots?.tickets?.created_at,
+          row.domain_snapshots?.['correlates.ticket_metadata']?.created_at,
+        );
+        if (existingSnapshotCompany || existingSnapshotRequester || existingSnapshotStatus || existingSnapshotAssignedTo || existingSnapshotQueueName || existingSnapshotQueueId !== undefined || existingSnapshotCreatedAt) {
           const nextFromSnapshot: InboxTicketState = {
             ...row,
             ...(existingSnapshotCompany ? { company: existingSnapshotCompany } : {}),
@@ -1876,6 +1873,7 @@ export class TicketWorkflowCoreService {
             ...(existingSnapshotAssignedTo ? { assigned_to: existingSnapshotAssignedTo } : {}),
             ...(existingSnapshotQueueName ? { queue_name: existingSnapshotQueueName } : {}),
             ...(existingSnapshotQueueId !== undefined ? { queue_id: existingSnapshotQueueId } : {}),
+            ...(existingSnapshotCreatedAt ? { created_at: existingSnapshotCreatedAt } : {}),
             updated_at: nowIso(),
           };
           await this.repo.upsertInboxTicket(nextFromSnapshot);
@@ -1941,7 +1939,13 @@ export class TicketWorkflowCoreService {
           (snapshot as any).queue_name,
           (snapshot as any).queueName,
         );
-        if (!companyName && !requesterName && !status && !assignedTo && queueId === undefined && !queueName) return null;
+        const createdAt = inferCreatedAt(
+          row.created_at,
+          (snapshot as any).created_at,
+          (snapshot as any).createDateTime,
+          (snapshot as any).createDate,
+        );
+        if (!companyName && !requesterName && !status && !assignedTo && queueId === undefined && !queueName && !createdAt) return null;
 
         const next: InboxTicketState = {
           ...row,
@@ -1951,10 +1955,12 @@ export class TicketWorkflowCoreService {
           ...(assignedTo ? { assigned_to: assignedTo } : {}),
           ...(queueId !== undefined ? { queue_id: queueId } : {}),
           ...(queueName ? { queue_name: queueName } : {}),
+          ...(createdAt ? { created_at: createdAt } : {}),
           domain_snapshots: {
             ...(row.domain_snapshots || {}),
             tickets: {
               ...(row.domain_snapshots?.tickets || {}),
+              ...(createdAt ? { created_at: createdAt } : {}),
               ...(companyName ? { company_name: companyName } : {}),
               ...(requesterName ? { requester_name: requesterName } : {}),
               ...(requesterName ? { contact_name: requesterName, requester: requesterName } : {}),
@@ -1965,6 +1971,7 @@ export class TicketWorkflowCoreService {
             },
             'correlates.ticket_metadata': {
               ...(row.domain_snapshots?.['correlates.ticket_metadata'] || {}),
+              ...(createdAt ? { created_at: createdAt } : {}),
               ...(companyName ? { company_name: companyName } : {}),
               ...(requesterName ? { requester_name: requesterName } : {}),
               ...(requesterName ? { contact_name: requesterName, requester: requesterName } : {}),

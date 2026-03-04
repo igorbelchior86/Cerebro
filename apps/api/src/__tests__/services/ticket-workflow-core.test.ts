@@ -328,6 +328,23 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     });
 
     await service.processAutotaskSyncEvent({
+      event_id: 'evt-created-at-1b',
+      tenant_id: tenantId,
+      event_type: 'ticket.updated',
+      source: 'Autotask',
+      entity_type: 'ticket',
+      entity_id: 'T20210115.0001',
+      payload: {
+        ticket_number: 'T20210115.0001',
+        createDateTime: '2021-01-15T14:22:00.000Z',
+        status: 'Waiting Customer',
+      },
+      occurred_at: '2026-02-26T12:06:00.000Z',
+      correlation: { trace_id: 'trace-created-at', ticket_id: 'T20210115.0001' },
+      provenance: { source: 'autotask_poller', fetched_at: '2026-02-26T12:06:10.000Z' },
+    });
+
+    await service.processAutotaskSyncEvent({
       event_id: 'evt-created-at-2',
       tenant_id: tenantId,
       event_type: 'ticket.updated',
@@ -364,7 +381,7 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     const inferredCreated = inbox.find((row) => row.ticket_id === 'T20200202.0003');
 
     expect(explicitCreated?.created_at).toBe('2021-01-15T14:22:00.000Z');
-    expect(inferredCreated?.created_at).toBe('2020-02-02T12:00:00.000Z');
+    expect(inferredCreated?.created_at).toBeUndefined();
   });
 
   it('hydrates missing org/requester beyond legacy 25-item cap', async () => {

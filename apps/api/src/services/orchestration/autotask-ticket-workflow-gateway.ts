@@ -527,7 +527,7 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
     const ticketNumber = this.readTicketNumber(ticket);
     const requesterName = this.readRequesterName(ticket);
     const companyName = String(ticket?.companyName ?? ticket?.company ?? '').trim();
-    const createdAt = String(ticket?.createDate ?? ticket?.created_at ?? '').trim();
+    const createdAt = String(ticket?.createDateTime ?? ticket?.createDate ?? ticket?.created_at ?? ticket?.createdAt ?? '').trim();
     return {
       id: ticket?.id,
       ticket_number: ticketNumber || undefined,

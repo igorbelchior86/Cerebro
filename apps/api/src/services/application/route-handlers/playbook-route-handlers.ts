@@ -209,6 +209,12 @@ async function applyAutotaskReviewerOverlay(
     secondary_resource_id: secondaryResourceId,
     secondary_resource_name: secondaryName || null,
     secondary_resource_email: String((secondaryResource as any)?.email || '').trim() || null,
+    created_at: pickFirstText(
+      (remoteTicket as any)?.createDateTime,
+      (remoteTicket as any)?.createDate,
+      (remoteTicket as any)?.created_at,
+      (remoteTicket as any)?.createdAt,
+    ),
   };
 
   const divergences: AuthoritativeFieldDiff[] = [];
@@ -682,7 +688,12 @@ router.get('/full-flow', async (req, res) => {
       secondary_resource_email: ssot?.autotask_authoritative?.secondary_resource_email ?? null,
       status: ssot?.autotask_authoritative?.status ?? dbTicket.status ?? null,
       status_label: ssot?.autotask_authoritative?.status_label ?? null,
-      created_at: dbTicket.created_at ?? ssot?.created_at ?? sessionRow?.created_at ?? null,
+      created_at:
+        ssot?.autotask_authoritative?.created_at ??
+        dbTicket.created_at ??
+        ssot?.created_at ??
+        sessionRow?.created_at ??
+        null,
       priority: ssot?.autotask_authoritative?.priority_id ?? dbTicket.priority ?? 'P3',
       priority_label: ssot?.autotask_authoritative?.priority_label ?? null,
       issue_type: ssot?.autotask_authoritative?.issue_type_id ?? dbTicket.issue_type ?? null,

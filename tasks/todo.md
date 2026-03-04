@@ -1,3 +1,29 @@
+# Task: Criar skill cerebro-team no projeto Cerebro a partir do pacote enviado
+**Status**: completed
+**Started**: 2026-03-04T07:25:00-05:00
+
+## Plan
+- [x] Step 1: Inspecionar `cerebro-team.zip` e `skill-creator` para validar estrutura alvo.
+- [x] Step 2: Copiar skill para `.codex/skills/cerebro-team` removendo artefatos de zip/macOS.
+- [x] Step 3: Ajustar frontmatter do `SKILL.md` para padrão mínimo (`name`, `description`).
+- [x] Step 4: Verificar estrutura final do skill no repositório.
+- [x] Step 5: Documentar mudança obrigatória na wiki/changelog.
+
+## Progress Notes
+- Skill importado de `cerebro-team.zip` para `.codex/skills/cerebro-team`.
+- Arquivos `.DS_Store` removidos.
+- `SKILL.md` normalizado para frontmatter simples e compatível com os demais skills do repositório.
+- Estrutura `references/` preservada com playbooks, docs e exemplos.
+
+## Review
+- Verification:
+- `find .codex/skills/cerebro-team -type f` ✅
+- `sed -n '1,120p' .codex/skills/cerebro-team/SKILL.md` ✅
+- Documentation:
+- `wiki/changelog/2026-03-04-cerebro-team-skill-import.md`
+
+---
+
 # Task: Corrigir ausência de queues reais (evitar 200 vazio silencioso)
 **Status**: completed
 **Started**: 2026-03-03T18:45:00-05:00
@@ -454,3 +480,39 @@
 - `python3 .codex/skills/cerebro-concurrency-race-auditor/scripts/concurrency_hotspots.py` ✅
 - Documentation:
 - `wiki/changelog/2026-03-04-sidebar-created-at-race-fix.md`
+
+---
+
+# Task: Tornar horário de criação estritamente canônico do Autotask
+**Status**: completed
+**Started**: 2026-03-04T09:00:00-05:00
+
+## Plan
+- [x] Step 1: Auditar paths que preenchem `created_at` (sync event, gateway snapshot, full-flow, sidebar adapter).
+- [x] Step 2: Priorizar aliases de criação do AT (`createDateTime/createDate`) no backend de workflow/sync.
+- [x] Step 3: Remover fallback por `ticket_number` para horário (evitar `7:00 AM` sintético).
+- [x] Step 4: Garantir overlay autoritativo no full-flow com `created_at` vindo do AT.
+- [x] Step 5: Validar testes/typecheck e documentar.
+
+## Open Questions
+- Nenhuma.
+
+## Progress Notes
+- `processAutotaskSyncEvent` e projeções locais agora aceitam `createDateTime/createDate` como candidatos de `created_at`.
+- Hidratação remota do inbox passa a preencher `created_at` via snapshot remoto (AT) quando ausente.
+- Fallback baseado em `ticket_number` foi removido do backend (`inferCreatedAt`) e da sidebar adapter para impedir hora fabricada.
+- Overlay autoritativo do full-flow agora inclui `created_at` do ticket remoto do Autotask.
+- Poller de sync envia payload com `created_at`, `createDateTime` e `createDate`.
+
+## Review
+- What worked:
+- Correção em cadeia inteira de origem/projeção para manter semântica única de “ticket creation time”.
+- What was tricky:
+- Conciliar robustez para payloads heterogêneos do AT sem reintroduzir fallback sintético.
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/api test -- ticket-workflow-core.test.ts` ✅ (19/19)
+- `python3 .codex/skills/cerebro-concurrency-race-auditor/scripts/concurrency_hotspots.py --json` ✅
+- Documentation:
+- `wiki/changelog/2026-03-04-autotask-canonical-created-at.md`

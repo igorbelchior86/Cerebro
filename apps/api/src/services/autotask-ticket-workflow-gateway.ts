@@ -420,9 +420,11 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
   }
 
   private mapTicketSnapshot(ticket: any): Record<string, unknown> {
+    const createdAt = String(ticket?.createDateTime ?? ticket?.createDate ?? ticket?.created_at ?? ticket?.createdAt ?? '').trim();
     return {
       id: ticket?.id,
       ticket_number: ticket?.ticketNumber,
+      ...(createdAt ? { created_at: createdAt } : {}),
       title: ticket?.title ?? ticket?.summary,
       description: ticket?.description,
       status: ticket?.status,

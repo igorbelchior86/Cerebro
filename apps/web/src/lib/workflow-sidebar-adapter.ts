@@ -17,25 +17,6 @@ function fallbackPriority(status?: string): NonNullable<ActiveTicket['priority']
   return 'P3';
 }
 
-function ticketNumberToIsoDate(value: unknown): string | undefined {
-  const raw = String(value ?? '').trim();
-  const match = /^T(\d{4})(\d{2})(\d{2})\.\d{4}$/i.exec(raw);
-  if (!match) return undefined;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return undefined;
-  const utc = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-  if (
-    utc.getUTCFullYear() !== year ||
-    utc.getUTCMonth() !== month - 1 ||
-    utc.getUTCDate() !== day
-  ) {
-    return undefined;
-  }
-  return utc.toISOString();
-}
-
 function normalizeIsoTimestamp(value: unknown): string | undefined {
   const raw = String(value ?? '').trim();
   if (!raw) return undefined;
@@ -54,8 +35,6 @@ function resolveCreatedAt(row: WorkflowInboxTicket): string | undefined {
   );
   if (fromMetadata) return fromMetadata;
 
-  const fromTicketNumber = ticketNumberToIsoDate(row.ticket_number || row.ticket_id);
-  if (fromTicketNumber) return fromTicketNumber;
   return undefined;
 }
 

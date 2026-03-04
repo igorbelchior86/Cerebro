@@ -636,7 +636,12 @@ export class AutotaskPollingService {
     const rawId = String(ticket.id ?? '').trim();
     const ticketRef = String(ticket.ticketNumber || rawId).trim();
     if (!ticketRef) return;
-    const occurredAt = String(ticket.lastActivityDate || ticket.createDate || new Date().toISOString());
+    const occurredAt = String(
+      ticket.lastActivityDate ||
+      ticket.createDateTime ||
+      ticket.createDate ||
+      new Date().toISOString()
+    );
     const eventId = `${source}:${rawId || ticketRef}:ticket.created:${occurredAt}`;
 
     const event: WorkflowEventEnvelope = {
@@ -649,7 +654,9 @@ export class AutotaskPollingService {
       payload: {
         external_id: rawId || ticketRef,
         ticket_number: String(ticket.ticketNumber || '').trim() || undefined,
-        created_at: String(ticket.createDate || '').trim() || undefined,
+        created_at: String((ticket as any).createDateTime || ticket.createDate || '').trim() || undefined,
+        createDateTime: String((ticket as any).createDateTime || '').trim() || undefined,
+        createDate: String(ticket.createDate || '').trim() || undefined,
         title: ticket.title,
         description: ticket.description,
         company_name: String((ticket as any).companyName || (ticket as any).company || '').trim() || undefined,

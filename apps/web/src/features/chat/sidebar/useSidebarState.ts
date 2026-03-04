@@ -185,6 +185,7 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
                     })
                     .filter((item): item is AutotaskQueueCatalogItem => Boolean(item));
 
+                if (normalized.length === 0) return;
                 setGlobalQueuesCatalog(normalized);
             } catch {
                 // Keep UI fallback queue labels when Autotask catalog is unavailable.

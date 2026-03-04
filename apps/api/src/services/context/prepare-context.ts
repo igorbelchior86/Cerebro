@@ -587,9 +587,15 @@ export class PrepareContextService {
       const contactId = Number(raw.contactID);
       const queueId = Number(raw.queueID);
       const assignedResourceId = Number(raw.assignedResourceID);
+      const secondaryResourceId = Number(raw.secondaryResourceID);
+      const priorityId = Number(raw.priority);
+      const issueTypeId = Number(raw.issueType);
+      const subIssueTypeId = Number(raw.subIssueType);
+      const serviceLevelAgreementId = Number(raw.serviceLevelAgreementID);
       const ticketNumber = String(raw.ticketNumber || '').trim();
       const companyName = String((ticket as any)?.company || '').trim();
       const queueName = String((ticket as any)?.queueName || '').trim();
+      const statusValue = String(raw.status ?? '').trim();
       const contactName = String(autotaskContactNameResolved || '').trim();
       const contactEmail = String(autotaskContactEmailResolved || '').trim().toLowerCase();
       const assignedResourceName = String(autotaskAssignedResourceNameResolved || '').trim();
@@ -604,7 +610,13 @@ export class PrepareContextService {
         !!contactEmail ||
         Number.isFinite(queueId) ||
         !!queueName ||
-        Number.isFinite(assignedResourceId);
+        Number.isFinite(assignedResourceId) ||
+        Number.isFinite(secondaryResourceId) ||
+        !!statusValue ||
+        Number.isFinite(priorityId) ||
+        Number.isFinite(issueTypeId) ||
+        Number.isFinite(subIssueTypeId) ||
+        Number.isFinite(serviceLevelAgreementId);
       if (!hasAutotaskAuthority) return null;
       return {
         source: 'autotask' as const,
@@ -622,6 +634,12 @@ export class PrepareContextService {
         ...(Number.isFinite(assignedResourceId) ? { assigned_resource_id: assignedResourceId } : {}),
         ...(assignedResourceName ? { assigned_resource_name: assignedResourceName } : {}),
         ...(assignedResourceEmail ? { assigned_resource_email: assignedResourceEmail } : {}),
+        ...(Number.isFinite(secondaryResourceId) ? { secondary_resource_id: secondaryResourceId } : {}),
+        ...(statusValue ? { status: statusValue } : {}),
+        ...(Number.isFinite(priorityId) ? { priority_id: priorityId } : {}),
+        ...(Number.isFinite(issueTypeId) ? { issue_type_id: issueTypeId } : {}),
+        ...(Number.isFinite(subIssueTypeId) ? { sub_issue_type_id: subIssueTypeId } : {}),
+        ...(Number.isFinite(serviceLevelAgreementId) ? { service_level_agreement_id: serviceLevelAgreementId } : {}),
       };
     })();
     const normalizedTicket = await this.normalizeTicketForPipeline(ticket).catch(() => null);

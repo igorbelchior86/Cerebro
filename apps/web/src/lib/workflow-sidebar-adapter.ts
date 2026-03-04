@@ -56,8 +56,7 @@ function resolveCreatedAt(row: WorkflowInboxTicket): string | undefined {
 
   const fromTicketNumber = ticketNumberToIsoDate(row.ticket_number || row.ticket_id);
   if (fromTicketNumber) return fromTicketNumber;
-
-  return normalizeIsoTimestamp(row.updated_at || row.last_event_occurred_at || row.last_sync_at);
+  return undefined;
 }
 
 function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
@@ -74,30 +73,60 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
   const requesterName = String(
     row.requester ||
     row.domain_snapshots?.tickets?.requester_name ||
+    row.domain_snapshots?.tickets?.contact_name ||
+    row.domain_snapshots?.tickets?.requester ||
     row.domain_snapshots?.['correlates.ticket_metadata']?.requester_name ||
+    row.domain_snapshots?.['correlates.ticket_metadata']?.contact_name ||
+    row.domain_snapshots?.['correlates.ticket_metadata']?.requester ||
     ''
   ).trim();
-  const assignedRaw = String(row.assigned_to || '').trim();
+  const statusLabel = String(
+    row.domain_snapshots?.tickets?.status_label ||
+    row.domain_snapshots?.['correlates.ticket_metadata']?.status_label ||
+    ''
+  ).trim();
+  const statusValue = String(
+    statusLabel ||
+    row.status ||
+    row.domain_snapshots?.tickets?.status ||
+    row.domain_snapshots?.['correlates.ticket_metadata']?.status ||
+    ''
+  ).trim();
+  const assignedRaw = String(
+    row.assigned_to ||
+    row.domain_snapshots?.tickets?.assigned_to ||
+    row.domain_snapshots?.['correlates.resources']?.assigned_to ||
+    ''
+  ).trim();
+  const queueName = String(
+    row.queue_name ||
+    row.domain_snapshots?.tickets?.queue_name ||
+    row.domain_snapshots?.['correlates.ticket_metadata']?.queue_name ||
+    ''
+  ).trim();
+  const queueIdRaw = row.queue_id ??
+    row.domain_snapshots?.tickets?.queue_id ??
+    row.domain_snapshots?.['correlates.ticket_metadata']?.queue_id;
+  const queueId = Number(queueIdRaw);
   const assignedNumeric = Number.parseInt(assignedRaw, 10);
   return {
     id: row.ticket_id,
     ticket_id: displayTicketNumber || row.ticket_id,
     ticket_number: displayTicketNumber || row.ticket_id,
-    status: mapWorkflowStatusToSidebarStatus(row.status),
-    ...(row.status ? { ticket_status_value: row.status } : {}),
+    status: mapWorkflowStatusToSidebarStatus(statusValue),
+    ...(statusValue ? { ticket_status_value: statusValue } : {}),
     ...((() => {
-      const label = String(row.domain_snapshots?.['correlates.ticket_metadata']?.status_label || '').trim();
-      return label ? { ticket_status_label: label } : {};
+      return statusLabel ? { ticket_status_label: statusLabel } : {};
     })()),
-    priority: fallbackPriority(row.status),
+    priority: fallbackPriority(statusValue),
     title,
     ...(description ? { description } : {}),
     ...(companyName ? { company: companyName, org: companyName } : {}),
     ...(requesterName ? { requester: requesterName } : {}),
-    meta: row.status ? `Workflow ${row.status}` : 'Workflow inbox',
+    meta: statusValue ? `Workflow ${statusValue}` : 'Workflow inbox',
     ...(createdAt ? { created_at: createdAt } : {}),
-    ...(row.queue_name ? { queue_name: row.queue_name, queue: row.queue_name } : {}),
-    ...(typeof row.queue_id === 'number' ? { queue_id: row.queue_id } : {}),
+    ...(queueName ? { queue_name: queueName, queue: queueName } : {}),
+    ...(Number.isFinite(queueId) ? { queue_id: queueId } : {}),
     ...(assignedRaw
       ? (Number.isFinite(assignedNumeric)
         ? { assigned_resource_id: assignedNumeric }

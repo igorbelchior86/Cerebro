@@ -993,6 +993,14 @@ router.get('/queues', async (req, res, next) => {
     } catch (error) {
       degradedReason = classifyAutotaskReadDegradedReason(error);
     }
+    if (degradedReason && rows.length === 0 && !cacheMeta) {
+      res.status(503).json({
+        error: 'Queue catalog unavailable',
+        degraded: { provider: 'Autotask', reason: degradedReason },
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
     res.json({
       success: true,
       data: rows,

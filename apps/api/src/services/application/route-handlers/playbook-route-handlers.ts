@@ -40,8 +40,31 @@ type AuthoritativeFieldDiff = {
   autotask: unknown;
 };
 
-async function getAutotaskClientForReviewer(): Promise<AutotaskClient | null> {
-  const tenantId = String(tenantContext.getStore()?.tenantId || '').trim();
+function pickFirstNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function pickFirstText(...values: unknown[]): string | null {
+  for (const value of values) {
+    const normalized = String(value ?? '').trim();
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+function resolvePicklistLabel(options: Array<{ id: number; label: string }>, rawValue: unknown): string | null {
+  const numeric = Number(rawValue);
+  if (!Number.isFinite(numeric)) return null;
+  const match = options.find((option) => option.id === numeric);
+  return match?.label || null;
+}
+
+async function getAutotaskClientForReviewer(explicitTenantId?: string | null): Promise<AutotaskClient | null> {
+  const tenantId = String(explicitTenantId || tenantContext.getStore()?.tenantId || '').trim();
   if (!tenantId) return null;
   const row = await queryOne<{ credentials: AutotaskCreds }>(
     `SELECT credentials
@@ -76,7 +99,8 @@ function valuesDiffer(a: unknown, b: unknown): boolean {
 
 async function applyAutotaskReviewerOverlay(
   ticketRef: string,
-  localTicket: Record<string, unknown>
+  localTicket: Record<string, unknown>,
+  tenantId?: string | null,
 ): Promise<{
   ticket: Record<string, unknown>;
   review: {
@@ -86,7 +110,7 @@ async function applyAutotaskReviewerOverlay(
     divergences: AuthoritativeFieldDiff[];
   };
 } | null> {
-  const client = await getAutotaskClientForReviewer();
+  const client = await getAutotaskClientForReviewer(tenantId);
   if (!client) return null;
 
   const ref = String(ticketRef || '').trim();
@@ -101,18 +125,43 @@ async function applyAutotaskReviewerOverlay(
     return null;
   }
 
-  const companyId = Number((remoteTicket as any)?.companyID);
-  const contactId = Number((remoteTicket as any)?.contactID);
-  const primaryResourceId = Number((remoteTicket as any)?.assignedResourceID);
-  const secondaryResourceId = Number((remoteTicket as any)?.secondaryResourceID);
-  const queueId = Number((remoteTicket as any)?.queueID);
+  const companyId = pickFirstNumber((remoteTicket as any)?.companyID, (remoteTicket as any)?.companyId);
+  const contactId = pickFirstNumber((remoteTicket as any)?.contactID, (remoteTicket as any)?.contactId);
+  const primaryResourceId = pickFirstNumber((remoteTicket as any)?.assignedResourceID, (remoteTicket as any)?.assignedResourceId);
+  const secondaryResourceId = pickFirstNumber((remoteTicket as any)?.secondaryResourceID, (remoteTicket as any)?.secondaryResourceId);
+  const queueId = pickFirstNumber((remoteTicket as any)?.queueID, (remoteTicket as any)?.queueId);
+  const priorityId = pickFirstNumber((remoteTicket as any)?.priority, (remoteTicket as any)?.priorityID, (remoteTicket as any)?.priorityId);
+  const issueTypeId = pickFirstNumber((remoteTicket as any)?.issueType, (remoteTicket as any)?.issueTypeID, (remoteTicket as any)?.issueTypeId);
+  const subIssueTypeId = pickFirstNumber((remoteTicket as any)?.subIssueType, (remoteTicket as any)?.subIssueTypeID, (remoteTicket as any)?.subIssueTypeId);
+  const serviceLevelAgreementId = pickFirstNumber(
+    (remoteTicket as any)?.serviceLevelAgreementID,
+    (remoteTicket as any)?.serviceLevelAgreementId,
+    (remoteTicket as any)?.sla,
+  );
+  const statusValue = pickFirstText((remoteTicket as any)?.status, (remoteTicket as any)?.statusValue);
 
-  const [company, contact, primaryResource, secondaryResource, queueOptions] = await Promise.all([
-    Number.isFinite(companyId) ? client.getCompany(companyId).catch(() => null) : Promise.resolve(null),
-    Number.isFinite(contactId) ? client.getContact(contactId).catch(() => null) : Promise.resolve(null),
-    Number.isFinite(primaryResourceId) ? client.getResource(primaryResourceId).catch(() => null) : Promise.resolve(null),
-    Number.isFinite(secondaryResourceId) ? client.getResource(secondaryResourceId).catch(() => null) : Promise.resolve(null),
+  const [
+    company,
+    contact,
+    primaryResource,
+    secondaryResource,
+    queueOptions,
+    statusOptionRows,
+    priorityOptionRows,
+    issueTypeOptionRows,
+    subIssueTypeOptionRows,
+    slaOptionRows,
+  ] = await Promise.all([
+    Number.isFinite(Number(companyId)) ? client.getCompany(Number(companyId)).catch(() => null) : Promise.resolve(null),
+    Number.isFinite(Number(contactId)) ? client.getContact(Number(contactId)).catch(() => null) : Promise.resolve(null),
+    Number.isFinite(Number(primaryResourceId)) ? client.getResource(Number(primaryResourceId)).catch(() => null) : Promise.resolve(null),
+    Number.isFinite(Number(secondaryResourceId)) ? client.getResource(Number(secondaryResourceId)).catch(() => null) : Promise.resolve(null),
     client.getTicketQueues().catch(() => []),
+    client.getTicketStatusOptions().catch(() => []),
+    client.getTicketPriorityOptions().catch(() => []),
+    client.getTicketIssueTypeOptions().catch(() => []),
+    client.getTicketSubIssueTypeOptions().catch(() => []),
+    client.getTicketServiceLevelAgreementOptions().catch(() => []),
   ]);
 
   const queueLabelMap = new Map<number, string>();
@@ -125,27 +174,39 @@ async function applyAutotaskReviewerOverlay(
   const contactName = `${String((contact as any)?.firstName || '').trim()} ${String((contact as any)?.lastName || '').trim()}`.trim();
   const primaryName = `${String((primaryResource as any)?.firstName || '').trim()} ${String((primaryResource as any)?.lastName || '').trim()}`.trim();
   const secondaryName = `${String((secondaryResource as any)?.firstName || '').trim()} ${String((secondaryResource as any)?.lastName || '').trim()}`.trim();
+  const priorityLabel = resolvePicklistLabel(priorityOptionRows, priorityId);
+  const issueTypeLabel = resolvePicklistLabel(issueTypeOptionRows, issueTypeId);
+  const subIssueTypeLabel = resolvePicklistLabel(subIssueTypeOptionRows, subIssueTypeId);
+  const serviceLevelAgreementLabel = resolvePicklistLabel(slaOptionRows, serviceLevelAgreementId);
+  const statusLabel =
+    resolvePicklistLabel(statusOptionRows, statusValue) ||
+    pickFirstText((remoteTicket as any)?.statusName, (remoteTicket as any)?.statusLabel);
 
   const authoritativeOverlay: Record<string, unknown> = {
-    company_id: Number.isFinite(companyId) ? companyId : null,
-    company: String((company as any)?.companyName || (remoteTicket as any)?.companyName || '').trim() || null,
-    contact_id: Number.isFinite(contactId) ? contactId : null,
-    contact_name: contactName || null,
+    company_id: companyId,
+    company: pickFirstText((company as any)?.companyName, (remoteTicket as any)?.companyName, (remoteTicket as any)?.company),
+    contact_id: contactId,
+    contact_name: pickFirstText(contactName, (remoteTicket as any)?.contactName, (remoteTicket as any)?.requesterName),
     contact_email: String((contact as any)?.emailAddress || '').trim() || null,
-    status: (remoteTicket as any)?.status ?? null,
-    priority: (remoteTicket as any)?.priority ?? null,
-    additional_contacts: (remoteTicket as any)?.additionalContactIDs ?? null,
-    issue_type: (remoteTicket as any)?.issueType ?? null,
-    sub_issue_type: (remoteTicket as any)?.subIssueType ?? null,
+    status: statusValue,
+    status_label: statusLabel,
+    priority: priorityId,
+    priority_label: priorityLabel,
+    additional_contacts: (remoteTicket as any)?.additionalContactIDs ?? (remoteTicket as any)?.additionalContactIds ?? null,
+    issue_type: issueTypeId,
+    issue_type_label: issueTypeLabel,
+    sub_issue_type: subIssueTypeId,
+    sub_issue_type_label: subIssueTypeLabel,
     source: (remoteTicket as any)?.source ?? null,
     due_date: (remoteTicket as any)?.dueDateTime ?? (remoteTicket as any)?.dueDate ?? null,
-    sla: (remoteTicket as any)?.serviceLevelAgreementID ?? null,
-    queue_id: Number.isFinite(queueId) ? queueId : null,
-    queue_name: Number.isFinite(queueId) ? (queueLabelMap.get(queueId) || null) : null,
-    assigned_resource_id: Number.isFinite(primaryResourceId) ? primaryResourceId : null,
+    sla: serviceLevelAgreementId,
+    sla_label: serviceLevelAgreementLabel,
+    queue_id: queueId,
+    queue_name: Number.isFinite(Number(queueId)) ? (queueLabelMap.get(Number(queueId)) || null) : null,
+    assigned_resource_id: primaryResourceId,
     assigned_resource_name: primaryName || null,
     assigned_resource_email: String((primaryResource as any)?.email || '').trim() || null,
-    secondary_resource_id: Number.isFinite(secondaryResourceId) ? secondaryResourceId : null,
+    secondary_resource_id: secondaryResourceId,
     secondary_resource_name: secondaryName || null,
     secondary_resource_email: String((secondaryResource as any)?.email || '').trim() || null,
   };
@@ -171,8 +232,8 @@ async function applyAutotaskReviewerOverlay(
   };
 }
 
-async function getAutotaskTicketNotesForFeed(ticketRef: string): Promise<Record<string, unknown>[]> {
-  const client = await getAutotaskClientForReviewer();
+async function getAutotaskTicketNotesForFeed(ticketRef: string, tenantId?: string | null): Promise<Record<string, unknown>[]> {
+  const client = await getAutotaskClientForReviewer(tenantId);
   if (!client) return [];
 
   const ref = String(ticketRef || '').trim();
@@ -184,7 +245,11 @@ async function getAutotaskTicketNotesForFeed(ticketRef: string): Promise<Record<
       numericTicketId = Number(ref);
     } else {
       const remoteTicket = await client.getTicketByTicketNumber(ref);
-      numericTicketId = Number((remoteTicket as any)?.id);
+      numericTicketId = Number(
+        (remoteTicket as any)?.id ??
+        (remoteTicket as any)?.ticketID ??
+        (remoteTicket as any)?.ticketId
+      );
     }
   } catch {
     return [];
@@ -612,14 +677,19 @@ router.get('/full-flow', async (req, res) => {
       assigned_resource_id: ssot?.autotask_authoritative?.assigned_resource_id ?? null,
       assigned_resource_name: ssot?.autotask_authoritative?.assigned_resource_name ?? null,
       assigned_resource_email: ssot?.autotask_authoritative?.assigned_resource_email ?? null,
-      created_at: ssot?.created_at ?? dbTicket.created_at ?? sessionRow?.created_at ?? null,
-      priority: dbTicket.priority ?? 'P3',
+      secondary_resource_id: ssot?.autotask_authoritative?.secondary_resource_id ?? null,
+      secondary_resource_name: ssot?.autotask_authoritative?.secondary_resource_name ?? null,
+      secondary_resource_email: ssot?.autotask_authoritative?.secondary_resource_email ?? null,
+      status: ssot?.autotask_authoritative?.status ?? dbTicket.status ?? null,
+      status_label: ssot?.autotask_authoritative?.status_label ?? null,
+      created_at: dbTicket.created_at ?? ssot?.created_at ?? sessionRow?.created_at ?? null,
+      priority: ssot?.autotask_authoritative?.priority_id ?? dbTicket.priority ?? 'P3',
       priority_label: ssot?.autotask_authoritative?.priority_label ?? null,
-      issue_type: ssot?.autotask_authoritative?.issue_type_id ?? null,
+      issue_type: ssot?.autotask_authoritative?.issue_type_id ?? dbTicket.issue_type ?? null,
       issue_type_label: ssot?.autotask_authoritative?.issue_type_label ?? null,
-      sub_issue_type: ssot?.autotask_authoritative?.sub_issue_type_id ?? null,
+      sub_issue_type: ssot?.autotask_authoritative?.sub_issue_type_id ?? dbTicket.sub_issue_type ?? null,
       sub_issue_type_label: ssot?.autotask_authoritative?.sub_issue_type_label ?? null,
-      sla: ssot?.autotask_authoritative?.service_level_agreement_id ?? null,
+      sla: ssot?.autotask_authoritative?.service_level_agreement_id ?? dbTicket.sla ?? null,
       sla_label: ssot?.autotask_authoritative?.service_level_agreement_label ?? null,
       normalization_audit: {
         round: round0Finding ? 0 : null,
@@ -628,10 +698,15 @@ router.get('/full-flow', async (req, res) => {
         source: round0Finding?.source || null,
       },
     };
-    const authoritativeReviewed = await applyAutotaskReviewerOverlay(String(ticketId || rawId || ''), canonicalTicket);
+    const authoritativeReviewed = await applyAutotaskReviewerOverlay(
+      String(ticketId || rawId || ''),
+      canonicalTicket,
+      req.auth?.tid || null,
+    );
     const canonicalTicketResolved = authoritativeReviewed?.ticket || canonicalTicket;
     const ticketNotes = await getAutotaskTicketNotesForFeed(
-      String(canonicalTicketResolved.autotask_ticket_id_numeric || canonicalTicketResolved.id || ticketId || rawId || '')
+      String(canonicalTicketResolved.autotask_ticket_id_numeric || canonicalTicketResolved.id || ticketId || rawId || ''),
+      req.auth?.tid || null,
     );
 
     const diagResult = await queryOne<{ payload: any }>(

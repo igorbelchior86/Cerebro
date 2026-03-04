@@ -1,3 +1,27 @@
+# Task: Corrigir ausência de queues reais (evitar 200 vazio silencioso)
+**Status**: completed
+**Started**: 2026-03-03T18:45:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar ponto de falha no fluxo `/autotask/queues` + sidebar queue catalog.
+- [x] Step 2: Ajustar backend para não responder `success=true` com lista vazia quando provider falha e não há cache.
+- [x] Step 3: Ajustar frontend para não sobrescrever catálogo com `[]`.
+- [x] Step 4: Rodar typecheck API/Web.
+- [x] Step 5: Atualizar wiki/changelog.
+
+## Progress Notes
+- Backend: `GET /autotask/queues` agora retorna `503` (`Queue catalog unavailable`) quando o provider degrada e não existe cache válido, eliminando “falso sucesso” com payload vazio.
+- Frontend sidebar: fetch de queue catalog ignora resposta normalizada vazia, preservando estado/catálogo anterior e fallback estável.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-03-queue-catalog-no-silent-empty-success.md`
+
+---
+
 # Task: Implementar cache robusto (backend Redis/memory + frontend dedupe/SWR) para reduzir live pulls do Autotask
 **Status**: completed
 **Started**: 2026-03-03T18:20:00-05:00
@@ -221,3 +245,212 @@
 - `pnpm --filter @cerebro/api test -- autotask-route-handlers.sidebar-coordination.test.ts` ✅
 - Documentation:
 - `wiki/changelog/2026-03-03-autotask-sidebar-upstream-amplification-coordination.md`
+
+---
+
+# Task: RCA profundo + correção de fallback persistente (org/requester/status/tech e 304 no full-flow)
+**Status**: completed
+**Started**: 2026-03-03T19:05:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar causa raiz no caminho `/workflow/inbox` + adapter sidebar + polling de `/playbook/full-flow`.
+- [x] Step 2: Corrigir hidratação backend para preencher também `status/assigned/queue` e aliases (`contact_name/requester`).
+- [x] Step 3: Corrigir frontend para tratar `304` de `/playbook/full-flow` sem entrar em estado de erro/fallback.
+- [x] Step 4: Ajustar adapter da sidebar para consumir aliases de snapshots (requester/status/queue/assigned).
+- [x] Step 5: Adicionar teste de regressão para hidratação de campos além de org/requester.
+- [x] Step 6: Executar testes/typecheck e registrar documentação.
+
+## Open Questions
+- Nenhuma.
+
+## Progress Notes
+- Causa raiz confirmada em dois pontos:
+- Polling da tela de triage tratava `304` como erro (Axios default), levando o estado para erro/fallback sem falha real de backend.
+- Hidratação do inbox cobria essencialmente org/requester; campos de status/assignee/queue ficavam vazios quando vinham por aliases em snapshots.
+- Backend atualizado para hidratar e promover `status`, `assigned_to`, `queue_id`, `queue_name` e aliases `contact_name/requester`.
+- Frontend atualizado no adapter da sidebar para ler aliases equivalentes em `domain_snapshots`.
+- Frontend atualizado no polling de `full-flow` para aceitar `304` sem quebrar a UI.
+
+## Review
+- What worked:
+- Correções localizadas nos pontos de projeção e leitura de dados, sem alteração de contrato de autenticação/tenant/integration write.
+- What was tricky:
+- Distinguir falha real de backend de resposta condicional `304` e preservar comportamento de polling sem reintroduzir bypass agressivo.
+- Verification:
+- `pnpm --filter @cerebro/api test -- ticket-workflow-core.test.ts` ✅ (19/19)
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-03-fullflow-304-and-workflow-inbox-hydration-fix.md`
+
+---
+
+# Task: Correção end-to-end de divergências no ticket T20260303.0015 (status/sidebar/contexto/notas)
+**Status**: completed
+**Started**: 2026-03-03T21:05:00-05:00
+
+## Plan
+- [x] Step 1: Auditar payloads do `full-flow` e `workflow/inbox` contra campos visíveis nas 3 colunas da tela.
+- [x] Step 2: Corrigir overlay autoritativo do Autotask para mapear IDs/labels de status/priority/issue/sub-issue/SLA com aliases.
+- [x] Step 3: Corrigir recuperação de notes para feed central com fallback de ID (`id`/`ticketID`/`ticketId`).
+- [x] Step 4: Reforçar seed de `autotask_authoritative` no prepare-context para reduzir lacunas sem refresh manual.
+- [x] Step 5: Ajustar renderização frontend (timeline + status label/sidebar) para evitar fallback incorreto.
+- [x] Step 6: Executar validações de tipagem/testes e registrar evidências.
+
+## Open Questions
+- Nenhuma.
+
+## Progress Notes
+- `full-flow` agora recebe overlay com normalização robusta de campos Autotask (snake/camel/case variants) e labels por picklist.
+- Campo `priority` não usa mais fallback fixo `P3` quando existe dado autoritativo.
+- Feed central agora recupera notes mesmo quando API retorna `ticketID` ao invés de `id`; também inclui `ticket.updates` como fallback de histórico.
+- Sidebar workflow passou a priorizar `status_label` de snapshot para classificação visual, reduzindo mismatch de status.
+- SSOT authoritative seed foi ampliado com status/priority/issue/sub-issue/SLA e secondary resource.
+
+## Review
+- What worked:
+- Correção focada no path de dados (Autotask -> SSOT/full-flow -> UI), sem mudanças em auth/tenant boundaries.
+- What was tricky:
+- Harmonizar aliases heterogêneos da API Autotask sem quebrar contratos existentes.
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/api test -- ticket-workflow-core.test.ts` ✅ (19/19)
+- Documentation:
+- `wiki/changelog/2026-03-03-fullflow-304-and-workflow-inbox-hydration-fix.md`
+
+---
+
+# Task: Correção de runtime não refletindo campos canônicos no T20260303.0015
+**Status**: completed
+**Started**: 2026-03-04T06:10:00-05:00
+
+## Plan
+- [x] Step 1: Revalidar sintomas reportados após deploy local e identificar ponto de falha ainda ativo.
+- [x] Step 2: Corrigir obtenção de cliente Autotask no reviewer/full-flow para usar tenant explícito da request.
+- [x] Step 3: Corrigir feed central para fallback adicional de updates e note-id variants.
+- [x] Step 4: Sincronizar card da esquerda com snapshot canônico do ticket selecionado para eliminar `Unknown` residual.
+- [x] Step 5: Restaurar fallback seguro de `priority/issue/sub-issue/sla/status` quando overlay autoritativo não retornar.
+- [x] Step 6: Reexecutar typecheck/testes e reiniciar stack runtime.
+
+## Open Questions
+- Nenhuma.
+
+## Progress Notes
+- Causa operacional encontrada: camada reviewer do `full-flow` podia ficar sem tenant explícito e retornar vazio silenciosamente (impactando notes + campos contextuais).
+- Ajuste aplicado para passar `req.auth.tid` explicitamente ao resolver cliente Autotask no overlay e notes feed.
+- Card da esquerda agora é atualizado com dados canônicos já resolvidos no `full-flow` para o ticket ativo.
+- Fallback de campos contextuais no `canonicalTicket` foi reforçado para evitar regressão de `Priority` em branco.
+- Stack reiniciada após patch para garantir runtime consistente com o código atual.
+
+## Review
+- What worked:
+- Correção direta no path efetivamente usado em runtime (`playbook-route-handlers` + page triage).
+- What was tricky:
+- Diferenciar falha de mapeamento de falha de contexto de tenant na camada reviewer.
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/api test -- ticket-workflow-core.test.ts` ✅ (19/19)
+- `pnpm stack:restart` ✅ (api/web healthy)
+- Documentation:
+- `wiki/changelog/2026-03-03-fullflow-304-and-workflow-inbox-hydration-fix.md`
+
+---
+
+# Task: Corrigir race condition de oscilação Unknown/real no card da sidebar
+**Status**: completed
+**Started**: 2026-03-04T06:45:00-05:00
+
+## Plan
+- [x] Step 1: Auditar concorrência entre polling da sidebar (`loadTriPaneSidebarTickets`) e patch canônico vindo do `full-flow`.
+- [x] Step 2: Implementar merge determinístico de estado no frontend para evitar overwrite com valores degradados.
+- [x] Step 3: Priorizar valores conhecidos sobre placeholders (`Unknown`, `Unassigned`, `-`) em campos críticos do card.
+- [x] Step 4: Validar typecheck web/api e reiniciar runtime.
+
+## Open Questions
+- Nenhuma.
+
+## Progress Notes
+- Race confirmado: dois writers assíncronos atualizando `sidebarTickets` em cadências distintas (3s e 10s), gerando flip-flop visual entre dados canônicos e fallback.
+- `fetchTickets` da página de triage passou a usar merge com estado anterior, em vez de replace direto.
+- Merge agora preserva `org/requester/status label/priority/queue/assignee` quando o payload novo vier degradado.
+
+## Review
+- What worked:
+- Fix localizado no writer da sidebar em `triage/[id]`, sem alterar contratos da API.
+- What was tricky:
+- Evitar “travar” dados antigos; merge mantém atualização quando novo valor é realmente melhor.
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm stack:restart` ✅ (api/web healthy)
+- Documentation:
+- `wiki/changelog/2026-03-03-fullflow-304-and-workflow-inbox-hydration-fix.md`
+
+---
+
+# Task: Corrigir oscillation de status canônico vs evento de nota no mesmo card
+**Status**: completed
+**Started**: 2026-03-04T07:15:00-05:00
+
+## Plan
+- [x] Step 1: Isolar origem da alternância `Waiting Customer` <-> `Customer note added`.
+- [x] Step 2: Bloquear labels de evento (`note/comment added`) como `ticket_status_label` canônico.
+- [x] Step 3: Ajustar merge concorrente da sidebar para preservar status lifecycle válido.
+- [x] Step 4: Validar typecheck e reiniciar stack.
+
+## Open Questions
+- Nenhuma.
+
+## Progress Notes
+- Root cause confirmado: writer do `full-flow` estava empurrando label de evento de nota para o campo de status do card.
+- Regras novas no frontend:
+- `isLifecycleStatusLabel` rejeita labels de evento (`note/comment added`, `workflow rule`).
+- merge de sidebar só aceita status detalhado quando label é lifecycle; caso contrário preserva status anterior válido.
+
+## Review
+- What worked:
+- Fix localizado no merge writer do `triage/[id]` sem alterar contrato da API.
+- What was tricky:
+- Evitar bloquear status legítimo textual e ao mesmo tempo impedir overwrite por evento operacional.
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm stack:restart` ✅
+- Documentation:
+- `wiki/changelog/2026-03-03-fullflow-304-and-workflow-inbox-hydration-fix.md`
+
+---
+
+# Task: Corrigir race de horário no card (alternância 7:00 AM vs 6:32 PM)
+**Status**: completed
+**Started**: 2026-03-04T08:05:00-05:00
+
+## Plan
+- [x] Step 1: Reproduzir race temporal e confirmar writers concorrentes (`workflow inbox` vs `full-flow`).
+- [x] Step 2: Tornar `created_at` determinístico no merge do card (preferir timestamp mais antigo/canônico).
+- [x] Step 3: Remover fallback de `created_at` para `updated/last_event` no adapter da sidebar.
+- [x] Step 4: Ajustar `full-flow` para priorizar `dbTicket.created_at` sobre `ssot.created_at`.
+- [x] Step 5: Validar typecheck/teste e registrar documentação.
+
+## Open Questions
+- Nenhuma.
+
+## Progress Notes
+- Root cause confirmado: dois polls atualizavam o mesmo card com semânticas diferentes de tempo (`ticket created` vs `event processed`), causando flip-flop visual.
+- `mergeSidebarTicketList` agora resolve `created_at` por regra temporal determinística (earliest ISO válido) e não por última resposta recebida.
+- `workflow-sidebar-adapter` não usa mais `updated_at/last_event_occurred_at/last_sync_at` para preencher horário do card quando `created_at` está ausente.
+- `full-flow` passou a usar `dbTicket.created_at` antes de `ssot.created_at` para reduzir contaminação por timestamps de processamento.
+
+## Review
+- What worked:
+- Correção no ponto de concorrência de writers sem alterar contratos de API.
+- What was tricky:
+- Isolar timestamp canônico de ticket versus timestamp operacional de evento.
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/api test -- ticket-workflow-core.test.ts` ✅ (19/19)
+- `python3 .codex/skills/cerebro-concurrency-race-auditor/scripts/concurrency_hotspots.py` ✅
+- Documentation:
+- `wiki/changelog/2026-03-04-sidebar-created-at-race-fix.md`

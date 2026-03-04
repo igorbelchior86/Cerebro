@@ -1168,3 +1168,9 @@
 **Root cause**: O read-path passou a executar round-trips externos demais por request sob backlog, elevando latência e empurrando UI para fallback.
 **Rule**: Em rotas críticas de leitura, hidratação remota deve ser bounded (batch + timeout) e dados locais persistidos devem ter prioridade.
 **Pattern**: “Após backfill em massa, tudo cai no fallback” sinaliza regressão de latência no caminho síncrono de leitura.
+
+## Lesson: 2026-03-04 (não misturar timestamp de criação com timestamp de evento no mesmo campo de UI)
+**Mistake**: Permiti que `created_at` do card recebesse valor de fontes com semântica diferente (ex.: `updated_at` / evento de comentário) durante polls concorrentes.
+**Root cause**: Faltava regra determinística de precedência temporal entre writers assíncronos (`full-flow` 3s e `workflow inbox` 10s), então o valor “mais recente” visualmente alternava.
+**Rule**: Campo de horário exibido no card deve usar somente tempo canônico de criação do ticket; quando houver múltiplas fontes, aplicar merge determinístico (earliest válido) e bloquear fallback de campos operacionais.
+**Pattern**: Oscilação entre “hora antiga” e “hora recente de evento” em polling indica mistura de semântica temporal e write contention no estado da sidebar.

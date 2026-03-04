@@ -407,6 +407,58 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     }
   });
 
+  it('hydrates status, assignee and queue from snapshot aliases when inbox row is sparse', async () => {
+    const fetchTicketSnapshot = jest.fn().mockResolvedValue({
+      company_name: 'Bethel Presbyterian Church',
+      contact_name: 'Allen Hauser',
+      status_label: 'In Progress',
+      assigned_to: '321',
+      queue_id: 7,
+      queue_name: 'Service Desk',
+    });
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn(),
+      fetchTicketSnapshot,
+    };
+    const { service, repo } = createService(gateway);
+
+    await repo.upsertInboxTicket({
+      tenant_id: tenantId,
+      ticket_id: 'T20260303.0015',
+      ticket_number: 'T20260303.0015',
+      title: 'Unable to Open PDF Files Due to Adobe Program Error',
+      description: 'Initial payload',
+      comments: [],
+      source_of_truth: 'Autotask',
+      updated_at: '2026-03-03T22:00:00.000Z',
+      domain_snapshots: {
+        tickets: {
+          contact_name: 'Allen Hauser',
+        },
+        'correlates.ticket_metadata': {
+          company_name: 'Bethel Presbyterian Church',
+          status_label: 'In Progress',
+          queue_name: 'Service Desk',
+        },
+        'correlates.resources': {
+          assigned_to: '321',
+        },
+      },
+    });
+
+    const inbox = await service.listInbox(tenantId);
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0]).toMatchObject({
+      ticket_id: 'T20260303.0015',
+      company: 'Bethel Presbyterian Church',
+      requester: 'Allen Hauser',
+      status: 'In Progress',
+      assigned_to: '321',
+      queue_name: 'Service Desk',
+    });
+    expect(fetchTicketSnapshot).not.toHaveBeenCalled();
+  });
+
   it('retries transient failures and sends to DLQ after max attempts', async () => {
     const gateway: TicketWorkflowGateway = {
       executeCommand: jest

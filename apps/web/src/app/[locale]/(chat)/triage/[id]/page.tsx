@@ -68,7 +68,9 @@ interface SessionData {
     secondary_resource_email?: string;
     secondary_resource_id?: number;
     created_at?: string;
-    priority?: string;
+    status?: string | number | null;
+    status_label?: string | null;
+    priority?: string | number | null;
     priority_label?: string | null;
     issue_type?: string | number | null;
     issue_type_label?: string | null;
@@ -76,6 +78,7 @@ interface SessionData {
     sub_issue_type_label?: string | null;
     sla?: string | number | null;
     sla_label?: string | null;
+    updates?: Array<{ timestamp?: string; content?: string; body?: string; noteText?: string; created_at?: string; createDate?: string }>;
     normalization_audit?: {
       round?: number | null;
       method?: string | null;
@@ -532,6 +535,109 @@ export default function SessionDetail({
     return normalizePlainText(current, fallback) || fallback;
   };
 
+  const isKnownTicketText = (value?: string) => {
+    const normalized = normalizePlainText(value, '').toLowerCase();
+    if (!normalized) return false;
+    if (normalized === '-') return false;
+    return ![
+      'unknown',
+      'unknown org',
+      'unknown requester',
+      'unknown user',
+      'unknown site',
+      'unassigned',
+      'untitled ticket',
+    ].includes(normalized);
+  };
+
+  const preferKnownTicketText = (nextValue?: string, previousValue?: string) => {
+    if (isKnownTicketText(nextValue)) return normalizePlainText(nextValue, '');
+    if (isKnownTicketText(previousValue)) return normalizePlainText(previousValue, '');
+    return normalizePlainText(nextValue || previousValue || '', '');
+  };
+
+  const isLifecycleStatusLabel = (value?: string) => {
+    const normalized = normalizePlainText(value, '').toLowerCase();
+    if (!normalized) return false;
+    if (/(note|comment)\s+(added|updated|created)/.test(normalized)) return false;
+    if (/\bworkflow rule\b/.test(normalized)) return false;
+    return true;
+  };
+
+  const parseIsoMs = (value?: string) => {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const ms = Date.parse(raw);
+    return Number.isFinite(ms) ? ms : null;
+  };
+
+  const pickEarliestIso = (...values: Array<string | undefined>) => {
+    let winner: string | null = null;
+    let winnerMs: number | null = null;
+    for (const value of values) {
+      const raw = String(value || '').trim();
+      if (!raw) continue;
+      const ms = parseIsoMs(raw);
+      if (ms === null) continue;
+      if (winnerMs === null || ms < winnerMs) {
+        winnerMs = ms;
+        winner = new Date(ms).toISOString();
+      }
+    }
+    return winner ?? undefined;
+  };
+
+  const mergeSidebarTicketList = (previous: ActiveTicket[], incoming: ActiveTicket[]): ActiveTicket[] => {
+    const previousByAnyId = new Map<string, ActiveTicket>();
+    for (const row of previous) {
+      const keys = [row.id, row.ticket_id, row.ticket_number].map((v) => normalizePlainText(String(v || ''), '')).filter(Boolean);
+      for (const key of keys) previousByAnyId.set(key, row);
+    }
+
+    return incoming.map((nextRow) => {
+      const keys = [nextRow.id, nextRow.ticket_id, nextRow.ticket_number].map((v) => normalizePlainText(String(v || ''), '')).filter(Boolean);
+      const prev = keys.map((key) => previousByAnyId.get(key)).find((row): row is ActiveTicket => Boolean(row));
+      if (!prev) return nextRow;
+
+      const nextStatusLabel = normalizePlainText(String(nextRow.ticket_status_label || ''), '');
+      const prevStatusLabel = normalizePlainText(String(prev.ticket_status_label || ''), '');
+      const nextHasStatusDetail =
+        isKnownTicketText(String(nextRow.ticket_status_label || nextRow.ticket_status_value || '')) &&
+        isLifecycleStatusLabel(nextStatusLabel);
+      const prevHasStatusDetail =
+        isKnownTicketText(String(prev.ticket_status_label || prev.ticket_status_value || '')) &&
+        isLifecycleStatusLabel(prevStatusLabel);
+
+      return {
+        ...nextRow,
+        ...(preferKnownTicketText(nextRow.title, prev.title) ? { title: preferKnownTicketText(nextRow.title, prev.title) } : {}),
+        ...(preferKnownTicketText(nextRow.description, prev.description) ? { description: preferKnownTicketText(nextRow.description, prev.description) } : {}),
+        ...(preferKnownTicketText(nextRow.company, prev.company) ? { company: preferKnownTicketText(nextRow.company, prev.company) } : {}),
+        ...(preferKnownTicketText(nextRow.org, prev.org) ? { org: preferKnownTicketText(nextRow.org, prev.org) } : {}),
+        ...(preferKnownTicketText(nextRow.requester, prev.requester) ? { requester: preferKnownTicketText(nextRow.requester, prev.requester) } : {}),
+        ...(preferKnownTicketText(nextRow.site, prev.site) ? { site: preferKnownTicketText(nextRow.site, prev.site) } : {}),
+        ...(preferKnownTicketText(nextRow.queue_name, prev.queue_name) ? { queue_name: preferKnownTicketText(nextRow.queue_name, prev.queue_name) } : {}),
+        ...(preferKnownTicketText(nextRow.queue, prev.queue) ? { queue: preferKnownTicketText(nextRow.queue, prev.queue) } : {}),
+        ...(preferKnownTicketText(nextRow.assigned_resource_name, prev.assigned_resource_name)
+          ? { assigned_resource_name: preferKnownTicketText(nextRow.assigned_resource_name, prev.assigned_resource_name) }
+          : {}),
+        ...(!nextHasStatusDetail && prevHasStatusDetail && prevStatusLabel
+          ? { ticket_status_label: prevStatusLabel }
+          : {}),
+        ...(!nextHasStatusDetail && prevHasStatusDetail && prev.ticket_status_value !== undefined
+          ? { ticket_status_value: prev.ticket_status_value }
+          : {}),
+        ...(!nextHasStatusDetail && prevHasStatusDetail
+          ? { status: prev.status }
+          : {}),
+        ...((nextRow.priority || prev.priority) ? { priority: nextRow.priority || prev.priority } : {}),
+        ...((nextRow.created_at || prev.created_at)
+          ? { created_at: pickEarliestIso(prev.created_at, nextRow.created_at) || nextRow.created_at || prev.created_at }
+          : {}),
+      };
+    });
+  };
+
   const isSpecificUiUser = (value?: string) => {
     const normalized = normalizePlainText(value, '').toLowerCase();
     if (!normalized || normalized === 'unknown') return false;
@@ -809,7 +915,13 @@ export default function SessionDetail({
         const res = await axios.get(`${apiUrl}/playbook/full-flow`, {
           params: { sessionId: selectedTicketId },
           withCredentials: true,
+          validateStatus: (status) => (status >= 200 && status < 300) || status === 304,
         });
+        if (res.status === 304) {
+          setError('');
+          setPlaybookStatus((prev) => (prev === 'error' ? 'loading' : prev));
+          return;
+        }
         if (cancelled || reqSeq !== flowRequestSeqRef.current) return;
 
         const payload = res.data || {};
@@ -897,7 +1009,24 @@ export default function SessionDetail({
           'Unknown site'
         );
         const priority = backendTicket.priority || currentTicket?.priority || snapshot?.priority || 'P3';
-        const createdAt = snapshot?.createdAt || ssot.created_at || backendTicket.created_at || currentTicket?.created_at || packTicket.created_at;
+        const priorityLabelForLine = pickStableText(
+          normalizePlainText(String(backendTicket.priority_label || ''), ''),
+          [normalizePlainText(String(priority), '')],
+          'P3'
+        );
+        const createdAt =
+          pickEarliestIso(
+            snapshot?.createdAt,
+            currentTicket?.created_at,
+            backendTicket.created_at,
+            ssot.created_at,
+            packTicket.created_at,
+          ) ||
+          snapshot?.createdAt ||
+          currentTicket?.created_at ||
+          backendTicket.created_at ||
+          ssot.created_at ||
+          packTicket.created_at;
         ticketSnapshotRef.current[selectedTicketId] = {
           ticketId,
           subject,
@@ -908,7 +1037,28 @@ export default function SessionDetail({
           priority,
           createdAt,
         };
-        const priorityLabel = priority === 'P1' ? 'P1 Critical' : priority;
+        setSidebarTickets((prev) => prev.map((ticket) => {
+          const isTarget =
+            ticket.id === selectedTicketId ||
+            ticket.id === ticketId ||
+            ticket.ticket_id === selectedTicketId ||
+            ticket.ticket_id === ticketId;
+          if (!isTarget) return ticket;
+          const candidateStatusLabel = normalizePlainText(String(backendTicket.status_label || backendTicket.status || ''), '');
+          const statusValueResolved = isLifecycleStatusLabel(candidateStatusLabel)
+            ? candidateStatusLabel
+            : normalizePlainText(String(ticket.ticket_status_label || ticket.ticket_status_value || ''), '');
+          return {
+            ...ticket,
+            ...(ticketId ? { ticket_id: ticketId } : {}),
+            ...(org ? { company: org, org } : {}),
+            ...(requester ? { requester } : {}),
+            ...(site ? { site } : {}),
+            ...(createdAt ? { created_at: createdAt } : {}),
+            ...(statusValueResolved ? { ticket_status_value: statusValueResolved, ticket_status_label: statusValueResolved } : {}),
+          };
+        }));
+        const priorityLabel = priorityLabelForLine;
         const firstEventTime = parseDate(createdAt);
         const ts = (offsetSec: number) => new Date(firstEventTime.getTime() + offsetSec * 1000);
 
@@ -1078,8 +1228,27 @@ export default function SessionDetail({
           seenNoteKeys.add(key);
           return true;
         });
+        const backendTicketUpdates = Array.isArray(backendTicket?.updates)
+          ? backendTicket.updates.filter((row: unknown): row is Record<string, unknown> => Boolean(row && typeof row === 'object'))
+          : [];
+        const updateTimeline: Message[] = backendTicketUpdates
+          .map((update: Record<string, unknown>, index: number): Message | null => {
+            const body = normalizePlainText(String(update.content ?? update.body ?? update.noteText ?? '').trim(), '');
+            if (!body) return null;
+            const createdAt = String(update.timestamp ?? update.created_at ?? update.createDate ?? '').trim() || new Date().toISOString();
+            return {
+              id: `backend-update-${selectedTicketId}-${index}-${createdAt}`,
+              role: 'assistant',
+              type: 'note' as const,
+              timestamp: parseDate(createdAt),
+              content: body,
+              channel: 'internal_ai' as const,
+            };
+          })
+          .filter((item: Message | null): item is Message => Boolean(item));
         timeline.push(...notesTimeline);
         timeline.push(...mergedAutotaskNotes);
+        timeline.push(...updateTimeline);
         timeline.sort((a, b) => {
           const aTs = a.timestamp instanceof Date ? a.timestamp.getTime() : 0;
           const bTs = b.timestamp instanceof Date ? b.timestamp.getTime() : 0;
@@ -1177,7 +1346,9 @@ export default function SessionDetail({
       inFlight = true;
       try {
         const tickets = await loadTriPaneSidebarTickets();
-        if (!cancelled) setSidebarTickets(tickets);
+        if (!cancelled) {
+          setSidebarTickets((prev) => mergeSidebarTicketList(prev, tickets));
+        }
       } catch (err) {
         console.error('Failed to load tickets', err);
       } finally {
@@ -1331,6 +1502,7 @@ export default function SessionDetail({
       await axios.get(`${apiUrl}/playbook/full-flow`, {
         params: { sessionId: ticket, refresh: 1 },
         withCredentials: true,
+        validateStatus: (status) => (status >= 200 && status < 300) || status === 304,
       });
     } catch (err) {
       setError(axios.isAxiosError(err) ? err.message : String(err));

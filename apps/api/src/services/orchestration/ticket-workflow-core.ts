@@ -466,6 +466,14 @@ function selectFirstNonEmpty(...values: unknown[]): string | undefined {
   return undefined;
 }
 
+function selectFirstFiniteNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
 async function mapWithConcurrencyLimit<T, R>(
   items: T[],
   limit: number,
@@ -1818,7 +1826,9 @@ export class TicketWorkflowCoreService {
       .filter((row) => {
         const company = String(row.company || '').trim();
         const requester = String(row.requester || '').trim();
-        return !company || !requester;
+        const status = String(row.status || '').trim();
+        const assignedTo = String(row.assigned_to || '').trim();
+        return !company || !requester || !status || !assignedTo;
       })
       .slice(0, this.inboxHydrationBatchSize);
     if (candidates.length === 0) return rows;
@@ -1834,13 +1844,38 @@ export class TicketWorkflowCoreService {
         );
         const existingSnapshotRequester = selectFirstNonEmpty(
           row.domain_snapshots?.tickets?.requester_name,
+          row.domain_snapshots?.tickets?.contact_name,
+          row.domain_snapshots?.tickets?.requester,
           row.domain_snapshots?.['correlates.ticket_metadata']?.requester_name,
+          row.domain_snapshots?.['correlates.ticket_metadata']?.contact_name,
+          row.domain_snapshots?.['correlates.ticket_metadata']?.requester,
         );
-        if (existingSnapshotCompany || existingSnapshotRequester) {
+        const existingSnapshotStatus = selectFirstNonEmpty(
+          row.domain_snapshots?.tickets?.status,
+          row.domain_snapshots?.['correlates.ticket_metadata']?.status,
+          row.domain_snapshots?.['correlates.ticket_metadata']?.status_label,
+        );
+        const existingSnapshotAssignedTo = selectFirstNonEmpty(
+          row.domain_snapshots?.tickets?.assigned_to,
+          row.domain_snapshots?.['correlates.resources']?.assigned_to,
+        );
+        const existingSnapshotQueueId = selectFirstFiniteNumber(
+          row.domain_snapshots?.tickets?.queue_id,
+          row.domain_snapshots?.['correlates.ticket_metadata']?.queue_id,
+        );
+        const existingSnapshotQueueName = selectFirstNonEmpty(
+          row.domain_snapshots?.tickets?.queue_name,
+          row.domain_snapshots?.['correlates.ticket_metadata']?.queue_name,
+        );
+        if (existingSnapshotCompany || existingSnapshotRequester || existingSnapshotStatus || existingSnapshotAssignedTo || existingSnapshotQueueName || existingSnapshotQueueId !== undefined) {
           const nextFromSnapshot: InboxTicketState = {
             ...row,
             ...(existingSnapshotCompany ? { company: existingSnapshotCompany } : {}),
             ...(existingSnapshotRequester ? { requester: existingSnapshotRequester } : {}),
+            ...(existingSnapshotStatus ? { status: existingSnapshotStatus } : {}),
+            ...(existingSnapshotAssignedTo ? { assigned_to: existingSnapshotAssignedTo } : {}),
+            ...(existingSnapshotQueueName ? { queue_name: existingSnapshotQueueName } : {}),
+            ...(existingSnapshotQueueId !== undefined ? { queue_id: existingSnapshotQueueId } : {}),
             updated_at: nowIso(),
           };
           await this.repo.upsertInboxTicket(nextFromSnapshot);
@@ -1885,23 +1920,61 @@ export class TicketWorkflowCoreService {
           (snapshot as any).contact_name,
           (snapshot as any).requester,
         );
-        if (!companyName && !requesterName) return null;
+        const status = selectFirstNonEmpty(
+          row.status,
+          (snapshot as any).status_label,
+          (snapshot as any).status,
+        );
+        const assignedTo = selectFirstNonEmpty(
+          row.assigned_to,
+          (snapshot as any).assigned_to,
+          (snapshot as any).assignedResourceID,
+          (snapshot as any).assignee_resource_id,
+        );
+        const queueId = selectFirstFiniteNumber(
+          row.queue_id,
+          (snapshot as any).queue_id,
+          (snapshot as any).queueID,
+        );
+        const queueName = selectFirstNonEmpty(
+          row.queue_name,
+          (snapshot as any).queue_name,
+          (snapshot as any).queueName,
+        );
+        if (!companyName && !requesterName && !status && !assignedTo && queueId === undefined && !queueName) return null;
 
         const next: InboxTicketState = {
           ...row,
           ...(companyName ? { company: companyName } : {}),
           ...(requesterName ? { requester: requesterName } : {}),
+          ...(status ? { status } : {}),
+          ...(assignedTo ? { assigned_to: assignedTo } : {}),
+          ...(queueId !== undefined ? { queue_id: queueId } : {}),
+          ...(queueName ? { queue_name: queueName } : {}),
           domain_snapshots: {
             ...(row.domain_snapshots || {}),
             tickets: {
               ...(row.domain_snapshots?.tickets || {}),
               ...(companyName ? { company_name: companyName } : {}),
               ...(requesterName ? { requester_name: requesterName } : {}),
+              ...(requesterName ? { contact_name: requesterName, requester: requesterName } : {}),
+              ...(status ? { status } : {}),
+              ...(assignedTo ? { assigned_to: assignedTo } : {}),
+              ...(queueId !== undefined ? { queue_id: queueId } : {}),
+              ...(queueName ? { queue_name: queueName } : {}),
             },
             'correlates.ticket_metadata': {
               ...(row.domain_snapshots?.['correlates.ticket_metadata'] || {}),
               ...(companyName ? { company_name: companyName } : {}),
               ...(requesterName ? { requester_name: requesterName } : {}),
+              ...(requesterName ? { contact_name: requesterName, requester: requesterName } : {}),
+              ...(status ? { status, status_label: status } : {}),
+              ...(queueId !== undefined ? { queue_id: queueId } : {}),
+              ...(queueName ? { queue_name: queueName } : {}),
+            },
+            'correlates.resources': {
+              ...(row.domain_snapshots?.['correlates.resources'] || {}),
+              ...(assignedTo ? { assigned_to: assignedTo } : {}),
             },
           },
           updated_at: nowIso(),

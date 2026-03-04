@@ -60,6 +60,8 @@ export function StatusEditorModal({
 
                 {/* Search */}
                 <input
+                    id="ticket-status-search"
+                    name="ticketStatusSearch"
                     type="text"
                     value={statusEditorQuery}
                     onChange={(e) => onQueryChange(e.target.value)}

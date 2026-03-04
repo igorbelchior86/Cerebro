@@ -20,12 +20,31 @@ type CachedResponseEntry = {
   staleUntil: number;
 };
 
+type IntegrationCredentialEntry = {
+  configured?: boolean;
+  enabled?: boolean;
+  active?: boolean;
+};
+
 const readResponseCache = new Map<string, CachedResponseEntry>();
 const readResponseInFlight = new Map<string, Promise<unknown>>();
 const READ_CACHE_STORAGE_KEY = 'cerebro.read-cache.v1';
 const MAX_PERSISTED_ENTRIES = 12;
 const MAX_PERSISTED_ENTRY_BYTES = 900_000;
 let readCacheHydrated = false;
+const integrationCapabilitiesCache = new Map<string, boolean>();
+let integrationCapabilitiesLoadedAt = 0;
+let integrationCapabilitiesInFlight: Promise<void> | null = null;
+const INTEGRATION_CAPABILITIES_TTL_MS = 30_000;
+const KNOWN_INTEGRATION_SERVICES = new Set([
+  'autotask',
+  'connectwise',
+  'halo',
+  'itglue',
+  'kaseya',
+  'ninjaone',
+  'syncro',
+]);
 
 function shouldPersistReadCacheKey(key: string): boolean {
   return key.includes('GET:/workflow/inbox')
@@ -435,6 +454,65 @@ async function executeRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+function parseServiceFromPath(path: string): string | null {
+  if (!path.startsWith('/')) return null;
+  const segment = path.slice(1).split('/')[0]?.trim().toLowerCase();
+  if (!segment) return null;
+  if (segment === 'workflow' || segment === 'manager-ops' || segment === 'integrations') return null;
+  return segment;
+}
+
+function resolveIntegrationEntryActive(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const row = value as IntegrationCredentialEntry;
+  if (typeof row.configured === 'boolean') return row.configured;
+  if (typeof row.enabled === 'boolean') return row.enabled;
+  if (typeof row.active === 'boolean') return row.active;
+  return false;
+}
+
+async function ensureIntegrationCapabilities(forceRefresh = false): Promise<void> {
+  if (typeof window === 'undefined') return;
+  const now = Date.now();
+  const fresh = integrationCapabilitiesLoadedAt > 0 && (now - integrationCapabilitiesLoadedAt) < INTEGRATION_CAPABILITIES_TTL_MS;
+  if (!forceRefresh && fresh) return;
+  if (integrationCapabilitiesInFlight) return integrationCapabilitiesInFlight;
+
+  integrationCapabilitiesInFlight = (async () => {
+    try {
+      const payload = await executeRequest<Record<string, unknown>>('/integrations/credentials');
+      integrationCapabilitiesCache.clear();
+      for (const [service, entry] of Object.entries(payload || {})) {
+        integrationCapabilitiesCache.set(service.toLowerCase(), resolveIntegrationEntryActive(entry));
+      }
+      integrationCapabilitiesLoadedAt = Date.now();
+    } catch {
+      // Keep previous snapshot; if none exists, integration checks are treated as unknown.
+      if (integrationCapabilitiesLoadedAt === 0) integrationCapabilitiesLoadedAt = Date.now();
+    } finally {
+      integrationCapabilitiesInFlight = null;
+    }
+  })();
+
+  return integrationCapabilitiesInFlight;
+}
+
+async function ensureServiceActiveForPath(path: string): Promise<void> {
+  const service = parseServiceFromPath(path);
+  if (!service || typeof window === 'undefined') return;
+  await ensureIntegrationCapabilities(false);
+  const known = KNOWN_INTEGRATION_SERVICES.has(service) || integrationCapabilitiesCache.has(service);
+  if (!known) return;
+  const active = integrationCapabilitiesCache.get(service) === true;
+  if (!active) {
+    throw new HttpError(503, `${service} connector is not active for this tenant`, {
+      error: `${service} connector is not active for this tenant`,
+      service,
+      code: 'connector_inactive',
+    });
+  }
+}
+
 function buildReadCacheKey(path: string, init?: RequestInit, explicitKey?: string): string {
   if (explicitKey) return explicitKey;
   const method = String(init?.method || 'GET').toUpperCase();
@@ -442,6 +520,7 @@ function buildReadCacheKey(path: string, init?: RequestInit, explicitKey?: strin
 }
 
 async function request<T>(path: string, init?: RequestInit, cacheOptions?: RequestCacheOptions): Promise<T> {
+  await ensureServiceActiveForPath(path);
   hydrateReadCacheFromStorage();
   const method = String(init?.method || 'GET').toUpperCase();
   const isGet = method === 'GET';
@@ -522,6 +601,20 @@ export function listWorkflowInbox() {
   return request<WorkflowInboxTicket[]>('/workflow/inbox', undefined, {
     staleTimeMs: 12_000,
     staleWhileRevalidateMs: 2 * 60_000,
+  });
+}
+
+export function listConnectorCredentials() {
+  return request<Record<string, unknown>>('/integrations/credentials', undefined, {
+    staleTimeMs: 15_000,
+    staleWhileRevalidateMs: 45_000,
+  });
+}
+
+export function listAutotaskQueues() {
+  return request<AutotaskPicklistOption[]>('/autotask/queues', undefined, {
+    staleTimeMs: 10 * 60_000,
+    staleWhileRevalidateMs: 6 * 60 * 60_000,
   });
 }
 

@@ -57,7 +57,14 @@ export default function ProfileModal({ open, onClose, currentName, currentJobTit
                         <div>
                             <label style={{ cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: 'var(--accent)', background: 'rgba(91,127,255,0.1)', padding: '6px 12px', borderRadius: '6px' }}>
                                 {t('uploadPhoto')}
-                                <input type="file" accept="image/*" onChange={handleFileChange} style={{ display: 'none' }} />
+                                <input
+                                    id="profile-avatar-upload"
+                                    name="profileAvatar"
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleFileChange}
+                                    style={{ display: 'none' }}
+                                />
                             </label>
                             <p style={{ fontSize: '11px', color: 'var(--text-faint)', margin: '6px 0 0' }}>{t('photoHint')}</p>
                         </div>
@@ -67,6 +74,8 @@ export default function ProfileModal({ open, onClose, currentName, currentJobTit
                     <div>
                         <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>{t('displayName')}</label>
                         <input
+                            id="profile-display-name"
+                            name="displayName"
                             type="text"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
@@ -78,6 +87,8 @@ export default function ProfileModal({ open, onClose, currentName, currentJobTit
                     <div>
                         <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>{t('jobTitle')}</label>
                         <input
+                            id="profile-job-title"
+                            name="jobTitle"
                             type="text"
                             value={jobTitle}
                             onChange={(e) => setJobTitle(e.target.value)}

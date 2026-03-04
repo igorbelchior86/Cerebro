@@ -198,7 +198,15 @@ export default function ChatInput({
 
   return (
     <div style={{ padding: '12px', border: '1px solid var(--bento-outline)', borderRadius: '14px', background: 'var(--bg-card)', flexShrink: 0 }}>
-      <input ref={fileInputRef} type="file" multiple style={{ display: 'none' }} onChange={onFilesSelected} />
+      <input
+        ref={fileInputRef}
+        id="chat-attachments-input"
+        name="chatAttachments"
+        type="file"
+        multiple
+        style={{ display: 'none' }}
+        onChange={onFilesSelected}
+      />
       {activeHints.length > 0 ? (
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '-19px', marginBottom: '10px', padding: '0 8px' }}>
           {activeHints.map((h) => (

@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import {
     type AutotaskPicklistOption,
     getWorkflowCommandStatus,
+    listAutotaskQueues,
     listAutotaskTicketFieldOptionsByField,
     mapHttpErrorToFrontendState,
     submitWorkflowCommand,
@@ -171,12 +172,10 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         let cancelled = false;
         const fetchAutotaskQueues = async () => {
             try {
-                const res = await fetch(`${API}/autotask/queues`, { credentials: 'include' });
-                if (!res.ok) return;
-                const payload = await res.json().catch(() => null) as { success?: boolean; data?: unknown[] } | null;
-                if (!payload?.success || !Array.isArray(payload.data) || cancelled) return;
+                const rows = await listAutotaskQueues();
+                if (!Array.isArray(rows) || cancelled) return;
 
-                const normalized = payload.data
+                const normalized = rows
                     .map((row) => {
                         const item = row as Partial<AutotaskQueueCatalogItem>;
                         const id = Number(item.id);

@@ -1,3 +1,50 @@
+# Task: Corrigir warning de form field sem id/name
+**Status**: completed
+**Started**: 2026-03-04T17:18:00-05:00
+
+## Plan
+- [x] Step 1: Identificar campos com warning de `id/name` ausente.
+- [x] Step 2: Adicionar `id` e `name` em inputs afetados.
+- [x] Step 3: Validar com typecheck web.
+- [x] Step 4: Documentar na wiki/changelog.
+
+## Progress Notes
+- Foram corrigidos campos de input em `ChatInput`, `ProfileModal` e `StatusEditorModal`.
+- Mudança sem impacto de lógica/fluxo, focada em semântica de formulário e compatibilidade de autofill.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-04-form-field-id-name-accessibility-fix.md`
+
+---
+
+# Task: Gate de fetch por conector ativo (multi-PSA)
+**Status**: completed
+**Started**: 2026-03-04T17:05:00-05:00
+
+## Plan
+- [x] Step 1: Identificar chamadas de integração disparadas sem verificação de conector ativo.
+- [x] Step 2: Implementar guarda compartilhada no client HTTP para bloquear requests de conectores inativos.
+- [x] Step 3: Migrar sidebar para usar client gated (removendo fetch direto de `/autotask/queues`).
+- [x] Step 4: Validar com typecheck e varredura estática de chamadas Autotask.
+- [x] Step 5: Documentar na wiki/changelog.
+
+## Progress Notes
+- `p0-ui-client` agora resolve capabilities por tenant via `/integrations/credentials` (cache TTL 30s) e bloqueia requests para conectores conhecidos inativos (`autotask`, `connectwise`, `halo`, `itglue`, `kaseya`, `ninjaone`, `syncro`).
+- Requests bloqueados falham localmente com `HttpError 503 connector_inactive`, sem chamada ao endpoint do conector.
+- `useSidebarState` deixou de usar `fetch` direto para `/autotask/queues`; agora consome `listAutotaskQueues()` pelo client gated.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `rg -n "fetch\\(\\`\\$\\{API\\}/autotask|/api/autotask" apps/web/src -S` ✅ (sem fetch direto restante)
+- Documentation:
+- `wiki/changelog/2026-03-04-connector-active-gating-multi-psa-fetch.md`
+
+---
+
 # Task: Canonical pass-through Autotask -> Workflow Inbox -> Sidebar/Context (sem enrichment tardio)
 **Status**: completed
 **Started**: 2026-03-04T12:20:00-05:00

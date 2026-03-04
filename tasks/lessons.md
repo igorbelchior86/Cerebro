@@ -1270,3 +1270,9 @@
 **Root cause**: O pipeline podia ingerir backlog antigo antes de completar tickets recentes do mesmo dia, quebrando expectativa operacional.
 **Rule**: Em paridade de tickets abertos, ingestão deve ser recency-first e garantir cobertura dos mais recentes antes de avançar para histórico.
 **Pattern**: Se UI mostra tickets de 2021/2023 enquanto tickets de hoje faltam, o algoritmo de hidratação está priorizando backlog errado.
+
+## Lesson: 2026-03-04 (frontend integration calls must be connector-gated by tenant capability)
+**Mistake**: Permitir que componentes UI chamem endpoints de integração (ex.: `/autotask/*`) sem validar se o conector está ativo no tenant.
+**Root cause**: Gate de conectividade existia só em pontos isolados (Settings), não no client HTTP compartilhado.
+**Rule**: Toda chamada para rota de integração deve passar por um guard central que consulte capacidades do tenant e bloqueie conectores inativos.
+**Pattern**: `503` recorrente em endpoints de um conector desconectado indica ausência de gate de capability no cliente.

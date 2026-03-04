@@ -1,3 +1,9 @@
+## Lesson: 2026-03-04 (canonical fields must not depend on sync-time snapshot enrichment or poller sweeps)
+**Mistake**: Manter `fetchTicketSnapshot` no `processAutotaskSyncEvent` e ainda rodar `backfillCanonicalIdentity` no poller para “corrigir depois”.
+**Root cause**: O read model mudava após a renderização inicial, gerando oscilação visual e estados de loading/fallback instáveis.
+**Rule**: Para campos canônicos de UI (Org/Contact/Priority/Issue/Sub-Issue/SLA/created_at), persistir apenas pass-through do payload Autotask no momento da ingestão e nunca reescrever por enrichment tardio.
+**Pattern**: Se a UI mostra valor A e segundos depois troca para B sem ação do usuário, revisar imediatamente qualquer backfill/snapshot fetch assíncrono fora da ingestão primária.
+
 ## Lesson: 2026-03-04 (sidebar FLIP reorder must be scroll-aware under live polling)
 **Mistake**: Mantive animação FLIP de reorder ativa mesmo durante scroll do usuário, com polling/realtime atualizando a lista em paralelo.
 **Root cause**: Medição de `getBoundingClientRect().top` foi comparada entre renders sem considerar drift de scroll, então o delta de scroll foi tratado como delta de reorder e a animação “brigou” com a rolagem.
@@ -1246,3 +1252,21 @@
 **Root cause**: `useEffect` de polling sem guarda por `isActive`.
 **Rule**: Todo polling em subárvore de modo/overlay deve ser condicionado ao estado ativo visível.
 **Pattern**: Muitos `GET /workflow/inbox` sem interação direta geralmente indicam loops em componentes ocultos.
+
+## Lesson: 2026-03-04 (gating de polling por modo draft não pode bloquear rota standalone)
+**Mistake**: Condicionei o fetch da sidebar a `isActive` e acabei bloqueando `GET /workflow/inbox` no `/triage/home` normal.
+**Root cause**: `isActive` representava estado de compose/draft, não elegibilidade de carregamento da fila na rota standalone.
+**Rule**: Para páginas que existem em dois contextos (standalone e embutido), separar explicitamente `isEmbedded` de `isActive` antes de aplicar guard de polling.
+**Pattern**: “zero requests no Network em rota principal” após hardening de loops indica guarda de ativação aplicada no escopo errado.
+
+## Lesson: 2026-03-04 (canonical-first exige pass-through de identidade completo no poller)
+**Mistake**: Removi hidratação no GET (`/workflow/inbox`) sem garantir que o payload de polling sempre trouxesse `company_name/requester` resolvidos.
+**Root cause**: `searchTickets` pode retornar linhas sem `companyName/contactName`; sem enriquecimento síncrono de leitura, o inbox persistia lacunas de identidade.
+**Rule**: Em canonical-first, todo campo essencial de sidebar deve ser resolvido no pipeline de ingestão antes de persistir no read model.
+**Pattern**: `status/priority` corretos + `org/requester` em `—` indica payload parcial de identidade na origem de ingestão.
+
+## Lesson: 2026-03-04 (paridade de backlog não pode competir com cobertura do dia atual)
+**Mistake**: Mantive polling com janela recente curta (1h) e snapshot por fila sem prioridade global de recência.
+**Root cause**: O pipeline podia ingerir backlog antigo antes de completar tickets recentes do mesmo dia, quebrando expectativa operacional.
+**Rule**: Em paridade de tickets abertos, ingestão deve ser recency-first e garantir cobertura dos mais recentes antes de avançar para histórico.
+**Pattern**: Se UI mostra tickets de 2021/2023 enquanto tickets de hoje faltam, o algoritmo de hidratação está priorizando backlog errado.

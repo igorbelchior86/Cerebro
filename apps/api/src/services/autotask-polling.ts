@@ -218,9 +218,20 @@ export class AutotaskPollingService {
         ticket_number: String(ticket.ticketNumber || '').trim() || undefined,
         title: ticket.title,
         description: ticket.description,
+        // Pass raw status id — enrichment will resolve the label via fetchTicketSnapshot.
         status: ticket.status,
         assigned_to: ticket.assignedResourceID,
         queue_id: ticket.queueID,
+        // Pass all canonical identity fields from the raw Autotask ticket so that
+        // processAutotaskSyncEvent can resolve labels without a redundant second API call.
+        company_id: ticket.companyID,
+        contact_id: ticket.contactID,
+        priority: ticket.priority,
+        issue_type: ticket.issueType,
+        sub_issue_type: ticket.subIssueType,
+        sla_id: ticket.serviceLevelAgreementID,
+        // Date fields — Autotask uses camelCase.
+        createDateTime: ticket.createDate ?? ticket.createDateTime,
       },
       occurred_at: occurredAt,
       correlation: {

@@ -18,6 +18,7 @@ import {
     FILTER_IDS,
     GLOBAL_QUEUE_FALLBACKS,
     normalizeText,
+    resolveTicketChronology,
 } from './utils';
 import type { ActiveTicket, AutotaskQueueCatalogItem, QueueOption, ChatSidebarProps } from './types';
 
@@ -607,15 +608,21 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
 
     const sortedVisible = useMemo(() => {
         const ranked = visible.map((ticket, index) => {
-            const timestamp = Date.parse(String(ticket.created_at || ''));
+            const chronology = resolveTicketChronology(ticket);
             return {
                 ticket,
                 index,
-                timestamp: Number.isFinite(timestamp) ? timestamp : Number.NEGATIVE_INFINITY,
+                timestamp: chronology.timestamp,
+                hasCanonicalTimestamp: chronology.hasCanonicalTimestamp,
+                sequence: chronology.sequence,
             };
         });
         ranked.sort((a, b) => {
             if (a.timestamp !== b.timestamp) return b.timestamp - a.timestamp;
+            if (a.hasCanonicalTimestamp !== b.hasCanonicalTimestamp) {
+                return a.hasCanonicalTimestamp ? -1 : 1;
+            }
+            if (a.sequence !== b.sequence) return b.sequence - a.sequence;
             return a.index - b.index;
         });
         return ranked.map((entry) => entry.ticket);

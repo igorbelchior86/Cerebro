@@ -309,10 +309,6 @@ function statusesMatch(localStatus: unknown, remoteStatus: unknown, remoteStatus
   return false;
 }
 
-function isLikelyNumericStatusCode(value: unknown): boolean {
-  return /^[0-9]+$/.test(String(value ?? '').trim());
-}
-
 function classifyError(error: unknown): 'transient' | 'terminal' {
   if (error instanceof WorkflowTransientError) return 'transient';
   const message = String((error as any)?.message || error || '').toLowerCase();
@@ -356,6 +352,10 @@ function fingerprintText(input: unknown): string {
 }
 
 function normalizeEventDomainSnapshots(payload: Record<string, unknown>) {
+  const asFiniteNumber = (value: unknown): number | undefined => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
   const ticketId = String(payload.external_id ?? payload.ticket_id ?? '').trim();
   const ticketNumber = String(payload.ticket_number ?? '').trim();
   const createdAt = String(
@@ -367,14 +367,22 @@ function normalizeEventDomainSnapshots(payload: Record<string, unknown>) {
   ).trim();
   const companyName = String(payload.company_name ?? payload.company ?? '').trim();
   const requesterName = String(payload.requester ?? payload.contact_name ?? '').trim();
+  const contactEmail = String(payload.contact_email ?? '').trim();
   const status = String(payload.status ?? '').trim();
   const statusLabel = String(payload.status_label ?? '').trim();
   const assignedTo = String(payload.assigned_to ?? '').trim();
-  const queueIdRaw = payload.queue_id ?? payload.queueID;
-  const queueId = Number(queueIdRaw);
-  const companyId = Number(payload.company_id ?? payload.companyID);
-  const contactId = Number(payload.contact_id ?? payload.contactID);
-  const queueName = String(payload.queue_name ?? '').trim();
+  const queueId = asFiniteNumber(payload.queue_id ?? payload.queueID);
+  const companyId = asFiniteNumber(payload.company_id ?? payload.companyID);
+  const contactId = asFiniteNumber(payload.contact_id ?? payload.contactID);
+  const queueName = String(payload.queue_name ?? payload.queueName ?? '').trim();
+  const priority = asFiniteNumber(payload.priority ?? payload.priority_id);
+  const priorityLabel = String(payload.priority_label ?? payload.priorityLabel ?? '').trim();
+  const issueType = asFiniteNumber(payload.issue_type ?? payload.issueType);
+  const issueTypeLabel = String(payload.issue_type_label ?? payload.issueTypeLabel ?? '').trim();
+  const subIssueType = asFiniteNumber(payload.sub_issue_type ?? payload.subIssueType);
+  const subIssueTypeLabel = String(payload.sub_issue_type_label ?? payload.subIssueTypeLabel ?? '').trim();
+  const sla = asFiniteNumber(payload.sla ?? payload.sla_id ?? payload.serviceLevelAgreementID);
+  const slaLabel = String(payload.sla_label ?? payload.serviceLevelAgreementLabel ?? '').trim();
   const commentBody = extractCommentBodyForProjection(payload);
   const commentVisibility = String(payload.comment_visibility ?? '').trim().toLowerCase();
   const noteFingerprint = fingerprintText(commentBody);
@@ -384,14 +392,24 @@ function normalizeEventDomainSnapshots(payload: Record<string, unknown>) {
       ...(ticketId ? { external_id: ticketId } : {}),
       ...(ticketNumber ? { ticket_number: ticketNumber } : {}),
       ...(createdAt ? { created_at: createdAt } : {}),
-      ...(companyName ? { company_name: companyName } : {}),
+      ...(companyName ? { company_name: companyName, company: companyName } : {}),
       ...(Number.isFinite(companyId) ? { company_id: companyId } : {}),
-      ...(requesterName ? { requester_name: requesterName } : {}),
+      ...(requesterName ? { requester_name: requesterName, contact_name: requesterName, requester: requesterName } : {}),
+      ...(contactEmail ? { contact_email: contactEmail } : {}),
       ...(Number.isFinite(contactId) ? { contact_id: contactId } : {}),
       ...(status ? { status } : {}),
+      ...(statusLabel ? { status_label: statusLabel } : {}),
       ...(assignedTo ? { assigned_to: assignedTo } : {}),
       ...(Number.isFinite(queueId) ? { queue_id: queueId } : {}),
       ...(queueName ? { queue_name: queueName } : {}),
+      ...(priority !== undefined ? { priority } : {}),
+      ...(priorityLabel ? { priority_label: priorityLabel } : {}),
+      ...(issueType !== undefined ? { issue_type: issueType } : {}),
+      ...(issueTypeLabel ? { issue_type_label: issueTypeLabel } : {}),
+      ...(subIssueType !== undefined ? { sub_issue_type: subIssueType } : {}),
+      ...(subIssueTypeLabel ? { sub_issue_type_label: subIssueTypeLabel } : {}),
+      ...(sla !== undefined ? { sla } : {}),
+      ...(slaLabel ? { sla_label: slaLabel } : {}),
     },
     ticket_notes: {
       ...(commentBody ? { latest_note_fingerprint: noteFingerprint } : {}),
@@ -405,10 +423,20 @@ function normalizeEventDomainSnapshots(payload: Record<string, unknown>) {
       ...(companyName ? { company_name: companyName } : {}),
       ...(Number.isFinite(companyId) ? { company_id: companyId } : {}),
       ...(requesterName ? { requester_name: requesterName } : {}),
+      ...(contactEmail ? { contact_email: contactEmail } : {}),
       ...(Number.isFinite(contactId) ? { contact_id: contactId } : {}),
       ...(status ? { status } : {}),
       ...(statusLabel ? { status_label: statusLabel } : {}),
       ...(Number.isFinite(queueId) ? { queue_id: queueId } : {}),
+      ...(queueName ? { queue_name: queueName } : {}),
+      ...(priority !== undefined ? { priority } : {}),
+      ...(priorityLabel ? { priority_label: priorityLabel } : {}),
+      ...(issueType !== undefined ? { issue_type: issueType } : {}),
+      ...(issueTypeLabel ? { issue_type_label: issueTypeLabel } : {}),
+      ...(subIssueType !== undefined ? { sub_issue_type: subIssueType } : {}),
+      ...(subIssueTypeLabel ? { sub_issue_type_label: subIssueTypeLabel } : {}),
+      ...(sla !== undefined ? { sla } : {}),
+      ...(slaLabel ? { sla_label: slaLabel } : {}),
     },
     'correlates.ticket_note_metadata': {
       ...(commentBody ? { latest_note_fingerprint: noteFingerprint } : {}),
@@ -1382,84 +1410,43 @@ export class TicketWorkflowCoreService {
     }
 
     const domainSnapshots = normalizeEventDomainSnapshots(payload);
-    const ticketRefForCanonicalFetch = selectFirstNonEmpty(
-      payload.ticket_number,
-      payload.external_id,
-      eventTicketId,
-      existing?.ticket_number,
-      existing?.external_id,
-      ticketId
-    );
-    const payloadCompany = selectFirstMeaningful([
-      payload.company_name,
-      payload.company,
-    ], ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']);
-    const payloadRequester = selectFirstMeaningful([
-      payload.requester,
-      payload.contact_name,
-    ], ['unknown requester', 'unknown user', 'requester', 'user', 'contact']);
-    const payloadStatus = selectFirstMeaningful([
-      payload.status_label,
-      payload.status,
-    ], ['unknown status', 'status', '-', 'n/a']);
-    const payloadCreatedAt = inferCreatedAt(
-      payload.created_at,
-      payload.createDateTime,
-      payload.createDate,
-      (domainSnapshots.tickets as any)?.created_at,
-    );
-    const needsCanonicalSnapshot =
-      !payloadCompany ||
-      !payloadRequester ||
-      !payloadCreatedAt ||
-      !payloadStatus ||
-      isLikelyNumericStatusCode(payloadStatus);
-    let canonicalSnapshot: Record<string, unknown> | null = null;
-    if (needsCanonicalSnapshot && this.gateway.fetchTicketSnapshot && ticketRefForCanonicalFetch) {
-      try {
-        canonicalSnapshot = await this.gateway.fetchTicketSnapshot(event.tenant_id, ticketRefForCanonicalFetch);
-      } catch {
-        canonicalSnapshot = null;
-      }
-    }
     const canonicalCompany = selectFirstMeaningful([
       payload.company_name,
       payload.company,
-      canonicalSnapshot?.company_name,
-      canonicalSnapshot?.company,
       existing?.company,
     ], ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']);
     const canonicalRequester = selectFirstMeaningful([
       payload.requester,
       payload.contact_name,
-      canonicalSnapshot?.contact_name,
-      canonicalSnapshot?.requester,
       existing?.requester,
     ], ['unknown requester', 'unknown user', 'requester', 'user', 'contact']);
+    const payloadStatusLabel = selectFirstMeaningful(
+      [payload.status_label],
+      ['unknown status', 'status', '-', 'n/a']
+    );
+    const payloadStatusRaw = selectFirstMeaningful(
+      [payload.status],
+      ['unknown status', 'status', '-', 'n/a']
+    );
+    const payloadStatus =
+      payloadStatusLabel ||
+      (payloadStatusRaw && /^[0-9]+$/.test(payloadStatusRaw) ? undefined : payloadStatusRaw);
     const canonicalStatus = selectFirstMeaningful([
-      payload.status_label,
-      canonicalSnapshot?.status_label,
-      payload.status,
-      canonicalSnapshot?.status,
+      payloadStatus,
       existing?.status,
     ], ['unknown status', 'status', '-', 'n/a']);
     const canonicalAssignedTo = selectFirstMeaningful([
       payload.assigned_to,
-      canonicalSnapshot?.assigned_to,
-      canonicalSnapshot?.assignedResourceID,
-      canonicalSnapshot?.assignee_resource_id,
       existing?.assigned_to,
     ], ['unassigned', 'unknown assignee', 'assignee', 'assigned']);
     const canonicalQueueId = selectFirstFiniteNumber(
       payload.queue_id,
-      canonicalSnapshot?.queue_id,
-      canonicalSnapshot?.queueID,
+      payload.queueID,
       existing?.queue_id,
     );
     const canonicalQueueName = selectFirstNonEmpty(
       payload.queue_name,
-      canonicalSnapshot?.queue_name,
-      canonicalSnapshot?.queueName,
+      payload.queueName,
       existing?.queue_name,
     );
     const resolvedCreatedAt = inferCreatedAt(
@@ -1467,9 +1454,6 @@ export class TicketWorkflowCoreService {
       payload.created_at,
       payload.createDateTime,
       payload.createDate,
-      canonicalSnapshot?.created_at,
-      canonicalSnapshot?.createDateTime,
-      canonicalSnapshot?.createDate,
       (domainSnapshots.tickets as any)?.created_at,
       payload.ticket_number,
       existing?.ticket_number,
@@ -1502,6 +1486,32 @@ export class TicketWorkflowCoreService {
       domain_snapshots: {
         ...(existing?.domain_snapshots || {}),
         ...domainSnapshots,
+        tickets: {
+          ...(existing?.domain_snapshots?.tickets || {}),
+          ...(domainSnapshots.tickets || {}),
+          ...(canonicalCompany ? { company_name: canonicalCompany, company: canonicalCompany } : {}),
+          ...(canonicalRequester ? { requester_name: canonicalRequester, contact_name: canonicalRequester, requester: canonicalRequester } : {}),
+          ...(canonicalStatus ? { status: canonicalStatus } : {}),
+          ...(canonicalAssignedTo ? { assigned_to: canonicalAssignedTo } : {}),
+          ...(canonicalQueueId !== undefined ? { queue_id: canonicalQueueId } : {}),
+          ...(canonicalQueueName ? { queue_name: canonicalQueueName } : {}),
+          ...(resolvedCreatedAt ? { created_at: resolvedCreatedAt } : {}),
+        },
+        'correlates.ticket_metadata': {
+          ...(existing?.domain_snapshots?.['correlates.ticket_metadata'] || {}),
+          ...(domainSnapshots['correlates.ticket_metadata'] || {}),
+          ...(canonicalCompany ? { company_name: canonicalCompany } : {}),
+          ...(canonicalRequester ? { requester_name: canonicalRequester, contact_name: canonicalRequester, requester: canonicalRequester } : {}),
+          ...(canonicalStatus ? { status: canonicalStatus, status_label: canonicalStatus } : {}),
+          ...(canonicalQueueId !== undefined ? { queue_id: canonicalQueueId } : {}),
+          ...(canonicalQueueName ? { queue_name: canonicalQueueName } : {}),
+          ...(resolvedCreatedAt ? { created_at: resolvedCreatedAt } : {}),
+        },
+        'correlates.resources': {
+          ...(existing?.domain_snapshots?.['correlates.resources'] || {}),
+          ...(domainSnapshots['correlates.resources'] || {}),
+          ...(canonicalAssignedTo ? { assigned_to: canonicalAssignedTo } : {}),
+        },
       },
       updated_at: nowIso(),
     };
@@ -2043,96 +2053,96 @@ export class TicketWorkflowCoreService {
         remoteCandidates,
         this.inboxHydrationConcurrency,
         async (row) => {
-        const ticketRef =
-          selectFirstNonEmpty(row.ticket_number, row.external_id, row.ticket_id);
-        if (!ticketRef) return null;
-        const snapshot = await Promise.race([
-          this.gateway.fetchTicketSnapshot?.(row.tenant_id, ticketRef),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), this.inboxHydrationRemoteTimeoutMs)),
-        ]);
-        if (!snapshot) return null;
+          const ticketRef =
+            selectFirstNonEmpty(row.ticket_number, row.external_id, row.ticket_id);
+          if (!ticketRef) return null;
+          const snapshot = await Promise.race([
+            this.gateway.fetchTicketSnapshot?.(row.tenant_id, ticketRef),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), this.inboxHydrationRemoteTimeoutMs)),
+          ]);
+          if (!snapshot) return null;
 
-        const companyName = selectFirstMeaningful([
-          row.company,
-          (snapshot as any).company_name,
-          (snapshot as any).company,
-        ], ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']);
-        const requesterName = selectFirstMeaningful([
-          row.requester,
-          (snapshot as any).contact_name,
-          (snapshot as any).requester,
-        ], ['unknown requester', 'unknown user', 'requester', 'user', 'contact']);
-        const status = selectFirstMeaningful([
-          row.status,
-          (snapshot as any).status_label,
-          (snapshot as any).status,
-        ], ['unknown status', 'status', '-', 'n/a']);
-        const assignedTo = selectFirstMeaningful([
-          row.assigned_to,
-          (snapshot as any).assigned_to,
-          (snapshot as any).assignedResourceID,
-          (snapshot as any).assignee_resource_id,
-        ], ['unassigned', 'unknown assignee', 'assignee', 'assigned']);
-        const queueId = selectFirstFiniteNumber(
-          row.queue_id,
-          (snapshot as any).queue_id,
-          (snapshot as any).queueID,
-        );
-        const queueName = selectFirstNonEmpty(
-          row.queue_name,
-          (snapshot as any).queue_name,
-          (snapshot as any).queueName,
-        );
-        const createdAt = inferCreatedAt(
-          row.created_at,
-          (snapshot as any).created_at,
-          (snapshot as any).createDateTime,
-          (snapshot as any).createDate,
-        );
-        if (!companyName && !requesterName && !status && !assignedTo && queueId === undefined && !queueName && !createdAt) return null;
+          const companyName = selectFirstMeaningful([
+            row.company,
+            (snapshot as any).company_name,
+            (snapshot as any).company,
+          ], ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']);
+          const requesterName = selectFirstMeaningful([
+            row.requester,
+            (snapshot as any).contact_name,
+            (snapshot as any).requester,
+          ], ['unknown requester', 'unknown user', 'requester', 'user', 'contact']);
+          const status = selectFirstMeaningful([
+            row.status,
+            (snapshot as any).status_label,
+            (snapshot as any).status,
+          ], ['unknown status', 'status', '-', 'n/a']);
+          const assignedTo = selectFirstMeaningful([
+            row.assigned_to,
+            (snapshot as any).assigned_to,
+            (snapshot as any).assignedResourceID,
+            (snapshot as any).assignee_resource_id,
+          ], ['unassigned', 'unknown assignee', 'assignee', 'assigned']);
+          const queueId = selectFirstFiniteNumber(
+            row.queue_id,
+            (snapshot as any).queue_id,
+            (snapshot as any).queueID,
+          );
+          const queueName = selectFirstNonEmpty(
+            row.queue_name,
+            (snapshot as any).queue_name,
+            (snapshot as any).queueName,
+          );
+          const createdAt = inferCreatedAt(
+            row.created_at,
+            (snapshot as any).created_at,
+            (snapshot as any).createDateTime,
+            (snapshot as any).createDate,
+          );
+          if (!companyName && !requesterName && !status && !assignedTo && queueId === undefined && !queueName && !createdAt) return null;
 
-        const next: InboxTicketState = {
-          ...row,
-          ...(companyName ? { company: companyName } : {}),
-          ...(requesterName ? { requester: requesterName } : {}),
-          ...(status ? { status } : {}),
-          ...(assignedTo ? { assigned_to: assignedTo } : {}),
-          ...(queueId !== undefined ? { queue_id: queueId } : {}),
-          ...(queueName ? { queue_name: queueName } : {}),
-          ...(createdAt ? { created_at: createdAt } : {}),
-          domain_snapshots: {
-            ...(row.domain_snapshots || {}),
-            tickets: {
-              ...(row.domain_snapshots?.tickets || {}),
-              ...(createdAt ? { created_at: createdAt } : {}),
-              ...(companyName ? { company_name: companyName } : {}),
-              ...(requesterName ? { requester_name: requesterName } : {}),
-              ...(requesterName ? { contact_name: requesterName, requester: requesterName } : {}),
-              ...(status ? { status } : {}),
-              ...(assignedTo ? { assigned_to: assignedTo } : {}),
-              ...(queueId !== undefined ? { queue_id: queueId } : {}),
-              ...(queueName ? { queue_name: queueName } : {}),
+          const next: InboxTicketState = {
+            ...row,
+            ...(companyName ? { company: companyName } : {}),
+            ...(requesterName ? { requester: requesterName } : {}),
+            ...(status ? { status } : {}),
+            ...(assignedTo ? { assigned_to: assignedTo } : {}),
+            ...(queueId !== undefined ? { queue_id: queueId } : {}),
+            ...(queueName ? { queue_name: queueName } : {}),
+            ...(createdAt ? { created_at: createdAt } : {}),
+            domain_snapshots: {
+              ...(row.domain_snapshots || {}),
+              tickets: {
+                ...(row.domain_snapshots?.tickets || {}),
+                ...(createdAt ? { created_at: createdAt } : {}),
+                ...(companyName ? { company_name: companyName } : {}),
+                ...(requesterName ? { requester_name: requesterName } : {}),
+                ...(requesterName ? { contact_name: requesterName, requester: requesterName } : {}),
+                ...(status ? { status } : {}),
+                ...(assignedTo ? { assigned_to: assignedTo } : {}),
+                ...(queueId !== undefined ? { queue_id: queueId } : {}),
+                ...(queueName ? { queue_name: queueName } : {}),
+              },
+              'correlates.ticket_metadata': {
+                ...(row.domain_snapshots?.['correlates.ticket_metadata'] || {}),
+                ...(createdAt ? { created_at: createdAt } : {}),
+                ...(companyName ? { company_name: companyName } : {}),
+                ...(requesterName ? { requester_name: requesterName } : {}),
+                ...(requesterName ? { contact_name: requesterName, requester: requesterName } : {}),
+                ...(status ? { status, status_label: status } : {}),
+                ...(queueId !== undefined ? { queue_id: queueId } : {}),
+                ...(queueName ? { queue_name: queueName } : {}),
+              },
+              'correlates.resources': {
+                ...(row.domain_snapshots?.['correlates.resources'] || {}),
+                ...(assignedTo ? { assigned_to: assignedTo } : {}),
+              },
             },
-            'correlates.ticket_metadata': {
-              ...(row.domain_snapshots?.['correlates.ticket_metadata'] || {}),
-              ...(createdAt ? { created_at: createdAt } : {}),
-              ...(companyName ? { company_name: companyName } : {}),
-              ...(requesterName ? { requester_name: requesterName } : {}),
-              ...(requesterName ? { contact_name: requesterName, requester: requesterName } : {}),
-              ...(status ? { status, status_label: status } : {}),
-              ...(queueId !== undefined ? { queue_id: queueId } : {}),
-              ...(queueName ? { queue_name: queueName } : {}),
-            },
-            'correlates.resources': {
-              ...(row.domain_snapshots?.['correlates.resources'] || {}),
-              ...(assignedTo ? { assigned_to: assignedTo } : {}),
-            },
-          },
-          updated_at: nowIso(),
-        };
-        await this.repo.upsertInboxTicket(next);
-        return next;
-      }
+            updated_at: nowIso(),
+          };
+          await this.repo.upsertInboxTicket(next);
+          return next;
+        }
       );
       updates.push(...remoteUpdates);
     }
@@ -2200,6 +2210,7 @@ export class TicketWorkflowCoreService {
   async listAuditByTicket(tenantId: string, ticketId: string): Promise<WorkflowAuditRecord[]> {
     return this.repo.listAuditByTicket(tenantId, ticketId);
   }
+
 }
 
 export function buildCommandEnvelope(input: {

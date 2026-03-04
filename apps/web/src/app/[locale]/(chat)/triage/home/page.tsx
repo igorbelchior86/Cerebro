@@ -352,8 +352,10 @@ export default function HomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const bridge = useNewTicketWorkspaceBridge();
+  const isEmbeddedWorkspace = Boolean(bridge);
   const composeRequested = searchParams?.get('compose') === '1';
   const isActive = (bridge?.isActive ?? false) || composeRequested;
+  const shouldLoadSidebarTickets = !isEmbeddedWorkspace || isActive;
   const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT);
   const [sidebarTickets, setSidebarTickets] = useState<ActiveTicket[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(true);
@@ -371,7 +373,7 @@ export default function HomePage() {
   const [draftActionError, setDraftActionError] = useState('');
 
   useEffect(() => {
-    if (!isActive) return;
+    if (!shouldLoadSidebarTickets) return;
     setIsLoadingTickets(true);
     const fetchTickets = async () => {
       try {
@@ -389,7 +391,7 @@ export default function HomePage() {
       void fetchTickets();
     }, 10000);
     return () => clearInterval(interval);
-  }, [isActive]);
+  }, [shouldLoadSidebarTickets]);
 
   const activeOrgId = draft.org?.id ?? draft.contact?.companyId ?? draft.additionalContact?.companyId ?? null;
   const ticketTitle = draft.title.trim() || 'New Ticket';

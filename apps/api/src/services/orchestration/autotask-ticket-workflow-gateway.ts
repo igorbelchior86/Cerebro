@@ -452,7 +452,8 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
   private async enrichTicketSnapshot(client: AutotaskClient, ticket: any): Promise<Record<string, unknown>> {
     const snapshot = this.mapTicketSnapshot(ticket);
     const companyId = Number(ticket?.companyID ?? ticket?.companyId);
-    if (!String((snapshot as any).company_name || (snapshot as any).company || '').trim() && Number.isFinite(companyId)) {
+    // Guard companyId > 0: Number(null) = 0, Number.isFinite(0) = true — getCompany(0) would throw.
+    if (!String((snapshot as any).company_name || (snapshot as any).company || '').trim() && Number.isFinite(companyId) && companyId > 0) {
       try {
         const company = await client.getCompany(companyId);
         const companyName = String((company as any)?.companyName || (company as any)?.name || '').trim();
@@ -460,12 +461,15 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
           (snapshot as any).company_name = companyName;
           (snapshot as any).company = companyName;
         }
-      } catch {
-        // Company enrichment is best-effort only.
+      } catch (companyErr) {
+        // Company enrichment is best-effort only — log for visibility.
+        console.warn('[autotask-gateway] enrichTicketSnapshot: company lookup failed',
+          JSON.stringify({ companyId, ticket_id: ticket?.id, error: String((companyErr as Error)?.message || companyErr) }));
       }
     }
     const contactId = Number(ticket?.contactID ?? ticket?.contactId);
-    if (!String((snapshot as any).contact_name || '').trim() && Number.isFinite(contactId)) {
+    // Guard contactId > 0: same null→0 issue.
+    if (!String((snapshot as any).contact_name || '').trim() && Number.isFinite(contactId) && contactId > 0) {
       try {
         const contact = await client.getContact(contactId);
         const firstName = String((contact as any)?.firstName || '').trim();
@@ -480,8 +484,10 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
         if (email) {
           (snapshot as any).contact_email = email;
         }
-      } catch {
-        // Contact enrichment is best-effort only.
+      } catch (contactErr) {
+        // Contact enrichment is best-effort only — log for visibility.
+        console.warn('[autotask-gateway] enrichTicketSnapshot: contact lookup failed',
+          JSON.stringify({ contactId, ticket_id: ticket?.id, error: String((contactErr as Error)?.message || contactErr) }));
       }
     }
     const status = String(ticket?.status ?? '').trim();
@@ -541,6 +547,14 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
       contact_id: ticket?.contactID,
       ...(companyName ? { company_name: companyName, company: companyName } : {}),
       ...(requesterName ? { contact_name: requesterName, requester: requesterName } : {}),
+      // Numeric picklist IDs — labels are resolved in enrichTicketSnapshot via getStatusLabelMap.
+      // For priority/issueType/subIssueType/SLA, labels must be resolved separately (see TODO below).
+      ...(ticket?.priority !== undefined && ticket?.priority !== null ? { priority: ticket.priority } : {}),
+      ...(ticket?.issueType !== undefined && ticket?.issueType !== null ? { issue_type: ticket.issueType } : {}),
+      ...(ticket?.subIssueType !== undefined && ticket?.subIssueType !== null ? { sub_issue_type: ticket.subIssueType } : {}),
+      ...(ticket?.serviceLevelAgreementID !== undefined && ticket?.serviceLevelAgreementID !== null
+        ? { sla: ticket.serviceLevelAgreementID }
+        : {}),
     };
   }
 }

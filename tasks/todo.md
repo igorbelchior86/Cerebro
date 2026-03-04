@@ -1,3 +1,33 @@
+# Task: Canonical pass-through Autotask -> Workflow Inbox -> Sidebar/Context (sem enrichment tardio)
+**Status**: completed
+**Started**: 2026-03-04T12:20:00-05:00
+
+## Plan
+- [x] Step 1: Remover enrichment de sync por `fetchTicketSnapshot` para campos canônicos de sidebar/contexto.
+- [x] Step 2: Persistir no `domain_snapshots.tickets` os campos canônicos do payload Autotask (IDs/labels e identidade).
+- [x] Step 3: Remover sweep de backfill canônico no poller para evitar overwrite tardio na UI.
+- [x] Step 4: Priorizar no frontend os campos canônicos vindos de `/workflow/inbox` e parar resolução em background por metadata para render principal.
+- [x] Step 5: Atualizar testes do workflow core para o novo contrato de pass-through.
+- [x] Step 6: Rodar validações (`api test`, `api/web typecheck`, `web lint`) e documentar na wiki.
+
+## Progress Notes
+- `processAutotaskSyncEvent` deixou de buscar snapshot remoto para preencher company/requester/status/queue/created_at durante sync; agora persiste o que chega no evento canônico + estado já existente.
+- `normalizeEventDomainSnapshots` passou a mapear explicitamente `company_id`, `contact_id`, `priority`, `issue_type`, `sub_issue_type`, `sla` e labels associados quando presentes no payload.
+- O poller removeu o `backfillCanonicalIdentity` pós-loop, eliminando mutação tardia que podia alterar card/contexto após render inicial.
+- A tela de triagem passou a usar labels/IDs canônicos do sidebar ticket para Priority/Issue/Sub-Issue/SLA e removeu prefetch de `/autotask/ticket-field-options` para renderização passiva.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- ticket-workflow-core.test.ts` ✅ (24/24)
+- `pnpm --filter @cerebro/api test -- autotask-polling.test.ts` ✅ (7/7)
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/web lint` ✅ (warnings preexistentes em `triage/home/page.tsx`)
+- Documentation:
+- `wiki/changelog/2026-03-04-autotask-canonical-pass-through-no-sync-enrichment.md`
+
+---
+
 # Task: Hotfix sidebar jitter (scroll lock race + skeleton eterno)
 **Status**: completed
 **Started**: 2026-03-04T11:45:00-05:00
@@ -834,3 +864,87 @@
 - `pnpm --filter @cerebro/web lint` ✅ (somente warnings preexistentes no arquivo)
 - Documentation:
 - `wiki/changelog/2026-03-04-sidebar-canonical-autotask-scroll-stability-hotfix.md`
+
+---
+
+# Task: Regressão de fetch no `/triage/home` (sidebar sem requests)
+**Status**: completed
+**Started**: 2026-03-04T12:05:00-05:00
+
+## Plan
+- [x] Step 1: Isolar causa de ausência de `GET /workflow/inbox` no `/triage/home`.
+- [x] Step 2: Corrigir condição de polling para diferenciar modo embutido (draft layer) de rota standalone.
+- [x] Step 3: Validar typecheck/lint no `@cerebro/web`.
+- [x] Step 4: Atualizar documentação wiki.
+
+## Progress Notes
+- O guard `if (!isActive) return` bloqueava polling também na rota standalone (`/triage/home`).
+- Ajuste aplicado com `shouldLoadSidebarTickets = !isEmbeddedWorkspace || isActive`.
+- Resultado: standalone volta a carregar lista normalmente; modo embutido oculto continua sem polling.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/web lint` ✅ (warnings preexistentes)
+- Documentation:
+- `wiki/changelog/2026-03-04-triage-home-sidebar-fetch-regression-fix.md`
+
+---
+
+# Task: Sidebar chronological ordering fix (Personal/Global)
+**Status**: completed
+**Started**: 2026-03-04T15:05:00-05:00
+
+## Plan
+- [x] Step 1: Identificar onde a ordenação da sidebar é aplicada para ambos os escopos.
+- [x] Step 2: Tornar o ranking cronológico determinístico com fallback seguro quando `created_at` estiver ausente/inválido.
+- [x] Step 3: Validar `@cerebro/web` com typecheck/lint.
+- [x] Step 4: Registrar documentação da mudança na wiki.
+
+## Progress Notes
+- O sort anterior usava apenas `Date.parse(created_at)` e, sem timestamp válido, caía para ordem de chegada do array.
+- Foi adicionado `resolveTicketChronology` para calcular ordem por precedência: `created_at` canônico -> data derivada de `ticket_number` (`TYYYYMMDD.*`) -> undated.
+- Tie-break determinístico: presença de timestamp canônico e sequência do ticket (`.0001`, `.0018`, etc.).
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/web lint` ✅ (warnings preexistentes em `triage/home/page.tsx`)
+- Documentation:
+- `wiki/changelog/2026-03-04-sidebar-chronological-ordering-deterministic.md`
+
+---
+
+# Task: Polling parity non-complete with recency-first hydration
+**Status**: completed
+**Started**: 2026-03-04T15:20:00-05:00
+
+## Plan
+- [x] Step 1: Identificar por que tickets antigos aparecem antes da cobertura completa dos tickets recentes.
+- [x] Step 2: Ajustar poller para processar não-complete priorizando mais recentes (global e por fila), com ordenação determinística por recência.
+- [x] Step 3: Validar com testes alvo do poller + typecheck API.
+- [x] Step 4: Atualizar wiki/changelog e finalizar review com evidências.
+
+## Open Questions
+- Nenhuma (requisito explícito: paridade em não-complete com hidratação recency-first).
+
+## Progress Notes
+- Diagnóstico confirmado: o poller fazia varredura por fila sem priorização global de recência e a coleta "recent" considerava apenas última 1h, podendo deixar tickets de hoje fora enquanto backlog antigo era ingerido.
+- Implementação aplicada em `AutotaskPollingService`:
+  - Janela recent configurável (`AUTOTASK_POLLER_RECENT_LOOKBACK_HOURS`, default 24h) com ordenação por recência.
+  - Snapshot de paridade por fila em 2 fases (janela recente + backlog), merge/dedupe e ordenação recency-first.
+  - Filtro de status terminal (Complete/Closed/Resolved/Done) por IDs de metadata + fallback textual.
+  - Priorização explícita: ingestão recente primeiro, backlog depois.
+
+## Review
+- What worked:
+- Mudança localizada no poller, sem alteração de contrato de API da sidebar.
+- Verification:
+- `pnpm --filter @cerebro/api test -- autotask-polling.test.ts` ✅ (7/7)
+- `pnpm --filter @cerebro/api typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-04-polling-parity-non-complete-recency-first.md`
+
+## Progress Notes (update)
+- Root cause adicional identificado: o loop de polling aguardava `triageRun` sequencialmente por ticket, reduzindo throughput de ingestão e atrasando visibilidade de tickets recentes.
+- Ajuste: ingestão de todos os tickets recentes ocorre primeiro; disparo de triage é feito depois, com concorrência controlada (`AUTOTASK_POLLER_TRIAGE_CONCURRENCY`, default 3), sem bloquear o preenchimento do inbox.

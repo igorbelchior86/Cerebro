@@ -83,3 +83,70 @@ export function formatCreatedAt(createdAt?: string, age?: string, justNowFallbac
     const dateLabel = date.toLocaleDateString([], { month: '2-digit', day: '2-digit', year: 'numeric' });
     return `${dateLabel} ${timeLabel}`;
 }
+
+function parseFiniteTimestamp(value: unknown): number | undefined {
+    const raw = String(value ?? '').trim();
+    if (!raw) return undefined;
+    const timestamp = Date.parse(raw);
+    if (!Number.isFinite(timestamp)) return undefined;
+    return timestamp;
+}
+
+function parseTicketNumberDate(value: unknown): number | undefined {
+    const raw = String(value ?? '').trim();
+    if (!raw) return undefined;
+    const match = raw.match(/T(\d{4})(\d{2})(\d{2})\.\d+/i);
+    if (!match) return undefined;
+    const [, yearRaw, monthRaw, dayRaw] = match;
+    if (!yearRaw || !monthRaw || !dayRaw) return undefined;
+
+    const year = Number.parseInt(yearRaw, 10);
+    const month = Number.parseInt(monthRaw, 10);
+    const day = Number.parseInt(dayRaw, 10);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return undefined;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return undefined;
+    return Date.UTC(year, month - 1, day, 0, 0, 0, 0);
+}
+
+function parseTicketSequence(value: unknown): number {
+    const raw = String(value ?? '').trim();
+    if (!raw) return -1;
+    const match = raw.match(/T\d{8}\.(\d+)/i);
+    if (!match) return -1;
+    const sequenceRaw = match[1];
+    if (!sequenceRaw) return -1;
+    const sequence = Number.parseInt(sequenceRaw, 10);
+    return Number.isFinite(sequence) ? sequence : -1;
+}
+
+export function resolveTicketChronology(ticket: ActiveTicket): {
+    timestamp: number;
+    hasCanonicalTimestamp: boolean;
+    sequence: number;
+} {
+    const canonicalTimestamp = parseFiniteTimestamp(ticket.created_at);
+    const ticketKey = String(ticket.ticket_number || ticket.ticket_id || ticket.id || '').trim();
+    const ticketDate = parseTicketNumberDate(ticketKey);
+
+    if (canonicalTimestamp !== undefined) {
+        return {
+            timestamp: canonicalTimestamp,
+            hasCanonicalTimestamp: true,
+            sequence: parseTicketSequence(ticketKey),
+        };
+    }
+
+    if (ticketDate !== undefined) {
+        return {
+            timestamp: ticketDate,
+            hasCanonicalTimestamp: false,
+            sequence: parseTicketSequence(ticketKey),
+        };
+    }
+
+    return {
+        timestamp: Number.NEGATIVE_INFINITY,
+        hasCanonicalTimestamp: false,
+        sequence: parseTicketSequence(ticketKey),
+    };
+}

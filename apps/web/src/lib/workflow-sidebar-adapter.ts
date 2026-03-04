@@ -54,33 +54,38 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
   const companyName = normalizeMeaningful(
     row.company ||
     row.domain_snapshots?.tickets?.company_name ||
+    row.domain_snapshots?.tickets?.company ||
     row.domain_snapshots?.['correlates.ticket_metadata']?.company_name ||
     '',
     ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']
   );
   const requesterName = normalizeMeaningful(
     row.requester ||
-    row.domain_snapshots?.tickets?.requester_name ||
     row.domain_snapshots?.tickets?.contact_name ||
+    row.domain_snapshots?.tickets?.requester_name ||
     row.domain_snapshots?.tickets?.requester ||
-    row.domain_snapshots?.['correlates.ticket_metadata']?.requester_name ||
     row.domain_snapshots?.['correlates.ticket_metadata']?.contact_name ||
-    row.domain_snapshots?.['correlates.ticket_metadata']?.requester ||
+    row.domain_snapshots?.['correlates.ticket_metadata']?.requester_name ||
     '',
     ['unknown requester', 'unknown user', 'requester', 'user', 'contact']
   );
+  const contactEmail = String(
+    row.domain_snapshots?.tickets?.contact_email ||
+    row.domain_snapshots?.['correlates.ticket_metadata']?.contact_email ||
+    ''
+  ).trim() || undefined;
   const statusLabel = String(
     row.domain_snapshots?.tickets?.status_label ||
     row.domain_snapshots?.['correlates.ticket_metadata']?.status_label ||
     ''
   ).trim();
-  const statusValue = String(
-    statusLabel ||
+  const rawStatusValue = String(
     row.status ||
     row.domain_snapshots?.tickets?.status ||
     row.domain_snapshots?.['correlates.ticket_metadata']?.status ||
     ''
   ).trim();
+  const statusValue = statusLabel || (/^\d+$/.test(rawStatusValue) ? '' : rawStatusValue);
   const assignedRaw = String(
     row.assigned_to ||
     row.domain_snapshots?.tickets?.assigned_to ||
@@ -99,6 +104,29 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
   const queueId = Number(queueIdRaw);
   const assignedNumeric = Number.parseInt(assignedRaw, 10);
   const priority = normalizePriority(row.domain_snapshots?.tickets?.priority);
+
+  // Canonical label fields surfaced from domain_snapshots.tickets (populated during ingest).
+  // Values from domain_snapshots are typed as unknown; cast to string | number to satisfy ActiveTicket.
+  const priorityLabel = String(row.domain_snapshots?.tickets?.priority_label || '').trim() || undefined;
+  const rawIssueType = row.domain_snapshots?.tickets?.issue_type;
+  const issueType: string | number | undefined =
+    typeof rawIssueType === 'string' || typeof rawIssueType === 'number' ? rawIssueType : undefined;
+  const issueTypeLabel = String(row.domain_snapshots?.tickets?.issue_type_label || '').trim() || undefined;
+  const rawSubIssueType = row.domain_snapshots?.tickets?.sub_issue_type;
+  const subIssueType: string | number | undefined =
+    typeof rawSubIssueType === 'string' || typeof rawSubIssueType === 'number' ? rawSubIssueType : undefined;
+  const subIssueTypeLabel = String(row.domain_snapshots?.tickets?.sub_issue_type_label || '').trim() || undefined;
+  const rawSla = row.domain_snapshots?.tickets?.sla;
+  const sla: string | number | undefined =
+    typeof rawSla === 'string' || typeof rawSla === 'number' ? rawSla : undefined;
+  const slaLabel = String(row.domain_snapshots?.tickets?.sla_label || '').trim() || undefined;
+  const rawCompanyId = row.domain_snapshots?.tickets?.company_id;
+  const companyId: number | string | undefined =
+    typeof rawCompanyId === 'string' || typeof rawCompanyId === 'number' ? rawCompanyId : undefined;
+  const rawContactId = row.domain_snapshots?.tickets?.contact_id;
+  const contactId: number | string | undefined =
+    typeof rawContactId === 'string' || typeof rawContactId === 'number' ? rawContactId : undefined;
+
   return {
     id: row.ticket_id,
     ticket_id: displayTicketNumber || row.ticket_id,
@@ -109,10 +137,20 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
       return statusLabel ? { ticket_status_label: statusLabel } : {};
     })()),
     ...(priority ? { priority } : {}),
+    ...(priorityLabel ? { priority_label: priorityLabel } : {}),
+    ...(issueType !== undefined ? { issue_type: issueType } : {}),
+    ...(issueTypeLabel ? { issue_type_label: issueTypeLabel } : {}),
+    ...(subIssueType !== undefined ? { sub_issue_type: subIssueType } : {}),
+    ...(subIssueTypeLabel ? { sub_issue_type_label: subIssueTypeLabel } : {}),
+    ...(sla !== undefined ? { sla } : {}),
+    ...(slaLabel ? { sla_label: slaLabel } : {}),
     title,
     ...(description ? { description } : {}),
+    ...(companyId !== undefined ? { company_id: companyId } : {}),
+    ...(contactId !== undefined ? { contact_id: contactId } : {}),
     ...(companyName ? { company: companyName, org: companyName } : {}),
     ...(requesterName ? { requester: requesterName } : {}),
+    ...(contactEmail ? { contact_email: contactEmail } : {}),
     meta: statusValue ? `Workflow ${statusValue}` : 'Workflow inbox',
     ...(createdAt ? { created_at: createdAt } : {}),
     ...(queueName ? { queue_name: queueName, queue: queueName } : {}),

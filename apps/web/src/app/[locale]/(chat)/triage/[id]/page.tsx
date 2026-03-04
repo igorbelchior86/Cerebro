@@ -21,7 +21,6 @@ import {
   type AutotaskResourceOption,
   getWorkflowCommandStatus,
   isRetryableCommandStatus,
-  listAutotaskTicketFieldOptions,
   listAutotaskTicketFieldOptionsByField,
   listManagerOpsAiDecisions,
   listManagerOpsAudit,
@@ -226,16 +225,6 @@ function mapEditorToTicketFieldKey(
   if (key === 'Sub-Issue Type') return 'subIssueType';
   if (key === 'Service Level Agreement') return 'serviceLevelAgreement';
   return null;
-}
-
-function resolvePicklistLabelFromCache(
-  options: AutotaskPicklistOption[] | undefined,
-  id: string | number | null | undefined
-): string | null {
-  const numericId = Number.parseInt(String(id ?? ''), 10);
-  if (!Number.isFinite(numericId) || !options || options.length === 0) return null;
-  const match = options.find((row) => row.id === numericId);
-  return match?.label || null;
 }
 
 function TechPill({ label, name, type, onEdit, onRemove }: { label: string; name: string; type: 'primary' | 'secondary'; onEdit: () => void; onRemove: () => void }) {
@@ -632,6 +621,36 @@ export default function SessionDetail({
           ? { status: prev.status }
           : {}),
         ...((nextRow.priority || prev.priority) ? { priority: nextRow.priority || prev.priority } : {}),
+        ...((nextRow.priority_label || prev.priority_label)
+          ? { priority_label: nextRow.priority_label || prev.priority_label }
+          : {}),
+        ...((nextRow.issue_type ?? prev.issue_type) !== undefined
+          ? { issue_type: nextRow.issue_type ?? prev.issue_type }
+          : {}),
+        ...((nextRow.issue_type_label || prev.issue_type_label)
+          ? { issue_type_label: nextRow.issue_type_label || prev.issue_type_label }
+          : {}),
+        ...((nextRow.sub_issue_type ?? prev.sub_issue_type) !== undefined
+          ? { sub_issue_type: nextRow.sub_issue_type ?? prev.sub_issue_type }
+          : {}),
+        ...((nextRow.sub_issue_type_label || prev.sub_issue_type_label)
+          ? { sub_issue_type_label: nextRow.sub_issue_type_label || prev.sub_issue_type_label }
+          : {}),
+        ...((nextRow.sla ?? prev.sla) !== undefined
+          ? { sla: nextRow.sla ?? prev.sla }
+          : {}),
+        ...((nextRow.sla_label || prev.sla_label)
+          ? { sla_label: nextRow.sla_label || prev.sla_label }
+          : {}),
+        ...((nextRow.company_id ?? prev.company_id) !== undefined
+          ? { company_id: nextRow.company_id ?? prev.company_id }
+          : {}),
+        ...((nextRow.contact_id ?? prev.contact_id) !== undefined
+          ? { contact_id: nextRow.contact_id ?? prev.contact_id }
+          : {}),
+        ...((nextRow.contact_email || prev.contact_email)
+          ? { contact_email: nextRow.contact_email || prev.contact_email }
+          : {}),
         ...((nextRow.created_at || prev.created_at)
           ? { created_at: pickEarliestIso(prev.created_at, nextRow.created_at) || nextRow.created_at || prev.created_at }
           : {}),
@@ -1623,7 +1642,7 @@ export default function SessionDetail({
     if (!activeContextEditor || !requiresTypedAutotaskSearch(activeContextEditor)) return [];
     const seeded: ContextEditorOption[] = [];
     if (activeContextEditor === 'Org') {
-      const orgId = toAutotaskId(contextOverrides.org?.id ?? data?.ticket?.company_id);
+      const orgId = toAutotaskId(contextOverrides.org?.id ?? data?.ticket?.company_id ?? selectedTicketView?.company_id);
       const orgName = String(
         contextOverrides.org?.name ||
         data?.ticket?.company ||
@@ -1689,7 +1708,7 @@ export default function SessionDetail({
   const localContactEditorSuggestions = (() => {
     if (!activeContextEditor || (activeContextEditor !== 'Contact' && activeContextEditor !== 'Additional contacts')) return [];
     const seeded: ContextEditorOption[] = [];
-    const contactId = toAutotaskId(contextOverrides.user?.id ?? data?.ticket?.contact_id);
+    const contactId = toAutotaskId(contextOverrides.user?.id ?? data?.ticket?.contact_id ?? selectedTicketView?.contact_id);
     const contactName = String(
       contextOverrides.user?.name ||
       canonicalRequesterUi ||
@@ -1706,7 +1725,7 @@ export default function SessionDetail({
     const activeCompanyId = (() => {
       const overrideOrgId = toAutotaskId(contextOverrides.org?.id);
       if (overrideOrgId !== null) return overrideOrgId;
-      const ticketCompanyId = toAutotaskId(data?.ticket?.company_id);
+      const ticketCompanyId = toAutotaskId(data?.ticket?.company_id ?? selectedTicketView?.company_id);
       if (ticketCompanyId !== null) return ticketCompanyId;
       const resolvedFallback = toAutotaskId(resolvedOrgIdFallback);
       if (resolvedFallback !== null) return resolvedFallback;
@@ -1720,7 +1739,7 @@ export default function SessionDetail({
     const companyId = (() => {
       const overrideOrgId = toAutotaskId(contextOverrides.org?.id);
       if (overrideOrgId !== null) return overrideOrgId;
-      const ticketCompanyId = toAutotaskId(data?.ticket?.company_id);
+      const ticketCompanyId = toAutotaskId(data?.ticket?.company_id ?? selectedTicketView?.company_id);
       if (ticketCompanyId !== null) return ticketCompanyId;
       const resolvedFallback = toAutotaskId(resolvedOrgIdFallback);
       if (resolvedFallback !== null) return resolvedFallback;
@@ -1748,44 +1767,7 @@ export default function SessionDetail({
     return () => {
       ignore = true;
     };
-  }, [contactSuggestionCacheByCompany, contextOverrides.org?.id, contextOverrides.user?.companyId, data?.ticket?.company_id, resolvedOrgIdFallback]);
-
-  useEffect(() => {
-    const hasPriority = Array.isArray(ticketFieldOptionsCache.priority) && ticketFieldOptionsCache.priority.length > 0;
-    const hasIssueType = Array.isArray(ticketFieldOptionsCache.issueType) && ticketFieldOptionsCache.issueType.length > 0;
-    const hasSubIssueType = Array.isArray(ticketFieldOptionsCache.subIssueType) && ticketFieldOptionsCache.subIssueType.length > 0;
-    const hasSla = Array.isArray(ticketFieldOptionsCache.serviceLevelAgreement) && ticketFieldOptionsCache.serviceLevelAgreement.length > 0;
-    if (hasPriority && hasIssueType && hasSubIssueType && hasSla) return;
-
-    let ignore = false;
-    void (async () => {
-      try {
-        const options = await listAutotaskTicketFieldOptions();
-        if (ignore) return;
-        setTicketFieldOptionsCache((prev) => ({
-          ...prev,
-          ...(!hasPriority && Array.isArray(options.priority) && options.priority.length > 0 ? { priority: options.priority } : {}),
-          ...(!hasIssueType && Array.isArray(options.issueType) && options.issueType.length > 0 ? { issueType: options.issueType } : {}),
-          ...(!hasSubIssueType && Array.isArray(options.subIssueType) && options.subIssueType.length > 0 ? { subIssueType: options.subIssueType } : {}),
-          ...(!hasSla && Array.isArray(options.serviceLevelAgreement) && options.serviceLevelAgreement.length > 0
-            ? { serviceLevelAgreement: options.serviceLevelAgreement }
-            : {}),
-        }));
-      } catch {
-        if (ignore) return;
-      }
-    })();
-
-    return () => {
-      ignore = true;
-    };
-  }, [
-    ticketFieldOptionsCache.issueType,
-    ticketFieldOptionsCache.priority,
-    ticketFieldOptionsCache.serviceLevelAgreement,
-    ticketFieldOptionsCache.subIssueType,
-  ]);
-
+  }, [contactSuggestionCacheByCompany, contextOverrides.org?.id, contextOverrides.user?.companyId, data?.ticket?.company_id, selectedTicketView?.company_id, resolvedOrgIdFallback]);
 
   const workflowTicket = (workflowInboxState.data || []).find(
     (row) => row.ticket_id === ticketNumber || row.ticket_id === canonicalTicketId
@@ -1914,7 +1896,7 @@ export default function SessionDetail({
   const activeOrgId = (() => {
     const overrideOrgId = toAutotaskId(contextOverrides.org?.id);
     if (overrideOrgId !== null) return overrideOrgId;
-    const ticketCompanyId = toAutotaskId(data?.ticket?.company_id);
+    const ticketCompanyId = toAutotaskId(data?.ticket?.company_id ?? selectedTicketView?.company_id);
     if (ticketCompanyId !== null) return ticketCompanyId;
     const resolvedFallback = toAutotaskId(resolvedOrgIdFallback);
     if (resolvedFallback !== null) return resolvedFallback;
@@ -2263,90 +2245,35 @@ export default function SessionDetail({
   const normalizeFact = (value: string) => value.replace(/\s+/g, ' ').trim();
   const parsedPlaybookChecklist = parseChecklistFromPlaybook(data?.playbook?.content_md || undefined);
 
-  useEffect(() => {
-    const missingFields: AutotaskTicketFieldKey[] = [];
-    const priorityId = toAutotaskId(data?.ticket?.priority);
-    const issueTypeId = toAutotaskId(data?.ticket?.issue_type);
-    const subIssueTypeId = toAutotaskId(data?.ticket?.sub_issue_type);
-    const slaId = toAutotaskId(data?.ticket?.sla);
-
-    if (priorityId !== null && !String(data?.ticket?.priority_label || '').trim() && !ticketFieldOptionsCache.priority?.length) {
-      missingFields.push('priority');
-    }
-    if (issueTypeId !== null && !String(data?.ticket?.issue_type_label || '').trim() && !ticketFieldOptionsCache.issueType?.length) {
-      missingFields.push('issueType');
-    }
-    if (subIssueTypeId !== null && !String(data?.ticket?.sub_issue_type_label || '').trim() && !ticketFieldOptionsCache.subIssueType?.length) {
-      missingFields.push('subIssueType');
-    }
-    if (slaId !== null && !String(data?.ticket?.sla_label || '').trim() && !ticketFieldOptionsCache.serviceLevelAgreement?.length) {
-      missingFields.push('serviceLevelAgreement');
-    }
-    if (missingFields.length === 0) return;
-
-    let ignore = false;
-    void (async () => {
-      try {
-        const options = await listAutotaskTicketFieldOptions();
-        if (ignore) return;
-        setTicketFieldOptionsCache((prev) => {
-          const next = { ...prev };
-          for (const field of missingFields) {
-            const rows = options[field];
-            if (!next[field]?.length && Array.isArray(rows) && rows.length > 0) {
-              next[field] = rows;
-            }
-          }
-          return next;
-        });
-      } catch {
-        if (ignore) return;
-      }
-    })();
-
-    return () => {
-      ignore = true;
-    };
-  }, [
-    data?.ticket?.priority,
-    data?.ticket?.priority_label,
-    data?.ticket?.issue_type,
-    data?.ticket?.issue_type_label,
-    data?.ticket?.sub_issue_type,
-    data?.ticket?.sub_issue_type_label,
-    data?.ticket?.sla,
-    data?.ticket?.sla_label,
-    ticketFieldOptionsCache.priority?.length,
-    ticketFieldOptionsCache.issueType?.length,
-    ticketFieldOptionsCache.subIssueType?.length,
-    ticketFieldOptionsCache.serviceLevelAgreement?.length,
-  ]);
-
   const derivedPriorityLabel = String(
     contextOverrides.priority?.name ||
+    selectedTicketView?.priority_label ||
     data?.ticket?.priority_label ||
-    resolvePicklistLabelFromCache(ticketFieldOptionsCache.priority, data?.ticket?.priority) ||
+    selectedTicketView?.priority ||
     data?.ticket?.priority ||
     ''
   );
   const derivedIssueTypeLabel = String(
     contextOverrides.issue_type?.name ||
+    selectedTicketView?.issue_type_label ||
     data?.ticket?.issue_type_label ||
-    resolvePicklistLabelFromCache(ticketFieldOptionsCache.issueType, data?.ticket?.issue_type) ||
+    selectedTicketView?.issue_type ||
     data?.ticket?.issue_type ||
     ''
   );
   const derivedSubIssueTypeLabel = String(
     contextOverrides.sub_issue_type?.name ||
+    selectedTicketView?.sub_issue_type_label ||
     data?.ticket?.sub_issue_type_label ||
-    resolvePicklistLabelFromCache(ticketFieldOptionsCache.subIssueType, data?.ticket?.sub_issue_type) ||
+    selectedTicketView?.sub_issue_type ||
     data?.ticket?.sub_issue_type ||
     ''
   );
   const derivedSlaLabel = String(
     contextOverrides.service_level_agreement?.name ||
+    selectedTicketView?.sla_label ||
     data?.ticket?.sla_label ||
-    resolvePicklistLabelFromCache(ticketFieldOptionsCache.serviceLevelAgreement, data?.ticket?.sla) ||
+    selectedTicketView?.sla ||
     data?.ticket?.sla ||
     ''
   );

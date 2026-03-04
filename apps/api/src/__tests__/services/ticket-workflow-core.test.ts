@@ -666,7 +666,7 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     expect(deduped?.requester).toBe('Tammy Lankford');
   });
 
-  it('enriches partial sync payload with canonical snapshot before persisting inbox row', async () => {
+  it('persists canonical Autotask payload without sync-time snapshot enrichment', async () => {
     const fetchTicketSnapshot = jest.fn().mockResolvedValue({
       company_name: 'Ferguson Supply & Box Company',
       contact_name: 'Jasen Nolff',
@@ -693,7 +693,23 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
         external_id: '112233',
         ticket_number: 'T20260303.0015',
         title: 'Unable to Open PDF Files Due to Adobe Program Error',
-        status: '5',
+        status: 'Waiting Customer',
+        assigned_to: 'Igor Belchior',
+        queue_id: 8,
+        queue_name: 'Level I Support',
+        company_name: 'Ferguson Supply & Box Company',
+        contact_name: 'Jasen Nolff',
+        company_id: 301,
+        contact_id: 90210,
+        created_at: '2026-03-03T17:54:00.000Z',
+        priority: 3,
+        priority_label: 'Medium',
+        issue_type: 12,
+        issue_type_label: 'Email',
+        sub_issue_type: 55,
+        sub_issue_type_label: 'Distribution Group',
+        sla_id: 7,
+        sla_label: 'Standard SLA',
       },
       occurred_at: '2026-03-03T18:00:00.000Z',
       correlation: { trace_id: 'trace-canonical-sync-1', ticket_id: 'T20260303.0015' },
@@ -703,7 +719,7 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     await service.processAutotaskSyncEvent(event);
     const inbox = await service.listInbox(tenantId);
     const row = inbox.find((item) => item.ticket_number === 'T20260303.0015');
-    expect(fetchTicketSnapshot).toHaveBeenCalledWith(tenantId, 'T20260303.0015');
+    expect(fetchTicketSnapshot).not.toHaveBeenCalled();
     expect(row).toMatchObject({
       ticket_id: 'T20260303.0015',
       company: 'Ferguson Supply & Box Company',
@@ -713,6 +729,18 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
       queue_id: 8,
       queue_name: 'Level I Support',
       created_at: '2026-03-03T17:54:00.000Z',
+    });
+    expect(row?.domain_snapshots?.tickets).toMatchObject({
+      company_id: 301,
+      contact_id: 90210,
+      priority: 3,
+      priority_label: 'Medium',
+      issue_type: 12,
+      issue_type_label: 'Email',
+      sub_issue_type: 55,
+      sub_issue_type_label: 'Distribution Group',
+      sla: 7,
+      sla_label: 'Standard SLA',
     });
   });
 

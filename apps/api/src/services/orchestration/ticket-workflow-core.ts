@@ -451,6 +451,29 @@ function selectFirstNonEmpty(...values: unknown[]): string | undefined {
   return undefined;
 }
 
+function isPlaceholderValue(value: unknown, placeholders: string[]): boolean {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return true;
+  return placeholders.some((placeholder) => normalized === placeholder);
+}
+
+function needsInboxHydration(row: InboxTicketState): boolean {
+  const companyMissing = isPlaceholderValue(row.company, ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']);
+  const requesterMissing = isPlaceholderValue(row.requester, ['unknown requester', 'unknown user', 'requester', 'user', 'contact']);
+  const statusMissing = isPlaceholderValue(row.status, ['unknown status', 'status', '-', 'n/a']);
+  const assigneeMissing = isPlaceholderValue(row.assigned_to, ['unassigned', 'unknown assignee', 'assignee', 'assigned']);
+  const createdAtMissing = !normalizeIsoTimestamp(row.created_at);
+  return companyMissing || requesterMissing || statusMissing || assigneeMissing || createdAtMissing;
+}
+
+function selectFirstMeaningful(values: unknown[], placeholders: string[]): string | undefined {
+  for (const value of values) {
+    if (isPlaceholderValue(value, placeholders)) continue;
+    return String(value ?? '').trim();
+  }
+  return undefined;
+}
+
 function selectFirstFiniteNumber(...values: unknown[]): number | undefined {
   for (const value of values) {
     const parsed = Number(value);
@@ -705,6 +728,7 @@ export class TicketWorkflowCoreService {
   );
   private readonly inboxHydrationRemoteBatchSize = readPositiveInt(process.env.P0_WORKFLOW_INBOX_HYDRATION_REMOTE_BATCH_SIZE, 25);
   private readonly inboxHydrationRemoteTimeoutMs = readPositiveInt(process.env.P0_WORKFLOW_INBOX_HYDRATION_REMOTE_TIMEOUT_MS, 1500);
+  private readonly inboxHydrationCursorByTenant = new Map<string, number>();
 
   constructor(
     private readonly repo: TicketWorkflowRepository,
@@ -1813,16 +1837,13 @@ export class TicketWorkflowCoreService {
   private async hydrateMissingOrgRequester(rows: InboxTicketState[]): Promise<InboxTicketState[]> {
     if (rows.length === 0) return rows;
 
-    const candidates = rows
-      .filter((row) => {
-        const company = String(row.company || '').trim();
-        const requester = String(row.requester || '').trim();
-        const status = String(row.status || '').trim();
-        const assignedTo = String(row.assigned_to || '').trim();
-        const createdAt = String(row.created_at || '').trim();
-        return !company || !requester || !status || !assignedTo || !createdAt;
-      })
-      .slice(0, this.inboxHydrationBatchSize);
+    const allCandidates = rows.filter((row) => needsInboxHydration(row));
+    const hydrationTenantId = String(rows[0]?.tenant_id || '').trim() || 'unknown';
+    const candidates = this.selectRoundRobinBatch(
+      hydrationTenantId,
+      allCandidates,
+      this.inboxHydrationBatchSize
+    );
     if (candidates.length === 0) return rows;
 
     // First, promote names already present in domain snapshots (zero provider round-trips).
@@ -1830,27 +1851,27 @@ export class TicketWorkflowCoreService {
       candidates,
       this.inboxHydrationConcurrency,
       async (row) => {
-        const existingSnapshotCompany = selectFirstNonEmpty(
+        const existingSnapshotCompany = selectFirstMeaningful([
           row.domain_snapshots?.tickets?.company_name,
           row.domain_snapshots?.['correlates.ticket_metadata']?.company_name,
-        );
-        const existingSnapshotRequester = selectFirstNonEmpty(
+        ], ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']);
+        const existingSnapshotRequester = selectFirstMeaningful([
           row.domain_snapshots?.tickets?.requester_name,
           row.domain_snapshots?.tickets?.contact_name,
           row.domain_snapshots?.tickets?.requester,
           row.domain_snapshots?.['correlates.ticket_metadata']?.requester_name,
           row.domain_snapshots?.['correlates.ticket_metadata']?.contact_name,
           row.domain_snapshots?.['correlates.ticket_metadata']?.requester,
-        );
-        const existingSnapshotStatus = selectFirstNonEmpty(
+        ], ['unknown requester', 'unknown user', 'requester', 'user', 'contact']);
+        const existingSnapshotStatus = selectFirstMeaningful([
           row.domain_snapshots?.tickets?.status,
           row.domain_snapshots?.['correlates.ticket_metadata']?.status,
           row.domain_snapshots?.['correlates.ticket_metadata']?.status_label,
-        );
-        const existingSnapshotAssignedTo = selectFirstNonEmpty(
+        ], ['unknown status', 'status', '-', 'n/a']);
+        const existingSnapshotAssignedTo = selectFirstMeaningful([
           row.domain_snapshots?.tickets?.assigned_to,
           row.domain_snapshots?.['correlates.resources']?.assigned_to,
-        );
+        ], ['unassigned', 'unknown assignee', 'assignee', 'assigned']);
         const existingSnapshotQueueId = selectFirstFiniteNumber(
           row.domain_snapshots?.tickets?.queue_id,
           row.domain_snapshots?.['correlates.ticket_metadata']?.queue_id,
@@ -1908,27 +1929,27 @@ export class TicketWorkflowCoreService {
         ]);
         if (!snapshot) return null;
 
-        const companyName = selectFirstNonEmpty(
+        const companyName = selectFirstMeaningful([
           row.company,
           (snapshot as any).company_name,
           (snapshot as any).company,
-        );
-        const requesterName = selectFirstNonEmpty(
+        ], ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']);
+        const requesterName = selectFirstMeaningful([
           row.requester,
           (snapshot as any).contact_name,
           (snapshot as any).requester,
-        );
-        const status = selectFirstNonEmpty(
+        ], ['unknown requester', 'unknown user', 'requester', 'user', 'contact']);
+        const status = selectFirstMeaningful([
           row.status,
           (snapshot as any).status_label,
           (snapshot as any).status,
-        );
-        const assignedTo = selectFirstNonEmpty(
+        ], ['unknown status', 'status', '-', 'n/a']);
+        const assignedTo = selectFirstMeaningful([
           row.assigned_to,
           (snapshot as any).assigned_to,
           (snapshot as any).assignedResourceID,
           (snapshot as any).assignee_resource_id,
-        );
+        ], ['unassigned', 'unknown assignee', 'assignee', 'assigned']);
         const queueId = selectFirstFiniteNumber(
           row.queue_id,
           (snapshot as any).queue_id,
@@ -2002,6 +2023,26 @@ export class TicketWorkflowCoreService {
     if (hydratedByTicketId.size === 0) return rows;
 
     return rows.map((row) => hydratedByTicketId.get(row.ticket_id) || row);
+  }
+
+  private selectRoundRobinBatch(
+    tenantId: string,
+    candidates: InboxTicketState[],
+    limit: number
+  ): InboxTicketState[] {
+    if (candidates.length <= limit) {
+      this.inboxHydrationCursorByTenant.set(tenantId, 0);
+      return candidates;
+    }
+    const cursor = this.inboxHydrationCursorByTenant.get(tenantId) ?? 0;
+    const start = ((cursor % candidates.length) + candidates.length) % candidates.length;
+    const batch: InboxTicketState[] = [];
+    for (let i = 0; i < limit; i += 1) {
+      const candidate = candidates[(start + i) % candidates.length];
+      if (candidate) batch.push(candidate);
+    }
+    this.inboxHydrationCursorByTenant.set(tenantId, (start + limit) % candidates.length);
+    return batch;
   }
 
   async removeInboxTicket(

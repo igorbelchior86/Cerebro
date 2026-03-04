@@ -1,3 +1,15 @@
+## Lesson: 2026-03-04 (snapshot local promotion can silently lock fallback placeholders)
+**Mistake**: Considerar qualquer valor não-vazio de `domain_snapshots` como confiável para promoção local.
+**Root cause**: `Unknown org`, `Unknown requester`, `-` e `Unassigned` vindos de snapshot local eram promovidos e o fetch remoto era pulado.
+**Rule**: Promoção local de snapshot deve aplicar a mesma regra de “valor significativo” usada no merge remoto.
+**Pattern**: Se o backfill continua preso em placeholders mesmo com fetch remoto disponível, revisar `selectFirstNonEmpty` em caminhos de pré-hidratação local.
+
+## Lesson: 2026-03-04 (placeholder text must be treated as missing data in systemic backfill)
+**Mistake**: Considerar apenas string vazia como critério de hidratação para `company/requester/status/assigned_to`.
+**Root cause**: Vários tickets persistiam com sentinelas (`Unknown org`, `Unknown requester`, `-`, `Unassigned`), e o backfill nunca os selecionava.
+**Rule**: Em pipelines de hidratação, placeholders/sentinelas devem ser classificados como “missing” e não como dado válido.
+**Pattern**: Se o card mostra texto fallback não-vazio por muito tempo, revisar o predicado de elegibilidade da hidratação antes de aumentar polling/cache.
+
 ## Lesson: 2026-03-03 (cache strategy fails if frontend forces timestamp cache busting)
 **Mistake**: Manter `_ts=Date.now()` em polling de leitura (`full-flow`) enquanto implementava cache em backend/frontend.
 **Root cause**: Query param variável invalida dedupe/cache local e reduz drasticamente hit ratio mesmo com arquitetura de cache correta no servidor.
@@ -1180,3 +1192,9 @@
 **Root cause**: Fallback heurístico foi útil para ordenação histórica, mas conflita com requisito de fonte canônica do horário.
 **Rule**: Para `ticket created time`, usar exclusivamente dados explícitos do provider canônico (`createDateTime/createDate` no AT); na ausência, deixar vazio em vez de inventar horário.
 **Pattern**: Quando horário exibido é “consistente, porém errado”, normalmente existe fallback heurístico semânticamente incorreto.
+
+## Lesson: 2026-03-04 (backfill em lote precisa de fairness para não travar em subconjunto)
+**Mistake**: A hidratação do inbox selecionava sempre a primeira fatia de candidatos incompletos.
+**Root cause**: Em presença de falhas recorrentes de snapshot para alguns tickets iniciais, os mesmos itens eram revisitados continuamente e o restante do backlog ficava sem hidratação.
+**Rule**: Processos de backfill incremental devem usar estratégia de fairness (ex.: round-robin por tenant) para garantir progresso sobre todo o conjunto.
+**Pattern**: “Só corrige quando abre ticket” + “milhares continuam Unknown” indica starvation no algoritmo de seleção de batch.

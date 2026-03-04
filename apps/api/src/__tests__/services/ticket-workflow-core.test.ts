@@ -424,6 +424,56 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     }
   });
 
+  it('rotates hydration candidates to avoid starvation when early snapshots keep failing', async () => {
+    const previousBatchSize = process.env.P0_WORKFLOW_INBOX_HYDRATION_BATCH_SIZE;
+    const previousRemoteBatchSize = process.env.P0_WORKFLOW_INBOX_HYDRATION_REMOTE_BATCH_SIZE;
+    process.env.P0_WORKFLOW_INBOX_HYDRATION_BATCH_SIZE = '2';
+    process.env.P0_WORKFLOW_INBOX_HYDRATION_REMOTE_BATCH_SIZE = '2';
+    const fetchTicketSnapshot = jest.fn().mockImplementation(async (_tenant: string, ticketRef: string) => {
+      if (ticketRef === 'T20260303.0005') {
+        return { company_name: 'Org T20260303.0005', contact_name: 'Requester T20260303.0005' };
+      }
+      return null;
+    });
+    try {
+      const gateway: TicketWorkflowGateway = {
+        executeCommand: jest.fn(),
+        fetchTicketSnapshot,
+      };
+      const { service, repo } = createService(gateway);
+
+      for (let i = 1; i <= 5; i += 1) {
+        const ticketNumber = `T20260303.${String(i).padStart(4, '0')}`;
+        await repo.upsertInboxTicket({
+          tenant_id: tenantId,
+          ticket_id: ticketNumber,
+          ticket_number: ticketNumber,
+          title: `Ticket ${i}`,
+          description: `Description ${i}`,
+          status: 'New',
+          comments: [],
+          source_of_truth: 'Autotask',
+          updated_at: `2026-03-03T21:${String(i).padStart(2, '0')}:00.000Z`,
+        });
+      }
+
+      await service.listInbox(tenantId);
+      await service.listInbox(tenantId);
+      await service.listInbox(tenantId);
+      const inbox = await service.listInbox(tenantId);
+
+      const hydrated = inbox.find((row) => row.ticket_id === 'T20260303.0005');
+      expect(fetchTicketSnapshot).toHaveBeenCalledWith(tenantId, 'T20260303.0005');
+      expect(hydrated?.company).toBe('Org T20260303.0005');
+      expect(hydrated?.requester).toBe('Requester T20260303.0005');
+    } finally {
+      if (previousBatchSize === undefined) delete process.env.P0_WORKFLOW_INBOX_HYDRATION_BATCH_SIZE;
+      else process.env.P0_WORKFLOW_INBOX_HYDRATION_BATCH_SIZE = previousBatchSize;
+      if (previousRemoteBatchSize === undefined) delete process.env.P0_WORKFLOW_INBOX_HYDRATION_REMOTE_BATCH_SIZE;
+      else process.env.P0_WORKFLOW_INBOX_HYDRATION_REMOTE_BATCH_SIZE = previousRemoteBatchSize;
+    }
+  });
+
   it('hydrates status, assignee and queue from snapshot aliases when inbox row is sparse', async () => {
     const fetchTicketSnapshot = jest.fn().mockResolvedValue({
       company_name: 'Bethel Presbyterian Church',
@@ -474,6 +524,108 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
       queue_name: 'Service Desk',
     });
     expect(fetchTicketSnapshot).not.toHaveBeenCalled();
+  });
+
+  it('treats Unknown placeholders as missing and rehydrates from Autotask snapshot', async () => {
+    const fetchTicketSnapshot = jest.fn().mockResolvedValue({
+      company_name: 'Bethel Presbyterian Church',
+      contact_name: 'Allen Hauser',
+      status_label: 'Waiting Customer',
+      assigned_to: 'Igor Belchior',
+      createDateTime: '2026-03-03T12:54:00.000Z',
+    });
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn(),
+      fetchTicketSnapshot,
+    };
+    const { service, repo } = createService(gateway);
+
+    await repo.upsertInboxTicket({
+      tenant_id: tenantId,
+      ticket_id: 'T20260303.0019',
+      ticket_number: 'T20260303.0019',
+      title: 'User Issue IMAC trying to send email and said cannot send message',
+      description: 'Initial payload',
+      company: 'Unknown org',
+      requester: 'Unknown requester',
+      status: '-',
+      assigned_to: 'Unassigned',
+      created_at: 'not-a-date',
+      comments: [],
+      source_of_truth: 'Autotask',
+      updated_at: '2026-03-03T23:00:00.000Z',
+    });
+
+    const inbox = await service.listInbox(tenantId);
+    expect(fetchTicketSnapshot).toHaveBeenCalledWith(tenantId, 'T20260303.0019');
+    expect(inbox[0]).toMatchObject({
+      ticket_id: 'T20260303.0019',
+      company: 'Bethel Presbyterian Church',
+      requester: 'Allen Hauser',
+      status: 'Waiting Customer',
+      assigned_to: 'Igor Belchior',
+      created_at: '2026-03-03T12:54:00.000Z',
+    });
+  });
+
+  it('does not accept placeholder values from domain snapshots as hydrated', async () => {
+    const fetchTicketSnapshot = jest.fn().mockResolvedValue({
+      company_name: 'Ferguson Supply & Box Company',
+      contact_name: 'Jasen Nolff',
+      status_label: 'Waiting Customer',
+      assigned_to: 'Igor Belchior',
+      createDateTime: '2026-03-03T12:54:00.000Z',
+    });
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn(),
+      fetchTicketSnapshot,
+    };
+    const { service, repo } = createService(gateway);
+
+    await repo.upsertInboxTicket({
+      tenant_id: tenantId,
+      ticket_id: 'T20260303.0015',
+      ticket_number: 'T20260303.0015',
+      title: 'Unable to Open PDF Files Due to Adobe Program Error',
+      description: 'Initial payload',
+      company: 'Unknown org',
+      requester: 'Unknown requester',
+      status: '-',
+      assigned_to: 'Unassigned',
+      created_at: 'invalid',
+      comments: [],
+      source_of_truth: 'Autotask',
+      updated_at: '2026-03-03T23:05:00.000Z',
+      domain_snapshots: {
+        tickets: {
+          company_name: 'Unknown org',
+          requester_name: 'Unknown requester',
+          status: '-',
+          assigned_to: 'Unassigned',
+          created_at: 'invalid',
+        },
+        'correlates.ticket_metadata': {
+          company_name: 'Unknown org',
+          requester_name: 'Unknown requester',
+          status_label: '-',
+          created_at: 'invalid',
+        },
+        'correlates.resources': {
+          assigned_to: 'Unassigned',
+        },
+      },
+    });
+
+    const inbox = await service.listInbox(tenantId);
+    expect(fetchTicketSnapshot).toHaveBeenCalledWith(tenantId, 'T20260303.0015');
+    expect(inbox[0]).toMatchObject({
+      ticket_id: 'T20260303.0015',
+      company: 'Ferguson Supply & Box Company',
+      requester: 'Jasen Nolff',
+      status: 'Waiting Customer',
+      assigned_to: 'Igor Belchior',
+      created_at: '2026-03-03T12:54:00.000Z',
+    });
   });
 
   it('retries transient failures and sends to DLQ after max attempts', async () => {

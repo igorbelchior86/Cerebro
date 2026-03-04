@@ -1,3 +1,58 @@
+# Task: Corrigir hidratação sistêmica de placeholders no inbox (Unknown org/requester/status/assignee)
+**Status**: completed
+**Started**: 2026-03-04T09:05:00-05:00
+
+## Plan
+- [x] Step 1: Auditar filtro de candidatos da hidratação no `workflow inbox`.
+- [x] Step 2: Tratar placeholders/sentinelas como campos faltantes para entrar no backfill.
+- [x] Step 3: Corrigir merge de snapshot remoto para priorizar valor significativo (não placeholder).
+- [x] Step 4: Adicionar teste de regressão para linha com `Unknown ...`.
+- [x] Step 5: Executar typecheck + testes de `ticket-workflow-core`.
+- [x] Step 6: Atualizar wiki/changelog obrigatório.
+
+## Progress Notes
+- Root cause confirmado: o filtro de hidratação só considerava string vazia como missing; valores `Unknown org`, `Unknown requester`, `-`, `Unassigned` ficavam fora da hidratação.
+- Merge remoto também priorizava o valor atual da linha (placeholder), bloqueando overwrite pelo snapshot Autotask.
+- Ajuste aplicado no core:
+  - `needsInboxHydration(row)` agora considera placeholders/sentinelas;
+  - merge remoto passou a usar `selectFirstMeaningful(...)`, ignorando placeholders.
+- Regressão coberta com teste dedicado em `ticket-workflow-core.test.ts`.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/api test -- ticket-workflow-core.test.ts` ✅ (21/21)
+- Documentation:
+- `wiki/changelog/2026-03-04-inbox-placeholder-hydration-systemic-fix.md`
+
+---
+
+# Task: Corrigir bloqueio de hidratação quando domain_snapshots contém placeholders
+**Status**: completed
+**Started**: 2026-03-04T09:35:00-05:00
+
+## Plan
+- [x] Step 1: Verificar se `domain_snapshots` com placeholders está marcando ticket como “hidratado”.
+- [x] Step 2: Ignorar placeholders também na promoção local de snapshot.
+- [x] Step 3: Adicionar regressão cobrindo snapshot local contaminado (`Unknown ...`).
+- [x] Step 4: Rodar typecheck e suite de `ticket-workflow-core`.
+- [x] Step 5: Atualizar wiki/changelog obrigatório.
+
+## Progress Notes
+- Root cause confirmado: promoção local (`existingSnapshot*`) usava `selectFirstNonEmpty`, aceitando `Unknown org/requester`, `-` e `Unassigned` como válidos.
+- Com isso, o ticket era marcado como hidratado e pulava o fetch remoto do Autotask, travando o fallback no card.
+- Ajuste aplicado para usar `selectFirstMeaningful(...)` também na etapa de promoção local de `domain_snapshots`.
+- Teste novo cobre exatamente esse cenário e garante overwrite remoto correto.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/api test -- ticket-workflow-core.test.ts` ✅ (22/22)
+- Documentation:
+- `wiki/changelog/2026-03-04-inbox-domain-snapshot-placeholder-guard.md`
+
+---
+
 # Task: Criar skill cerebro-team no projeto Cerebro a partir do pacote enviado
 **Status**: completed
 **Started**: 2026-03-04T07:25:00-05:00
@@ -548,3 +603,36 @@
 - `pnpm -r test` ❌ (falhas pré-existentes/independentes em `apps/api src/__tests__/routes/autotask.sidebar-tickets.test.ts`)
 - Documentation:
 - `wiki/changelog/2026-03-04-sidebar-card-date-time.md`
+
+---
+
+# Task: Corrigir hidratação sistêmica do inbox (sem abrir ticket individual)
+**Status**: completed
+**Started**: 2026-03-04T10:05:00-05:00
+
+## Plan
+- [x] Step 1: Auditar por que tickets antigos continuavam `Unknown` até abrir o ticket.
+- [x] Step 2: Eliminar starvation no backfill de hidratação da listagem do inbox.
+- [x] Step 3: Adicionar teste de regressão para rotação de candidatos em lotes.
+- [x] Step 4: Validar typecheck/teste alvo e documentar.
+
+## Open Questions
+- Nenhuma.
+
+## Progress Notes
+- Root cause encontrado: seleção fixa por fatia inicial de candidatos podia repetir sempre os mesmos tickets com falha de snapshot/timeouts, impedindo cobertura do backlog completo.
+- `hydrateMissingOrgRequester` agora usa seleção round-robin por tenant para os candidatos incompletos.
+- Isso garante progresso sobre todo o conjunto (~milhares), sem depender de abrir o ticket na UI.
+- Teste novo cobre starvation: mesmo com falhas recorrentes no início, tickets fora da primeira fatia passam a ser hidratados em ciclos seguintes.
+
+## Review
+- What worked:
+- Correção localizada no path de listagem/hidratação (`workflow inbox`) com baixo risco de regressão funcional.
+- What was tricky:
+- Preservar limites de batch/timeout e tenant-scoping sem introduzir contenção global.
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/api test -- ticket-workflow-core.test.ts` ✅ (20/20)
+- `python3 .codex/skills/cerebro-concurrency-race-auditor/scripts/concurrency_hotspots.py` ✅
+- Documentation:
+- `wiki/changelog/2026-03-04-inbox-hydration-round-robin-backfill.md`

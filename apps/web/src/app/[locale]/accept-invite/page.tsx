@@ -46,7 +46,7 @@ function AcceptInviteForm() {
             });
             const data = await res.json();
             if (!res.ok) { setError(data.error || 'Failed to accept invite'); return; }
-            router.replace('/triage/home');
+            router.replace('/triage/home?sidebarScope=personal');
         } catch {
             setError('Network error — is the API running?');
         } finally {

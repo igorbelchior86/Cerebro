@@ -1,3 +1,39 @@
+## Lesson: 2026-03-04 (sidebar FLIP reorder must be scroll-aware under live polling)
+**Mistake**: Mantive animação FLIP de reorder ativa mesmo durante scroll do usuário, com polling/realtime atualizando a lista em paralelo.
+**Root cause**: Medição de `getBoundingClientRect().top` foi comparada entre renders sem considerar drift de scroll, então o delta de scroll foi tratado como delta de reorder e a animação “brigou” com a rolagem.
+**Rule**: Em listas com auto-refresh, animação de reorder deve ser desativada durante scroll ativo e ignorar deltas extremos.
+**Pattern**: Se a lista “puxa” para cima/baixo enquanto o usuário rola, revisar FLIP para distinguir reorder real de movimento de viewport.
+
+## Lesson: 2026-03-04 (realtime event bursts must be coalesced before read-model refresh)
+**Mistake**: Cada evento `ticket.change` disparava `run(false)` imediatamente, sem coalescing nem lock de in-flight no hook de polling.
+**Root cause**: Bursts de eventos SSE criavam fanout de requests concorrentes para `/workflow/inbox`, amplificando jitter de UI.
+**Rule**: Hooks de polling com realtime precisam de serialização in-flight + refresh trailing/debounced.
+**Pattern**: Sequência de múltiplos `GET /workflow/inbox` em sub-segundos indica ausência de coalescimento em eventos realtime.
+
+## Lesson: 2026-03-04 (canonical-first must happen in write-path, not only in read-time hydration)
+**Mistake**: Confiar no `listInbox` para corrigir payload parcial do poller.
+**Root cause**: O sync persistia linha incompleta no read-model, e o usuário via fallback antes do próximo ciclo de hidratação.
+**Rule**: Dados canônicos de sidebar devem ser resolvidos no `processAutotaskSyncEvent` antes de gravar no inbox.
+**Pattern**: Se `/workflow/inbox` mostra `Unknown` apesar de polling ativo, o bug principal tende a estar no write-path (materialização), não no fetch da UI.
+
+## Lesson: 2026-03-04 (dedupe layers must treat placeholders as missing, not as truthy winners)
+**Mistake**: Corrigir hidratação, mas manter dedupe final aceitando `Unknown org/requester` como valor “preenchido”.
+**Root cause**: Em tickets com aliases (ID numérico + ticket number), o merge consolidado preservava placeholder e descartava a cópia canônica.
+**Rule**: Toda etapa de merge/dedupe deve aplicar regra de valor significativo, não só a etapa de fetch/hydration.
+**Pattern**: Se payload já chega com dado correto em uma linha mas UI ainda mostra fallback, investigar reducer de deduplicação antes de culpar polling/cache.
+
+## Lesson: 2026-03-04 (default draft mode on home route can violate post-login UX expectations)
+**Mistake**: Considerar `/triage/home` sempre como workspace ativa de criação (`isActive=true`) mesmo em navegação pós-login.
+**Root cause**: A sidebar recebia um `draftTicket` fixo e marcava `__draft__` como selecionado em todo acesso inicial.
+**Rule**: Fluxo pós-login deve abrir em estado neutro (lista carregada, sem seleção ativa); modo draft só por ação explícita do usuário.
+**Pattern**: Se a UI “sempre entra criando ticket”, revisar defaults de modo/bridge antes de mexer em auth/session.
+
+## Lesson: 2026-03-04 (systemic backfill should prioritize recency, but preserve fairness)
+**Mistake**: Tratar todos os candidatos de hidratação com prioridade uniforme em backlog massivo.
+**Root cause**: UX sofria porque os tickets mais recentes (os que o técnico realmente vê primeiro) podiam demorar para hidratar.
+**Rule**: Ordenar candidatos por recência antes de batching, mantendo fairness (round-robin) para evitar starvation do backlog antigo.
+**Pattern**: Em filas grandes, “fair-only” sem recency bias piora percepção de qualidade na UI mesmo com taxa de hidratação correta.
+
 ## Lesson: 2026-03-04 (snapshot local promotion can silently lock fallback placeholders)
 **Mistake**: Considerar qualquer valor não-vazio de `domain_snapshots` como confiável para promoção local.
 **Root cause**: `Unknown org`, `Unknown requester`, `-` e `Unassigned` vindos de snapshot local eram promovidos e o fetch remoto era pulado.
@@ -1198,3 +1234,15 @@
 **Root cause**: Em presença de falhas recorrentes de snapshot para alguns tickets iniciais, os mesmos itens eram revisitados continuamente e o restante do backlog ficava sem hidratação.
 **Rule**: Processos de backfill incremental devem usar estratégia de fairness (ex.: round-robin por tenant) para garantir progresso sobre todo o conjunto.
 **Pattern**: “Só corrige quando abre ticket” + “milhares continuam Unknown” indica starvation no algoritmo de seleção de batch.
+
+## Lesson: 2026-03-04 (não usar skeleton por campo para dados canônicos em lista viva)
+**Mistake**: Mantive skeleton/shimmer em campos individuais (`company/requester`) do card enquanto o ticket já estava renderizado.
+**Root cause**: O estado `canonical_pending` permitia loading parcial indefinido para campos que não vinham em todos os snapshots, quebrando o contrato binary-state (dados completos vs loading explícito).
+**Rule**: Em lista de tickets com read model canônico, não usar shimmer por campo; usar apenas loading de lista inteira (skeleton explícito) ou valor estável (`—`) quando o campo não existe.
+**Pattern**: “Shimmer eterno” em parte do card indica estado intermediário não-bounded no cliente.
+
+## Lesson: 2026-03-04 (componentes ocultos não devem manter polling ativo)
+**Mistake**: O `NewTicketHomePage` permanecia montado oculto e continuava fazendo polling de inbox fora do modo draft.
+**Root cause**: `useEffect` de polling sem guarda por `isActive`.
+**Rule**: Todo polling em subárvore de modo/overlay deve ser condicionado ao estado ativo visível.
+**Pattern**: Muitos `GET /workflow/inbox` sem interação direta geralmente indicam loops em componentes ocultos.

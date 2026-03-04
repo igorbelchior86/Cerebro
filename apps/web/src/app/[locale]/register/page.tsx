@@ -38,7 +38,7 @@ export default function RegisterPage() {
                 setError(data.error || 'Registration failed');
                 return;
             }
-            router.replace('/triage/home');
+            router.replace('/triage/home?sidebarScope=personal');
         } catch {
             setError('Network error — is the API running?');
         } finally {

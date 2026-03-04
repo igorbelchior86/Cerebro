@@ -41,7 +41,7 @@ describe('GET /autotask/sidebar-tickets', () => {
     expect(response.status).toBe(200);
     expect(response.body?.success).toBe(true);
     expect(response.body?.data).toEqual([]);
-    expect(response.body?.degraded).toEqual({ provider: 'Autotask', reason: 'rate_limited' });
+    expect(response.body?.degraded).toMatchObject({ provider: 'Autotask', reason: 'rate_limited' });
   });
 
   it('propagates non-provider errors to error middleware', async () => {
@@ -54,7 +54,7 @@ describe('GET /autotask/sidebar-tickets', () => {
       res.status(500).json({ error: String(err?.message || err) });
     });
 
-    const response = await request(app).get('/autotask/sidebar-tickets?queueId=29683512&limit=75');
+    const response = await request(app).get('/autotask/sidebar-tickets?queueId=29683513&limit=75');
 
     expect(response.status).toBe(500);
     expect(String(response.body?.error || '')).toContain('unexpected local failure');

@@ -9,12 +9,20 @@ function mapWorkflowStatusToSidebarStatus(status?: string): ActiveTicket['status
   return 'pending';
 }
 
-function fallbackPriority(status?: string): NonNullable<ActiveTicket['priority']> {
-  const normalized = String(status || '').toLowerCase();
-  if (/critical|sev1|p1/.test(normalized)) return 'P1';
-  if (/high|sev2|p2/.test(normalized)) return 'P2';
-  if (/low|p4/.test(normalized)) return 'P4';
-  return 'P3';
+function normalizePriority(value: unknown): ActiveTicket['priority'] | undefined {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  if (normalized === 'P1' || normalized === 'P2' || normalized === 'P3' || normalized === 'P4') {
+    return normalized;
+  }
+  return undefined;
+}
+
+function normalizeMeaningful(value: unknown, placeholders: string[]): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const normalized = raw.toLowerCase();
+  if (placeholders.includes(normalized)) return '';
+  return raw;
 }
 
 function normalizeIsoTimestamp(value: unknown): string | undefined {
@@ -43,13 +51,14 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
   const title = String(row.title || '').trim() || `Ticket ${displayTicketNumber || row.ticket_id}`;
   const description = String(row.description || '').trim() || undefined;
   const createdAt = resolveCreatedAt(row);
-  const companyName = String(
+  const companyName = normalizeMeaningful(
     row.company ||
     row.domain_snapshots?.tickets?.company_name ||
     row.domain_snapshots?.['correlates.ticket_metadata']?.company_name ||
-    ''
-  ).trim();
-  const requesterName = String(
+    '',
+    ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']
+  );
+  const requesterName = normalizeMeaningful(
     row.requester ||
     row.domain_snapshots?.tickets?.requester_name ||
     row.domain_snapshots?.tickets?.contact_name ||
@@ -57,8 +66,9 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
     row.domain_snapshots?.['correlates.ticket_metadata']?.requester_name ||
     row.domain_snapshots?.['correlates.ticket_metadata']?.contact_name ||
     row.domain_snapshots?.['correlates.ticket_metadata']?.requester ||
-    ''
-  ).trim();
+    '',
+    ['unknown requester', 'unknown user', 'requester', 'user', 'contact']
+  );
   const statusLabel = String(
     row.domain_snapshots?.tickets?.status_label ||
     row.domain_snapshots?.['correlates.ticket_metadata']?.status_label ||
@@ -88,6 +98,7 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
     row.domain_snapshots?.['correlates.ticket_metadata']?.queue_id;
   const queueId = Number(queueIdRaw);
   const assignedNumeric = Number.parseInt(assignedRaw, 10);
+  const priority = normalizePriority(row.domain_snapshots?.tickets?.priority);
   return {
     id: row.ticket_id,
     ticket_id: displayTicketNumber || row.ticket_id,
@@ -97,7 +108,7 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
     ...((() => {
       return statusLabel ? { ticket_status_label: statusLabel } : {};
     })()),
-    priority: fallbackPriority(statusValue),
+    ...(priority ? { priority } : {}),
     title,
     ...(description ? { description } : {}),
     ...(companyName ? { company: companyName, org: companyName } : {}),

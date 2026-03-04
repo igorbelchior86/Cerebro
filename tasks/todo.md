@@ -1,3 +1,167 @@
+# Task: Hotfix sidebar jitter (scroll lock race + skeleton eterno)
+**Status**: completed
+**Started**: 2026-03-04T11:45:00-05:00
+
+## Plan
+- [x] Step 1: Mitigar storm de requests em `/workflow/inbox` causado por bursts de realtime.
+- [x] Step 2: Tornar animação FLIP da sidebar scroll-aware para não disputar scroll do usuário.
+- [x] Step 3: Remover skeleton “eterno” por card com fallback estável quando canônico não chega rapidamente.
+- [x] Step 4: Executar validação completa (`lint`, `typecheck`, `test`).
+- [x] Step 5: Atualizar wiki/changelog obrigatório.
+
+## Progress Notes
+- `usePollingResource` agora coalesceu bursts de `ticket.change` (debounce), serializa fetches in-flight e evita fanout concorrente.
+- `ChatSidebar` passou a pular animação de reorder quando há scroll ativo ou deltas de layout suspeitos, removendo a disputa de rolagem.
+- A adaptação de tickets para sidebar agora sanitiza placeholders `Unknown ...`; skeleton só aparece quando o ticket está em janela recente de pendência canônica.
+- Fora dessa janela, campos ausentes mostram `—` estável em vez de shimmer infinito.
+
+## Review
+- Verification:
+- `pnpm -r lint` ✅ (sem erros; warnings preexistentes)
+- `pnpm -r typecheck` ✅
+- `pnpm -r test` ✅
+- Documentation:
+- `wiki/changelog/2026-03-04-sidebar-scroll-race-and-canonical-skeleton-timebox.md`
+
+---
+
+# Task: Canonical-first sidebar rendering (remover hidratação no GET e fallback Unknown na UI)
+**Status**: completed
+**Started**: 2026-03-04T10:35:00-05:00
+
+## Plan
+- [x] Step 1: Remover hidratação durante `listInbox` (`GET /workflow/inbox`) para read-path estritamente canônico/read-only.
+- [x] Step 2: Ajustar testes do workflow core para o novo contrato canonical-first (sem fetch/hydration em leitura).
+- [x] Step 3: Eliminar fallback textual `Unknown` na sidebar/contexto para Org/Requester/Issue/Sub-Issue/Priority/SLA.
+- [x] Step 4: Garantir estado visual explícito de loading/skeleton quando campos não estão presentes.
+- [x] Step 5: Executar gates de validação (`pnpm -r lint`, `pnpm -r typecheck`, `pnpm -r test`).
+- [x] Step 6: Atualizar wiki/changelog obrigatório.
+
+## Progress Notes
+- `listInbox` deixou de chamar `hydrateMissingOrgRequester`; o GET agora só retorna o read-model já materializado.
+- Testes que assumiam hidratação no read-path foram migrados para validar comportamento read-only.
+- UI da sidebar/contexto foi ajustada para não renderizar texto `Unknown`; quando faltam valores, renderiza vazio/skeleton em vez de placeholder textual.
+
+## Review
+- Verification:
+- `pnpm -r lint` ✅ (sem erros; warnings preexistentes)
+- `pnpm -r typecheck` ✅
+- `pnpm -r test` ✅
+- Documentation:
+- `wiki/changelog/2026-03-04-canonical-first-sidebar-read-model-no-get-hydration.md`
+
+---
+
+# Task: Canonical-first no write-path do workflow inbox (eliminar persistência de payload parcial)
+**Status**: completed
+**Started**: 2026-03-04T09:40:00-05:00
+
+## Plan
+- [x] Step 1: Investigar por que `/workflow/inbox` ainda publica dados errados mesmo com polling.
+- [x] Step 2: Implementar enriquecimento canônico no `processAutotaskSyncEvent` antes do `upsertInboxTicket`.
+- [x] Step 3: Evitar persistência de status numérico/placeholder quando snapshot canônico está disponível.
+- [x] Step 4: Adicionar regressão cobrindo evento parcial do poller (sem org/requester/status label).
+- [x] Step 5: Executar testes/typecheck da superfície alterada.
+- [x] Step 6: Atualizar wiki/changelog obrigatório.
+
+## Progress Notes
+- O write-path de sync aceitava payload parcial do poller como “verdade” e só corrigia depois via hidratação no read-path.
+- Agora o sync faz canonicalização antes de persistir: busca snapshot Autotask quando faltam campos canônicos (org/requester/created_at/status label) ou quando status vem como código numérico.
+- Resultado: a linha já entra no inbox com dados canônicos, reduzindo race/fallback na sidebar.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- ticket-workflow-core.test.ts` ✅ (24/24)
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-04-canonical-first-workflow-inbox-write-path.md`
+
+---
+
+# Task: Corrigir unknown persistente no topo da sidebar + persistir cache local de hidratação
+**Status**: completed
+**Started**: 2026-03-04T11:10:00-05:00
+
+## Plan
+- [x] Step 1: Investigar por que tickets recentes continuam `Unknown` mesmo com polling.
+- [x] Step 2: Corrigir dedupe de aliases para não preservar placeholders quando existe valor canônico.
+- [x] Step 3: Persistir cache de leitura no cliente para sobreviver reload/login.
+- [x] Step 4: Ajustar TTL do cache de inbox para reduzir refetch agressivo.
+- [x] Step 5: Rodar testes/typecheck de API/Web.
+- [x] Step 6: Atualizar wiki/changelog obrigatório.
+
+## Progress Notes
+- Root cause confirmado: no merge de aliases (`listInbox`), `Unknown org/requester` era tratado como valor válido e bloqueava overwrite por outra linha do mesmo ticket com dados reais.
+- Correção aplicada com seleção de valor significativo no dedupe.
+- Cache local client-side agora persiste em `localStorage` para recursos críticos (`/workflow/inbox`, queues e field options), com hidratação no boot + TTL/stale.
+- `listWorkflowInbox` teve janela de cache ampliada para reduzir re-fetchs frequentes após login/reload.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- ticket-workflow-core.test.ts` ✅ (23/23)
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-04-sidebar-top-unknown-dedupe-fix-and-persistent-read-cache.md`
+
+---
+
+# Task: Corrigir landing pós-login para fila Personal sem ticket selecionado
+**Status**: completed
+**Started**: 2026-03-04T10:35:00-05:00
+
+## Plan
+- [x] Step 1: Identificar por que `/triage/home` abre em modo draft por padrão.
+- [x] Step 2: Alterar default para modo inbox (sem draft ativo) no acesso direto pós-login.
+- [x] Step 3: Manter criação de ticket apenas quando usuário clicar `New Ticket`.
+- [x] Step 4: Forçar escopo inicial `personal` via URL no redirect pós-login.
+- [x] Step 5: Rodar typecheck web/api.
+- [x] Step 6: Atualizar wiki/changelog obrigatório.
+
+## Progress Notes
+- Root cause: `/triage/home` sempre tratava a workspace de new-ticket como ativa (`isActive` default `true`) e passava `draftTicket + currentTicketId='__draft__'` para a sidebar.
+- Correção:
+  - modo compose só ativa via bridge ou `?compose=1`;
+  - acesso padrão em `/triage/home` agora renderiza estado “sem seleção”;
+  - botão `New Ticket` na home liga `compose=1`;
+  - redirects pós-auth agora usam `?sidebarScope=personal`;
+  - restore do sidebar state passou a priorizar `sidebarScope` da URL sobre sessão.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-04-post-login-personal-queue-no-active-draft.md`
+
+---
+
+# Task: Priorizar hidratação por recência + animação live de reorganização da sidebar
+**Status**: completed
+**Started**: 2026-03-04T10:10:00-05:00
+
+## Plan
+- [x] Step 1: Priorizar candidatos de hidratação do inbox do mais recente para o mais antigo.
+- [x] Step 2: Implementar animação de reorganização dos cards na sidebar com auto-update.
+- [x] Step 3: Rodar typecheck API/Web e testes do core de workflow.
+- [x] Step 4: Atualizar wiki/changelog obrigatório.
+
+## Progress Notes
+- Backend: `hydrateMissingOrgRequester` agora ordena candidatos faltantes por recência (`created_at` válido, fallback `updated_at`) antes do batch round-robin.
+- Frontend: `ChatSidebar` recebeu animação FLIP de reorder para auto-update do polling (cards movem com transição suave quando dados canônicos chegam e a ordem muda).
+- Não houve mudança de contrato público de API.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/api test -- ticket-workflow-core.test.ts` ✅ (22/22)
+- Documentation:
+- `wiki/changelog/2026-03-04-hydration-recency-priority-and-live-sidebar-reorder.md`
+
+---
+
 # Task: Corrigir hidratação sistêmica de placeholders no inbox (Unknown org/requester/status/assignee)
 **Status**: completed
 **Started**: 2026-03-04T09:05:00-05:00
@@ -636,3 +800,37 @@
 - `python3 .codex/skills/cerebro-concurrency-race-auditor/scripts/concurrency_hotspots.py` ✅
 - Documentation:
 - `wiki/changelog/2026-03-04-inbox-hydration-round-robin-backfill.md`
+
+---
+
+# Task: Hotfix final de estabilidade da sidebar (sem shimmer eterno + sem disputa de scroll)
+**Status**: completed
+**Started**: 2026-03-04T11:25:00-05:00
+
+## Plan
+- [x] Step 1: Eliminar shimmer por campo em card de ticket (render estável para metadados ausentes).
+- [x] Step 2: Remover animação de reordenação que aplicava transforms durante atualizações da lista.
+- [x] Step 3: Priorizar campos canônicos Autotask para Org/Contact no triage.
+- [x] Step 4: Evitar polling de inbox em tela de draft quando o draft está inativo.
+- [x] Step 5: Validar web lint/typecheck e registrar documentação.
+
+## Open Questions
+- Nenhuma.
+
+## Progress Notes
+- `SidebarTicketCard` não exibe mais skeleton por campo (`company/requester`): agora renderiza valor canônico ou `—`.
+- `ChatSidebar` deixou de aplicar FLIP de reordenação em DOM; lista passou para render estático sem transformação de `translateY`.
+- `triage/[id]/page.tsx` passou a priorizar `data.ticket` (Autotask) para `Org` e `Contact`, reduzindo influência de heurísticas (`affected_user`) nesses campos.
+- `ChatSidebar` no triage usa somente `isLoadingTickets` para loading da lista, desacoplado do loading do playbook.
+- `triage/home/page.tsx` só faz polling de inbox quando `isActive` (draft realmente aberto), removendo polling em background oculto.
+
+## Review
+- What worked:
+- Hotfix focado na causa visual e de concorrência sem alterar contratos públicos da API.
+- What was tricky:
+- Separar fallback UX (placeholder/skeleton) de fonte canônica sem quebrar navegação do triage.
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/web lint` ✅ (somente warnings preexistentes no arquivo)
+- Documentation:
+- `wiki/changelog/2026-03-04-sidebar-canonical-autotask-scroll-stability-hotfix.md`

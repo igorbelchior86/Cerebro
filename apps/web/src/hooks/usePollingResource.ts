@@ -43,7 +43,10 @@ export function usePollingResource<T>(
   const fetcherRef = useRef(fetcher);
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
+  const realtimeRefreshTimerRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
+  const runInFlightRef = useRef(false);
+  const runQueuedRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -57,6 +60,10 @@ export function usePollingResource<T>(
         window.clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
       }
+      if (realtimeRefreshTimerRef.current) {
+        window.clearTimeout(realtimeRefreshTimerRef.current);
+        realtimeRefreshTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -69,13 +76,19 @@ export function usePollingResource<T>(
   }, [fetcher]);
 
   const run = useCallback(async (isManual = false) => {
-    if (!enabled) {
+    if (!enabled && !isManual) {
       if (mountedRef.current) {
         setLoading(false);
         setRefreshing(false);
       }
       return;
     }
+    if (runInFlightRef.current) {
+      runQueuedRef.current = true;
+      return;
+    }
+    runInFlightRef.current = true;
+    runQueuedRef.current = false;
 
     if (mountedRef.current) {
       if (dataRef.current === null && !isManual) setLoading(true);
@@ -92,9 +105,16 @@ export function usePollingResource<T>(
       if (!mountedRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to load');
     } finally {
+      runInFlightRef.current = false;
       if (mountedRef.current) {
         setLoading(false);
         setRefreshing(false);
+      }
+      if (runQueuedRef.current && mountedRef.current) {
+        runQueuedRef.current = false;
+        window.setTimeout(() => {
+          void run(false);
+        }, 0);
       }
     }
   }, [enabled]);
@@ -125,6 +145,10 @@ export function usePollingResource<T>(
       if (reconnectTimerRef.current) {
         window.clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
+      }
+      if (realtimeRefreshTimerRef.current) {
+        window.clearTimeout(realtimeRefreshTimerRef.current);
+        realtimeRefreshTimerRef.current = null;
       }
       return;
     }
@@ -169,7 +193,12 @@ export function usePollingResource<T>(
             setRealtimeDegraded(true);
             setRealtimeReason(envelope.payload.reason || 'realtime_degraded');
           } else if (envelope.kind === 'ticket.change') {
-            void run(false);
+            if (realtimeRefreshTimerRef.current) return;
+            // Coalesce bursts of realtime events into a single fetch.
+            realtimeRefreshTimerRef.current = window.setTimeout(() => {
+              realtimeRefreshTimerRef.current = null;
+              void run(false);
+            }, 800);
           }
         } catch {
           // ignore malformed events and keep stream alive
@@ -202,6 +231,10 @@ export function usePollingResource<T>(
     return () => {
       cancelled = true;
       clearReconnectTimer();
+      if (realtimeRefreshTimerRef.current) {
+        window.clearTimeout(realtimeRefreshTimerRef.current);
+        realtimeRefreshTimerRef.current = null;
+      }
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;

@@ -186,7 +186,10 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                         {/* Ticket list */}
                         <div
                             ref={listRef}
-                            onScroll={(e) => persistSidebarState(filter, (e.currentTarget as HTMLDivElement).scrollTop)}
+                            onScroll={(e) => {
+                                const nextTop = (e.currentTarget as HTMLDivElement).scrollTop;
+                                persistSidebarState(filter, nextTop);
+                            }}
                             style={{ flex: 1, overflowY: 'auto', padding: '4px 10px 10px', display: 'flex', flexDirection: 'column', gap: '7px', position: 'relative', zIndex: 1 }}
                         >
                             {listLoading && visibleTickets.length === 0 ? (
@@ -230,7 +233,6 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                                                     onOpenStatusEditor={openStatusEditor}
                                                     hideSuppressed={hideSuppressed}
                                                     labelDefaultIssue={t('defaultIssue')}
-                                                    labelUnknownOrg={t('unknownOrg')}
                                                     labelSuppressedBadge={t('suppressedBadge')}
                                                     labelSuppressedReasonNoise={t('suppressedReasonNoise')}
                                                     labelJustNow={t('justNow')}

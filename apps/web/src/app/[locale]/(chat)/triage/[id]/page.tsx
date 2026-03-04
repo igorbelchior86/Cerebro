@@ -409,8 +409,9 @@ export default function SessionDetail({
 
   const p0LookupTicketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
   const workflowInboxState = usePollingResource(listWorkflowInbox, {
-    intervalMs: 10000,
-    realtime: { path: '/workflow/realtime' },
+    intervalMs: 30000,
+    enabled: false,
+    realtime: { path: '/workflow/realtime', enabled: false },
   });
   const workflowAuditState = usePollingResource(
     () => listWorkflowAudit(p0LookupTicketId),
@@ -996,17 +997,17 @@ export default function SessionDetail({
             }),
             currentTicket?.site,
           ],
-          'Unknown user'
+          ''
         );
         const org = pickStableText(
           snapshot?.org,
           [ssot.company, backendTicket.company, currentTicket?.company, currentTicket?.org, packOrg.name],
-          'Unknown org'
+          ''
         );
         const site = pickStableText(
           snapshot?.site,
           [backendTicket.requester, currentTicket?.site, currentTicket?.requester, packUser.name],
-          'Unknown site'
+          ''
         );
         const priority = backendTicket.priority || currentTicket?.priority || snapshot?.priority || 'P3';
         const priorityLabelForLine = pickStableText(
@@ -1571,22 +1572,36 @@ export default function SessionDetail({
   const displayTickets = sidebarTickets;
   const canonicalTicketId = data?.session.ticket_id || selectedTicketId;
   const selectedTicket = displayTickets.find((t) => t.id === canonicalTicketId || t.ticket_id === canonicalTicketId);
+  const pickCanonicalUiText = (...values: unknown[]): string => {
+    for (const value of values) {
+      const normalized = normalizePlainText(String(value ?? ''), '');
+      if (!normalized) continue;
+      if (!isMeaningfulText(normalized)) continue;
+      return normalized;
+    }
+    return '';
+  };
   useEffect(() => {
     const ticket = sidebarTickets.find((t) => t.id === selectedTicketId || t.ticket_id === selectedTicketId);
     setIsManualSuppressed(Boolean(ticket?.manual_suppressed));
   }, [selectedTicketId, sidebarTickets]);
-  const canonicalRequesterUi = selectUiUserFromSsot({
-    affected: data?.ssot?.affected_user_name || data?.ticket?.affected_user_normalized,
-    requester: data?.ssot?.requester_name || data?.ticket?.requester_normalized || data?.ticket?.requester,
-    fallbacks: [selectedTicket?.requester],
-  });
-  const canonicalCompanyUi = normalizePlainText(
-    data?.ssot?.company || data?.ticket?.company || selectedTicket?.company || selectedTicket?.org,
-    'Unknown org'
+  const canonicalRequesterUi = pickCanonicalUiText(
+    data?.ticket?.requester,
+    data?.ticket?.requester_normalized,
+    data?.ssot?.requester_name,
+    selectedTicket?.requester,
+    data?.ssot?.affected_user_name,
+    data?.ticket?.affected_user_normalized
+  );
+  const canonicalCompanyUi = pickCanonicalUiText(
+    data?.ticket?.company,
+    selectedTicket?.company,
+    selectedTicket?.org,
+    data?.ssot?.company
   );
   const canonicalSiteUi = normalizePlainText(
     selectedTicket?.site || selectedTicket?.org || data?.ssot?.company || data?.ticket?.company,
-    'Unknown site'
+    ''
   );
   const selectedTicketView = selectedTicket
     ? {
@@ -2312,28 +2327,28 @@ export default function SessionDetail({
     data?.ticket?.priority_label ||
     resolvePicklistLabelFromCache(ticketFieldOptionsCache.priority, data?.ticket?.priority) ||
     data?.ticket?.priority ||
-    'Unknown'
+    ''
   );
   const derivedIssueTypeLabel = String(
     contextOverrides.issue_type?.name ||
     data?.ticket?.issue_type_label ||
     resolvePicklistLabelFromCache(ticketFieldOptionsCache.issueType, data?.ticket?.issue_type) ||
     data?.ticket?.issue_type ||
-    'Unknown'
+    ''
   );
   const derivedSubIssueTypeLabel = String(
     contextOverrides.sub_issue_type?.name ||
     data?.ticket?.sub_issue_type_label ||
     resolvePicklistLabelFromCache(ticketFieldOptionsCache.subIssueType, data?.ticket?.sub_issue_type) ||
     data?.ticket?.sub_issue_type ||
-    'Unknown'
+    ''
   );
   const derivedSlaLabel = String(
     contextOverrides.service_level_agreement?.name ||
     data?.ticket?.sla_label ||
     resolvePicklistLabelFromCache(ticketFieldOptionsCache.serviceLevelAgreement, data?.ticket?.sla) ||
     data?.ticket?.sla ||
-    'Unknown'
+    ''
   );
   const parsedPlaybookEscalation = parseEscalationFromPlaybook(data?.playbook?.content_md || undefined);
   const playbookPanelData = data
@@ -2342,24 +2357,17 @@ export default function SessionDetail({
       context: [
         {
           key: 'Org',
-          val: contextOverrides.org?.name || data?.ssot?.company || selectedTicketView?.company || selectedTicketView?.org || 'Unknown org',
+          val: contextOverrides.org?.name || canonicalCompanyUi || '',
           editable: true,
         },
         {
           key: 'Contact',
-          val: contextOverrides.user?.name || normalizePlainText(
-            selectUiUserFromSsot({
-              affected: data?.ssot?.affected_user_name,
-              requester: data?.ssot?.requester_name,
-              fallbacks: [selectedTicketView?.requester],
-            }),
-            'Unknown'
-          ),
+          val: contextOverrides.user?.name || canonicalRequesterUi || '',
           editable: true,
         },
         {
           key: 'Additional contacts',
-          val: contextOverrides.additional_contact?.name || data?.ssot?.additional_contacts || 'Unknown',
+          val: contextOverrides.additional_contact?.name || data?.ssot?.additional_contacts || '',
           editable: true,
         },
         {
@@ -2470,7 +2478,7 @@ export default function SessionDetail({
             <ChatSidebar
               tickets={displayTickets}
               currentTicketId={selectedTicketId}
-              isLoading={isLoadingTickets || loading}
+              isLoading={isLoadingTickets}
               onCreateTicket={() => setIsDraftMode(true)}
               onSelectTicket={(id) => {
                 if (id === selectedTicketId) return;

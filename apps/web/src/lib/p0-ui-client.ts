@@ -22,6 +22,62 @@ type CachedResponseEntry = {
 
 const readResponseCache = new Map<string, CachedResponseEntry>();
 const readResponseInFlight = new Map<string, Promise<unknown>>();
+const READ_CACHE_STORAGE_KEY = 'cerebro.read-cache.v1';
+const MAX_PERSISTED_ENTRIES = 12;
+const MAX_PERSISTED_ENTRY_BYTES = 900_000;
+let readCacheHydrated = false;
+
+function shouldPersistReadCacheKey(key: string): boolean {
+  return key.includes('GET:/workflow/inbox')
+    || key.includes('GET:/autotask/queues')
+    || key.includes('GET:/autotask/ticket-field-options');
+}
+
+function persistReadCacheToStorage() {
+  if (typeof window === 'undefined') return;
+  try {
+    const now = Date.now();
+    const items = Array.from(readResponseCache.entries())
+      .filter(([key, entry]) => shouldPersistReadCacheKey(key) && entry.staleUntil > now)
+      .sort((a, b) => b[1].staleUntil - a[1].staleUntil)
+      .slice(0, MAX_PERSISTED_ENTRIES)
+      .map(([key, entry]) => ({ key, ...entry }));
+    window.localStorage.setItem(READ_CACHE_STORAGE_KEY, JSON.stringify(items));
+  } catch {
+    // Best-effort persistence only.
+  }
+}
+
+function hydrateReadCacheFromStorage() {
+  if (readCacheHydrated) return;
+  readCacheHydrated = true;
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = window.localStorage.getItem(READ_CACHE_STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as Array<{
+      key: string;
+      value: unknown;
+      freshUntil: number;
+      staleUntil: number;
+    }>;
+    const now = Date.now();
+    for (const item of Array.isArray(parsed) ? parsed : []) {
+      if (!item || typeof item.key !== 'string') continue;
+      if (!Number.isFinite(item.freshUntil) || !Number.isFinite(item.staleUntil)) continue;
+      if (item.staleUntil <= now) continue;
+      const serialized = JSON.stringify(item.value);
+      if (serialized.length > MAX_PERSISTED_ENTRY_BYTES) continue;
+      readResponseCache.set(item.key, {
+        value: item.value,
+        freshUntil: item.freshUntil,
+        staleUntil: item.staleUntil,
+      });
+    }
+  } catch {
+    // Ignore corrupt local cache.
+  }
+}
 
 export interface ApiEnvelope<T> {
   success?: boolean;
@@ -386,6 +442,7 @@ function buildReadCacheKey(path: string, init?: RequestInit, explicitKey?: strin
 }
 
 async function request<T>(path: string, init?: RequestInit, cacheOptions?: RequestCacheOptions): Promise<T> {
+  hydrateReadCacheFromStorage();
   const method = String(init?.method || 'GET').toUpperCase();
   const isGet = method === 'GET';
   const staleTimeMs = Math.max(0, Number(cacheOptions?.staleTimeMs || 0));
@@ -413,8 +470,10 @@ async function request<T>(path: string, init?: RequestInit, cacheOptions?: Reque
                 freshUntil: ts + staleTimeMs,
                 staleUntil: ts + staleTimeMs + staleWhileRevalidateMs,
               });
+              persistReadCacheToStorage();
             } else {
               readResponseCache.delete(cacheKey);
+              persistReadCacheToStorage();
             }
             return nextValue;
           })
@@ -427,6 +486,7 @@ async function request<T>(path: string, init?: RequestInit, cacheOptions?: Reque
       return cached.value as T;
     }
     readResponseCache.delete(cacheKey);
+    persistReadCacheToStorage();
   }
 
   const inFlight = readResponseInFlight.get(cacheKey);
@@ -443,8 +503,10 @@ async function request<T>(path: string, init?: RequestInit, cacheOptions?: Reque
           freshUntil: ts + staleTimeMs,
           staleUntil: ts + staleTimeMs + staleWhileRevalidateMs,
         });
+        persistReadCacheToStorage();
       } else {
         readResponseCache.delete(cacheKey);
+        persistReadCacheToStorage();
       }
       return value;
     })
@@ -458,8 +520,8 @@ async function request<T>(path: string, init?: RequestInit, cacheOptions?: Reque
 
 export function listWorkflowInbox() {
   return request<WorkflowInboxTicket[]>('/workflow/inbox', undefined, {
-    staleTimeMs: 2_000,
-    staleWhileRevalidateMs: 13_000,
+    staleTimeMs: 12_000,
+    staleWhileRevalidateMs: 2 * 60_000,
   });
 }
 

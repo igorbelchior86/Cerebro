@@ -229,7 +229,7 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         if (explicit) return explicit;
 
         const rawText = String(ticket.ticket_status_value ?? '').trim();
-        if (!rawText) return ticket.isDraft ? 'New' : 'Unknown';
+        if (!rawText) return ticket.isDraft ? 'New' : '';
 
         const numeric = Number.parseInt(rawText, 10);
         if (Number.isFinite(numeric)) {
@@ -301,6 +301,7 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         if (restoredRef.current || typeof window === 'undefined') return;
 
         const urlFilter = searchParams?.get('sidebarFilter');
+        const urlScope = searchParams?.get('sidebarScope');
         const rawSaved = sessionStorage.getItem(SIDEBAR_STATE_KEY);
         let saved: {
             filter?: string;
@@ -315,7 +316,8 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         const candidateFilter = urlFilter || saved.filter || 'all';
         const restoredFilter = FILTER_IDS.has(candidateFilter) ? candidateFilter : 'all';
         setFilter(restoredFilter);
-        if (saved.scope === 'personal' || saved.scope === 'global') setScope(saved.scope);
+        if (urlScope === 'personal' || urlScope === 'global') setScope(urlScope);
+        else if (saved.scope === 'personal' || saved.scope === 'global') setScope(saved.scope);
         if (typeof saved.searchQuery === 'string') setSearchQuery(saved.searchQuery);
         if (typeof saved.selectedGlobalQueue === 'string') setSelectedGlobalQueue(saved.selectedGlobalQueue);
 
@@ -327,15 +329,16 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         restoredRef.current = true;
     }, [searchParams]);
 
-    // Persist filter to URL + sessionStorage
+    // Persist filter/scope to URL + sessionStorage
     useEffect(() => {
         if (typeof window === 'undefined') return;
         const params = new URLSearchParams(searchParams?.toString() ?? '');
         params.set('sidebarFilter', filter);
+        params.set('sidebarScope', scope);
         const currentPath = pathname ?? window.location.pathname;
         window.history.replaceState(null, '', `${currentPath}?${params.toString()}`);
         persistSidebarState(filter);
-    }, [filter, pathname, searchParams, persistSidebarState]);
+    }, [filter, scope, pathname, searchParams, persistSidebarState]);
 
     const toggleTheme = () => {
         const newTheme = theme === 'dark' ? 'light' : 'dark';
@@ -645,7 +648,7 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
             const key = normalizedLabel ? `label:${normalizedLabel}` : `workflow:${String(ticket.status || '').trim().toLowerCase()}`;
             const current = counts.get(key) || 0;
             counts.set(key, current + 1);
-            if (!labels.has(key)) labels.set(key, resolvedLabel || 'Unknown');
+            if (!labels.has(key)) labels.set(key, resolvedLabel || 'Workflow');
         }
 
         return Array.from(labels.entries())

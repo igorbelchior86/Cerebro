@@ -309,6 +309,10 @@ function statusesMatch(localStatus: unknown, remoteStatus: unknown, remoteStatus
   return false;
 }
 
+function isLikelyNumericStatusCode(value: unknown): boolean {
+  return /^[0-9]+$/.test(String(value ?? '').trim());
+}
+
 function classifyError(error: unknown): 'transient' | 'terminal' {
   if (error instanceof WorkflowTransientError) return 'transient';
   const message = String((error as any)?.message || error || '').toLowerCase();
@@ -470,6 +474,22 @@ function selectFirstMeaningful(values: unknown[], placeholders: string[]): strin
   for (const value of values) {
     if (isPlaceholderValue(value, placeholders)) continue;
     return String(value ?? '').trim();
+  }
+  return undefined;
+}
+
+function preferMeaningfulText(
+  currentValue: unknown,
+  candidateValue: unknown,
+  placeholders: string[]
+): string | undefined {
+  if (!isPlaceholderValue(currentValue, placeholders)) {
+    const normalizedCurrent = String(currentValue ?? '').trim();
+    if (normalizedCurrent) return normalizedCurrent;
+  }
+  if (!isPlaceholderValue(candidateValue, placeholders)) {
+    const normalizedCandidate = String(candidateValue ?? '').trim();
+    if (normalizedCandidate) return normalizedCandidate;
   }
   return undefined;
 }
@@ -1362,11 +1382,94 @@ export class TicketWorkflowCoreService {
     }
 
     const domainSnapshots = normalizeEventDomainSnapshots(payload);
+    const ticketRefForCanonicalFetch = selectFirstNonEmpty(
+      payload.ticket_number,
+      payload.external_id,
+      eventTicketId,
+      existing?.ticket_number,
+      existing?.external_id,
+      ticketId
+    );
+    const payloadCompany = selectFirstMeaningful([
+      payload.company_name,
+      payload.company,
+    ], ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']);
+    const payloadRequester = selectFirstMeaningful([
+      payload.requester,
+      payload.contact_name,
+    ], ['unknown requester', 'unknown user', 'requester', 'user', 'contact']);
+    const payloadStatus = selectFirstMeaningful([
+      payload.status_label,
+      payload.status,
+    ], ['unknown status', 'status', '-', 'n/a']);
+    const payloadCreatedAt = inferCreatedAt(
+      payload.created_at,
+      payload.createDateTime,
+      payload.createDate,
+      (domainSnapshots.tickets as any)?.created_at,
+    );
+    const needsCanonicalSnapshot =
+      !payloadCompany ||
+      !payloadRequester ||
+      !payloadCreatedAt ||
+      !payloadStatus ||
+      isLikelyNumericStatusCode(payloadStatus);
+    let canonicalSnapshot: Record<string, unknown> | null = null;
+    if (needsCanonicalSnapshot && this.gateway.fetchTicketSnapshot && ticketRefForCanonicalFetch) {
+      try {
+        canonicalSnapshot = await this.gateway.fetchTicketSnapshot(event.tenant_id, ticketRefForCanonicalFetch);
+      } catch {
+        canonicalSnapshot = null;
+      }
+    }
+    const canonicalCompany = selectFirstMeaningful([
+      payload.company_name,
+      payload.company,
+      canonicalSnapshot?.company_name,
+      canonicalSnapshot?.company,
+      existing?.company,
+    ], ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']);
+    const canonicalRequester = selectFirstMeaningful([
+      payload.requester,
+      payload.contact_name,
+      canonicalSnapshot?.contact_name,
+      canonicalSnapshot?.requester,
+      existing?.requester,
+    ], ['unknown requester', 'unknown user', 'requester', 'user', 'contact']);
+    const canonicalStatus = selectFirstMeaningful([
+      payload.status_label,
+      canonicalSnapshot?.status_label,
+      payload.status,
+      canonicalSnapshot?.status,
+      existing?.status,
+    ], ['unknown status', 'status', '-', 'n/a']);
+    const canonicalAssignedTo = selectFirstMeaningful([
+      payload.assigned_to,
+      canonicalSnapshot?.assigned_to,
+      canonicalSnapshot?.assignedResourceID,
+      canonicalSnapshot?.assignee_resource_id,
+      existing?.assigned_to,
+    ], ['unassigned', 'unknown assignee', 'assignee', 'assigned']);
+    const canonicalQueueId = selectFirstFiniteNumber(
+      payload.queue_id,
+      canonicalSnapshot?.queue_id,
+      canonicalSnapshot?.queueID,
+      existing?.queue_id,
+    );
+    const canonicalQueueName = selectFirstNonEmpty(
+      payload.queue_name,
+      canonicalSnapshot?.queue_name,
+      canonicalSnapshot?.queueName,
+      existing?.queue_name,
+    );
     const resolvedCreatedAt = inferCreatedAt(
       existing?.created_at,
       payload.created_at,
       payload.createDateTime,
       payload.createDate,
+      canonicalSnapshot?.created_at,
+      canonicalSnapshot?.createDateTime,
+      canonicalSnapshot?.createDate,
       (domainSnapshots.tickets as any)?.created_at,
       payload.ticket_number,
       existing?.ticket_number,
@@ -1384,22 +1487,12 @@ export class TicketWorkflowCoreService {
       ...(String(payload.description ?? existing?.description ?? '').trim()
         ? { description: String(payload.description ?? existing?.description).trim() }
         : {}),
-      ...(String(payload.company_name ?? payload.company ?? existing?.company ?? '').trim()
-        ? { company: String(payload.company_name ?? payload.company ?? existing?.company).trim() }
-        : {}),
-      ...(String(payload.requester ?? payload.contact_name ?? existing?.requester ?? '').trim()
-        ? { requester: String(payload.requester ?? payload.contact_name ?? existing?.requester).trim() }
-        : {}),
-      ...(String(payload.status ?? existing?.status ?? '').trim()
-        ? { status: String(payload.status ?? existing?.status).trim() }
-        : {}),
-      ...(String(payload.assigned_to ?? existing?.assigned_to ?? '').trim()
-        ? { assigned_to: String(payload.assigned_to ?? existing?.assigned_to).trim() }
-        : {}),
-      ...(Number.isFinite(Number(payload.queue_id)) ? { queue_id: Number(payload.queue_id) } : {}),
-      ...(String(payload.queue_name ?? existing?.queue_name ?? '').trim()
-        ? { queue_name: String(payload.queue_name ?? existing?.queue_name).trim() }
-        : {}),
+      ...(canonicalCompany ? { company: canonicalCompany } : {}),
+      ...(canonicalRequester ? { requester: canonicalRequester } : {}),
+      ...(canonicalStatus ? { status: canonicalStatus } : {}),
+      ...(canonicalAssignedTo ? { assigned_to: canonicalAssignedTo } : {}),
+      ...(canonicalQueueId !== undefined ? { queue_id: canonicalQueueId } : {}),
+      ...(canonicalQueueName ? { queue_name: canonicalQueueName } : {}),
       comments: [...(existing?.comments || [])],
       last_sync_at: nowIso(),
       last_event_occurred_at: event.occurred_at,
@@ -1792,14 +1885,20 @@ export class TicketWorkflowCoreService {
 
   async listInbox(tenantId: string): Promise<InboxTicketState[]> {
     const rows = await this.repo.listInboxTickets(tenantId);
-    const hydratedRows = await this.hydrateMissingOrgRequester(rows);
     const grouped = new Map<string, InboxTicketState[]>();
-    for (const row of hydratedRows) {
+    for (const row of rows) {
+      const snapshotTicketNumber = String(
+        row.domain_snapshots?.tickets?.ticket_number ??
+        row.domain_snapshots?.['correlates.ticket_metadata']?.ticket_number ??
+        ''
+      ).trim();
+      const canonicalTicketNumber = String(row.ticket_number || snapshotTicketNumber || '').trim();
+      const canonicalExternalId = String(row.external_id || '').trim();
       const key =
-        String(row.external_id || '').trim()
-          ? `ext:${String(row.external_id).trim()}`
-          : String(row.ticket_number || '').trim()
-            ? `num:${String(row.ticket_number).trim()}`
+        canonicalTicketNumber
+          ? `num:${canonicalTicketNumber}`
+          : canonicalExternalId
+            ? `ext:${canonicalExternalId}`
             : isTicketNumberLike(row.ticket_id)
               ? `num:${row.ticket_id}`
               : `id:${row.ticket_id}`;
@@ -1825,8 +1924,22 @@ export class TicketWorkflowCoreService {
         ...(acc.ticket_number ? {} : item.ticket_number ? { ticket_number: item.ticket_number } : {}),
         ...(acc.title ? {} : item.title ? { title: item.title } : {}),
         ...(acc.description ? {} : item.description ? { description: item.description } : {}),
-        ...(acc.company ? {} : item.company ? { company: item.company } : {}),
-        ...(acc.requester ? {} : item.requester ? { requester: item.requester } : {}),
+        ...((() => {
+          const company = preferMeaningfulText(
+            acc.company,
+            item.company,
+            ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']
+          );
+          return company ? { company } : {};
+        })()),
+        ...((() => {
+          const requester = preferMeaningfulText(
+            acc.requester,
+            item.requester,
+            ['unknown requester', 'unknown user', 'requester', 'user', 'contact']
+          );
+          return requester ? { requester } : {};
+        })()),
       }), preferred);
       deduped.push(merged);
 
@@ -1837,7 +1950,17 @@ export class TicketWorkflowCoreService {
   private async hydrateMissingOrgRequester(rows: InboxTicketState[]): Promise<InboxTicketState[]> {
     if (rows.length === 0) return rows;
 
-    const allCandidates = rows.filter((row) => needsInboxHydration(row));
+    const allCandidates = rows
+      .filter((row) => needsInboxHydration(row))
+      .sort((a, b) => {
+        const aCreated = Date.parse(String(a.created_at || ''));
+        const bCreated = Date.parse(String(b.created_at || ''));
+        const aUpdated = Date.parse(String(a.updated_at || ''));
+        const bUpdated = Date.parse(String(b.updated_at || ''));
+        const aRank = Number.isFinite(aCreated) ? aCreated : (Number.isFinite(aUpdated) ? aUpdated : Number.NEGATIVE_INFINITY);
+        const bRank = Number.isFinite(bCreated) ? bCreated : (Number.isFinite(bUpdated) ? bUpdated : Number.NEGATIVE_INFINITY);
+        return bRank - aRank;
+      });
     const hydrationTenantId = String(rows[0]?.tenant_id || '').trim() || 'unknown';
     const candidates = this.selectRoundRobinBatch(
       hydrationTenantId,

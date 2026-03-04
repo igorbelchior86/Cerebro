@@ -37,7 +37,6 @@ interface SidebarTicketCardProps {
     onOpenStatusEditor: (ticket: ActiveTicket) => void;
     hideSuppressed: boolean;
     labelDefaultIssue: string;
-    labelUnknownOrg: string;
     labelSuppressedBadge: string;
     labelSuppressedReasonNoise: string;
     labelJustNow: string;
@@ -52,7 +51,6 @@ export function SidebarTicketCard({
     onOpenStatusEditor,
     hideSuppressed,
     labelDefaultIssue,
-    labelUnknownOrg,
     labelSuppressedBadge,
     labelSuppressedReasonNoise,
     labelJustNow,
@@ -69,8 +67,8 @@ export function SidebarTicketCard({
         status: STATUS_LABEL[ticket.status] ?? 'PENDING',
         ticketStatus: resolveTicketStatusLabel(ticket),
         title: normalizeTicketTitle(ticket.title, labelDefaultIssue),
-        company: normalizeText(ticket.company ?? ticket.org, labelUnknownOrg),
-        requester: normalizeText(ticket.requester ?? ticket.site, 'Unknown requester'),
+        company: normalizeText(ticket.company ?? ticket.org, ''),
+        requester: normalizeText(ticket.requester ?? ticket.site, ''),
         createdAt: ticket.created_at ?? '',
     };
     const createdAtLabel = formatCreatedAt(normalized.createdAt, ticket.age, labelJustNow);
@@ -164,7 +162,7 @@ export function SidebarTicketCard({
                 </span>
                 <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right', display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
                     <MetaIcon type="company" />
-                    {normalized.company}
+                    {normalized.company || '—'}
                 </span>
                 {/* Status badge with inline edit button */}
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
@@ -186,7 +184,7 @@ export function SidebarTicketCard({
                 </span>
                 <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right', display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
                     <MetaIcon type="user" />
-                    {normalized.requester}
+                    {normalized.requester || '—'}
                 </span>
             </div>
         </div>

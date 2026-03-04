@@ -352,7 +352,8 @@ export default function HomePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const bridge = useNewTicketWorkspaceBridge();
-  const isActive = bridge?.isActive ?? true;
+  const composeRequested = searchParams?.get('compose') === '1';
+  const isActive = (bridge?.isActive ?? false) || composeRequested;
   const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT);
   const [sidebarTickets, setSidebarTickets] = useState<ActiveTicket[]>([]);
   const [isLoadingTickets, setIsLoadingTickets] = useState(true);
@@ -370,6 +371,8 @@ export default function HomePage() {
   const [draftActionError, setDraftActionError] = useState('');
 
   useEffect(() => {
+    if (!isActive) return;
+    setIsLoadingTickets(true);
     const fetchTickets = async () => {
       try {
         const tickets = await loadTriPaneSidebarTickets();
@@ -386,7 +389,7 @@ export default function HomePage() {
       void fetchTickets();
     }, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isActive]);
 
   const activeOrgId = draft.org?.id ?? draft.contact?.companyId ?? draft.additionalContact?.companyId ?? null;
   const ticketTitle = draft.title.trim() || 'New Ticket';
@@ -667,7 +670,9 @@ export default function HomePage() {
     const returnTicketId = String(searchParams?.get('returnTicketId') || '').trim();
     if (returnTicketId) {
       router.push(`/triage/${returnTicketId}`, { scroll: false });
+      return;
     }
+    router.push('/triage/home?sidebarScope=personal', { scroll: false });
   };
 
   const acceptDraft = async () => {
@@ -999,22 +1004,26 @@ export default function HomePage() {
       sidebarContent={(
         <ChatSidebar
           tickets={sidebarTickets}
-          draftTicket={{
-            id: '__draft__',
-            ticket_id: 'New Ticket',
-            ticket_number: 'New Ticket',
-            status: 'pending',
-            ...(draft.status?.id !== undefined ? { ticket_status_value: draft.status.id } : {}),
-            ticket_status_label: draft.status?.name || 'New',
-            priority: mapDraftReferenceToSidebarPriority(draft.priority),
-            title: ticketTitle,
-            company: draft.org?.name || '-',
-            requester: draft.contact?.name || '-',
-            ...(draft.queue?.name ? { queue: draft.queue.name } : {}),
-            created_at: '',
-            isDraft: true,
-          }}
-          currentTicketId="__draft__"
+          {...(isActive
+            ? {
+              draftTicket: {
+                id: '__draft__',
+                ticket_id: 'New Ticket',
+                ticket_number: 'New Ticket',
+                status: 'pending' as const,
+                ...(draft.status?.id !== undefined ? { ticket_status_value: draft.status.id } : {}),
+                ticket_status_label: draft.status?.name || 'New',
+                priority: mapDraftReferenceToSidebarPriority(draft.priority),
+                title: ticketTitle,
+                company: draft.org?.name || '-',
+                requester: draft.contact?.name || '-',
+                ...(draft.queue?.name ? { queue: draft.queue.name } : {}),
+                created_at: '',
+                isDraft: true,
+              },
+              currentTicketId: '__draft__',
+            }
+            : {})}
           onDraftStatusChange={(status) => setDraft((prev) => ({ ...prev, status: createDraftReference(status.id, status.name) }))}
           isLoading={isLoadingTickets}
           onSelectTicket={(id) => {
@@ -1024,7 +1033,13 @@ export default function HomePage() {
             }
             router.push(`/triage/${id}`, { scroll: false });
           }}
-          onCreateTicket={resetDraft}
+          onCreateTicket={() => {
+            if (isActive) {
+              resetDraft();
+              return;
+            }
+            router.push('/triage/home?sidebarScope=personal&compose=1', { scroll: false });
+          }}
         />
       )}
       rightContent={(
@@ -1037,6 +1052,28 @@ export default function HomePage() {
         />
       )}
       mainContent={(
+        !isActive ? (
+          <div className="flex-1 flex flex-col" style={{ background: 'transparent', minWidth: 0, height: '100%', minHeight: 0, padding: '12px' }}>
+            <div
+              style={{
+                flex: 1,
+                border: '1px solid var(--bento-outline)',
+                borderRadius: '14px',
+                background: 'var(--bg-card)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                textAlign: 'center',
+                color: 'var(--text-muted)',
+                fontSize: '13px',
+                lineHeight: 1.8,
+                padding: '24px',
+              }}
+            >
+              Personal queue loaded. Select a ticket from the left sidebar to start triage.
+            </div>
+          </div>
+        ) : (
         <div className="flex-1 flex flex-col" style={{ background: 'transparent', minWidth: 0, height: '100%', minHeight: 0, padding: '12px', gap: '8px' }}>
           <div style={{ border: '1px solid var(--bento-outline)', borderRadius: '14px', background: 'var(--bg-card)', flexShrink: 0 }}>
             <div
@@ -1385,6 +1422,7 @@ export default function HomePage() {
             </div>
           ) : null}
         </div>
+        )
       )}
     />
   );

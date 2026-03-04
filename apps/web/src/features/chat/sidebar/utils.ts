@@ -10,7 +10,7 @@ export const GLOBAL_QUEUE_FALLBACKS = ['Service Desk', 'Escalations', 'Projects'
 export const PRIORITY_COLOR: Record<string, string> = {
     P1: '#F97316',
     P2: '#EAB308',
-    P3: '#5B7FFF',
+    P3: 'var(--accent)',
     P4: 'var(--bento-outline)',
 };
 

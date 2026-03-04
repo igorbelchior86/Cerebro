@@ -56,7 +56,7 @@ export function CollapseToggleButton({
             onMouseEnter={(e) => {
                 e.currentTarget.style.borderColor = 'var(--accent)';
                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)';
-                e.currentTarget.style.boxShadow = '0 0 0 2px rgba(91, 127, 255, 0.15), 0 4px 12px rgba(91, 127, 255, 0.15)';
+                e.currentTarget.style.boxShadow = '0 0 0 2px rgba(111, 143, 126, 0.20), 0 4px 12px rgba(111, 143, 126, 0.22)';
                 e.currentTarget.style.transform = 'translateY(-1px)';
             }}
             onMouseLeave={(e) => {
@@ -70,7 +70,7 @@ export function CollapseToggleButton({
             <div style={{
                 position: 'absolute',
                 inset: 0,
-                background: 'radial-gradient(circle at center, rgba(91,127,255,0.12) 0%, transparent 80%)',
+                background: 'radial-gradient(circle at center, rgba(111,143,126,0.14) 0%, transparent 80%)',
                 opacity: 0,
                 transition: 'opacity 0.3s ease',
                 pointerEvents: 'none',
@@ -170,7 +170,7 @@ export function hypothesisCategory(text: string): string {
 export function confidenceTone(c: number): { label: string; color: string; bg: string; border: string } {
     if (c >= 0.8) return { label: 'High', color: '#10B981', bg: 'rgba(16,185,129,0.1)', border: 'rgba(16,185,129,0.28)' };
     if (c >= 0.65) return { label: 'Medium', color: '#EAB308', bg: 'rgba(234,179,8,0.1)', border: 'rgba(234,179,8,0.26)' };
-    return { label: 'Low', color: '#5B7FFF', bg: 'rgba(91,127,255,0.1)', border: 'rgba(91,127,255,0.28)' };
+    return { label: 'Low', color: 'var(--accent)', bg: 'var(--accent-muted)', border: 'var(--border-accent)' };
 }
 
 export function formatEvidenceChipLabel(raw: string | { id: string; label?: string }): string {

@@ -56,18 +56,18 @@ export function SidebarStats({
                     style={{
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                         padding: '6px 10px', borderRadius: '10px', border: '1px solid var(--border-accent)',
-                        background: 'linear-gradient(135deg, rgba(91,127,255,0.16) 0%, rgba(91,127,255,0.08) 100%)',
+                        background: 'linear-gradient(135deg, var(--accent-muted) 0%, rgba(111,143,126,0.06) 100%)',
                         color: 'var(--accent)', cursor: 'pointer', fontSize: '9px', fontWeight: 800,
                         letterSpacing: '0.08em', textTransform: 'uppercase',
-                        boxShadow: '0 8px 18px rgba(91,127,255,0.10)', transition: 'var(--transition)',
+                        boxShadow: '0 8px 18px rgba(111,143,126,0.16)', transition: 'var(--transition)',
                     }}
                     onMouseEnter={(e) => {
                         (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)';
-                        (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 10px 22px rgba(91,127,255,0.16)';
+                        (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 10px 22px rgba(111,143,126,0.24)';
                     }}
                     onMouseLeave={(e) => {
                         (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
-                        (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 8px 18px rgba(91,127,255,0.10)';
+                        (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 8px 18px rgba(111,143,126,0.16)';
                     }}
                     aria-label={labelNewTicket}
                 >

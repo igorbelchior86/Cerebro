@@ -420,7 +420,7 @@ const userBubbleStyle: CSSProperties = {
   fontSize: '13px',
   lineHeight: 1.55,
   color: '#FFFFFF',
-  background: 'linear-gradient(135deg, #007aff, #0056b3)',
+  background: 'linear-gradient(135deg, var(--accent), #516e61)',
   boxShadow: '0 2px 6px rgba(0, 122, 255, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.1)',
   border: 'none',
 };
@@ -594,7 +594,7 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
     return (
       <div className="animate-msgIn" style={{ marginBottom: '20px' }}>
         <div style={{ ...elasticScrollStyle, display: 'flex', gap: '8px', alignItems: 'flex-end', flexDirection: 'row-reverse' }}>
-          <div style={{ width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', background: channel === 'internal_ai' ? '#4B5563' : '#007aff', boxShadow: '0 2px 4px rgba(0,122,255,0.2)' }}>
+          <div style={{ width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff', background: channel === 'internal_ai' ? '#4B5563' : 'var(--accent)', boxShadow: '0 2px 4px rgba(111,143,126,0.3)' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flex: 1, minWidth: 0 }}>
@@ -649,7 +649,7 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
                         width: '100%',
                         maxWidth: '320px',
                         borderRadius: '10px',
-                        border: '1px solid rgba(91,127,255,0.18)',
+                        border: '1px solid var(--border-accent)',
                         objectFit: 'cover',
                       }}
                     />
@@ -660,8 +660,8 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
                         width: '100%',
                         maxWidth: '320px',
                         borderRadius: '10px',
-                        border: '1px solid rgba(91,127,255,0.18)',
-                        background: 'rgba(91,127,255,0.06)',
+                        border: '1px solid var(--border-accent)',
+                        background: 'var(--accent-muted)',
                         padding: '8px 9px',
                         display: 'flex',
                         alignItems: 'center',
@@ -673,7 +673,7 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
                           width: '30px',
                           height: '30px',
                           borderRadius: '7px',
-                          border: '1px solid rgba(91,127,255,0.25)',
+                          border: '1px solid var(--border-accent)',
                           background: 'rgba(255,255,255,0.55)',
                           color: 'var(--text-muted)',
                           fontSize: '10px',
@@ -726,7 +726,7 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
     <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '8px' }}>
       {message.steps.map((step, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11.5px', color: 'var(--text-muted)' }}>
-          <span style={{ width: '14px', height: '14px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', flexShrink: 0, background: step.status === 'done' ? 'var(--green-muted)' : step.status === 'running' ? 'var(--accent-muted)' : 'var(--bg-badge)', border: `1px solid ${step.status === 'done' ? 'var(--green-border)' : step.status === 'running' ? 'rgba(91,127,255,0.25)' : 'var(--border)'}`, color: step.status === 'done' ? 'var(--green)' : 'transparent' }} className={step.status === 'running' ? 'animate-throbber' : undefined}>
+          <span style={{ width: '14px', height: '14px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', flexShrink: 0, background: step.status === 'done' ? 'var(--green-muted)' : step.status === 'running' ? 'var(--accent-muted)' : 'var(--bg-badge)', border: `1px solid ${step.status === 'done' ? 'var(--green-border)' : step.status === 'running' ? 'var(--border-accent)' : 'var(--border)'}`, color: step.status === 'done' ? 'var(--green)' : 'transparent' }} className={step.status === 'running' ? 'animate-throbber' : undefined}>
             {step.status === 'done' ? '✓' : ''}
           </span>
           <span>{step.label}</span>
@@ -848,12 +848,12 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
                         alignItems: 'center',
                         justifyContent: 'center',
                         border: '1px solid',
-                        borderColor: ticketTextMode === mode ? 'rgba(91,127,255,0.3)' : 'var(--bento-outline)',
-                        background: ticketTextMode === mode ? 'rgba(91,127,255,0.12)' : 'var(--bg-card)',
+                        borderColor: ticketTextMode === mode ? 'var(--border-accent)' : 'var(--bento-outline)',
+                        background: ticketTextMode === mode ? 'var(--accent-muted)' : 'var(--bg-card)',
                         color: ticketTextMode === mode ? 'var(--accent)' : 'var(--text-faint)',
                         cursor: 'pointer',
                         transition: 'all 0.2s ease',
-                        boxShadow: ticketTextMode === mode ? '0 1px 4px rgba(91,127,255,0.1)' : 'none',
+                        boxShadow: ticketTextMode === mode ? '0 1px 4px rgba(111,143,126,0.2)' : 'none',
                       }}
                       onMouseEnter={(e) => {
                         if (ticketTextMode !== mode) {

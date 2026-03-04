@@ -80,7 +80,7 @@ export default function UserProfileDropdown({
                         width: '32px',
                         height: '32px',
                         borderRadius: '50%',
-                        background: userAvatar ? `url(${userAvatar}) center/cover` : 'linear-gradient(135deg, #4F6EFF, #7B8FFF)',
+                        background: userAvatar ? `url(${userAvatar}) center/cover` : 'linear-gradient(135deg, var(--accent), #8fa999)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -136,7 +136,7 @@ export default function UserProfileDropdown({
                         onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)' }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
                     >
-                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: userAvatar ? `url(${userAvatar}) center/cover` : 'linear-gradient(135deg, #4F6EFF, #7B8FFF)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: 'white' }}>
+                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: userAvatar ? `url(${userAvatar}) center/cover` : 'linear-gradient(135deg, var(--accent), #8fa999)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, color: 'white' }}>
                             {!userAvatar && userInitials}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>

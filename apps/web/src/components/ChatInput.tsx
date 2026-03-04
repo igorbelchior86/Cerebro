@@ -178,7 +178,7 @@ export default function ChatInput({
   const destinationPillLabel = targetChannel === 'internal_ai' ? 'AI' : 'User';
   const destinationPillStyle: CSSProperties = {
     border: '1px solid',
-    borderColor: targetChannel === 'internal_ai' ? 'rgba(91,127,255,0.30)' : 'rgba(16,185,129,0.35)',
+    borderColor: targetChannel === 'internal_ai' ? 'var(--border-accent)' : 'rgba(16,185,129,0.35)',
     borderRadius: '999px',
     width: '52px',
     height: '24px',
@@ -190,7 +190,7 @@ export default function ChatInput({
     alignItems: 'center',
     justifyContent: 'center',
     color: targetChannel === 'internal_ai' ? 'var(--accent)' : '#047857',
-    background: targetChannel === 'internal_ai' ? 'rgba(91,127,255,0.10)' : 'rgba(16,185,129,0.12)',
+    background: targetChannel === 'internal_ai' ? 'var(--accent-muted)' : 'rgba(16,185,129,0.12)',
     cursor: disabled || isLoading ? 'not-allowed' : 'pointer',
     opacity: disabled || isLoading ? 0.6 : 1,
     flexShrink: 0,
@@ -270,7 +270,7 @@ export default function ChatInput({
               }}
               onMouseLeave={(e) => {
                 if (!disabled && !isLoading) {
-                  (e.currentTarget as HTMLButtonElement).style.borderColor = targetChannel === 'internal_ai' ? 'rgba(91,127,255,0.30)' : 'rgba(16,185,129,0.35)';
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = targetChannel === 'internal_ai' ? 'var(--border-accent)' : 'rgba(16,185,129,0.35)';
                   (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none';
                   (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
                 }

@@ -19,7 +19,7 @@ export function PlaybookHypotheses({ hypotheses: hyps }: PlaybookHypothesesProps
                     const c = confColor(h.confidence);
                     const tone = confidenceTone(h.confidence);
                     const category = hypothesisCategory(h.hypothesis);
-                    const rankBg = h.rank === 1 ? '#F97316' : h.rank === 2 ? '#EAB308' : '#5B7FFF';
+                    const rankBg = h.rank === 1 ? '#F97316' : h.rank === 2 ? '#EAB308' : 'var(--accent)';
                     return (
                         <div
                             key={h.rank}
@@ -91,7 +91,7 @@ export function PlaybookHypotheses({ hypotheses: hyps }: PlaybookHypothesesProps
                                                 color: 'var(--accent)', display: 'flex', alignItems: 'center',
                                                 justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s ease',
                                             }}
-                                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'rgba(91,127,255,0.08)'; }}
+                                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.background = 'var(--accent-muted)'; }}
                                             onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--bento-outline)'; e.currentTarget.style.background = 'var(--bg-card)'; }}
                                         >
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

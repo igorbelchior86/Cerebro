@@ -55,7 +55,7 @@ export default function ProfileModal({ open, onClose, currentName, currentJobTit
                             {!displayAvatar && <span style={{ color: 'var(--text-faint)', fontSize: '24px' }}>📷</span>}
                         </div>
                         <div>
-                            <label style={{ cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: 'var(--accent)', background: 'rgba(91,127,255,0.1)', padding: '6px 12px', borderRadius: '6px' }}>
+                            <label style={{ cursor: 'pointer', fontSize: '13px', fontWeight: 500, color: 'var(--accent)', background: 'var(--accent-muted)', padding: '6px 12px', borderRadius: '6px' }}>
                                 {t('uploadPhoto')}
                                 <input
                                     id="profile-avatar-upload"

@@ -399,7 +399,7 @@ function SectionConnections() {
         </p>
         <button onClick={() => loadAll(true)} disabled={loading}
           className="text-xs font-medium px-2.5 py-1 rounded-md"
-          style={{ color: 'var(--accent-1)', background: 'rgba(91,127,255,0.08)', opacity: loading ? 0.5 : 1 }}
+          style={{ color: 'var(--accent-1)', background: 'var(--accent-muted)', opacity: loading ? 0.5 : 1 }}
         >
           {loading ? 'Checking…' : 'Refresh'}
         </button>

@@ -2454,8 +2454,8 @@ export default function SessionDetail({
                         height: '30px',
                         borderRadius: '10px',
                         color: isHeaderMenuOpen ? 'var(--accent)' : 'var(--text-muted)',
-                        background: isHeaderMenuOpen ? 'rgba(91,127,255,0.08)' : 'var(--bg-card)',
-                        border: isHeaderMenuOpen ? '1px solid rgba(91,127,255,0.30)' : '1px solid var(--bento-outline)',
+                        background: isHeaderMenuOpen ? 'var(--accent-muted)' : 'var(--bg-card)',
+                        border: isHeaderMenuOpen ? '1px solid var(--border-accent)' : '1px solid var(--bento-outline)',
                         cursor: 'pointer',
                         transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
                       }}
@@ -2637,7 +2637,7 @@ export default function SessionDetail({
                         style={{
                           borderRadius: '999px',
                           border: 'none',
-                          background: channelFilter === opt.key ? 'rgba(91,127,255,0.12)' : 'transparent',
+                          background: channelFilter === opt.key ? 'var(--accent-muted)' : 'transparent',
                           color: channelFilter === opt.key ? 'var(--accent)' : 'var(--text-muted)',
                           padding: '4px 9px',
                           fontSize: '10px',
@@ -2916,9 +2916,9 @@ export default function SessionDetail({
                   bottom: '18px',
                   zIndex: 60,
                   borderRadius: '14px',
-                  border: '1px solid rgba(91,127,255,0.24)',
-                  background: isDevPanelOpen ? 'rgba(91,127,255,0.14)' : 'rgba(255,255,255,0.96)',
-                  color: isDevPanelOpen ? '#4f6fe9' : 'var(--text-primary)',
+                  border: '1px solid var(--border-accent)',
+                  background: isDevPanelOpen ? 'var(--accent-muted)' : 'rgba(255,255,255,0.96)',
+                  color: isDevPanelOpen ? 'var(--accent)' : 'var(--text-primary)',
                   padding: '10px 12px',
                   boxShadow: '0 10px 30px rgba(0,0,0,0.12)',
                   display: 'inline-flex',
@@ -2931,7 +2931,7 @@ export default function SessionDetail({
               >
                 <span style={{
                   width: '8px', height: '8px', borderRadius: '50%',
-                  background: isDevPanelOpen ? '#4f6fe9' : '#9ca3af',
+                  background: isDevPanelOpen ? 'var(--accent)' : '#9ca3af',
                   boxShadow: isDevPanelOpen ? '0 0 10px rgba(79,111,233,0.5)' : 'none',
                 }} />
                 {isDevPanelOpen ? 'Hide dev tools' : 'Show dev tools'}
@@ -3081,9 +3081,9 @@ export default function SessionDetail({
                           style={{
                             height: '30px',
                             borderRadius: '8px',
-                            border: '1px solid rgba(91,127,255,0.25)',
-                            background: 'rgba(91,127,255,0.08)',
-                            color: '#3f5fcb',
+                            border: '1px solid var(--border-accent)',
+                            background: 'var(--accent-muted)',
+                            color: 'var(--accent)',
                             padding: '0 10px',
                             fontSize: '11px',
                             fontWeight: 600,
@@ -3181,7 +3181,7 @@ type TriPaneBadgeTone = 'neutral' | 'info' | 'good' | 'warn' | 'bad';
 function triPaneBadgeStyle(tone: TriPaneBadgeTone): CSSProperties {
   const palette: Record<TriPaneBadgeTone, { color: string; bg: string; border: string }> = {
     neutral: { color: 'var(--text-secondary)', bg: 'rgba(255,255,255,0.03)', border: 'var(--bento-outline)' },
-    info: { color: '#5B7FFF', bg: 'rgba(91,127,255,0.08)', border: 'rgba(91,127,255,0.22)' },
+    info: { color: 'var(--accent)', bg: 'var(--accent-muted)', border: 'var(--border-accent)' },
     good: { color: '#1DB98A', bg: 'rgba(29,185,138,0.08)', border: 'rgba(29,185,138,0.20)' },
     warn: { color: '#F59E0B', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.22)' },
     bad: { color: '#F87171', bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.22)' },

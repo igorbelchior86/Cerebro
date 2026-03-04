@@ -65,7 +65,7 @@ export function PlaybookChecklist({ items: chk }: PlaybookChecklistProps) {
                                             fontFamily: 'var(--font-jetbrains-mono, monospace)',
                                             fontSize: '9px', fontWeight: 700,
                                             color: done ? 'var(--text-faint)' : 'var(--accent)',
-                                            background: done ? 'var(--bg-badge)' : 'rgba(91,127,255,0.08)',
+                                            background: done ? 'var(--bg-badge)' : 'var(--accent-muted)',
                                             padding: '1px 5px', borderRadius: '4px',
                                             marginTop: '2px', flexShrink: 0,
                                         }}>

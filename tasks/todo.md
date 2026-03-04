@@ -1,3 +1,28 @@
+# Task: Refresh estético sem azul na interface (paleta moderna)
+**Status**: completed
+**Started**: 2026-03-04T18:10:00-05:00
+
+## Plan
+- [x] Step 1: Mapear tokens de tema e hardcodes azuis na UI principal de triagem.
+- [x] Step 2: Substituir paleta base para acento `sage/slate` e fundos claros neutros.
+- [x] Step 3: Remover hardcodes azuis residuais em sidebar/chat/playbook/triage.
+- [x] Step 4: Validar com lint/typecheck do web.
+- [x] Step 5: Documentar na wiki/changelog.
+
+## Progress Notes
+- Tokens centrais em `apps/web/src/styles/globals.css` foram trocados de azul para `--accent` verde-acinzentado (`#6F8F7E`) com derivados (`--accent-muted`, `--border-accent`, glows).
+- Tema claro foi neutralizado (menos azulado) com novos fundos/textos para aparência mais moderna e limpa.
+- Hardcodes azuis removidos nos fluxos de triagem/chat/sidebar/playbook e substituídos por variáveis de tema.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/web lint` ✅ (apenas warnings preexistentes em `triage/home/page.tsx`: `no-explicit-any`)
+- Documentation:
+- `wiki/changelog/2026-03-04-ui-modern-theme-no-blue-sage-slate-refresh.md`
+
+---
+
 # Task: Corrigir warning de form field sem id/name
 **Status**: completed
 **Started**: 2026-03-04T17:18:00-05:00

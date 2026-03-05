@@ -196,7 +196,14 @@ export type WorkflowExecutionResult =
   | { kind: 'updated'; snapshot?: Record<string, unknown> }
   | { kind: 'assigned'; assigned_to?: string; snapshot?: Record<string, unknown> }
   | { kind: 'status'; status?: string; snapshot?: Record<string, unknown> }
-  | { kind: 'time_entry'; entry_id?: string | number; snapshot?: Record<string, unknown> };
+  | {
+    kind: 'time_entry';
+    entry_id?: string | number;
+    worked_hours?: number;
+    worked_minutes?: number;
+    billable_hours?: number;
+    snapshot?: Record<string, unknown>;
+  };
 
 export class WorkflowPolicyError extends Error {
   constructor(message: string) {
@@ -526,6 +533,14 @@ function selectFirstFiniteNumber(...values: unknown[]): number | undefined {
   for (const value of values) {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function selectFirstNonNegativeNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
   }
   return undefined;
 }
@@ -1321,6 +1336,50 @@ export class TicketWorkflowCoreService {
           latest_note_fingerprint: fingerprintText(commentBody),
           latest_note_visibility: normalizeVisibility(patch.comment_visibility ?? patch.note_visibility),
           latest_note_created_at: nowIso(),
+        },
+      };
+    }
+
+    if ((result as any)?.kind === 'time_entry') {
+      const timeEntrySyncedAt = nowIso();
+      const timeEntryId = selectFirstNonEmpty(
+        (result as any)?.entry_id,
+        (result as any)?.snapshot?.entry_id,
+        patch.time_entry_id,
+        patch.id,
+      );
+      const workedHours = selectFirstNonNegativeNumber(
+        (result as any)?.worked_hours,
+        (result as any)?.snapshot?.worked_hours_saved,
+        (result as any)?.snapshot?.worked_hours_requested,
+      );
+      const workedMinutes = selectFirstNonNegativeNumber(
+        (result as any)?.worked_minutes,
+        (result as any)?.snapshot?.worked_minutes_saved,
+        workedHours !== undefined ? Math.round(workedHours * 60) : undefined,
+      );
+      const billableHours = selectFirstNonNegativeNumber(
+        (result as any)?.billable_hours,
+        (result as any)?.snapshot?.billable_hours_saved,
+      );
+
+      next.domain_snapshots = {
+        ...(next.domain_snapshots || {}),
+        tickets: {
+          ...(next.domain_snapshots?.tickets || {}),
+          ...(timeEntryId ? { last_time_entry_id: timeEntryId } : {}),
+          ...(workedHours !== undefined ? { last_time_entry_worked_hours: workedHours } : {}),
+          ...(workedMinutes !== undefined ? { last_time_entry_worked_minutes: workedMinutes } : {}),
+          ...(billableHours !== undefined ? { last_time_entry_billable_hours: billableHours } : {}),
+          last_time_entry_synced_at: timeEntrySyncedAt,
+        },
+        'correlates.ticket_metadata': {
+          ...(next.domain_snapshots?.['correlates.ticket_metadata'] || {}),
+          ...(timeEntryId ? { last_time_entry_id: timeEntryId } : {}),
+          ...(workedHours !== undefined ? { last_time_entry_worked_hours: workedHours } : {}),
+          ...(workedMinutes !== undefined ? { last_time_entry_worked_minutes: workedMinutes } : {}),
+          ...(billableHours !== undefined ? { last_time_entry_billable_hours: billableHours } : {}),
+          last_time_entry_synced_at: timeEntrySyncedAt,
         },
       };
     }

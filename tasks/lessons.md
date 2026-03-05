@@ -1,3 +1,9 @@
+## Lesson: 2026-03-04 (quando o usuário corrige o desenho: priorizar PSA truth over heuristic learning)
+**Mistake**: Propor mecanismo de “aprendizado” de política de tempo antes de priorizar espelhamento direto do valor final confirmado pelo PSA.
+**Root cause**: Foco excessivo em inferência local, apesar de existir caminho mais simples/seguro: enviar comando e refletir o resultado persistido no PSA.
+**Rule**: Para writes em integração PSA, UI deve priorizar “PSA-confirmed mirror” como fonte de verdade; heurísticas locais só entram como fallback e nunca como primário.
+**Pattern**: Se a implementação descreve “aprender comportamento” sem primeiro usar resposta/evento oficial do provedor, refatorar para event-driven mirror.
+
 ## Lesson: 2026-03-04 (canonical fields must not depend on sync-time snapshot enrichment or poller sweeps)
 **Mistake**: Manter `fetchTicketSnapshot` no `processAutotaskSyncEvent` e ainda rodar `backfillCanonicalIdentity` no poller para “corrigir depois”.
 **Root cause**: O read model mudava após a renderização inicial, gerando oscilação visual e estados de loading/fallback instáveis.

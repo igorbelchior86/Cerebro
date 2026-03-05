@@ -35,6 +35,96 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
     return parsed > 0 ? Math.trunc(parsed) : null;
   }
 
+  private parseNonNegativeNumber(value: unknown): number | null {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    return parsed >= 0 ? parsed : null;
+  }
+
+  private firstNonNegativeNumber(...values: unknown[]): number | null {
+    for (const value of values) {
+      const parsed = this.parseNonNegativeNumber(value);
+      if (parsed !== null) return parsed;
+    }
+    return null;
+  }
+
+  private firstNonEmptyString(...values: unknown[]): string | undefined {
+    for (const value of values) {
+      const normalized = String(value ?? '').trim();
+      if (normalized) return normalized;
+    }
+    return undefined;
+  }
+
+  private mapTimeEntryMirrorSnapshot(
+    payload: Record<string, unknown>,
+    entry: Record<string, unknown>
+  ): {
+    snapshot: Record<string, unknown>;
+    workedHours: number | null;
+    workedMinutes: number | null;
+    billableHours: number | null;
+  } {
+    const workedHoursRequested = this.firstNonNegativeNumber(payload.hours_worked, payload.hoursWorked);
+    const workedHoursSaved = this.firstNonNegativeNumber(
+      entry.hoursWorked,
+      entry.hours_worked,
+      entry.workedHours,
+      entry.actualHours,
+    );
+    const rawWorkedMinutes = this.firstNonNegativeNumber(
+      entry.minutesWorked,
+      entry.minutes_worked,
+      entry.workedMinutes,
+      entry.actualMinutes,
+    );
+    const workedMinutesSaved = rawWorkedMinutes !== null
+      ? Math.round(rawWorkedMinutes)
+      : workedHoursSaved !== null
+        ? Math.round(workedHoursSaved * 60)
+        : workedHoursRequested !== null
+          ? Math.round(workedHoursRequested * 60)
+          : null;
+    const billableHoursSaved = this.firstNonNegativeNumber(
+      entry.hoursToBill,
+      entry.hours_to_bill,
+      entry.billableHours,
+    );
+    const summaryNotes = this.firstNonEmptyString(
+      entry.summaryNotes,
+      entry.summary_notes,
+      payload.summary_notes,
+      payload.summaryNotes,
+    );
+    const resourceId = this.parsePositiveInt(entry.resourceID ?? entry.resourceId ?? payload.resource_id ?? payload.resourceID);
+    const ticketId = this.parsePositiveInt(entry.ticketID ?? entry.ticketId ?? payload.ticket_id ?? payload.ticketID);
+    const createdAt = this.firstNonEmptyString(
+      entry.createDate,
+      entry.createDateTime,
+      entry.createdAt,
+      entry.dateWorked,
+      entry.startDateTime,
+      entry.endDateTime,
+    );
+
+    return {
+      workedHours: workedHoursSaved ?? workedHoursRequested,
+      workedMinutes: workedMinutesSaved,
+      billableHours: billableHoursSaved,
+      snapshot: {
+        ...(ticketId !== null ? { ticket_id: ticketId } : {}),
+        ...(resourceId !== null ? { resource_id: resourceId } : {}),
+        ...(workedHoursRequested !== null ? { worked_hours_requested: workedHoursRequested } : {}),
+        ...(workedHoursSaved !== null ? { worked_hours_saved: workedHoursSaved } : {}),
+        ...(workedMinutesSaved !== null ? { worked_minutes_saved: workedMinutesSaved } : {}),
+        ...(billableHoursSaved !== null ? { billable_hours_saved: billableHoursSaved } : {}),
+        ...(summaryNotes ? { summary_notes: summaryNotes } : {}),
+        ...(createdAt ? { created_at: createdAt } : {}),
+      },
+    };
+  }
+
   private async resolveAssignedResourceRoleId(
     client: AutotaskClient,
     assignedResourceId: unknown,
@@ -283,9 +373,17 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
         hoursWorked: payload.hours_worked ?? payload.hoursWorked,
         summaryNotes,
       });
+      const mirror = this.mapTimeEntryMirrorSnapshot(
+        payload,
+        typeof entry === 'object' && entry ? (entry as Record<string, unknown>) : {}
+      );
       return {
         kind: 'time_entry',
         entry_id: (entry as any)?.id ?? undefined,
+        ...(mirror.workedHours !== null ? { worked_hours: mirror.workedHours } : {}),
+        ...(mirror.workedMinutes !== null ? { worked_minutes: mirror.workedMinutes } : {}),
+        ...(mirror.billableHours !== null ? { billable_hours: mirror.billableHours } : {}),
+        snapshot: mirror.snapshot,
       };
     }
 
@@ -305,7 +403,18 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
           ...(normalizedSummaryNotesCamel !== undefined ? { summaryNotes: normalizedSummaryNotesCamel } : {}),
         }
       );
-      return { kind: 'time_entry', entry_id: (entry as any)?.id ?? Number(payload.time_entry_id ?? payload.id) };
+      const mirror = this.mapTimeEntryMirrorSnapshot(
+        payload,
+        typeof entry === 'object' && entry ? (entry as Record<string, unknown>) : {}
+      );
+      return {
+        kind: 'time_entry',
+        entry_id: (entry as any)?.id ?? Number(payload.time_entry_id ?? payload.id),
+        ...(mirror.workedHours !== null ? { worked_hours: mirror.workedHours } : {}),
+        ...(mirror.workedMinutes !== null ? { worked_minutes: mirror.workedMinutes } : {}),
+        ...(mirror.billableHours !== null ? { billable_hours: mirror.billableHours } : {}),
+        snapshot: mirror.snapshot,
+      };
     }
 
     if (operation.operation.handler === 'time_entry_delete') {

@@ -220,6 +220,58 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     });
   });
 
+  it('projects confirmed time entry mirror fields into inbox domain snapshots', async () => {
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn().mockResolvedValue({
+        kind: 'time_entry',
+        entry_id: 9876,
+        worked_hours: 0.25,
+        worked_minutes: 15,
+        billable_hours: 0.25,
+        snapshot: {
+          worked_hours_saved: 0.25,
+          worked_minutes_saved: 15,
+          billable_hours_saved: 0.25,
+          summary_notes: 'User communication',
+        },
+      }),
+    };
+    const { service } = createService(gateway);
+
+    const command = buildCommandEnvelope({
+      tenantId,
+      targetIntegration: 'Autotask',
+      commandType: 'time_entry',
+      payload: {
+        ticket_id: 'T20260304.0042',
+        hours_worked: 0.24,
+        summary_notes: 'User communication',
+      },
+      actor,
+      idempotencyKey: 'time-entry-sync-1',
+      correlation: { trace_id: 'trace-time-entry-sync-1', ticket_id: 'T20260304.0042' },
+    });
+
+    await service.submitCommand(command);
+    await service.processPendingCommands();
+
+    const inbox = await service.listInbox(tenantId);
+    const row = inbox.find((item) => item.ticket_id === 'T20260304.0042');
+    expect(row).toBeTruthy();
+    expect(row?.domain_snapshots?.tickets).toMatchObject({
+      last_time_entry_id: '9876',
+      last_time_entry_worked_hours: 0.25,
+      last_time_entry_worked_minutes: 15,
+      last_time_entry_billable_hours: 0.25,
+    });
+    expect(row?.domain_snapshots?.['correlates.ticket_metadata']).toMatchObject({
+      last_time_entry_id: '9876',
+      last_time_entry_worked_hours: 0.25,
+      last_time_entry_worked_minutes: 15,
+      last_time_entry_billable_hours: 0.25,
+    });
+  });
+
   it('emits realtime ticket change events for command/sync lifecycle', async () => {
     const realtimePublisher = jest.fn();
     const gateway: TicketWorkflowGateway = {

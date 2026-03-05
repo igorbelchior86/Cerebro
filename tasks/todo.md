@@ -1,3 +1,56 @@
+# Task: Stopwatch PSA-confirmed (time entry primário + timer UI no ChatInput)
+**Status**: completed
+**Started**: 2026-03-04T19:26:42-05:00
+
+## Plan
+- [x] Step 1: Implementar fluxo primário `time_entry` no canal externo com confirmação PSA.
+- [x] Step 2: Projetar metadados confirmados de time entry no workflow (mirror path).
+- [x] Step 3: Adicionar timer UI no canto direito abaixo da chat box (oposto à toolbar), com start/pause/reset.
+- [x] Step 4: Integrar feedback do comando no timer (synced/pending/error) e manter fallback de nota pública.
+- [x] Step 5: Validar com testes/lint/typecheck e documentar wiki/changelog.
+
+## Progress Notes
+- `ChatInput` recebeu slot de footer à direita para renderizar stopwatch sem acoplar lógica de domínio no componente de input.
+- Fluxo externo (`external_psa_user`) agora envia `time_entry` como primário e inicia listener de status para espelhar tempo confirmado pelo PSA.
+- `AutotaskTicketWorkflowGateway` passou a retornar metadados confirmados de time entry e `TicketWorkflowCoreService` projeta `last_time_entry_*` em `domain_snapshots`.
+- Timer persiste por ticket em `localStorage`, oferece start/pause/reset e reinicia automaticamente após `time_entry` confirmado.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- autotask-ticket-workflow-gateway.test.ts ticket-workflow-core.test.ts` ✅
+- `pnpm -r lint` ✅ (0 errors; warnings preexistentes)
+- `pnpm -r typecheck` ✅
+- `pnpm -r test` ✅
+- Documentation:
+- `wiki/changelog/2026-03-04-stopwatch-time-entry-listener-mirror.md`
+
+---
+
+# Task: Stopwatch visível em qualquer superfície de ticket (home + existing)
+**Status**: completed
+**Started**: 2026-03-04T20:02:00-05:00
+
+## Plan
+- [x] Step 1: Corrigir ausência do timer em `triage/home` (ticket novo).
+- [x] Step 2: Garantir chave de persistência canônica por `ticket_id` em `triage/[id]`.
+- [x] Step 3: Revalidar render/estado do timer no slot `footerRightContent`.
+- [x] Step 4: Executar validações web (`typecheck`/`lint`).
+- [x] Step 5: Documentar na wiki/changelog.
+
+## Progress Notes
+- `triage/home` agora renderiza stopwatch no mesmo espaço do `ChatInput` (rodapé direito, oposto à toolbar), com controles `Start/Pause/Reset`.
+- A tela `triage/[id]` passou a resolver chave de persistência com `data.session.ticket_id` quando disponível, evitando dependência de identificador transitório da rota.
+- Com isso, o timer fica disponível quando o ticket é aberto como novo ou existente, em qualquer superfície de triagem.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/web lint` ✅ (warnings preexistentes em `triage/home/page.tsx`: `no-explicit-any`)
+- Documentation:
+- `wiki/changelog/2026-03-04-stopwatch-visible-all-ticket-surfaces.md`
+
+---
+
 # Task: Refresh estético sem azul na interface (paleta moderna)
 **Status**: completed
 **Started**: 2026-03-04T18:10:00-05:00

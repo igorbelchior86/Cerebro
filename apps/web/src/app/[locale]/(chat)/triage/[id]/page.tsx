@@ -161,6 +161,25 @@ interface WorkflowActionFeedback {
   updatedAt: string;
 }
 
+type StopwatchSyncState = 'idle' | 'pending' | 'synced' | 'error';
+
+interface StopwatchSyncFeedback {
+  state: StopwatchSyncState;
+  pendingCommandId?: string;
+  workedMinutes?: number;
+  workedHours?: number;
+  billableHours?: number;
+  syncedAt?: string;
+  error?: string;
+}
+
+interface PersistedStopwatchState {
+  elapsedMs: number;
+  running: boolean;
+  startedAtMs?: number;
+  sync?: StopwatchSyncFeedback;
+}
+
 type EditableContextKey =
   | 'Org'
   | 'Contact'
@@ -369,6 +388,11 @@ export default function SessionDetail({
   const [isSubmittingTechAssignment, setIsSubmittingTechAssignment] = useState(false);
   const [workflowActionFeedback, setWorkflowActionFeedback] = useState<WorkflowActionFeedback | null>(null);
   const [workflowWritePolicyDisabled, setWorkflowWritePolicyDisabled] = useState(false);
+  const [stopwatchElapsedMs, setStopwatchElapsedMs] = useState(0);
+  const [stopwatchRunning, setStopwatchRunning] = useState(true);
+  const [stopwatchStartedAtMs, setStopwatchStartedAtMs] = useState<number>(Date.now());
+  const [stopwatchSync, setStopwatchSync] = useState<StopwatchSyncFeedback>({ state: 'idle' });
+  const [stopwatchNowMs, setStopwatchNowMs] = useState(Date.now());
   const [isDevPanelOpen, setIsDevPanelOpen] = useState(false);
   const [contextOverrides, setContextOverrides] = useState<ContextOverrideState>({});
   const [activeContextEditor, setActiveContextEditor] = useState<EditableContextKey | null>(null);
@@ -383,6 +407,8 @@ export default function SessionDetail({
   const [resolvedOrgIdFallback, setResolvedOrgIdFallback] = useState<number | null>(null);
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
   const headerMenuRef = useRef<HTMLDivElement>(null);
+  const stopwatchHydratedRef = useRef(false);
+  const timerTicketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -395,6 +421,151 @@ export default function SessionDetail({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    stopwatchHydratedRef.current = false;
+    const now = Date.now();
+    const storageKey = stopwatchStorageKey(timerTicketId);
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) {
+      setStopwatchElapsedMs(0);
+      setStopwatchRunning(true);
+      setStopwatchStartedAtMs(now);
+      setStopwatchSync({ state: 'idle' });
+      setStopwatchNowMs(now);
+      stopwatchHydratedRef.current = true;
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw) as PersistedStopwatchState;
+      const restoredElapsedMs = Number.isFinite(Number(parsed?.elapsedMs)) && Number(parsed.elapsedMs) >= 0
+        ? Number(parsed.elapsedMs)
+        : 0;
+      const restoredRunning = Boolean(parsed?.running);
+      const restoredStartedAtMs = Number.isFinite(Number(parsed?.startedAtMs)) && Number(parsed.startedAtMs) > 0
+        ? Number(parsed.startedAtMs)
+        : now;
+      const restoredSync = parsed?.sync && typeof parsed.sync === 'object'
+        ? {
+          state: (['idle', 'pending', 'synced', 'error'].includes(String(parsed.sync.state))
+            ? parsed.sync.state
+            : 'idle') as StopwatchSyncState,
+          ...(String(parsed.sync.pendingCommandId || '').trim() ? { pendingCommandId: String(parsed.sync.pendingCommandId).trim() } : {}),
+          ...(Number.isFinite(Number(parsed.sync.workedMinutes)) ? { workedMinutes: Number(parsed.sync.workedMinutes) } : {}),
+          ...(Number.isFinite(Number(parsed.sync.workedHours)) ? { workedHours: Number(parsed.sync.workedHours) } : {}),
+          ...(Number.isFinite(Number(parsed.sync.billableHours)) ? { billableHours: Number(parsed.sync.billableHours) } : {}),
+          ...(String(parsed.sync.syncedAt || '').trim() ? { syncedAt: String(parsed.sync.syncedAt).trim() } : {}),
+          ...(String(parsed.sync.error || '').trim() ? { error: String(parsed.sync.error).trim() } : {}),
+        } satisfies StopwatchSyncFeedback
+        : ({ state: 'idle' } satisfies StopwatchSyncFeedback);
+
+      setStopwatchElapsedMs(restoredElapsedMs);
+      setStopwatchRunning(restoredRunning);
+      setStopwatchStartedAtMs(restoredStartedAtMs);
+      setStopwatchSync(restoredSync);
+      setStopwatchNowMs(now);
+    } catch {
+      setStopwatchElapsedMs(0);
+      setStopwatchRunning(true);
+      setStopwatchStartedAtMs(now);
+      setStopwatchSync({ state: 'idle' });
+      setStopwatchNowMs(now);
+    }
+    stopwatchHydratedRef.current = true;
+  }, [timerTicketId]);
+
+  useEffect(() => {
+    if (!stopwatchHydratedRef.current || typeof window === 'undefined') return;
+    const storageKey = stopwatchStorageKey(timerTicketId);
+    const payload: PersistedStopwatchState = {
+      elapsedMs: Math.max(0, Math.round(stopwatchElapsedMs)),
+      running: stopwatchRunning,
+      ...(stopwatchRunning ? { startedAtMs: stopwatchStartedAtMs } : {}),
+      sync: stopwatchSync,
+    };
+    window.localStorage.setItem(storageKey, JSON.stringify(payload));
+  }, [
+    timerTicketId,
+    stopwatchElapsedMs,
+    stopwatchRunning,
+    stopwatchStartedAtMs,
+    stopwatchSync,
+  ]);
+
+  useEffect(() => {
+    if (!stopwatchRunning) return;
+    const timer = window.setInterval(() => {
+      setStopwatchNowMs(Date.now());
+    }, 1_000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [stopwatchRunning]);
+
+  useEffect(() => {
+    if (stopwatchSync.state !== 'pending' || !stopwatchSync.pendingCommandId) return;
+    let cancelled = false;
+    let timeoutId: number | null = null;
+
+    const schedule = (delayMs: number) => {
+      timeoutId = window.setTimeout(() => {
+        void poll();
+      }, delayMs);
+    };
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const status = await getWorkflowCommandStatus(stopwatchSync.pendingCommandId as string);
+        if (cancelled) return;
+
+        if (status.status === 'completed') {
+          const mirror = extractTimeEntryMirrorFromResult(status.result);
+          const now = Date.now();
+          setStopwatchSync({
+            state: 'synced',
+            ...(mirror?.workedMinutes !== undefined ? { workedMinutes: mirror.workedMinutes } : {}),
+            ...(mirror?.workedHours !== undefined ? { workedHours: mirror.workedHours } : {}),
+            ...(mirror?.billableHours !== undefined ? { billableHours: mirror.billableHours } : {}),
+            syncedAt: new Date(now).toISOString(),
+          });
+          setStopwatchElapsedMs(0);
+          setStopwatchRunning(true);
+          setStopwatchStartedAtMs(now);
+          setStopwatchNowMs(now);
+          return;
+        }
+
+        if (status.status === 'failed' || status.status === 'dlq' || status.status === 'rejected') {
+          const detail = status.last_error || `Time entry command ${status.status}`;
+          setStopwatchSync({
+            state: 'error',
+            error: detail,
+          });
+          return;
+        }
+
+        schedule(1_500);
+      } catch (err) {
+        if (cancelled) return;
+        const mapped = mapHttpErrorToFrontendState(err, 'Unable to read time entry status');
+        setStopwatchSync({
+          state: 'error',
+          error: `${mapped.summary}: ${mapped.detail}`,
+        });
+      }
+    };
+
+    schedule(0);
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [
+    stopwatchSync.state,
+    stopwatchSync.pendingCommandId,
+  ]);
 
   const p0LookupTicketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
   const workflowInboxState = usePollingResource(listWorkflowInbox, {
@@ -500,6 +671,61 @@ export default function SessionDetail({
   };
 
   const channelStorageKey = (ticketId: string) => `cerebro:chat-target-channel:${ticketId}`;
+  const stopwatchStorageKey = (ticketId: string) => `cerebro:time-entry-stopwatch:${ticketId}`;
+
+  const readNonNegativeNumber = (...values: unknown[]): number | undefined => {
+    for (const value of values) {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+    }
+    return undefined;
+  };
+
+  const extractTimeEntryMirrorFromResult = (result?: Record<string, unknown>) => {
+    if (!result || String(result.kind || '').trim() !== 'time_entry') {
+      return null;
+    }
+    const snapshot = typeof result.snapshot === 'object' && result.snapshot
+      ? (result.snapshot as Record<string, unknown>)
+      : {};
+    const workedHours = readNonNegativeNumber(
+      result.worked_hours,
+      snapshot.worked_hours_saved,
+      snapshot.worked_hours_requested,
+      snapshot.hoursWorked,
+      snapshot.hours_worked,
+    );
+    const workedMinutes = readNonNegativeNumber(
+      result.worked_minutes,
+      snapshot.worked_minutes_saved,
+      snapshot.minutesWorked,
+      snapshot.minutes_worked,
+      workedHours !== undefined ? Math.round(workedHours * 60) : undefined,
+    );
+    const billableHours = readNonNegativeNumber(
+      result.billable_hours,
+      snapshot.billable_hours_saved,
+      snapshot.hoursToBill,
+      snapshot.hours_to_bill,
+    );
+    return {
+      workedHours,
+      workedMinutes,
+      billableHours,
+    };
+  };
+
+  const formatStopwatchDuration = (totalMs: number): string => {
+    const totalSeconds = Math.max(0, Math.floor(totalMs / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return [
+      String(hours).padStart(2, '0'),
+      String(minutes).padStart(2, '0'),
+      String(seconds).padStart(2, '0'),
+    ].join(':');
+  };
 
   const isMeaningfulText = (value?: string) => {
     const normalized = normalizePlainText(value, '').toLowerCase();
@@ -1392,6 +1618,43 @@ export default function SessionDetail({
     reader.readAsDataURL(file);
   });
 
+  const computeActiveStopwatchElapsedMs = () => {
+    if (!stopwatchRunning) return Math.max(0, stopwatchElapsedMs);
+    const liveDelta = Math.max(0, Date.now() - stopwatchStartedAtMs);
+    return Math.max(0, stopwatchElapsedMs + liveDelta);
+  };
+
+  const handleStopwatchStart = () => {
+    if (stopwatchRunning) return;
+    const now = Date.now();
+    setStopwatchRunning(true);
+    setStopwatchStartedAtMs(now);
+    setStopwatchNowMs(now);
+    setStopwatchSync((prev) => {
+      if (prev.state === 'pending') return prev;
+      return prev.state === 'error' ? { state: 'idle' } : prev;
+    });
+  };
+
+  const handleStopwatchPause = () => {
+    if (!stopwatchRunning) return;
+    const now = Date.now();
+    const nextElapsedMs = Math.max(0, stopwatchElapsedMs + (now - stopwatchStartedAtMs));
+    setStopwatchElapsedMs(nextElapsedMs);
+    setStopwatchRunning(false);
+    setStopwatchStartedAtMs(now);
+    setStopwatchNowMs(now);
+  };
+
+  const handleStopwatchReset = () => {
+    const now = Date.now();
+    setStopwatchElapsedMs(0);
+    setStopwatchRunning(false);
+    setStopwatchStartedAtMs(now);
+    setStopwatchNowMs(now);
+    setStopwatchSync((prev) => (prev.state === 'pending' ? prev : { state: 'idle' }));
+  };
+
   const handleSendMessage = async ({ message, attachments, targetChannel }: ChatInputSubmitPayload) => {
     const userMessageId = `msg-user-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const createdMessageContent = message || (attachments.length > 0 ? 'Attachment(s) added.' : '');
@@ -1448,9 +1711,66 @@ export default function SessionDetail({
     }
 
     if (targetChannel === 'external_psa_user') {
+      const ticketIdRef = String(data?.session?.ticket_id || selectedTicketId || '').trim();
+      if (!ticketIdRef) {
+        const errorText = 'Ticket reference unavailable';
+        trackChatEvent('chat_message_external_failed', { ticket_id: selectedTicketId, error: errorText });
+        setMessages((prev) => prev.map((m) => (
+          m.id === userMessageId
+            ? { ...m, delivery: { status: 'failed', error: errorText } }
+            : m
+        )));
+        return;
+      }
+
       try {
-        const ticketIdRef = String(data?.session?.ticket_id || selectedTicketId || '').trim();
-        if (!ticketIdRef) throw new Error('Ticket reference unavailable');
+        const elapsedMs = computeActiveStopwatchElapsedMs();
+        const workedHours = Math.max(0, Math.round((elapsedMs / 3_600_000) * 10_000) / 10_000);
+        const assignedResourceId = toAutotaskId(
+          data?.ticket?.assigned_resource_id ??
+          contextOverrides.tech?.id
+        );
+        const timeEntryCommand = await submitWorkflowCommand({
+          command_type: 'time_entry',
+          ticket_id: ticketIdRef,
+          idempotency_key: `time-entry-${ticketIdRef}-${Date.now()}`,
+          payload: {
+            hours_worked: workedHours,
+            summary_notes: createdMessageContent,
+            ...(assignedResourceId !== null && assignedResourceId > 0 ? { resource_id: assignedResourceId } : {}),
+          },
+          auto_process: true,
+        });
+        const timeEntryCommandId = String(
+          (timeEntryCommand as Record<string, unknown>)?.command_id ||
+          ((timeEntryCommand as Record<string, unknown>)?.command as Record<string, unknown>)?.command_id ||
+          ''
+        ).trim();
+        if (timeEntryCommandId) {
+          setStopwatchSync({
+            state: 'pending',
+            pendingCommandId: timeEntryCommandId,
+          });
+          setWorkflowActionFeedback({
+            commandId: timeEntryCommandId,
+            status: 'accepted',
+            uxState: 'pending',
+            detail: 'Time entry command accepted and awaiting PSA confirmation',
+            retryable: true,
+            attempts: 0,
+            maxAttempts: 3,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      } catch (err) {
+        const mapped = mapHttpErrorToFrontendState(err, 'Unable to submit time entry');
+        setStopwatchSync({
+          state: 'error',
+          error: `${mapped.summary}: ${mapped.detail}`,
+        });
+      }
+
+      try {
         await submitWorkflowCommand({
           command_type: 'create_comment_note',
           ticket_id: ticketIdRef,
@@ -1799,6 +2119,28 @@ export default function SessionDetail({
       : workflowActionFeedback?.uxState === 'retrying'
         ? 'warn'
         : 'info';
+  const activeStopwatchElapsedMs = stopwatchRunning
+    ? Math.max(0, stopwatchElapsedMs + (stopwatchNowMs - stopwatchStartedAtMs))
+    : Math.max(0, stopwatchElapsedMs);
+  const stopwatchDisplay = formatStopwatchDuration(activeStopwatchElapsedMs);
+  const stopwatchSyncTone = stopwatchSync.state === 'synced'
+    ? { border: 'rgba(16,185,129,0.35)', color: '#047857', background: 'rgba(16,185,129,0.10)' }
+    : stopwatchSync.state === 'error'
+      ? { border: 'rgba(248,113,113,0.35)', color: '#b91c1c', background: 'rgba(248,113,113,0.10)' }
+      : stopwatchSync.state === 'pending'
+        ? { border: 'rgba(245,158,11,0.35)', color: '#92400e', background: 'rgba(245,158,11,0.10)' }
+        : { border: 'var(--bento-outline)', color: 'var(--text-muted)', background: 'var(--bg-panel)' };
+  const stopwatchSyncLabel = stopwatchSync.state === 'synced'
+    ? `PSA synced${Number.isFinite(Number(stopwatchSync.workedMinutes))
+      ? ` · ${Math.round(Number(stopwatchSync.workedMinutes))}m`
+      : Number.isFinite(Number(stopwatchSync.workedHours))
+        ? ` · ${Number(stopwatchSync.workedHours).toFixed(2)}h`
+        : ''}`
+    : stopwatchSync.state === 'error'
+      ? (stopwatchSync.error || 'PSA sync failed')
+      : stopwatchSync.state === 'pending'
+        ? 'Awaiting PSA confirmation...'
+        : 'Ready';
 
   useEffect(() => {
     const commandId = String(workflowActionFeedback?.commandId || '').trim();
@@ -2703,6 +3045,78 @@ export default function SessionDetail({
                   'Summarize for ticket',
                   'Escalate to L3',
                 ]}
+                footerRightContent={(
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <div
+                      style={{
+                        borderRadius: '9px',
+                        border: '1px solid var(--bento-outline)',
+                        background: 'var(--bg-panel)',
+                        padding: '4px 8px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <span style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700 }}>Timer</span>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                        {stopwatchDisplay}
+                      </span>
+                    </div>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                      <button
+                        type="button"
+                        onClick={stopwatchRunning ? handleStopwatchPause : handleStopwatchStart}
+                        style={{
+                          borderRadius: '8px',
+                          border: `1px solid ${stopwatchRunning ? 'rgba(245,158,11,0.35)' : 'rgba(16,185,129,0.35)'}`,
+                          background: stopwatchRunning ? 'rgba(245,158,11,0.10)' : 'rgba(16,185,129,0.10)',
+                          color: stopwatchRunning ? '#92400e' : '#047857',
+                          padding: '4px 8px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {stopwatchRunning ? 'Pause' : 'Start'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleStopwatchReset}
+                        style={{
+                          borderRadius: '8px',
+                          border: '1px solid var(--bento-outline)',
+                          background: 'var(--bg-panel)',
+                          color: 'var(--text-muted)',
+                          padding: '4px 8px',
+                          fontSize: '11px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Reset
+                      </button>
+                    </div>
+                    <div
+                      title={stopwatchSyncLabel}
+                      style={{
+                        borderRadius: '8px',
+                        border: `1px solid ${stopwatchSyncTone.border}`,
+                        background: stopwatchSyncTone.background,
+                        color: stopwatchSyncTone.color,
+                        padding: '4px 8px',
+                        fontSize: '10px',
+                        fontWeight: 700,
+                        maxWidth: '240px',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                    >
+                      {stopwatchSyncLabel}
+                    </div>
+                  </div>
+                )}
               />
 
               {activeContextEditor ? (

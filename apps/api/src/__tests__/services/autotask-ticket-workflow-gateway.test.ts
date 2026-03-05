@@ -216,6 +216,46 @@ describe('AutotaskTicketWorkflowGateway', () => {
     );
   });
 
+  it('returns PSA-confirmed time entry mirror fields for UI syncing', async () => {
+    const mockClient = {
+      getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 335, ticketNumber: 'T20260226.0035' }),
+      createTimeEntry: jest.fn().mockResolvedValue({
+        id: 2224,
+        hoursWorked: 0.2,
+        minutesWorked: 12,
+        hoursToBill: 0.25,
+        createDate: '2026-03-04T19:20:00.000Z',
+      }),
+    } as any;
+
+    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    const result = await gateway.executeCommand(buildCommand({
+      command_type: 'time_entry',
+      payload: {
+        ticket_id: 'T20260226.0035',
+        resource_id: 42,
+        hours_worked: 0.2,
+        summary_notes: 'Follow-up call',
+      },
+    }));
+
+    expect(result).toMatchObject({
+      kind: 'time_entry',
+      entry_id: 2224,
+      worked_hours: 0.2,
+      worked_minutes: 12,
+      billable_hours: 0.25,
+      snapshot: {
+        resource_id: 42,
+        worked_hours_saved: 0.2,
+        worked_minutes_saved: 12,
+        billable_hours_saved: 0.25,
+        summary_notes: 'Follow-up call',
+        created_at: '2026-03-04T19:20:00.000Z',
+      },
+    });
+  });
+
   it('executes update_priority operation from previously excluded scope', async () => {
     const mockClient = {
       getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 333, ticketNumber: 'T20260226.0033' }),

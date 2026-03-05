@@ -172,6 +172,18 @@ function mapDraftReferenceToSidebarPriority(value?: DraftReference): NonNullable
   return 'P3';
 }
 
+function formatStopwatchDuration(totalMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(totalMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return [
+    String(hours).padStart(2, '0'),
+    String(minutes).padStart(2, '0'),
+    String(seconds).padStart(2, '0'),
+  ].join(':');
+}
+
 function TechPill({
   label,
   name,
@@ -371,6 +383,14 @@ export default function HomePage() {
   const [ticketDraftDefaults, setTicketDraftDefaults] = useState<AutotaskTicketDraftDefaults | null>(null);
   const [isCreatingDraft, setIsCreatingDraft] = useState(false);
   const [draftActionError, setDraftActionError] = useState('');
+  const [stopwatchElapsedMs, setStopwatchElapsedMs] = useState(0);
+  const [stopwatchRunning, setStopwatchRunning] = useState(true);
+  const [stopwatchStartedAtMs, setStopwatchStartedAtMs] = useState<number>(() => Date.now());
+  const [stopwatchNowMs, setStopwatchNowMs] = useState<number>(() => Date.now());
+  const ticketTimerStorageKey = useMemo(
+    () => 'cerebro:time-entry-stopwatch:draft:new-ticket',
+    []
+  );
 
   useEffect(() => {
     if (!shouldLoadSidebarTickets) return;
@@ -398,6 +418,87 @@ export default function HomePage() {
   const primaryTech = draft.primaryTech?.name || 'Unassigned';
   const secondaryTech = draft.secondaryTech?.name || 'Unassigned';
   const isAwaitingSearchInput = false;
+  const activeStopwatchElapsedMs = stopwatchRunning
+    ? Math.max(0, stopwatchElapsedMs + (stopwatchNowMs - stopwatchStartedAtMs))
+    : stopwatchElapsedMs;
+  const stopwatchDisplay = useMemo(
+    () => formatStopwatchDuration(activeStopwatchElapsedMs),
+    [activeStopwatchElapsedMs]
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const now = Date.now();
+    const raw = window.localStorage.getItem(ticketTimerStorageKey);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as {
+        elapsedMs?: number;
+        running?: boolean;
+        startedAtMs?: number;
+      };
+      const elapsedMs = Number.isFinite(Number(parsed.elapsedMs)) && Number(parsed.elapsedMs) >= 0
+        ? Number(parsed.elapsedMs)
+        : 0;
+      const running = Boolean(parsed.running);
+      const startedAtMs = Number.isFinite(Number(parsed.startedAtMs)) && Number(parsed.startedAtMs) > 0
+        ? Number(parsed.startedAtMs)
+        : now;
+      setStopwatchElapsedMs(elapsedMs);
+      setStopwatchRunning(running);
+      setStopwatchStartedAtMs(startedAtMs);
+      setStopwatchNowMs(now);
+    } catch {
+      // Ignore corrupt stopwatch payload.
+    }
+  }, [ticketTimerStorageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(
+      ticketTimerStorageKey,
+      JSON.stringify({
+        elapsedMs: Math.max(0, Math.round(stopwatchElapsedMs)),
+        running: stopwatchRunning,
+        startedAtMs: stopwatchStartedAtMs,
+      })
+    );
+  }, [ticketTimerStorageKey, stopwatchElapsedMs, stopwatchRunning, stopwatchStartedAtMs]);
+
+  useEffect(() => {
+    if (!stopwatchRunning) return;
+    const timer = window.setInterval(() => {
+      setStopwatchNowMs(Date.now());
+    }, 1000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [stopwatchRunning]);
+
+  const handleStopwatchStart = () => {
+    if (stopwatchRunning) return;
+    const now = Date.now();
+    setStopwatchRunning(true);
+    setStopwatchStartedAtMs(now);
+    setStopwatchNowMs(now);
+  };
+
+  const handleStopwatchPause = () => {
+    if (!stopwatchRunning) return;
+    const now = Date.now();
+    setStopwatchElapsedMs(Math.max(0, stopwatchElapsedMs + (now - stopwatchStartedAtMs)));
+    setStopwatchRunning(false);
+    setStopwatchStartedAtMs(now);
+    setStopwatchNowMs(now);
+  };
+
+  const handleStopwatchReset = () => {
+    const now = Date.now();
+    setStopwatchElapsedMs(0);
+    setStopwatchRunning(false);
+    setStopwatchStartedAtMs(now);
+    setStopwatchNowMs(now);
+  };
   useEffect(() => {
     if (!isActive) return;
     const needsOrg = !searchSuggestionCache.Org?.length;
@@ -1222,6 +1323,60 @@ export default function HomePage() {
               'State expected outcome',
             ]}
             showChannelToggle={false}
+            footerRightContent={(
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <div
+                  style={{
+                    borderRadius: '9px',
+                    border: '1px solid var(--bento-outline)',
+                    background: 'var(--bg-panel)',
+                    padding: '4px 8px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <span style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700 }}>Timer</span>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                    {stopwatchDisplay}
+                  </span>
+                </div>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                  <button
+                    type="button"
+                    onClick={stopwatchRunning ? handleStopwatchPause : handleStopwatchStart}
+                    style={{
+                      borderRadius: '8px',
+                      border: `1px solid ${stopwatchRunning ? 'rgba(245,158,11,0.35)' : 'rgba(16,185,129,0.35)'}`,
+                      background: stopwatchRunning ? 'rgba(245,158,11,0.10)' : 'rgba(16,185,129,0.10)',
+                      color: stopwatchRunning ? '#92400e' : '#047857',
+                      padding: '4px 8px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {stopwatchRunning ? 'Pause' : 'Start'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleStopwatchReset}
+                    style={{
+                      borderRadius: '8px',
+                      border: '1px solid var(--bento-outline)',
+                      background: 'var(--bg-panel)',
+                      color: 'var(--text-muted)',
+                      padding: '4px 8px',
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+            )}
           />
 
           {activeContextEditor ? (

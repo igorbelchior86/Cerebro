@@ -1,6 +1,6 @@
 'use client';
 
-import { type FormEvent, type KeyboardEvent, type ChangeEvent, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, type ChangeEvent, type ReactNode, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 
@@ -31,6 +31,7 @@ interface ChatInputProps {
   targetChannel?: 'internal_ai' | 'external_psa_user';
   onTargetChannelChange?: (channel: 'internal_ai' | 'external_psa_user') => void;
   showChannelToggle?: boolean;
+  footerRightContent?: ReactNode;
 }
 
 function inferExtension(name: string, mimeType: string): string {
@@ -49,6 +50,7 @@ export default function ChatInput({
   targetChannel = 'internal_ai',
   onTargetChannelChange,
   showChannelToggle = true,
+  footerRightContent,
 }: ChatInputProps) {
   const t = useTranslations('ChatInput');
   const [input, setInput] = useState('');
@@ -391,7 +393,7 @@ export default function ChatInput({
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
         <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center', paddingRight: '2px' }}>
           <button
             type="button"
@@ -502,6 +504,11 @@ export default function ChatInput({
             </svg>
           </button>
         </div>
+        {footerRightContent ? (
+          <div style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            {footerRightContent}
+          </div>
+        ) : null}
       </div>
     </div>
   );

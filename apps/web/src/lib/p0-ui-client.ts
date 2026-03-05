@@ -295,6 +295,7 @@ export type WorkflowCommandTypeUi =
   | 'status'
   | 'status_update'
   | 'update_status'
+  | 'time_entry'
   | 'comment_note'
   | 'create_comment_note';
 

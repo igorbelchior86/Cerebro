@@ -1,3 +1,27 @@
+## Lesson: 2026-03-05 (queue snapshot replay must change event identity when canonical payload improves)
+**Mistake**: Assumi que bastava adicionar lookup de `company/contact` no `autotask_reconcile`, sem revisar a chave de deduplicação do sync.
+**Root cause**: O `event_id` era derivado apenas de `source + ticket + occurredAt`; quando o mesmo ticket era reingestido depois com `Org/Requester` preenchidos, o core tratava como duplicado e ignorava a correção.
+**Rule**: Em replays de reconcile, o `event_id` precisa refletir o payload canônico materializado; se a identidade mudou, o replay não pode colidir com o evento antigo.
+**Pattern**: Se o inbox permanece preso com `null` mesmo após um backfill adicionar dados melhores no payload, revisar imediatamente a semântica de idempotência do `event_id`.
+
+## Lesson: 2026-03-05 (queue snapshot must exclude terminal statuses upstream, not after exhaustive pagination)
+**Mistake**: Depois de corrigir a paginação completa do `searchTickets()`, deixei o `queue snapshot` consultar `queueID` puro e filtrar `Complete/Resolved` só localmente.
+**Root cause**: O backlog por fila passou a percorrer páginas demais no Autotask antes de descartar tickets terminais, atrasando o reconcile do inbox.
+**Rule**: Em snapshots por fila, filtros de status terminal devem ser empurrados para o `Tickets/query` (`status noteq ...`) antes da paginação; nunca varrer a fila inteira para filtrar depois.
+**Pattern**: Se o log do poller para em `tickets_found` e o `parity_queue_snapshot_applied` demora demais, medir a query por `queueID` puro e empurrar a filtragem de ativo para o provedor.
+
+## Lesson: 2026-03-05 (poller ticket queries must exhaust `nextPageUrl`, not just first page)
+**Mistake**: Aceitei como “bounded coverage” um comportamento que na prática truncava a fila do PSA na primeira página do `/tickets/query`.
+**Root cause**: O conector `AutotaskClient.searchTickets()` ignorava `pageDetails.nextPageUrl`, então backlog e snapshots por queue nunca percorriam o conjunto completo de tickets.
+**Rule**: Toda operação `query/list` do Autotask usada para parity/backfill deve seguir paginação implícita até exaustão ou falhar explicitamente; primeira página isolada nunca é evidência suficiente de cobertura.
+**Pattern**: Se a fila “traz alguns tickets e para”, revisar imediatamente `nextPageUrl` antes de aumentar limites ou budgets do poller.
+
+## Lesson: 2026-03-05 (system pollers must thread tenant_id through every downstream orchestration hop)
+**Mistake**: Corrigi a ingestão do poller sem perceber que o dispatch para triage perdia `tenant_id` e criava sessões no primeiro tenant do banco.
+**Root cause**: `runPipeline()` era chamado apenas com `ticketId`, e `claimOrCreateSession()` fazia fallback para `SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`.
+**Rule**: Em fluxo background multi-tenant, `tenant_id` deve acompanhar o evento desde o poller até claim/retry/persistência; fallback para tenant default é proibido quando a origem já conhece o tenant.
+**Pattern**: Se `workflow sync` aparece num tenant e `triage_sessions` novos aparecem em outro, o defeito está no hop de orquestração, não nas credenciais da integração.
+
 ## Lesson: 2026-03-05 (when the user requests a destructive remediation that is already understood, execute instead of re-explaining)
 **Mistake**: Respondi com explicação sobre o reset do Cerebro em vez de executar imediatamente a ação destrutiva já pedida.
 **Root cause**: Tratei um pedido operacional imperativo como discussão de opções, apesar de o escopo e o efeito já estarem claros no repositório.
@@ -1336,3 +1360,9 @@
 **Root cause**: Lookup de identidade foi implementado com `Promise.all` amplo, sujeito a latência/rate-limit do PSA, bloqueando ciclo do poller.
 **Rule**: Enriquecimento auxiliar deve ser bounded (timeout por chamada + budget por rodada + limite de cardinalidade) e nunca bloquear ingestão canônica.
 **Pattern**: Se `show` congela enquanto integração externa oscila, procurar N+1 lookup no caminho crítico de polling/intake.
+
+## Lesson: 2026-03-05 (backlog histórico não pode usar prioridade newest-first sob cap de hidratação)
+**Mistake**: Reutilizei a priorização de tickets mais novos no batch de lookup de identidade do `queue snapshot`.
+**Root cause**: O batch era capped (`10` companies / `10` contacts por rodada) e a ordenação `createDate desc` deixava tickets antigos permanentemente atrás quando novos tickets faltando identidade continuavam chegando.
+**Rule**: Em jobs de reconciliação/backlog, a política de seleção deve favorecer os itens mais antigos ou aplicar fairness explícita; priorização newest-first serve para intake recente, não para drenagem histórica.
+**Pattern**: Se alguns tickets antigos nunca convergem enquanto tickets novos continuam entrando, revisar starvation causado por ordenação + cap de batch.

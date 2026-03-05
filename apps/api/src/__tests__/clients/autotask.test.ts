@@ -192,6 +192,39 @@ describe('AutotaskClient', () => {
       expect(result).toHaveLength(1);
       expect((result[0] as any).ticketNumber).toBe('T20260225.9999');
     });
+
+    it('should follow nextPageUrl until all query pages are collected', async () => {
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            items: [
+              { id: 101, ticketNumber: 'T20260305.0101' },
+              { id: 102, ticketNumber: 'T20260305.0102' },
+            ],
+            pageDetails: {
+              nextPageUrl: 'https://webservices14.autotask.net/atservicesrest/v1.0/Tickets/query?nextId=page-2',
+            },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            items: [
+              { id: 103, ticketNumber: 'T20260305.0103' },
+            ],
+            pageDetails: {},
+          }),
+        });
+
+      const result = await client.searchTickets('{"op":"gt","field":"createDate","value":"2026-03-01T00:00:00.000Z"}', 2, 0);
+
+      expect(result).toHaveLength(3);
+      expect((result[2] as any).ticketNumber).toBe('T20260305.0103');
+      expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe(
+        'https://webservices14.autotask.net/atservicesrest/v1.0/Tickets/query?nextId=page-2',
+      );
+    });
   });
 
   describe('getTicketByTicketNumber', () => {

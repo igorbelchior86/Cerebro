@@ -1,4 +1,5 @@
 import { AutotaskPollingService } from '../../services/adapters/autotask-polling.js';
+import { workflowService } from '../../services/orchestration/workflow-runtime.js';
 
 describe('AutotaskPollingService P0 hardening', () => {
   it('disables historical parity backfill when active-only mode is enabled', async () => {
@@ -97,7 +98,7 @@ describe('AutotaskPollingService P0 hardening', () => {
     expect(entityIds).toEqual(expect.arrayContaining(['T-ACTIVE-1', 'T-ACTIVE-RECENT']));
     expect(entityIds).not.toEqual(expect.arrayContaining(['T-COMPLETE-1', 'T-COMPLETE-RECENT']));
     expect(triageRun).toHaveBeenCalledTimes(1);
-    expect(triageRun).toHaveBeenCalledWith('3002');
+    expect(triageRun).toHaveBeenCalledWith('3002', 'tenant-1');
   });
 
   it('feeds polled Autotask tickets into workflow sync path and triage pipeline', async () => {
@@ -137,7 +138,7 @@ describe('AutotaskPollingService P0 hardening', () => {
       entity_id: 'T20260226.0123',
       provenance: { source: 'autotask_poller' },
     });
-    expect(triageRun).toHaveBeenCalledWith('123');
+    expect(triageRun).toHaveBeenCalledWith('123', 'tenant-1');
   });
 
   it('skips workflow sync when poller tenant is unavailable but preserves triage execution (degraded mode)', async () => {
@@ -162,7 +163,7 @@ describe('AutotaskPollingService P0 hardening', () => {
     await service.runOnce();
 
     expect(workflowSync).not.toHaveBeenCalled();
-    expect(triageRun).toHaveBeenCalledWith('321');
+    expect(triageRun).toHaveBeenCalledWith('321', undefined);
   });
 
   it('retries transient sync ingestion failures and succeeds before DLQ', async () => {
@@ -204,7 +205,7 @@ describe('AutotaskPollingService P0 hardening', () => {
     await service.runOnce();
 
     expect(workflowSync).toHaveBeenCalledTimes(3);
-    expect(triageRun).toHaveBeenCalled();
+    expect(triageRun).toHaveBeenCalledWith('777', 'tenant-1');
   });
 
   it('moves sync ingestion failure to DLQ after max attempts', async () => {
@@ -313,7 +314,7 @@ describe('AutotaskPollingService P0 hardening', () => {
 
     expect(elapsedMs).toBeLessThan(400);
     expect(workflowSync).toHaveBeenCalledTimes(1);
-    expect(triageRun).toHaveBeenCalledWith('456');
+    expect(triageRun).toHaveBeenCalledWith('456', 'tenant-1');
   });
 
   it('prioritizes identity lookup by ticket create time instead of last activity time', async () => {
@@ -441,7 +442,7 @@ describe('AutotaskPollingService P0 hardening', () => {
         contact_name: 'David Martinez',
         contact_email: 'david@refreshtech.com',
       });
-      expect(triageRun).toHaveBeenCalledWith('789');
+      expect(triageRun).toHaveBeenCalledWith('789', 'tenant-1');
     } finally {
       if (priorTimeout === undefined) delete process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_TIMEOUT_MS;
       else process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_TIMEOUT_MS = priorTimeout;
@@ -539,6 +540,359 @@ describe('AutotaskPollingService P0 hardening', () => {
       if (priorMaxContacts === undefined) delete process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_MAX_CONTACTS;
       else process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_MAX_CONTACTS = priorMaxContacts;
     }
+  });
+
+  it('hydrates older queue snapshot tickets that are still missing canonical identity in the inbox', async () => {
+    const workflowSync = jest.fn().mockResolvedValue(undefined);
+    const triageRun = jest.fn().mockResolvedValue(undefined);
+    const getCompany = jest.fn().mockImplementation(async (id: number) => ({ companyName: `Company ${id}` }));
+    const getContact = jest.fn().mockImplementation(async (id: number) => ({
+      firstName: 'Contact',
+      lastName: String(id),
+      emailAddress: `contact-${id}@example.com`,
+    }));
+    const searchTickets = jest.fn(async (filter: string) => {
+      const raw = JSON.parse(filter);
+      if (raw?.op === 'gt' && raw?.field === 'createDate') return [];
+      if (!Array.isArray(raw?.filter)) return [];
+      const fields = raw.filter.map((entry: any) => String(entry?.field || ''));
+      if (fields.includes('queueID') && fields.includes('createDate')) return [];
+      if (!fields.includes('queueID')) return [];
+      return [
+        {
+          id: 9001,
+          ticketNumber: 'T20260304.0001',
+          title: 'Already hydrated backlog ticket',
+          status: 'New',
+          queueID: 7,
+          companyID: 901,
+          contactID: 1001,
+          createDate: '2026-03-04T18:00:00.000Z',
+        },
+        {
+          id: 9002,
+          ticketNumber: 'T20260303.0001',
+          title: 'Older backlog ticket still missing identity',
+          status: 'New',
+          queueID: 7,
+          companyID: 902,
+          contactID: 1002,
+          createDate: '2026-03-03T18:00:00.000Z',
+        },
+      ];
+    });
+    const listInboxSpy = jest.spyOn(workflowService, 'listInbox').mockResolvedValue([
+      {
+        ticket_id: 'T20260304.0001',
+        company: 'Hydrated Org',
+        requester: 'Hydrated User',
+        domain_snapshots: {
+          tickets: {
+            company_name: 'Hydrated Org',
+            requester_name: 'Hydrated User',
+          },
+        },
+      } as any,
+      {
+        ticket_id: 'T20260303.0001',
+        company: null,
+        requester: null,
+        domain_snapshots: {
+          tickets: {},
+        },
+      } as any,
+    ]);
+
+    try {
+      const service = new AutotaskPollingService({
+        buildPollContext: async () => ({
+          tenantId: 'tenant-1',
+          client: {
+            getTicketQueues: jest.fn().mockResolvedValue([{ id: 7, name: 'Service Desk' }]),
+            searchTickets,
+            getCompany,
+            getContact,
+          } as any,
+        }),
+        workflowSync,
+        triageRun,
+        runWithLock: async (fn) => {
+          await fn();
+          return { acquired: true };
+        },
+        identityLookupMaxCompaniesPerRun: 1,
+        identityLookupMaxContactsPerRun: 1,
+      });
+
+      await service.runOnce();
+
+      const missingBacklogEvent = workflowSync.mock.calls.find((call) => call?.[0]?.entity_id === 'T20260303.0001')?.[0];
+
+      expect(getCompany).toHaveBeenCalledTimes(1);
+      expect(getCompany).toHaveBeenCalledWith(902);
+      expect(getContact).toHaveBeenCalledTimes(1);
+      expect(getContact).toHaveBeenCalledWith(1002);
+      expect(workflowSync).toHaveBeenCalledTimes(2);
+      expect(missingBacklogEvent).toMatchObject({
+        tenant_id: 'tenant-1',
+        event_type: 'ticket.created',
+        entity_id: 'T20260303.0001',
+        provenance: { source: 'autotask_reconcile' },
+        payload: {
+          company_name: 'Company 902',
+          requester: 'Contact 1002',
+          contact_name: 'Contact 1002',
+          contact_email: 'contact-1002@example.com',
+        },
+      });
+      expect(triageRun).not.toHaveBeenCalled();
+    } finally {
+      listInboxSpy.mockRestore();
+    }
+  });
+
+  it('changes the reconcile event id when canonical payload gains identity fields', async () => {
+    const workflowSync = jest.fn().mockResolvedValue(undefined);
+    const service = new AutotaskPollingService({
+      workflowSync,
+      buildPollContext: async () => null,
+      runWithLock: async (fn) => {
+        await fn();
+        return { acquired: true };
+      },
+    });
+    const ticket = {
+      id: 9002,
+      ticketNumber: 'T20260303.0001',
+      title: 'Older backlog ticket still missing identity',
+      status: 'New',
+      queueID: 7,
+      companyID: 902,
+      contactID: 1002,
+      createDate: '2026-03-03T18:00:00.000Z',
+    };
+
+    await (service as any).ingestWorkflowSyncEvent(ticket, 'tenant-1', 'autotask_reconcile');
+    await (service as any).ingestWorkflowSyncEvent(ticket, 'tenant-1', 'autotask_reconcile', {
+      companyNameById: new Map([[902, 'Company 902']]),
+      requesterNameByContactId: new Map([[1002, 'Contact 1002']]),
+      contactEmailByContactId: new Map([[1002, 'contact-1002@example.com']]),
+    });
+
+    const unenrichedEvent = workflowSync.mock.calls[0]?.[0];
+    const enrichedEvent = workflowSync.mock.calls[1]?.[0];
+
+    expect(unenrichedEvent?.event_id).toMatch(/^autotask_reconcile:9002:ticket\.created:2026-03-03T18:00:00.000Z:/);
+    expect(enrichedEvent?.event_id).toMatch(/^autotask_reconcile:9002:ticket\.created:2026-03-03T18:00:00.000Z:/);
+    expect(enrichedEvent?.event_id).not.toBe(unenrichedEvent?.event_id);
+    expect(unenrichedEvent?.payload).toMatchObject({
+      company_name: undefined,
+      requester: undefined,
+      contact_email: undefined,
+    });
+    expect(enrichedEvent?.payload).toMatchObject({
+      company_name: 'Company 902',
+      requester: 'Contact 1002',
+      contact_email: 'contact-1002@example.com',
+    });
+  });
+
+  it('runs queue snapshot reconcile before dispatching triage for recent tickets', async () => {
+    const callOrder: string[] = [];
+    const workflowSync = jest.fn().mockImplementation(async (event) => {
+      callOrder.push(`${event.provenance?.source}:${event.entity_id}`);
+    });
+    const triageRun = jest.fn().mockImplementation(async (ticketId: string) => {
+      callOrder.push(`triage:${ticketId}`);
+    });
+    const service = new AutotaskPollingService({
+      buildPollContext: async () => ({
+        tenantId: 'tenant-1',
+        client: {
+          getTicketQueues: jest.fn().mockResolvedValue([{ id: 7, name: 'Service Desk' }]),
+          searchTickets: jest.fn().mockImplementation(async (filter: string) => {
+            const raw = JSON.parse(filter);
+            if (raw?.op === 'gt' && raw?.field === 'createDate') {
+              return [
+                {
+                  id: 3001,
+                  ticketNumber: 'T20260305.3001',
+                  title: 'Recent ticket',
+                  status: 'New',
+                  queueID: 7,
+                  createDate: '2026-03-05T18:00:00.000Z',
+                },
+              ];
+            }
+            if (!Array.isArray(raw?.filter)) return [];
+            const fields = raw.filter.map((entry: any) => String(entry?.field || ''));
+            if (fields.includes('queueID') && fields.includes('createDate')) return [];
+            if (!fields.includes('queueID')) return [];
+            return [
+              {
+                id: 3002,
+                ticketNumber: 'T20260304.3002',
+                title: 'Older backlog ticket',
+                status: 'New',
+                queueID: 7,
+                companyID: 902,
+                contactID: 1002,
+                createDate: '2026-03-04T18:00:00.000Z',
+              },
+            ];
+          }),
+          getCompany: jest.fn().mockResolvedValue({ companyName: 'Company 902' }),
+          getContact: jest.fn().mockResolvedValue({
+            firstName: 'Contact',
+            lastName: '1002',
+            emailAddress: 'contact-1002@example.com',
+          }),
+        } as any,
+      }),
+      workflowSync,
+      triageRun,
+      runWithLock: async (fn) => {
+        await fn();
+        return { acquired: true };
+      },
+    });
+
+    await service.runOnce();
+
+    expect(callOrder).toEqual([
+      'autotask_poller:T20260305.3001',
+      'autotask_reconcile:T20260304.3002',
+      'triage:3001',
+    ]);
+  });
+
+  it('prioritizes the oldest missing backlog tickets for queue snapshot identity hydration', async () => {
+    const workflowSync = jest.fn().mockResolvedValue(undefined);
+    const inboxSpy = jest.spyOn(workflowService, 'listInbox').mockResolvedValue([
+      {
+        tenant_id: 'tenant-1',
+        ticket_id: 'T20260301.1001',
+        company: undefined,
+        requester: undefined,
+        comments: [],
+        source_of_truth: 'Autotask',
+        updated_at: '2026-03-05T12:00:00.000Z',
+      },
+      {
+        tenant_id: 'tenant-1',
+        ticket_id: 'T20260304.1002',
+        company: undefined,
+        requester: undefined,
+        comments: [],
+        source_of_truth: 'Autotask',
+        updated_at: '2026-03-05T12:00:00.000Z',
+      },
+    ] as any);
+
+    try {
+      const service = new AutotaskPollingService({
+        buildPollContext: async () => ({
+          tenantId: 'tenant-1',
+          client: {
+            getTicketQueues: jest.fn().mockResolvedValue([{ id: 7, name: 'Service Desk' }]),
+            searchTickets: jest.fn(async (filter: string) => {
+              const raw = JSON.parse(filter);
+              if (!Array.isArray(raw?.filter)) return [];
+              const fields = raw.filter.map((entry: any) => String(entry?.field || ''));
+              if (!fields.includes('queueID')) return [];
+              if (fields.includes('createDate')) return [];
+              return [
+                {
+                  id: 1002,
+                  ticketNumber: 'T20260304.1002',
+                  title: 'Newer missing backlog ticket',
+                  status: 'New',
+                  queueID: 7,
+                  companyID: 902,
+                  contactID: 1002,
+                  createDate: '2026-03-04T18:00:00.000Z',
+                },
+                {
+                  id: 1001,
+                  ticketNumber: 'T20260301.1001',
+                  title: 'Oldest missing backlog ticket',
+                  status: 'New',
+                  queueID: 7,
+                  companyID: 901,
+                  contactID: 1001,
+                  createDate: '2026-03-01T18:00:00.000Z',
+                },
+              ];
+            }),
+            getCompany: jest.fn().mockImplementation(async (id: number) => ({ companyName: `Company ${id}` })),
+            getContact: jest.fn().mockImplementation(async (id: number) => ({
+              firstName: 'Contact',
+              lastName: String(id),
+              emailAddress: `contact-${id}@example.com`,
+            })),
+          } as any,
+        }),
+        workflowSync,
+        runWithLock: async (fn) => {
+          await fn();
+          return { acquired: true };
+        },
+        identityLookupMaxCompaniesPerRun: 1,
+        identityLookupMaxContactsPerRun: 1,
+      });
+
+      await service.runOnce();
+
+      const oldestEvent = workflowSync.mock.calls.find((call) => call?.[0]?.entity_id === 'T20260301.1001')?.[0];
+      const newerEvent = workflowSync.mock.calls.find((call) => call?.[0]?.entity_id === 'T20260304.1002')?.[0];
+
+      expect(oldestEvent?.payload).toMatchObject({
+        company_name: 'Company 901',
+        requester: 'Contact 1001',
+        contact_name: 'Contact 1001',
+      });
+      expect(newerEvent?.payload).not.toMatchObject({
+        company_name: 'Company 902',
+        requester: 'Contact 1002',
+      });
+    } finally {
+      inboxSpy.mockRestore();
+    }
+  });
+
+  it('pushes terminal status exclusions into queue snapshot queries', async () => {
+    const searchTickets = jest.fn().mockResolvedValue([]);
+    const service = new AutotaskPollingService({
+      buildPollContext: async () => ({
+        tenantId: 'tenant-1',
+        client: {
+          getTicketQueues: jest.fn().mockResolvedValue([{ id: 7, name: 'Service Desk' }]),
+          getTicketStatusOptions: jest.fn().mockResolvedValue([
+            { id: 1, label: 'New' },
+            { id: 5, label: 'Complete' },
+            { id: 6, label: 'Resolved' },
+          ]),
+          searchTickets,
+        } as any,
+      }),
+      runWithLock: async (fn) => {
+        await fn();
+        return { acquired: true };
+      },
+    });
+
+    await service.runOnce();
+
+    const queueSearches = searchTickets.mock.calls
+      .map((call) => JSON.parse(String(call?.[0] || '{}')))
+      .filter((raw) => Array.isArray(raw?.filter) && raw.filter.some((entry: any) => entry?.field === 'queueID'));
+    const backlogSearch = queueSearches.find((raw) => !raw.filter.some((entry: any) => entry?.field === 'createDate'));
+
+    expect(backlogSearch?.filter).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'queueID', op: 'eq', value: 7 }),
+      expect.objectContaining({ field: 'status', op: 'noteq', value: '5' }),
+      expect.objectContaining({ field: 'status', op: 'noteq', value: '6' }),
+    ]));
   });
 
   it('resolves picklist labels (status, priority, etc.) from numeric IDs', async () => {

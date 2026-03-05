@@ -79,8 +79,8 @@ export class TriageOrchestrator {
             return tenantContext.run({ tenantId: undefined, bypassRLS: true }, async () => {
                 // Find sessions that are 'pending' or 'processing' but stale (> 10 mins)
                 // Limit to 5 per cycle to avoid hammering the API
-                const staleSessions = await query<{ ticket_id: string }>(
-                    `SELECT ticket_id FROM triage_sessions 
+                const staleSessions = await query<{ ticket_id: string; tenant_id: string | null }>(
+                    `SELECT ticket_id, tenant_id FROM triage_sessions 
                      WHERE (status = 'pending' AND (next_retry_at IS NULL OR next_retry_at <= NOW()))
                      OR (status = 'processing' AND updated_at < NOW() - INTERVAL '10 minutes')
                      ORDER BY updated_at ASC
@@ -104,7 +104,7 @@ export class TriageOrchestrator {
                     }
 
                     try {
-                        await this.runPipeline(s.ticket_id, undefined, 'autotask');
+                        await this.runPipeline(s.ticket_id, undefined, 'autotask', s.tenant_id || undefined);
                     } catch (err: any) {
                         const message = String(err?.message || err || '').toLowerCase();
                         operationalLogger.error('orchestration.triage.retry_sweep_ticket_failed', err, {
@@ -132,7 +132,12 @@ export class TriageOrchestrator {
      * Run the full triage pipeline for a ticket.
      * System-triggered pipeline always bypasses tenant RLS checks.
      */
-    async runPipeline(ticketId: string, orgId?: string, source: 'email' | 'autotask' = 'autotask') {
+    async runPipeline(
+        ticketId: string,
+        orgId?: string,
+        source: 'email' | 'autotask' = 'autotask',
+        tenantId?: string,
+    ) {
         const enqueuedAt = Date.now();
         this.queuedPipelines += 1;
         const runCore = async () => {
@@ -147,7 +152,7 @@ export class TriageOrchestrator {
                     degraded_mode: true,
                 }, { ticket_id: ticketId });
             }
-            await this.runPipelineCore(ticketId, orgId, source);
+            await this.runPipelineCore(ticketId, orgId, source, tenantId);
         };
 
         const scheduled = this.pipelineQueue.then(runCore, runCore);
@@ -182,7 +187,12 @@ export class TriageOrchestrator {
         }
     }
 
-    private async runPipelineCore(ticketId: string, orgId?: string, source: 'email' | 'autotask' = 'autotask') {
+    private async runPipelineCore(
+        ticketId: string,
+        orgId?: string,
+        source: 'email' | 'autotask' = 'autotask',
+        tenantId?: string,
+    ) {
         return tenantContext.run({ tenantId: undefined, bypassRLS: true }, async () => {
             operationalLogger.info('orchestration.triage.pipeline_started', {
                 module: 'orchestration.triage-orchestrator',
@@ -195,7 +205,7 @@ export class TriageOrchestrator {
                 await this.markLatestSessionBlockedBySuppression(ticketId);
                 return;
             }
-            const claimed = await this.claimOrCreateSession(ticketId, orgId);
+            const claimed = await this.claimOrCreateSession(ticketId, orgId, tenantId);
             if (!claimed) return;
             const sid = claimed;
 
@@ -412,7 +422,7 @@ export class TriageOrchestrator {
         });
     }
 
-    private async claimOrCreateSession(ticketId: string, orgId?: string): Promise<string | null> {
+    private async claimOrCreateSession(ticketId: string, orgId?: string, tenantId?: string): Promise<string | null> {
         type SessionRow = { id: string; status: string; updated_at: string };
         type TenantRow = { id: string };
         type PlaybookRow = { id: string };
@@ -423,15 +433,26 @@ export class TriageOrchestrator {
                 [this.advisoryLockNamespace, ticketId]
             );
 
-            const existingResult = await (client as any).query(
-                `SELECT id, status, updated_at
-                 FROM triage_sessions
-                 WHERE ticket_id = $1
-                 ORDER BY created_at DESC
-                 LIMIT 1
-                 FOR UPDATE`,
-                [ticketId]
-            );
+            const existingResult = tenantId
+                ? await (client as any).query(
+                    `SELECT id, status, updated_at
+                     FROM triage_sessions
+                     WHERE ticket_id = $1
+                       AND tenant_id = $2
+                     ORDER BY created_at DESC
+                     LIMIT 1
+                     FOR UPDATE`,
+                    [ticketId, tenantId]
+                )
+                : await (client as any).query(
+                    `SELECT id, status, updated_at
+                     FROM triage_sessions
+                     WHERE ticket_id = $1
+                     ORDER BY created_at DESC
+                     LIMIT 1
+                     FOR UPDATE`,
+                    [ticketId]
+                );
             const existingSession = existingResult.rows[0];
 
             if (existingSession) {
@@ -488,15 +509,19 @@ export class TriageOrchestrator {
             }
 
             const sessionId = uuidv4();
-            const defaultTenantResult = await (client as any).query(
-                `SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`
-            );
-            const defaultTenant = defaultTenantResult.rows[0];
+            let resolvedTenantId = String(tenantId || '').trim() || null;
+            if (!resolvedTenantId) {
+                const defaultTenantResult = await (client as any).query(
+                    `SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`
+                );
+                const defaultTenant = defaultTenantResult.rows[0];
+                resolvedTenantId = String(defaultTenant?.id || '').trim() || null;
+            }
 
             await client.query(
                 `INSERT INTO triage_sessions (id, ticket_id, org_id, status, created_by, tenant_id, created_at, updated_at)
                  VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())`,
-                [sessionId, ticketId, orgId || null, 'processing', 'system', defaultTenant?.id || null]
+                [sessionId, ticketId, orgId || null, 'processing', 'system', resolvedTenantId]
             );
             operationalLogger.info('orchestration.triage.claim_new_session_created', {
                 module: 'orchestration.triage-orchestrator',

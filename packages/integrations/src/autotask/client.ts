@@ -46,11 +46,24 @@ export interface AutotaskTicketDraftDefaults {
   queue: AutotaskPicklistOption | null;
 }
 
+interface AutotaskCollectionResponse<T> {
+  pageDetails?: {
+    nextPageUrl?: string | null;
+  } | null;
+  records?: T[];
+  items?: T[];
+  item?: T;
+}
+
 /** Discovery endpoint — acts as universal entry point for zone lookup */
 const DISCOVERY_BASE = 'https://webservices2.autotask.net/atservicesrest/v1.0';
 const AUTH_FAILURE_COOLDOWN_MS = Math.max(
   60_000,
   Number(process.env.AUTOTASK_AUTH_FAILURE_COOLDOWN_MS || 30 * 60 * 1000),
+);
+const AUTOTASK_MAX_QUERY_PAGES = Math.max(
+  1,
+  Number(process.env.AUTOTASK_MAX_QUERY_PAGES || 250),
 );
 
 export class AutotaskClient {
@@ -181,10 +194,28 @@ export class AutotaskClient {
       Object.entries(options.params).forEach(([k, v]) => url.searchParams.append(k, String(v)));
     }
 
-    const response = await fetch(url.toString(), {
+    return this.requestResolvedJson<T>(method, url.toString(), options?.body);
+  }
+
+  private async requestAbsoluteJson<T>(
+    method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+    absoluteUrl: string,
+    body?: unknown,
+  ) {
+    this.throwIfAuthFailureCooldownActive('request');
+    await this.discoverZone();
+    return this.requestResolvedJson<T>(method, absoluteUrl, body);
+  }
+
+  private async requestResolvedJson<T>(
+    method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+    url: string,
+    body?: unknown,
+  ) {
+    const response = await fetch(url, {
       method,
       headers: this.authHeaders(),
-      ...(options?.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
 
     if (!response.ok) {
@@ -248,6 +279,31 @@ export class AutotaskClient {
     if (Array.isArray(response?.items)) return response.items;
     if (Array.isArray(response?.records)) return response.records;
     return [];
+  }
+
+  private async collectPagedQueryResults<T>(
+    endpoint: string,
+    params: Record<string, string | number>,
+  ): Promise<T[]> {
+    const rows: T[] = [];
+    const seenNextUrls = new Set<string>();
+    let pageCount = 0;
+    let response = await this.request<AutotaskCollectionResponse<T>>(endpoint, params);
+
+    while (true) {
+      rows.push(...this.extractCollection(response));
+      const nextPageUrl = String(response?.pageDetails?.nextPageUrl || '').trim();
+      if (!nextPageUrl) return rows;
+      if (seenNextUrls.has(nextPageUrl)) {
+        throw new Error(`Autotask API pagination loop detected for ${endpoint}`);
+      }
+      seenNextUrls.add(nextPageUrl);
+      pageCount += 1;
+      if (pageCount >= AUTOTASK_MAX_QUERY_PAGES) {
+        throw new Error(`Autotask API pagination exceeded ${AUTOTASK_MAX_QUERY_PAGES} pages for ${endpoint}`);
+      }
+      response = await this.requestAbsoluteJson<AutotaskCollectionResponse<T>>('GET', nextPageUrl);
+    }
   }
 
   private async queryEntity<T>(
@@ -414,11 +470,10 @@ export class AutotaskClient {
    */
   async searchTickets(filter: string, pageSize: number = 25, pageNumber: number = 0) {
     void pageNumber; // Autotask REST query pagination uses nextPageUrl/prevPageUrl, not pageNumber.
-    const response = await this.request<{ pageDetails?: unknown; records?: AutotaskTicket[]; items?: AutotaskTicket[] }>(
+    return this.collectPagedQueryResults<AutotaskTicket>(
       '/tickets/query',
-      { search: this.buildSearchParam(filter, pageSize) }
+      { search: this.buildSearchParam(filter, pageSize) },
     );
-    return this.extractCollection(response);
   }
 
   async getTicketByTicketNumber(ticketNumber: string): Promise<AutotaskTicket> {

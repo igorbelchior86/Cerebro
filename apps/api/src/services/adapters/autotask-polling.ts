@@ -1,6 +1,7 @@
+import { createHash } from 'node:crypto';
 import { AutotaskClient } from '../../clients/autotask.js';
 import { queryOne, withTryAdvisoryLock } from '../../db/index.js';
-import type { WorkflowEventEnvelope } from '../orchestration/ticket-workflow-core.js';
+import type { InboxTicketState, WorkflowEventEnvelope } from '../orchestration/ticket-workflow-core.js';
 import { triageOrchestrator } from '../orchestration/triage-orchestrator.js';
 import { workflowService } from '../orchestration/workflow-runtime.js';
 import { classifyQueueError } from '../../platform/errors.js';
@@ -51,6 +52,8 @@ type CanonicalIdentityLookup = {
   requesterNameByContactId: Map<number, string>;
   contactEmailByContactId: Map<number, string>;
 };
+
+type IdentityLookupPriority = 'newest-first' | 'oldest-first';
 
 type CanonicalPicklistLabelMaps = {
   statusById: Map<number, string>;
@@ -121,6 +124,29 @@ function sortTicketsByRecencyDesc(a: Record<string, unknown>, b: Record<string, 
   return resolveTicketReference(b).localeCompare(resolveTicketReference(a));
 }
 
+function buildCanonicalPayloadFingerprint(payload: Record<string, unknown>): string {
+  return createHash('sha256')
+    .update(JSON.stringify(payload))
+    .digest('hex')
+    .slice(0, 16);
+}
+
+function hasMeaningfulIdentityValue(value: unknown, placeholders: string[]): boolean {
+  const raw = String(value ?? '').trim();
+  if (!raw) return false;
+  return !placeholders.includes(raw.toLowerCase());
+}
+
+function inboxRowHasCanonicalIdentity(row?: InboxTicketState | null): boolean {
+  if (!row) return false;
+  const company = row.company || row.domain_snapshots?.tickets?.company_name || row.domain_snapshots?.tickets?.company;
+  const requester = row.requester || row.domain_snapshots?.tickets?.contact_name || row.domain_snapshots?.tickets?.requester_name;
+  return (
+    hasMeaningfulIdentityValue(company, ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']) &&
+    hasMeaningfulIdentityValue(requester, ['unknown requester', 'unknown user', 'requester', 'user', 'contact'])
+  );
+}
+
 async function runWithConcurrencyLimit<T>(
   items: T[],
   concurrency: number,
@@ -144,7 +170,7 @@ export class AutotaskPollingService {
   private readonly advisoryLockKey = 1;
   private readonly buildPollContextFn: () => Promise<AutotaskPollContext | null>;
   private readonly workflowSyncFn: (event: WorkflowEventEnvelope) => Promise<unknown>;
-  private readonly triageRunFn: (ticketId: string) => Promise<void>;
+  private readonly triageRunFn: (ticketId: string, tenantId?: string) => Promise<void>;
   private readonly runWithLockFn: (fn: () => Promise<void>) => Promise<PollLockResult>;
   private readonly nowFn: () => number;
   private readonly retryBackoffMsFn: (attempt: number) => number;
@@ -178,7 +204,7 @@ export class AutotaskPollingService {
     pollIntervalMs?: number;
     buildPollContext?: () => Promise<AutotaskPollContext | null>;
     workflowSync?: (event: WorkflowEventEnvelope) => Promise<unknown>;
-    triageRun?: (ticketId: string) => Promise<void>;
+    triageRun?: (ticketId: string, tenantId?: string) => Promise<void>;
     runWithLock?: (fn: () => Promise<void>) => Promise<PollLockResult>;
     now?: () => number;
     retryBackoffMs?: (attempt: number) => number;
@@ -196,7 +222,7 @@ export class AutotaskPollingService {
     }
     this.buildPollContextFn = input?.buildPollContext || (() => this.buildPollContext());
     this.workflowSyncFn = input?.workflowSync || ((event) => workflowService.processAutotaskSyncEvent(event));
-    this.triageRunFn = input?.triageRun || ((ticketId) => triageOrchestrator.runPipeline(ticketId, undefined, 'autotask'));
+    this.triageRunFn = input?.triageRun || ((ticketId, tenantId) => triageOrchestrator.runPipeline(ticketId, undefined, 'autotask', tenantId));
     this.runWithLockFn = input?.runWithLock || (async (fn) =>
       withTryAdvisoryLock(this.advisoryLockNamespace, this.advisoryLockKey, async () => {
         await fn();
@@ -478,9 +504,23 @@ export class AutotaskPollingService {
           triageTargets.push(String((ticket as any)?.id ?? ticketIdStr));
         }
 
+        if (this.parityQueueSnapshotEnabled) {
+          try {
+            await this.runQueueParitySnapshot(context, terminalStatusIds, queueScope, recentlyIngested);
+          } catch (error) {
+            operationalLogger.warn('adapters.autotask_polling.parity_queue_snapshot_failed', {
+              module: 'adapters.autotask-polling',
+              integration: 'autotask',
+              signal: 'integration_failure',
+              degraded_mode: true,
+              reason: String((error as Error)?.message || error || 'unknown_error'),
+            }, { tenant_id: context.tenantId || null });
+          }
+        }
+
         await runWithConcurrencyLimit(triageTargets, this.triageDispatchConcurrency, async (targetId) => {
           try {
-            await this.triageRunFn(targetId);
+            await this.triageRunFn(targetId, context.tenantId);
           } catch (err) {
             operationalLogger.error('adapters.autotask_polling.orchestration_failed', err, {
               module: 'adapters.autotask-polling',
@@ -497,20 +537,6 @@ export class AutotaskPollingService {
             ticket_count: triageTargets.length,
             concurrency: this.triageDispatchConcurrency,
           });
-        }
-
-        if (this.parityQueueSnapshotEnabled) {
-          try {
-            await this.runQueueParitySnapshot(context, terminalStatusIds, queueScope, recentlyIngested);
-          } catch (error) {
-            operationalLogger.warn('adapters.autotask_polling.parity_queue_snapshot_failed', {
-              module: 'adapters.autotask-polling',
-              integration: 'autotask',
-              signal: 'integration_failure',
-              degraded_mode: true,
-              reason: String((error as Error)?.message || error || 'unknown_error'),
-            }, { tenant_id: context.tenantId || null });
-          }
         }
 
         if (this.parityPurgeEnabled) {
@@ -719,27 +745,34 @@ export class AutotaskPollingService {
     if (!Array.isArray(queues) || queues.length === 0) return;
     const excludedQueueIds = scope?.excludedQueueIds || new Set<number>();
     const recentWindowStartIso = new Date(Date.now() - this.parityRecentWindowHours * 60 * 60 * 1000).toISOString();
+    const merged = new Map<string, Record<string, unknown>>();
 
     for (const queue of queues) {
       const queueId = Number((queue as { id?: number }).id);
       if (!Number.isFinite(queueId)) continue;
       if (this.parityActiveOnly && excludedQueueIds.has(queueId)) continue;
+      const activeStatusFilters = Array.from(terminalStatusIds)
+        .sort((a, b) => a - b)
+        .map((statusId) => ({ op: 'noteq', field: 'status', value: String(statusId) }));
       const recentSearch = JSON.stringify({
         MaxRecords: this.parityQueueSnapshotMaxRecords,
         filter: [
           { op: 'eq', field: 'queueID', value: queueId },
+          ...activeStatusFilters,
           { op: 'gt', field: 'createDate', value: recentWindowStartIso },
         ],
       });
       const backlogSearch = JSON.stringify({
         MaxRecords: this.parityQueueSnapshotMaxRecords,
-        filter: [{ op: 'eq', field: 'queueID', value: queueId }],
+        filter: [
+          { op: 'eq', field: 'queueID', value: queueId },
+          ...activeStatusFilters,
+        ],
       });
       const [recentRows, backlogRows] = await Promise.all([
         context.client.searchTickets(recentSearch, this.parityQueueSnapshotMaxRecords, 0).catch(() => []),
         context.client.searchTickets(backlogSearch, this.parityQueueSnapshotMaxRecords, 0).catch(() => []),
       ]);
-      const merged = new Map<string, Record<string, unknown>>();
       for (const row of [...recentRows, ...backlogRows] as unknown as Record<string, unknown>[]) {
         const key = resolveTicketReference(row);
         if (!key) continue;
@@ -747,11 +780,41 @@ export class AutotaskPollingService {
         if (!this.isNonCompleteTicket(row, terminalStatusIds)) continue;
         if (!merged.has(key)) merged.set(key, row);
       }
-      const rows = Array.from(merged.values()).sort(sortTicketsByRecencyDesc);
-      const reconcilePicklistLabels = await this.resolvePicklistLabelMaps(context);
-      for (const ticket of rows) {
-        await this.ingestWorkflowSyncEvent(ticket, tenantId, 'autotask_reconcile', undefined, reconcilePicklistLabels);
-      }
+    }
+
+    const rows = Array.from(merged.values()).sort(sortTicketsByRecencyDesc);
+    if (rows.length === 0) return;
+
+    const [reconcilePicklistLabels, inboxRows] = await Promise.all([
+      this.resolvePicklistLabelMaps(context),
+      workflowService.listInbox(tenantId),
+    ]);
+    const inboxByTicketId = new Map<string, InboxTicketState>();
+    for (const row of inboxRows) {
+      const key = String(row.ticket_id || row.ticket_number || '').trim();
+      if (!key) continue;
+      inboxByTicketId.set(key, row);
+    }
+    const identityCandidates = rows.filter((ticket) => {
+      const key = resolveTicketReference(ticket);
+      if (!key) return false;
+      return !inboxRowHasCanonicalIdentity(inboxByTicketId.get(key));
+    });
+    const identityLookup = identityCandidates.length > 0
+      ? await this.resolveCanonicalIdentityBatch(context, identityCandidates, { priority: 'oldest-first' })
+      : undefined;
+
+    operationalLogger.info('adapters.autotask_polling.parity_queue_snapshot_applied', {
+      module: 'adapters.autotask-polling',
+      queue_count: queues.length,
+      ticket_count: rows.length,
+      identity_candidates: identityCandidates.length,
+    }, {
+      tenant_id: tenantId,
+    });
+
+    for (const ticket of rows) {
+      await this.ingestWorkflowSyncEvent(ticket, tenantId, 'autotask_reconcile', identityLookup, reconcilePicklistLabels);
     }
   }
 
@@ -828,18 +891,24 @@ export class AutotaskPollingService {
   private async resolveCanonicalIdentityBatch(
     context: AutotaskPollContext,
     tickets: Array<Record<string, unknown>>,
+    options?: { priority?: IdentityLookupPriority },
   ): Promise<CanonicalIdentityLookup> {
     const companyNameById = new Map<number, string>();
     const requesterNameByContactId = new Map<number, string>();
     const contactEmailByContactId = new Map<number, string>();
     const companyIds = new Set<number>();
     const contactIds = new Set<number>();
+    const priority = options?.priority || 'newest-first';
     const prioritizedTickets = tickets
       .slice()
       .sort((a, b) => {
-        const delta = getTicketCreationMs(b) - getTicketCreationMs(a);
+        const delta = priority === 'oldest-first'
+          ? getTicketCreationMs(a) - getTicketCreationMs(b)
+          : getTicketCreationMs(b) - getTicketCreationMs(a);
         if (delta !== 0) return delta;
-        return sortTicketsByRecencyDesc(a, b);
+        return priority === 'oldest-first'
+          ? sortTicketsByRecencyDesc(b, a)
+          : sortTicketsByRecencyDesc(a, b);
       });
 
     for (const raw of prioritizedTickets) {
@@ -1032,7 +1101,6 @@ export class AutotaskPollingService {
       ticket.createDate ||
       new Date().toISOString()
     );
-    const eventId = `${source}:${rawId || ticketRef}:ticket.created:${occurredAt}`;
     const companyId = Number((ticket as any).companyID);
     const contactId = Number((ticket as any).contactID);
     const companyName = String(
@@ -1053,6 +1121,79 @@ export class AutotaskPollingService {
       (Number.isFinite(contactId) ? identityLookup?.contactEmailByContactId.get(contactId) : '') ||
       ''
     ).trim();
+    const payload = {
+      external_id: rawId || ticketRef,
+      ticket_number: String(ticket.ticketNumber || '').trim() || undefined,
+      created_at: String((ticket as any).createDateTime || ticket.createDate || '').trim() || undefined,
+      createDateTime: String((ticket as any).createDateTime || '').trim() || undefined,
+      createDate: String(ticket.createDate || '').trim() || undefined,
+      title: ticket.title,
+      description: ticket.description,
+      company_name: companyName || undefined,
+      requester: requesterName || undefined,
+      contact_name: requesterName || undefined,
+      contact_email: contactEmail || undefined,
+      company_id: Number.isFinite(companyId) ? companyId : undefined,
+      contact_id: Number.isFinite(contactId) ? contactId : undefined,
+      status: ticket.status,
+      status_label: String(
+        (ticket as any).statusLabel ??
+        (ticket as any).status_label ??
+        (ticket as any).status_name ??
+        (Number.isFinite(Number(ticket.status)) ? picklistLabels?.statusById?.get(Number(ticket.status)) : '') ??
+        ''
+      ).trim() || undefined,
+      assigned_to: ticket.assignedResourceID,
+      queue_id: ticket.queueID,
+      queue_name: String(
+        (ticket as any).queueName ??
+        (ticket as any).queue_name ??
+        (Number.isFinite(Number(ticket.queueID)) ? picklistLabels?.queueById?.get(Number(ticket.queueID)) : '') ??
+        ''
+      ).trim() || undefined,
+      // Canonical Autotask picklist IDs/labels are resolved from picklist options fetched per-run.
+      priority: (ticket as any).priority !== undefined && (ticket as any).priority !== null
+        ? (ticket as any).priority
+        : undefined,
+      priority_label: String(
+        (ticket as any).priorityLabel ??
+        (ticket as any).priority_label ??
+        (ticket as any).priorityName ??
+        (Number.isFinite(Number((ticket as any).priority)) ? picklistLabels?.priorityById?.get(Number((ticket as any).priority)) : '') ??
+        ''
+      ).trim() || undefined,
+      issue_type: (ticket as any).issueType !== undefined && (ticket as any).issueType !== null
+        ? (ticket as any).issueType
+        : undefined,
+      issue_type_label: String(
+        (ticket as any).issueTypeLabel ??
+        (ticket as any).issueType_label ??
+        (ticket as any).issueTypeName ??
+        (Number.isFinite(Number((ticket as any).issueType)) ? picklistLabels?.issueTypeById?.get(Number((ticket as any).issueType)) : '') ??
+        ''
+      ).trim() || undefined,
+      sub_issue_type: (ticket as any).subIssueType !== undefined && (ticket as any).subIssueType !== null
+        ? (ticket as any).subIssueType
+        : undefined,
+      sub_issue_type_label: String(
+        (ticket as any).subIssueTypeLabel ??
+        (ticket as any).subIssueType_label ??
+        (ticket as any).subIssueTypeName ??
+        (Number.isFinite(Number((ticket as any).subIssueType)) ? picklistLabels?.subIssueTypeById?.get(Number((ticket as any).subIssueType)) : '') ??
+        ''
+      ).trim() || undefined,
+      sla_id: (ticket as any).serviceLevelAgreementID !== undefined && (ticket as any).serviceLevelAgreementID !== null
+        ? (ticket as any).serviceLevelAgreementID
+        : undefined,
+      sla_label: String(
+        (ticket as any).serviceLevelAgreementLabel ??
+        (ticket as any).serviceLevelAgreement_label ??
+        (ticket as any).serviceLevelAgreementName ??
+        (Number.isFinite(Number((ticket as any).serviceLevelAgreementID)) ? picklistLabels?.slaById?.get(Number((ticket as any).serviceLevelAgreementID)) : '') ??
+        ''
+      ).trim() || undefined,
+    };
+    const eventId = `${source}:${rawId || ticketRef}:ticket.created:${occurredAt}:${buildCanonicalPayloadFingerprint(payload)}`;
 
     const event: WorkflowEventEnvelope = {
       event_id: eventId,
@@ -1061,78 +1202,7 @@ export class AutotaskPollingService {
       source: 'Autotask',
       entity_type: 'ticket',
       entity_id: ticketRef,
-      payload: {
-        external_id: rawId || ticketRef,
-        ticket_number: String(ticket.ticketNumber || '').trim() || undefined,
-        created_at: String((ticket as any).createDateTime || ticket.createDate || '').trim() || undefined,
-        createDateTime: String((ticket as any).createDateTime || '').trim() || undefined,
-        createDate: String(ticket.createDate || '').trim() || undefined,
-        title: ticket.title,
-        description: ticket.description,
-        company_name: companyName || undefined,
-        requester: requesterName || undefined,
-        contact_name: requesterName || undefined,
-        contact_email: contactEmail || undefined,
-        company_id: Number.isFinite(companyId) ? companyId : undefined,
-        contact_id: Number.isFinite(contactId) ? contactId : undefined,
-        status: ticket.status,
-        status_label: String(
-          (ticket as any).statusLabel ??
-          (ticket as any).status_label ??
-          (ticket as any).status_name ??
-          (Number.isFinite(Number(ticket.status)) ? picklistLabels?.statusById?.get(Number(ticket.status)) : '') ??
-          ''
-        ).trim() || undefined,
-        assigned_to: ticket.assignedResourceID,
-        queue_id: ticket.queueID,
-        queue_name: String(
-          (ticket as any).queueName ??
-          (ticket as any).queue_name ??
-          (Number.isFinite(Number(ticket.queueID)) ? picklistLabels?.queueById?.get(Number(ticket.queueID)) : '') ??
-          ''
-        ).trim() || undefined,
-        // Canonical Autotask picklist IDs/labels are resolved from picklist options fetched per-run.
-        priority: (ticket as any).priority !== undefined && (ticket as any).priority !== null
-          ? (ticket as any).priority
-          : undefined,
-        priority_label: String(
-          (ticket as any).priorityLabel ??
-          (ticket as any).priority_label ??
-          (ticket as any).priorityName ??
-          (Number.isFinite(Number((ticket as any).priority)) ? picklistLabels?.priorityById?.get(Number((ticket as any).priority)) : '') ??
-          ''
-        ).trim() || undefined,
-        issue_type: (ticket as any).issueType !== undefined && (ticket as any).issueType !== null
-          ? (ticket as any).issueType
-          : undefined,
-        issue_type_label: String(
-          (ticket as any).issueTypeLabel ??
-          (ticket as any).issueType_label ??
-          (ticket as any).issueTypeName ??
-          (Number.isFinite(Number((ticket as any).issueType)) ? picklistLabels?.issueTypeById?.get(Number((ticket as any).issueType)) : '') ??
-          ''
-        ).trim() || undefined,
-        sub_issue_type: (ticket as any).subIssueType !== undefined && (ticket as any).subIssueType !== null
-          ? (ticket as any).subIssueType
-          : undefined,
-        sub_issue_type_label: String(
-          (ticket as any).subIssueTypeLabel ??
-          (ticket as any).subIssueType_label ??
-          (ticket as any).subIssueTypeName ??
-          (Number.isFinite(Number((ticket as any).subIssueType)) ? picklistLabels?.subIssueTypeById?.get(Number((ticket as any).subIssueType)) : '') ??
-          ''
-        ).trim() || undefined,
-        sla_id: (ticket as any).serviceLevelAgreementID !== undefined && (ticket as any).serviceLevelAgreementID !== null
-          ? (ticket as any).serviceLevelAgreementID
-          : undefined,
-        sla_label: String(
-          (ticket as any).serviceLevelAgreementLabel ??
-          (ticket as any).serviceLevelAgreement_label ??
-          (ticket as any).serviceLevelAgreementName ??
-          (Number.isFinite(Number((ticket as any).serviceLevelAgreementID)) ? picklistLabels?.slaById?.get(Number((ticket as any).serviceLevelAgreementID)) : '') ??
-          ''
-        ).trim() || undefined,
-      },
+      payload,
       occurred_at: occurredAt,
       correlation: {
         trace_id: `autotask-poller-${rawId || ticketRef}`,

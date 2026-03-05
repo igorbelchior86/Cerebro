@@ -1,3 +1,96 @@
+# Task: Destravar hidratação de backlog antigo no queue snapshot Autotask
+**Status**: completed
+**Started**: 2026-03-05T15:55:00-05:00
+
+## Plan
+- [x] Step 1: Validar o estado real do `/workflow/inbox` do tenant do usuário e medir o backlog sem `Org/Requester`.
+- [x] Step 2: Corrigir o reconcile de queue snapshot para aplicar lookup canônico nos tickets antigos ainda não hidratados.
+- [x] Step 3: Corrigir a idempotência do sync para permitir replay quando o payload canônico mudar.
+- [x] Step 4: Tirar o queue snapshot da frente do batch pesado de triage e reduzir custo upstream do query por fila.
+- [x] Step 5: Executar testes/typecheck, reiniciar a stack e confirmar evidência no runtime e no endpoint autenticado.
+
+## Progress Notes
+- O runtime do tenant `9439a8d1-6858-4a9d-a132-a1569b9da5f7` já tinha mais backlog do que a UI sugeria: `97` tickets no `workflow inbox`, com `71` tickets anteriores a `2026-03-04T19:18:00.000Z` sem `company/requester`.
+- O caminho de `runQueueParitySnapshot()` estava ingerindo tickets antigos via `autotask_reconcile`, mas sem `resolveCanonicalIdentityBatch()`, então `Org/Requester/Contact` ficavam `null` para esse lote.
+- Mesmo após adicionar lookup, os tickets antigos já materializados continuavam congelados porque o `event_id` do sync era só `source + ticket + occurredAt`; quando o payload ganhou identidade depois, o core tratava como duplicado e descartava o replay.
+- O queue snapshot também estava atrás do batch de triage recente no `runOnce()`, o que atrasava a convergência do inbox, e ainda fazia `backlogSearch` com `queueID` puro. Depois da paginação completa no client, isso virou scan caro demais por fila.
+- Persistia mais um defeito de fairness: `resolveCanonicalIdentityBatch()` priorizava tickets mais novos por `createDate`. Com cap de `10` empresas/contatos por rodada, backlog antigo podia ficar eternamente atrás dos tickets recentes.
+- Fix aplicado:
+  - `runQueueParitySnapshot()` agora carrega o inbox atual, filtra `identityCandidates` que ainda não têm identidade canônica e passa `identityLookup` no `autotask_reconcile`
+  - `event_id` do poller/reconcile agora inclui fingerprint estável do payload canônico, permitindo replay idempotente quando `company/requester/contact_email` mudarem
+  - `queue snapshot` roda antes do dispatch de triage
+  - queries do queue snapshot agora excluem status terminais no próprio `Tickets/query` com `status noteq ...`
+  - hidratação de identidade do `queue snapshot` agora prioriza os tickets antigos primeiro (`oldest-first`) para evitar starvation do backlog histórico
+  - log operacional novo: `adapters.autotask_polling.parity_queue_snapshot_applied`
+- Evidência live após restart:
+  - log do API: `parity_queue_snapshot_applied` com `queue_count=26`, `ticket_count=103`, `identity_candidates=102`
+  - `GET /workflow/inbox` autenticado para `igor@refreshtech.com` passou a retornar `124` tickets
+  - tickets antigos antes quebrados agora hidratados no inbox:
+    - `T20260304.0011` -> `BRK Global Marketing` / `John Drenkhahn`
+    - `T20260303.0015` -> `Ferguson Supply & Box Company` / `Jasen Nolff`
+    - `T20260304.0008` -> `InStore Group` / `Tom Palombo`
+  - após a correção de fairness e novo restart, o backlog antigo sem identidade caiu de `85` para `71` já no primeiro ciclo do poller
+  - tickets antigos de 2025/início de 2026 passaram a convergir, incluindo `T20260302.0017` (`Weaver Bennett & Bland` / `Eran Weaver`) e `T20251216.0014` (`Stintino Management`)
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- autotask-polling.test.ts autotask.test.ts triage-orchestrator-tenant.test.ts` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `./scripts/stack.sh restart` ✅
+- Runtime/API evidence after restart:
+  - `workflow inbox` autenticado: `count=124`
+  - runtime tenant-scoped antes do fix de fairness: `count=124`, `olderCount=98`, `olderMissing=85`
+  - inbox autenticado após o fix de fairness: `count=124`, `olderCount=98`, `olderMissing=71`
+  - redução observável do lote antigo sem identidade e aumento do backlog ativo materializado, sem starvation dos tickets mais velhos
+- Documentation:
+- `wiki/changelog/2026-03-05-autotask-queue-backlog-hydration-and-active-snapshot-fix.md`
+- `wiki/changelog/2026-03-05-autotask-backlog-fairness-oldest-first-hydration.md`
+
+---
+
+# Task: Corrigir ingestão parcial do PSA e claim cross-tenant na triage Autotask
+**Status**: completed
+**Started**: 2026-03-05T15:10:00-05:00
+
+## Plan
+- [x] Step 1: Validar se a fila estava truncando tickets no conector do PSA ou no poller.
+- [x] Step 2: Corrigir a paginação do `/tickets/query` para seguir `nextPageUrl` até exaustão.
+- [x] Step 3: Corrigir o dispatch `poller -> triage orchestrator` para preservar `tenant_id` e não cair no tenant default.
+- [x] Step 4: Adicionar regressões para paginação completa e tenant-scoped session claim.
+- [x] Step 5: Reiniciar a stack, validar no Postgres/runtime e documentar na wiki.
+
+## Progress Notes
+- O client `packages/integrations/src/autotask/client.ts` retornava apenas a primeira página de `/tickets/query`; o restante do backlog nunca chegava ao Cerebro.
+- A doc interna `apps/APIAT.md` já exigia seguir `pageDetails.nextPageUrl`, mas o conector ignorava isso.
+- Mesmo após corrigir a cobertura do poller, os tickets novos ainda morriam na triage porque `TriageOrchestrator.claimOrCreateSession()` criava sessão no primeiro tenant do banco (`SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`) quando o poller chamava `runPipeline()` sem `tenant_id`.
+- Evidência de runtime antes do fix:
+  - `workflow.realtime.publish` no tenant `9439...`
+  - `triage_sessions` novos em `5b5f...`
+  - `prepare_context` falhando com `401 Unauthorized`/cooldown por credencial do tenant errado
+- Fix aplicado:
+  - paginação completa via `nextPageUrl` no `AutotaskClient.searchTickets()`
+  - `AutotaskPollingService` agora passa `tenant_id` para o dispatch de triage
+  - `TriageOrchestrator` agora faz claim/create tenant-scoped quando `tenant_id` é fornecido
+  - retry sweep também passou a carregar e propagar `tenant_id`
+- Evidência após o fix:
+  - novo `triage_session` para ticket `132938` criado em `9439a8d1-6858-4a9d-a132-a1569b9da5f7`
+  - `ticket_ssot` persistido para `132938`
+  - payload canônico persistido com `company = BRK Global Marketing`, `requester_name = Colleen Newlin`, `requester_email = colleen.newlin@brkmarketing.com`
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- autotask.test.ts autotask-polling.test.ts triage-orchestrator-tenant.test.ts` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `./scripts/stack.sh restart` ✅
+- Verificação Postgres/runtime após restart:
+  - `triage_sessions` por tenant: `9439...` subiu de `2` para `4`
+  - `132938` passou a existir no tenant correto `9439...` e a cópia antiga errada ficou congelada em `5b5f...`
+  - `ticket_ssot_count` subiu de `2` para `3`
+- Documentation:
+- `wiki/changelog/2026-03-05-autotask-poller-pagination-and-tenant-claim-fix.md`
+
+---
+
 # Task: Corrigir lookup canônico de Org/Requester no poller Autotask
 **Status**: completed
 **Started**: 2026-03-05T14:10:00-05:00

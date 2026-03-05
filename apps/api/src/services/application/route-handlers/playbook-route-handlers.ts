@@ -19,6 +19,7 @@ import { PrepareContextService } from '../../context/prepare-context.js';
 import { AutotaskClient } from '../../../clients/autotask.js';
 import { operationalLogger } from '../../../lib/operational-logger.js';
 import { tenantContext } from '../../../lib/tenantContext.js';
+import { workflowService } from '../../orchestration/workflow-runtime.js';
 
 const router: Router = Router();
 const fullFlowInFlight = new Set<string>();
@@ -33,6 +34,56 @@ interface AutotaskCreds {
   secret: string;
   zoneUrl?: string;
 }
+
+function isMissingAutotaskTicketError(error: unknown): boolean {
+  const message = String((error as any)?.message || error || '').toLowerCase();
+  return (
+    message.includes('ticket') &&
+    (
+      message.includes('not found in autotask query') ||
+      message.includes('cannot prepare context without valid ticket from autotask') ||
+      message.includes('not found')
+    )
+  );
+}
+
+async function markSessionDeletedFromAutotask(
+  sessionId: string,
+  ticketId: string,
+  tenantId?: string | null,
+  reason?: string,
+): Promise<void> {
+  const normalizedTenantId = String(tenantId || '').trim();
+  if (normalizedTenantId) {
+    await workflowService.removeInboxTicket(normalizedTenantId, ticketId, {
+      reason: 'autotask_ticket_missing_during_full_flow',
+      correlation: {
+        trace_id: `playbook-stale-${Date.now()}`,
+        ticket_id: ticketId,
+      },
+      metadata: {
+        session_id: sessionId,
+        upstream_reason: reason || undefined,
+      },
+    });
+  }
+
+  await execute(
+    `UPDATE triage_sessions
+     SET status = 'failed',
+         last_error = $1,
+         retry_count = 0,
+         next_retry_at = NULL,
+         updated_at = NOW()
+     WHERE id = $2`,
+    [`deleted in Autotask: ${reason || 'Ticket missing in Autotask'}`, sessionId]
+  );
+}
+
+export const __testables = {
+  isMissingAutotaskTicketError,
+  markSessionDeletedFromAutotask,
+};
 
 type AuthoritativeFieldDiff = {
   field: string;
@@ -429,6 +480,7 @@ router.get('/full-flow', async (req, res) => {
     let sessionRow = await queryOne<{
       id: string;
       ticket_id: string;
+      tenant_id: string | null;
       status: string;
       retry_count: number | null;
       next_retry_at: string | null;
@@ -436,13 +488,14 @@ router.get('/full-flow', async (req, res) => {
       created_at: string;
       updated_at: string;
     }>(
-      `SELECT id, ticket_id, status, retry_count, next_retry_at, last_error, created_at, updated_at
+      `SELECT id, ticket_id, tenant_id, status, retry_count, next_retry_at, last_error, created_at, updated_at
        FROM triage_sessions
        WHERE id = $1
        LIMIT 1`,
       [sessionId]
     );
     const ticketId = sessionRow?.ticket_id || rawId;
+    const sessionTenantId = String(sessionRow?.tenant_id || req.auth?.tid || '').trim() || null;
 
     if (forceRefresh && sessionRow?.id) {
       operationalLogger.info('routes.ai.playbook.full_flow.force_refresh_requested', {
@@ -564,6 +617,7 @@ router.get('/full-flow', async (req, res) => {
         sessionRow = await queryOne<{
           id: string;
           ticket_id: string;
+          tenant_id: string | null;
           status: string;
           retry_count: number | null;
           next_retry_at: string | null;
@@ -571,7 +625,7 @@ router.get('/full-flow', async (req, res) => {
           created_at: string;
           updated_at: string;
         }>(
-          `SELECT id, ticket_id, status, retry_count, next_retry_at, last_error, created_at, updated_at
+          `SELECT id, ticket_id, tenant_id, status, retry_count, next_retry_at, last_error, created_at, updated_at
            FROM triage_sessions
            WHERE id = $1
            LIMIT 1`,
@@ -938,7 +992,17 @@ router.get('/full-flow', async (req, res) => {
           degraded_mode: true,
         }, { ticket_id: ticketId });
         const bgMessage = String((bgErr as any)?.message || bgErr || '');
-        if (isTransientProviderError(bgErr)) {
+        if (isMissingAutotaskTicketError(bgErr)) {
+          await markSessionDeletedFromAutotask(sessionId, ticketId, sessionTenantId, bgMessage);
+          operationalLogger.info('routes.ai.playbook.full_flow.stale_ticket_removed', {
+            module: 'routes.ai.playbook',
+            session_id: sessionId,
+            reason: 'autotask_ticket_missing_during_full_flow',
+          }, {
+            tenant_id: sessionTenantId,
+            ticket_id: ticketId,
+          });
+        } else if (isTransientProviderError(bgErr)) {
           await markSessionPendingForRetry(sessionId, bgMessage);
         } else {
           await execute(

@@ -1540,6 +1540,57 @@
 - Documentation:
 - `wiki/changelog/2026-03-05-poller-identity-bounded-lookup-and-fresh-sidebar-inbox.md`
 
+# Task: Fix workflow inbox parity drift against active Autotask tickets
+**Status**: completed
+**Started**: 2026-03-05T16:50:00-05:00
+
+## Plan
+- [x] Step 1: Measure live parity between `/workflow/inbox` and Autotask `status != Complete`.
+- [x] Step 2: Identify why `Complete` tickets still remain in the inbox read model.
+- [x] Step 3: Remove terminal tickets from inbox projection and parity purge.
+- [x] Step 4: Add regressions for terminal filtering and purge behavior.
+- [x] Step 5: Validate with tests/typecheck, restart stack, and re-measure live parity.
+- [x] Step 6: Document in wiki changelog.
+
+## Progress Notes
+- Live measurement found drift: Cerebro `124` vs Autotask active `119`, with five tickets already `Complete` upstream still exposed by `/workflow/inbox`.
+- Root cause: parity purge only removed `not found`; it did not remove tickets that still existed in Autotask but had already transitioned to a terminal status.
+- Secondary hardening: `listInbox()` now drops rows whose local effective status is already terminal, so locally-complete tickets stop surfacing immediately.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- autotask-polling.test.ts ticket-workflow-core.test.ts` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- Live validation after restart: Cerebro inbox count matches active Autotask count for `status != Complete` ✅
+- Documentation:
+- `wiki/changelog/2026-03-05-workflow-inbox-active-parity-terminal-purge-fix.md`
+
+# Task: Purge deleted Autotask tickets from workflow inbox on full-flow not-found
+**Status**: completed
+**Started**: 2026-03-05T17:35:00-05:00
+
+## Plan
+- [x] Step 1: Reproduce the stale ticket path for `T20260305.0031`.
+- [x] Step 2: Confirm whether the API already receives a `ticket not found` signal from Autotask.
+- [x] Step 3: Purge the inbox row and mark the session deleted when full-flow detects upstream deletion.
+- [x] Step 4: Add route-level regressions for stale ticket removal.
+- [x] Step 5: Validate with tests/typecheck, restart stack, and re-check live parity.
+- [x] Step 6: Document in wiki changelog.
+
+## Progress Notes
+- API logs already showed `Ticket T20260305.0031 not found in Autotask query` during `prepare_context`, so the provider deletion signal existed before this fix.
+- Root cause: the `full-flow` route handled the background failure as an operational error, but did not propagate that `not found` signal into workflow inbox purge or session terminalization.
+- Runtime nuance found during live validation: `triage_sessions.status` does not allow `deleted`, so the session transition had to use the existing terminal state `failed` with a deletion-specific `last_error`.
+- Fix: when the background path detects a missing Autotask ticket, remove it from the inbox read model and mark the `triage_session` as terminal without retries, tenant-scoped.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- playbook.full-flow-stale-ticket.test.ts autotask-polling.test.ts ticket-workflow-core.test.ts` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- Live validation after restart: `T20260305.0031` no longer appears in `/workflow/inbox`, and Cerebro active count matches Autotask active count ✅
+- Documentation:
+- `wiki/changelog/2026-03-05-full-flow-stale-autotask-ticket-purge-fix.md`
+
 # Task: Fix stack boot failure (web listener down)
 **Status**: completed
 **Started**: 2026-03-05T12:55:00-05:00

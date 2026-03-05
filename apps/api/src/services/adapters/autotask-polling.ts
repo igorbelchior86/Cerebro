@@ -579,7 +579,7 @@ export class AutotaskPollingService {
         }
 
         if (this.parityPurgeEnabled) {
-          await this.purgeMissingAutotaskTickets(context);
+          await this.purgeMissingAutotaskTickets(context, terminalStatusIds);
         }
 
       });
@@ -1052,7 +1052,10 @@ export class AutotaskPollingService {
     return { companyNameById, requesterNameByContactId, contactEmailByContactId };
   }
 
-  private async purgeMissingAutotaskTickets(context: AutotaskPollContext): Promise<void> {
+  private async purgeMissingAutotaskTickets(
+    context: AutotaskPollContext,
+    terminalStatusIds: Set<number>,
+  ): Promise<void> {
     const tenantId = String(context.tenantId || '').trim();
     if (!tenantId) return;
 
@@ -1067,33 +1070,29 @@ export class AutotaskPollingService {
       ).trim();
       const ticketId = String(row.ticket_id || '').trim();
 
-      let exists = false;
+      let remoteTicket: Record<string, unknown> | null = null;
       try {
         if (externalId && looksLikeNumericId(externalId)) {
-          await context.client.getTicket(Number(externalId));
-          exists = true;
+          remoteTicket = await context.client.getTicket(Number(externalId)) as unknown as Record<string, unknown>;
         } else if (ticketNumber) {
-          await context.client.getTicketByTicketNumber(ticketNumber);
-          exists = true;
+          remoteTicket = await context.client.getTicketByTicketNumber(ticketNumber) as unknown as Record<string, unknown>;
         } else if (ticketId && looksLikeNumericId(ticketId)) {
-          await context.client.getTicket(Number(ticketId));
-          exists = true;
+          remoteTicket = await context.client.getTicket(Number(ticketId)) as unknown as Record<string, unknown>;
         } else if (ticketId) {
-          await context.client.getTicketByTicketNumber(ticketId);
-          exists = true;
+          remoteTicket = await context.client.getTicketByTicketNumber(ticketId) as unknown as Record<string, unknown>;
         }
       } catch (error) {
         const message = String((error as Error)?.message || error || '').toLowerCase();
         if (message.includes('not found')) {
-          exists = false;
+          remoteTicket = null;
         } else {
           continue;
         }
       }
-      if (exists) continue;
+      if (remoteTicket && this.isNonCompleteTicket(remoteTicket, terminalStatusIds)) continue;
 
       await workflowService.removeInboxTicket(tenantId, ticketId, {
-        reason: 'autotask_ticket_not_found',
+        reason: remoteTicket ? 'autotask_ticket_terminal' : 'autotask_ticket_not_found',
         correlation: {
           trace_id: `autotask-purge-${Date.now()}`,
           ticket_id: ticketId,
@@ -1101,6 +1100,7 @@ export class AutotaskPollingService {
         metadata: {
           external_id: externalId || undefined,
           ticket_number: ticketNumber || undefined,
+          remote_status: remoteTicket ? String((remoteTicket as any).statusLabel || (remoteTicket as any).status || '').trim() || undefined : undefined,
         },
       });
       operationalLogger.info('adapters.autotask_polling.parity_purge_ticket_removed', {

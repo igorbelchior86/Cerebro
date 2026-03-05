@@ -211,6 +211,20 @@ export interface ReconciliationResult {
   issue?: ReconciliationIssue;
 }
 
+function normalizeStatusLabel(value: unknown): string {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function isTerminalStatusLabel(value: unknown): boolean {
+  const label = normalizeStatusLabel(value);
+  if (!label) return false;
+  return /(complete|completed|closed|resolved|done)/.test(label);
+}
+
 export type WorkflowExecutionResult =
   | { kind: 'created'; external_ticket_id: string; external_ticket_number?: string; snapshot?: Record<string, unknown> }
   | { kind: 'updated'; snapshot?: Record<string, unknown> }
@@ -1250,7 +1264,16 @@ export class TicketWorkflowCoreService {
           return requester ? { requester } : {};
         })()),
       }), preferred);
-      deduped.push(this.deriveTicketOperationalState(merged));
+      const derived = this.deriveTicketOperationalState(merged);
+      const effectiveStatus = selectFirstNonEmpty(
+        derived.status,
+        derived.domain_snapshots?.tickets?.status_label,
+        derived.domain_snapshots?.tickets?.status,
+        derived.domain_snapshots?.['correlates.ticket_metadata']?.status_label,
+        derived.domain_snapshots?.['correlates.ticket_metadata']?.status,
+      );
+      if (isTerminalStatusLabel(effectiveStatus)) continue;
+      deduped.push(derived);
 
     }
     return deduped.sort((a, b) => {

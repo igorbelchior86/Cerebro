@@ -1372,3 +1372,15 @@
 **Root cause**: Um ticket com apenas `created_at` válido era marcado como “já tratado”, então `company/requester` continuavam vazios mesmo com `fetchTicketSnapshot()` disponível.
 **Rule**: Em pipelines de catch-up, um estágio local só pode encerrar o item se ele realmente sair da condição de incompletude; caso contrário, o estágio remoto ainda deve rodar.
 **Pattern**: Se o contador de candidatos cai pouco mas `updated_at` muda, revisar filtros que confundem “campo secundário preenchido” com “ticket totalmente hidratado”.
+
+## Lesson: 2026-03-05 (parity purge precisa tratar ticket terminal como removido do inbox ativo)
+**Mistake**: O purge de paridade do Autotask só removia tickets `not found` e mantinha no inbox tickets que ainda existiam no PSA, mas já estavam `Complete`.
+**Root cause**: A lógica de purge modelava apenas inexistência física no provider, não inexistência lógica no conjunto ativo (`status != Complete`).
+**Rule**: Se o inbox representa tickets ativos, o purge deve remover tanto `not found` quanto qualquer ticket que o provider classifique como terminal no momento da checagem.
+**Pattern**: Se o Cerebro tem mais tickets “ativos” que o PSA e os extras ainda são retornados por `getTicket*`, revisar se o purge distingue existência remota de elegibilidade ativa.
+
+## Lesson: 2026-03-05 (ticket deletado no PSA precisa purgar o inbox no primeiro not-found útil)
+**Mistake**: Mesmo depois de o `prepare_context` confirmar que um ticket não existia mais no Autotask, o row continuava vivo no inbox do Cerebro.
+**Root cause**: O caminho `playbook/full-flow` tratava `ticket not found` só como falha de background; faltava fechar o ciclo no read model e no `triage_session`.
+**Rule**: Quando um fluxo read-only já prova que o recurso upstream foi deletado, o sistema precisa converter isso imediatamente em purge local tenant-scoped, não esperar reconciliação best-effort.
+**Pattern**: Se os logs mostram `not found` repetido para o mesmo ticket e o inbox continua exibindo o item, revisar handlers que capturam erro sem materializar a transição terminal local.

@@ -944,6 +944,53 @@ describe('AutotaskPollingService P0 hardening', () => {
     ]));
   });
 
+  it('purges inbox tickets that still exist in Autotask but are already Complete', async () => {
+    const removeSpy = jest.spyOn(workflowService, 'removeInboxTicket').mockResolvedValue(undefined);
+    const listInboxSpy = jest.spyOn(workflowService, 'listInbox').mockResolvedValue([
+      {
+        tenant_id: 'tenant-1',
+        ticket_id: 'T20260305.0024',
+        external_id: '132932',
+        ticket_number: 'T20260305.0024',
+        status: 'Customer Note Added',
+        comments: [],
+        source_of_truth: 'Autotask',
+        updated_at: '2026-03-05T21:00:00.000Z',
+      } as any,
+    ]);
+
+    try {
+      const service = new AutotaskPollingService({
+        buildPollContext: async () => ({
+          tenantId: 'tenant-1',
+          client: {
+            getTicketStatusOptions: jest.fn().mockResolvedValue([{ id: 1, label: 'New' }, { id: 5, label: 'Complete' }]),
+            searchTickets: jest.fn().mockResolvedValue([]),
+            getTicket: jest.fn().mockResolvedValue({ id: 132932, ticketNumber: 'T20260305.0024', status: 5 }),
+          } as any,
+        }),
+        runWithLock: async (fn) => {
+          await fn();
+          return { acquired: true };
+        },
+      });
+
+      await service.runOnce();
+
+      expect(removeSpy).toHaveBeenCalledWith('tenant-1', 'T20260305.0024', expect.objectContaining({
+        reason: 'autotask_ticket_terminal',
+        metadata: expect.objectContaining({
+          external_id: '132932',
+          ticket_number: 'T20260305.0024',
+          remote_status: '5',
+        }),
+      }));
+    } finally {
+      removeSpy.mockRestore();
+      listInboxSpy.mockRestore();
+    }
+  });
+
   it('resolves picklist labels (status, priority, etc.) from numeric IDs', async () => {
     const workflowSync = jest.fn().mockResolvedValue(undefined);
     const triageRun = jest.fn().mockResolvedValue(undefined);

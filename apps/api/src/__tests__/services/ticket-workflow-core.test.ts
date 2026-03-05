@@ -184,6 +184,40 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     expect(inbox[0]?.comments[0]?.visibility).toBe('internal');
   });
 
+  it('excludes terminal tickets from inbox list view when local snapshot already says Complete', async () => {
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn(),
+    };
+    const { repo, service } = createService(gateway);
+
+    await repo.upsertInboxTicket({
+      tenant_id: tenantId,
+      ticket_id: 'T20260305.1001',
+      ticket_number: 'T20260305.1001',
+      status: 'Complete',
+      comments: [],
+      source_of_truth: 'Autotask',
+      updated_at: '2026-03-05T21:00:00.000Z',
+    } as any);
+    await repo.upsertInboxTicket({
+      tenant_id: tenantId,
+      ticket_id: 'T20260305.1002',
+      ticket_number: 'T20260305.1002',
+      comments: [],
+      source_of_truth: 'Autotask',
+      domain_snapshots: {
+        tickets: {
+          status_label: 'New',
+        },
+      },
+      updated_at: '2026-03-05T21:01:00.000Z',
+    } as any);
+
+    const inbox = await service.listInbox(tenantId);
+
+    expect(inbox.map((row) => row.ticket_id)).toEqual(['T20260305.1002']);
+  });
+
   it('records audit/provenance for command execution and sync ingestion', async () => {
     const gateway: TicketWorkflowGateway = {
       executeCommand: jest.fn().mockResolvedValue({ kind: 'created', external_ticket_id: '9001' }),

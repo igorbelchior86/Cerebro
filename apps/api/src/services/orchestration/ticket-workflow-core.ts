@@ -799,12 +799,21 @@ function isPlaceholderValue(value: unknown, placeholders: string[]): boolean {
 }
 
 function needsInboxHydration(row: InboxTicketState): boolean {
+  const isZeroId = (val: unknown) => val === 0 || val === '0';
+
   const companyMissing = isPlaceholderValue(row.company, ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']);
+  const companyKnownEmpty = isZeroId(row.domain_snapshots?.tickets?.company_id);
+  const needsCompany = companyMissing && !companyKnownEmpty;
+
   const requesterMissing = isPlaceholderValue(row.requester, ['unknown requester', 'unknown user', 'requester', 'user', 'contact']);
+  const requesterKnownEmpty = isZeroId(row.domain_snapshots?.tickets?.contact_id);
+  const needsRequester = requesterMissing && !requesterKnownEmpty;
+
   const statusMissing = isPlaceholderValue(row.status, ['unknown status', 'status', '-', 'n/a']);
   const assigneeMissing = isPlaceholderValue(row.assigned_to, ['unassigned', 'unknown assignee', 'assignee', 'assigned']);
   const createdAtMissing = !normalizeIsoTimestamp(row.created_at);
-  return companyMissing || requesterMissing || statusMissing || assigneeMissing || createdAtMissing;
+
+  return needsCompany || needsRequester || statusMissing || assigneeMissing || createdAtMissing;
 }
 
 function selectFirstMeaningful(values: unknown[], placeholders: string[]): string | undefined {
@@ -1106,7 +1115,7 @@ export class TicketWorkflowCoreService {
     readPositiveInt(process.env.P0_WORKFLOW_INBOX_HYDRATION_CONCURRENCY, 5)
   );
   private readonly inboxHydrationRemoteBatchSize = readPositiveInt(process.env.P0_WORKFLOW_INBOX_HYDRATION_REMOTE_BATCH_SIZE, 25);
-  private readonly inboxHydrationRemoteTimeoutMs = readPositiveInt(process.env.P0_WORKFLOW_INBOX_HYDRATION_REMOTE_TIMEOUT_MS, 1500);
+  private readonly inboxHydrationRemoteTimeoutMs = readPositiveInt(process.env.P0_WORKFLOW_INBOX_HYDRATION_REMOTE_TIMEOUT_MS, 8000);
   private readonly inboxHydrationCursorByTenant = new Map<string, number>();
 
   constructor(
@@ -2002,18 +2011,21 @@ export class TicketWorkflowCoreService {
           ...(canonicalCompany ? { company_name: canonicalCompany, company: canonicalCompany } : {}),
           ...(canonicalRequester ? { requester_name: canonicalRequester, contact_name: canonicalRequester, requester: canonicalRequester } : {}),
           ...(canonicalStatus ? { status: canonicalStatus } : {}),
+          ...(payloadStatusLabel ? { status_label: payloadStatusLabel } : {}),
           ...(canonicalAssignedTo ? { assigned_to: canonicalAssignedTo } : {}),
           ...(canonicalQueueId !== undefined ? { queue_id: canonicalQueueId } : {}),
           ...(canonicalQueueName ? { queue_name: canonicalQueueName } : {}),
           ...(canonicalTicketBody ? { ticket_body: canonicalTicketBody } : {}),
           ...(resolvedCreatedAt ? { created_at: resolvedCreatedAt } : {}),
+          ...(String(payload.contact_email ?? '').trim() ? { contact_email: String(payload.contact_email).trim() } : {}),
         },
         'correlates.ticket_metadata': {
           ...(existing?.domain_snapshots?.['correlates.ticket_metadata'] || {}),
           ...(domainSnapshots['correlates.ticket_metadata'] || {}),
           ...(canonicalCompany ? { company_name: canonicalCompany } : {}),
           ...(canonicalRequester ? { requester_name: canonicalRequester, contact_name: canonicalRequester, requester: canonicalRequester } : {}),
-          ...(canonicalStatus ? { status: canonicalStatus, status_label: canonicalStatus } : {}),
+          ...(canonicalStatus ? { status: canonicalStatus } : {}),
+          ...(payloadStatusLabel ? { status_label: payloadStatusLabel } : {}),
           ...(canonicalQueueId !== undefined ? { queue_id: canonicalQueueId } : {}),
           ...(canonicalQueueName ? { queue_name: canonicalQueueName } : {}),
           ...(resolvedCreatedAt ? { created_at: resolvedCreatedAt } : {}),

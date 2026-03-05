@@ -1,3 +1,66 @@
+# Task: Corrigir lookup canônico de Org/Requester no poller Autotask
+**Status**: completed
+**Started**: 2026-03-05T14:10:00-05:00
+
+## Plan
+- [x] Step 1: Inspecionar dados reais do poller e confirmar se o problema está no backend canônico ou na UI.
+- [x] Step 2: Ajustar lookup de identidade do poller para latência real do Autotask sem perder bound operacional.
+- [x] Step 3: Adicionar regressão para propagação de `company/requester/contact_email`.
+- [x] Step 4: Validar com testes alvo, reiniciar stack e confirmar repovoamento.
+- [x] Step 5: Atualizar wiki/changelog obrigatório.
+
+## Progress Notes
+- Logs do runtime mostram `adapters.autotask_polling.identity_lookup_degraded` com `company_resolved=0` e `contact_resolved=0`.
+- Medição manual com as credenciais do tenant confirmou latência real do Autotask acima do budget atual:
+  - `searchTickets ≈ 2241ms`
+  - `getCompany ≈ 1089ms`
+  - `getContact ≈ 598ms`
+- O código estava limitando cada lookup a `450ms` com budget total de `1200ms`, então o poller nunca resolvia nomes de org/requester para o workflow inbox.
+- A correção final exigiu três ajustes no poller:
+  - timeout por `getCompany/getContact` elevado para `2500ms`,
+  - budget de lookup elevado para `8000ms`,
+  - priorização de lookup alinhada à ordem de `createDate` (mesma cronologia que a sidebar usa), não `lastActivityDate`.
+- A cobertura por run ficou em `10 companies / 10 contacts`, o que foi suficiente para preencher os cards recentes visíveis no tenant real sem estourar o budget.
+- Runtime limpo e repovoado após restart confirmou preenchimento canônico em tickets antes quebrados: `T20260305.0022`, `T20260305.0021`, `T20260305.0014`, `T20260305.0010`, `T20260305.0003`, `T20260304.0022`.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- autotask-polling.test.ts` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `./scripts/stack.sh restart` ✅
+- Runtime verificado em `apps/api/.run/p0-workflow-runtime.json` após reset:
+  - `company_capped=10`, `company_truncated=0`, `company_resolved=10`
+  - `contact_capped=10`, `contact_truncated=2`, `contact_resolved=10`
+  - top tickets recentes agora com identidade canônica preenchida
+- Documentation:
+- `wiki/changelog/2026-03-05-autotask-poller-identity-priority-coverage-fix.md`
+
+---
+
+# Task: Corrigir precedência canônica de Org/Requester/Contact na triage UI
+**Status**: completed
+**Started**: 2026-03-05T13:41:08-05:00
+
+## Plan
+- [x] Step 1: Reproduzir o split-brain entre `/workflow/inbox` e `/playbook/full-flow` para `org/requester/contact`.
+- [x] Step 2: Corrigir a precedência na UI para preservar o workflow canônico como source of truth.
+- [x] Step 3: Validar com lint/typecheck do web e registrar evidências.
+- [x] Step 4: Atualizar wiki/changelog obrigatório.
+
+## Progress Notes
+- Investigação identificou que `apps/web/src/app/[locale]/(chat)/triage/[id]/page.tsx` regrava `sidebarTickets` após `GET /playbook/full-flow`, priorizando `ssot/backendTicket` antes do row canônico vindo de `/workflow/inbox`.
+- Isso permite que um payload stale/parcial do full-flow degrade `Org`/`Contact` no card da esquerda e no contexto da direita, apesar do read model do workflow já conter valores melhores.
+- A precedência foi invertida para `workflow inbox row -> sidebar row atual -> full-flow`, mantendo `full-flow` apenas como fallback para identidade canônica.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/web lint` ✅ (0 errors, 4 warnings preexistentes em `apps/web/src/app/[locale]/(chat)/triage/home/page.tsx`)
+- Documentation:
+- `wiki/changelog/2026-03-05-triage-canonical-identity-precedence-fix.md`
+
+---
+
 # Task: Canonical flow audit cleanup (remove legacy sidebar dead path)
 **Status**: completed
 **Started**: 2026-03-05T12:43:00-05:00

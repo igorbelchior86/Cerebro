@@ -52,6 +52,15 @@ type CanonicalIdentityLookup = {
   contactEmailByContactId: Map<number, string>;
 };
 
+type CanonicalPicklistLabelMaps = {
+  statusById: Map<number, string>;
+  priorityById: Map<number, string>;
+  issueTypeById: Map<number, string>;
+  subIssueTypeById: Map<number, string>;
+  slaById: Map<number, string>;
+  queueById: Map<number, string>;
+};
+
 function looksLikeNumericId(value: string): boolean {
   return /^[0-9]+$/.test(value.trim());
 }
@@ -87,6 +96,18 @@ function getTicketRecencyMs(ticket: Record<string, unknown>): number {
     (ticket as any)?.lastActivityDate ||
     (ticket as any)?.createDateTime ||
     (ticket as any)?.createDate ||
+    ''
+  ).trim();
+  const timestamp = Date.parse(raw);
+  if (Number.isFinite(timestamp)) return timestamp;
+  return Number.NEGATIVE_INFINITY;
+}
+
+function getTicketCreationMs(ticket: Record<string, unknown>): number {
+  const raw = String(
+    (ticket as any)?.createDateTime ||
+    (ticket as any)?.createDate ||
+    (ticket as any)?.lastActivityDate ||
     ''
   ).trim();
   const timestamp = Date.parse(raw);
@@ -214,19 +235,19 @@ export class AutotaskPollingService {
     );
     this.identityLookupPerCallTimeoutMs = Math.max(
       100,
-      Number(input?.identityLookupPerCallTimeoutMs ?? process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_TIMEOUT_MS ?? 450),
+      Number(input?.identityLookupPerCallTimeoutMs ?? process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_TIMEOUT_MS ?? 2500),
     );
     this.identityLookupBudgetMs = Math.max(
       200,
-      Number(input?.identityLookupBudgetMs ?? process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_BUDGET_MS ?? 1200),
+      Number(input?.identityLookupBudgetMs ?? process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_BUDGET_MS ?? 8000),
     );
     this.identityLookupMaxCompaniesPerRun = Math.max(
       0,
-      Number(input?.identityLookupMaxCompaniesPerRun ?? process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_MAX_COMPANIES ?? 8),
+      Number(input?.identityLookupMaxCompaniesPerRun ?? process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_MAX_COMPANIES ?? 10),
     );
     this.identityLookupMaxContactsPerRun = Math.max(
       0,
-      Number(input?.identityLookupMaxContactsPerRun ?? process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_MAX_CONTACTS ?? 8),
+      Number(input?.identityLookupMaxContactsPerRun ?? process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_MAX_CONTACTS ?? 10),
     );
     this.parityActiveExcludedQueueNames = new Set(
       String(process.env.AUTOTASK_PARITY_ACTIVE_EXCLUDED_QUEUES || 'complete')
@@ -412,7 +433,10 @@ export class AutotaskPollingService {
           await this.runParityBackfill(context);
         }
 
-        const terminalStatusIds = await this.resolveTerminalStatusIds(context);
+        const [terminalStatusIds, picklistLabels] = await Promise.all([
+          this.resolveTerminalStatusIds(context),
+          this.resolvePicklistLabelMaps(context),
+        ]);
         const queueScope = await this.resolveParityQueueScope(context);
 
         const recentThresholdIso = new Date(Date.now() - this.recentTicketLookbackHours * 60 * 60 * 1000).toISOString();
@@ -448,7 +472,8 @@ export class AutotaskPollingService {
             ticket as unknown as Record<string, unknown>,
             context.tenantId,
             'autotask_poller',
-            identityLookup
+            identityLookup,
+            picklistLabels,
           );
           triageTargets.push(String((ticket as any)?.id ?? ticketIdStr));
         }
@@ -723,8 +748,9 @@ export class AutotaskPollingService {
         if (!merged.has(key)) merged.set(key, row);
       }
       const rows = Array.from(merged.values()).sort(sortTicketsByRecencyDesc);
+      const reconcilePicklistLabels = await this.resolvePicklistLabelMaps(context);
       for (const ticket of rows) {
-        await this.ingestWorkflowSyncEvent(ticket, tenantId, 'autotask_reconcile');
+        await this.ingestWorkflowSyncEvent(ticket, tenantId, 'autotask_reconcile', undefined, reconcilePicklistLabels);
       }
     }
   }
@@ -747,6 +773,48 @@ export class AutotaskPollingService {
     return out;
   }
 
+  private async resolvePicklistLabelMaps(context: AutotaskPollContext): Promise<CanonicalPicklistLabelMaps> {
+    const statusById = new Map<number, string>();
+    const priorityById = new Map<number, string>();
+    const issueTypeById = new Map<number, string>();
+    const subIssueTypeById = new Map<number, string>();
+    const slaById = new Map<number, string>();
+    const queueById = new Map<number, string>();
+
+    const buildMap = (options: unknown[]): Map<number, string> => {
+      const map = new Map<number, string>();
+      for (const option of Array.isArray(options) ? options : []) {
+        const id = Number((option as any)?.id);
+        const label = String((option as any)?.label || '').trim();
+        if (Number.isFinite(id) && label) map.set(id, label);
+      }
+      return map;
+    };
+
+    try {
+      const client = context.client as any;
+      const [statusOpts, priorityOpts, issueTypeOpts, subIssueTypeOpts, slaOpts, queueOpts] = await Promise.all([
+        typeof client.getTicketStatusOptions === 'function' ? client.getTicketStatusOptions().catch(() => []) : [],
+        typeof client.getTicketPriorityOptions === 'function' ? client.getTicketPriorityOptions().catch(() => []) : [],
+        typeof client.getTicketIssueTypeOptions === 'function' ? client.getTicketIssueTypeOptions().catch(() => []) : [],
+        typeof client.getTicketSubIssueTypeOptions === 'function' ? client.getTicketSubIssueTypeOptions().catch(() => []) : [],
+        typeof client.getTicketServiceLevelAgreementOptions === 'function' ? client.getTicketServiceLevelAgreementOptions().catch(() => []) : [],
+        typeof client.getTicketQueues === 'function' ? client.getTicketQueues().catch(() => []) : [],
+      ]);
+
+      for (const [id, label] of buildMap(statusOpts)) statusById.set(id, label);
+      for (const [id, label] of buildMap(priorityOpts)) priorityById.set(id, label);
+      for (const [id, label] of buildMap(issueTypeOpts)) issueTypeById.set(id, label);
+      for (const [id, label] of buildMap(subIssueTypeOpts)) subIssueTypeById.set(id, label);
+      for (const [id, label] of buildMap(slaOpts)) slaById.set(id, label);
+      for (const [id, label] of buildMap(queueOpts)) queueById.set(id, label);
+    } catch {
+      // Best effort only — labels degrade gracefully to numeric IDs.
+    }
+
+    return { statusById, priorityById, issueTypeById, subIssueTypeById, slaById, queueById };
+  }
+
   private isNonCompleteTicket(ticket: Record<string, unknown>, terminalStatusIds: Set<number>): boolean {
     const statusValue = (ticket as any)?.status;
     const numericStatus = Number(statusValue);
@@ -766,8 +834,15 @@ export class AutotaskPollingService {
     const contactEmailByContactId = new Map<number, string>();
     const companyIds = new Set<number>();
     const contactIds = new Set<number>();
+    const prioritizedTickets = tickets
+      .slice()
+      .sort((a, b) => {
+        const delta = getTicketCreationMs(b) - getTicketCreationMs(a);
+        if (delta !== 0) return delta;
+        return sortTicketsByRecencyDesc(a, b);
+      });
 
-    for (const raw of tickets) {
+    for (const raw of prioritizedTickets) {
       const companyName = String((raw as any)?.companyName || (raw as any)?.company || '').trim();
       const requesterName = String((raw as any)?.contactName || (raw as any)?.requesterName || '').trim();
       const companyId = Number((raw as any)?.companyID);
@@ -936,6 +1011,7 @@ export class AutotaskPollingService {
     tenantId?: string,
     source: 'autotask_poller' | 'autotask_reconcile' = 'autotask_poller',
     identityLookup?: CanonicalIdentityLookup,
+    picklistLabels?: CanonicalPicklistLabelMaps,
   ): Promise<void> {
     if (!tenantId) {
       operationalLogger.warn('adapters.autotask_polling.workflow_sync_skipped_missing_tenant', {
@@ -1000,9 +1076,22 @@ export class AutotaskPollingService {
         company_id: Number.isFinite(companyId) ? companyId : undefined,
         contact_id: Number.isFinite(contactId) ? contactId : undefined,
         status: ticket.status,
+        status_label: String(
+          (ticket as any).statusLabel ??
+          (ticket as any).status_label ??
+          (ticket as any).status_name ??
+          (Number.isFinite(Number(ticket.status)) ? picklistLabels?.statusById?.get(Number(ticket.status)) : '') ??
+          ''
+        ).trim() || undefined,
         assigned_to: ticket.assignedResourceID,
         queue_id: ticket.queueID,
-        // Canonical Autotask picklist IDs/labels are persisted directly in workflow inbox snapshots.
+        queue_name: String(
+          (ticket as any).queueName ??
+          (ticket as any).queue_name ??
+          (Number.isFinite(Number(ticket.queueID)) ? picklistLabels?.queueById?.get(Number(ticket.queueID)) : '') ??
+          ''
+        ).trim() || undefined,
+        // Canonical Autotask picklist IDs/labels are resolved from picklist options fetched per-run.
         priority: (ticket as any).priority !== undefined && (ticket as any).priority !== null
           ? (ticket as any).priority
           : undefined,
@@ -1010,6 +1099,7 @@ export class AutotaskPollingService {
           (ticket as any).priorityLabel ??
           (ticket as any).priority_label ??
           (ticket as any).priorityName ??
+          (Number.isFinite(Number((ticket as any).priority)) ? picklistLabels?.priorityById?.get(Number((ticket as any).priority)) : '') ??
           ''
         ).trim() || undefined,
         issue_type: (ticket as any).issueType !== undefined && (ticket as any).issueType !== null
@@ -1019,6 +1109,7 @@ export class AutotaskPollingService {
           (ticket as any).issueTypeLabel ??
           (ticket as any).issueType_label ??
           (ticket as any).issueTypeName ??
+          (Number.isFinite(Number((ticket as any).issueType)) ? picklistLabels?.issueTypeById?.get(Number((ticket as any).issueType)) : '') ??
           ''
         ).trim() || undefined,
         sub_issue_type: (ticket as any).subIssueType !== undefined && (ticket as any).subIssueType !== null
@@ -1028,6 +1119,7 @@ export class AutotaskPollingService {
           (ticket as any).subIssueTypeLabel ??
           (ticket as any).subIssueType_label ??
           (ticket as any).subIssueTypeName ??
+          (Number.isFinite(Number((ticket as any).subIssueType)) ? picklistLabels?.subIssueTypeById?.get(Number((ticket as any).subIssueType)) : '') ??
           ''
         ).trim() || undefined,
         sla_id: (ticket as any).serviceLevelAgreementID !== undefined && (ticket as any).serviceLevelAgreementID !== null
@@ -1037,6 +1129,7 @@ export class AutotaskPollingService {
           (ticket as any).serviceLevelAgreementLabel ??
           (ticket as any).serviceLevelAgreement_label ??
           (ticket as any).serviceLevelAgreementName ??
+          (Number.isFinite(Number((ticket as any).serviceLevelAgreementID)) ? picklistLabels?.slaById?.get(Number((ticket as any).serviceLevelAgreementID)) : '') ??
           ''
         ).trim() || undefined,
       },

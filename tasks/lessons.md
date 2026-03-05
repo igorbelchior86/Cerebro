@@ -1,3 +1,15 @@
+## Lesson: 2026-03-05 (when the user requests a destructive remediation that is already understood, execute instead of re-explaining)
+**Mistake**: Respondi com explicação sobre o reset do Cerebro em vez de executar imediatamente a ação destrutiva já pedida.
+**Root cause**: Tratei um pedido operacional imperativo como discussão de opções, apesar de o escopo e o efeito já estarem claros no repositório.
+**Rule**: Se o usuário pedir explicitamente um reset/reprocess destrutivo já conhecido e o ambiente permitir execução, rodar a ação primeiro e reportar evidências depois.
+**Pattern**: Quando a resposta começa listando um script destrutivo sem executá-lo, provavelmente estou atrasando uma ação operacional que o usuário já autorizou.
+
+## Lesson: 2026-03-05 (for sidebar identity bugs, compare the visible card order with the poller lookup priority)
+**Mistake**: Inicialmente tratei o bug como precedência de UI e depois como simples budget insuficiente, sem comparar a ordem real dos cards com a ordem usada pelo poller para enriquecer identidade.
+**Root cause**: O poller priorizava `lastActivityDate`, enquanto a sidebar exibia tickets por `createDate`; isso fazia tickets visíveis ficarem fora do lote enriquecido mesmo quando o lookup tinha budget.
+**Rule**: Em bugs de `Org/Requester/Contact` na sidebar, validar sempre se a prioridade de enrichment no backend está alinhada com a mesma cronologia usada na UI.
+**Pattern**: Se alguns tickets recentes do topo continuam com `—` e tickets mais antigos abaixo já têm nome, suspeitar imediatamente de divergência entre a ordenação de lookup e a ordenação visual.
+
 ## Lesson: 2026-03-05 (literal cleanup requests require exact term-preservation in planning and verification)
 **Mistake**: Ao registrar o plano, deixei uma substituição automática alterar a descrição do próprio requisito e o checklist ficou semanticamente errado.
 **Root cause**: Executei refactor textual em massa sem proteger artefatos de controle (`tasks/todo.md`) antes de validar o resultado final.

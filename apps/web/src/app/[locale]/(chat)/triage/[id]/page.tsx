@@ -55,6 +55,8 @@ interface SessionData {
     requester?: string;
     requester_normalized?: string;
     requester_email_normalized?: string;
+    contact_name?: string | null;
+    contact_email?: string | null;
     affected_user_normalized?: string;
     affected_user_email_normalized?: string;
     company?: string;
@@ -1206,7 +1208,19 @@ export default function SessionDetail({
         const packOrg = pack.org || {};
         const packUser = pack.user || {};
         const backendTicket = newData.ticket || {};
-        const currentTicket = sidebarTicketsRef.current.find((t) => t.id === selectedTicketId);
+        const currentTicket = sidebarTicketsRef.current.find(
+          (t) =>
+            t.id === selectedTicketId ||
+            t.ticket_id === selectedTicketId ||
+            t.ticket_number === selectedTicketId
+        );
+        const workflowInboxTicket = workflowInboxRef.current.find(
+          (t) =>
+            t.ticket_id === selectedTicketId ||
+            t.ticket_number === selectedTicketId ||
+            t.ticket_id === currentTicket?.ticket_id ||
+            t.ticket_number === currentTicket?.ticket_number
+        );
         const snapshot = ticketSnapshotRef.current[selectedTicketId];
         const ticketId = newData.session.ticket_id || normalizePlainText(backendTicket.id, '') || currentTicket?.ticket_id || snapshot?.ticketId || selectedTicketId;
         const subject = pickStableText(
@@ -1235,23 +1249,44 @@ export default function SessionDetail({
         const requester = pickStableText(
           snapshot?.requester,
           [
+            workflowInboxTicket?.requester,
+            currentTicket?.requester,
             selectUiUserFromSsot({
               affected: ssot.affected_user_name || backendTicket.affected_user_normalized,
-              requester: ssot.requester_name || backendTicket.requester_normalized || backendTicket.requester,
-              fallbacks: [currentTicket?.requester, packUser.name],
+              requester:
+                backendTicket.contact_name ||
+                ssot.requester_name ||
+                backendTicket.requester_normalized ||
+                backendTicket.requester,
+              fallbacks: [workflowInboxTicket?.requester, currentTicket?.requester, packUser.name],
             }),
+            backendTicket.contact_name,
             currentTicket?.site,
           ],
           ''
         );
         const org = pickStableText(
           snapshot?.org,
-          [ssot.company, backendTicket.company, currentTicket?.company, currentTicket?.org, packOrg.name],
+          [
+            workflowInboxTicket?.company,
+            currentTicket?.company,
+            currentTicket?.org,
+            ssot.company,
+            backendTicket.company,
+            packOrg.name,
+          ],
           ''
         );
         const site = pickStableText(
           snapshot?.site,
-          [backendTicket.requester, currentTicket?.site, currentTicket?.requester, packUser.name],
+          [
+            workflowInboxTicket?.requester,
+            currentTicket?.site,
+            currentTicket?.requester,
+            backendTicket.contact_name,
+            backendTicket.requester,
+            packUser.name,
+          ],
           ''
         );
         const priority = backendTicket.priority || currentTicket?.priority || snapshot?.priority || 'P3';
@@ -1299,6 +1334,9 @@ export default function SessionDetail({
             ...(ticketId ? { ticket_id: ticketId } : {}),
             ...(org ? { company: org, org } : {}),
             ...(requester ? { requester } : {}),
+            ...((ticket.contact_email || backendTicket.contact_email)
+              ? { contact_email: ticket.contact_email || String(backendTicket.contact_email || '') }
+              : {}),
             ...(site ? { site } : {}),
             ...(createdAt ? { created_at: createdAt } : {}),
             ...(statusValueResolved ? { ticket_status_value: statusValueResolved, ticket_status_label: statusValueResolved } : {}),
@@ -1925,17 +1963,18 @@ export default function SessionDetail({
     setIsManualSuppressed(Boolean(ticket?.manual_suppressed));
   }, [selectedTicketId, sidebarTickets]);
   const canonicalRequesterUi = pickCanonicalUiText(
+    selectedTicket?.requester,
+    data?.ticket?.contact_name,
     data?.ticket?.requester,
     data?.ticket?.requester_normalized,
     data?.ssot?.requester_name,
-    selectedTicket?.requester,
     data?.ssot?.affected_user_name,
     data?.ticket?.affected_user_normalized
   );
   const canonicalCompanyUi = pickCanonicalUiText(
-    data?.ticket?.company,
     selectedTicket?.company,
     selectedTicket?.org,
+    data?.ticket?.company,
     data?.ssot?.company
   );
   const canonicalSiteUi = normalizePlainText(

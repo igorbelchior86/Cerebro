@@ -1591,6 +1591,59 @@
 - Documentation:
 - `wiki/changelog/2026-03-05-full-flow-stale-autotask-ticket-purge-fix.md`
 
+# Task: Stop triage sidebar status flip between full-flow and workflow inbox
+**Status**: completed
+**Started**: 2026-03-05T17:55:00-05:00
+
+## Plan
+- [x] Step 1: Measure live status payload mismatch for `T20260305.0037`.
+- [x] Step 2: Confirm whether the UI merges status from both `/playbook/full-flow` and `/workflow/inbox`.
+- [x] Step 3: Remove full-flow status mutation from the sidebar card state so queue status comes only from workflow inbox.
+- [x] Step 4: Validate with web lint/typecheck and live behavior.
+- [x] Step 5: Document in wiki changelog.
+
+## Progress Notes
+- Live evidence showed `/workflow/inbox` returning `New` while `/playbook/full-flow` returned `Complete` for the same ticket.
+- Root cause: the triage ticket page rewrote the selected sidebar card status from `full-flow` every 3 seconds, while the sidebar itself refreshed canonical inbox data every 10 seconds.
+- Fix: stop mutating `ticket_status_label/ticket_status_value` from `full-flow`; sidebar card status now remains owned by the workflow inbox adapter.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/web lint` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Live validation: `T20260305.0037` no longer flips `New -> Complete -> New` in the sidebar card while the inbox remains stale ✅
+- Documentation:
+- `wiki/changelog/2026-03-05-triage-sidebar-status-source-of-truth-fix.md`
+
+# Task: Reflect terminal PSA status in workflow inbox instead of purging Complete tickets
+**Status**: completed
+**Started**: 2026-03-05T18:20:00-05:00
+
+## Plan
+- [x] Step 1: Re-audit the inbox/poller path after the user correction that `Complete` must remain visible.
+- [x] Step 2: Remove the active-set purge path that was incorrectly deleting tickets from the inbox.
+- [x] Step 3: Keep terminal tickets in `listInbox()` and sync terminal Autotask status into the canonical inbox row.
+- [x] Step 4: Update regression tests for poller + workflow core.
+- [x] Step 5: Run backend verification and validate `T20260305.0037`.
+- [x] Step 6: Document in wiki changelog.
+
+## Progress Notes
+- User correction is authoritative: the inbox is a mirror of the PSA, not an active-only queue.
+- Root cause was twofold: `buildInboxListView()` hid terminal statuses locally, and `purgeMissingAutotaskTickets()` deleted rows when Autotask returned `Complete`.
+- Fix direction: keep deletion only for real `not found`, and materialize terminal status via canonical sync event.
+- Follow-up found immediately after deploy: terminal status convergence was still not fully automatic for all rows because parity purge only scanned the first `AUTOTASK_PARITY_PURGE_MAX_CHECKS` inbox tickets per run.
+- Final fix: rotate the parity purge window round-robin per tenant so stale rows outside the top slice are revisited automatically without manual reconcile.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- autotask-polling.test.ts ticket-workflow-core.test.ts` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `./scripts/stack.sh restart` ✅
+- Live validation: one-off tenant-scoped reconcile of `T20260305.0037` updated inbox from `New` to `Complete` with `status_label=Complete` ✅
+- Automatic convergence guard: regression proves a stale ticket outside the first purge window is revisited on the next automatic poll cycle and synced to `Complete` ✅
+- Documentation:
+- `wiki/changelog/2026-03-05-workflow-inbox-terminal-status-mirror-fix.md`
+
 # Task: Fix stack boot failure (web listener down)
 **Status**: completed
 **Started**: 2026-03-05T12:55:00-05:00

@@ -202,6 +202,7 @@ export class AutotaskPollingService {
   private readonly backlogIdentityCatchupBatchSize: number;
   private readonly backlogIdentityCatchupRemoteBatchSize: number;
   private parityBackfillStateCache: ParityBackfillStateFile | null = null;
+  private readonly parityPurgeCursorByTenant = new Map<string, number>();
 
   constructor(input?: {
     pollIntervalMs?: number;
@@ -808,10 +809,30 @@ export class AutotaskPollingService {
           ...activeStatusFilters,
         ],
       });
-      const [recentRows, backlogRows] = await Promise.all([
-        context.client.searchTickets(recentSearch, this.parityQueueSnapshotMaxRecords, 0).catch(() => []),
-        context.client.searchTickets(backlogSearch, this.parityQueueSnapshotMaxRecords, 0).catch(() => []),
+      const [recentRowsResult, backlogRowsResult] = await Promise.allSettled([
+        context.client.searchTickets(recentSearch, this.parityQueueSnapshotMaxRecords, 0),
+        context.client.searchTickets(backlogSearch, this.parityQueueSnapshotMaxRecords, 0),
       ]);
+      if (recentRowsResult.status !== 'fulfilled' || backlogRowsResult.status !== 'fulfilled') {
+        operationalLogger.warn('adapters.autotask_polling.parity_queue_snapshot_queue_failed', {
+          module: 'adapters.autotask-polling',
+          integration: 'autotask',
+          signal: 'integration_failure',
+          degraded_mode: true,
+          queue_id: queueId,
+          recent_error: recentRowsResult.status === 'rejected'
+            ? String(recentRowsResult.reason || 'unknown_error')
+            : null,
+          backlog_error: backlogRowsResult.status === 'rejected'
+            ? String(backlogRowsResult.reason || 'unknown_error')
+            : null,
+        }, {
+          tenant_id: tenantId,
+        });
+        continue;
+      }
+      const recentRows = recentRowsResult.value;
+      const backlogRows = backlogRowsResult.value;
       for (const row of [...recentRows, ...backlogRows] as unknown as Record<string, unknown>[]) {
         const key = resolveTicketReference(row);
         if (!key) continue;
@@ -1060,7 +1081,8 @@ export class AutotaskPollingService {
     if (!tenantId) return;
 
     const inbox = await workflowService.listInbox(tenantId);
-    const candidates = inbox.slice(0, this.parityPurgeMaxChecksPerRun);
+    const candidates = this.selectParityPurgeCandidates(tenantId, inbox);
+    const picklistLabels = await this.resolvePicklistLabelMaps(context);
     for (const row of candidates) {
       const externalId = String(row.external_id || '').trim();
       const ticketNumber = String(
@@ -1089,10 +1111,30 @@ export class AutotaskPollingService {
           continue;
         }
       }
-      if (remoteTicket && this.isNonCompleteTicket(remoteTicket, terminalStatusIds)) continue;
+      if (remoteTicket) {
+        if (this.isNonCompleteTicket(remoteTicket, terminalStatusIds)) continue;
+
+        await this.ingestWorkflowSyncEvent(
+          remoteTicket,
+          tenantId,
+          'autotask_reconcile',
+          undefined,
+          picklistLabels,
+        );
+        operationalLogger.info('adapters.autotask_polling.parity_terminal_status_synced', {
+          module: 'adapters.autotask-polling',
+          tenant_id: tenantId,
+          ticket_id: ticketId,
+          remote_status: String((remoteTicket as any).statusLabel || (remoteTicket as any).status || '').trim() || undefined,
+        }, {
+          tenant_id: tenantId,
+          ticket_id: ticketId,
+        });
+        continue;
+      }
 
       await workflowService.removeInboxTicket(tenantId, ticketId, {
-        reason: remoteTicket ? 'autotask_ticket_terminal' : 'autotask_ticket_not_found',
+        reason: 'autotask_ticket_not_found',
         correlation: {
           trace_id: `autotask-purge-${Date.now()}`,
           ticket_id: ticketId,
@@ -1100,7 +1142,6 @@ export class AutotaskPollingService {
         metadata: {
           external_id: externalId || undefined,
           ticket_number: ticketNumber || undefined,
-          remote_status: remoteTicket ? String((remoteTicket as any).statusLabel || (remoteTicket as any).status || '').trim() || undefined : undefined,
         },
       });
       operationalLogger.info('adapters.autotask_polling.parity_purge_ticket_removed', {
@@ -1112,6 +1153,22 @@ export class AutotaskPollingService {
         ticket_id: ticketId,
       });
     }
+  }
+
+  private selectParityPurgeCandidates(tenantId: string, inbox: InboxTicketState[]): InboxTicketState[] {
+    if (inbox.length <= this.parityPurgeMaxChecksPerRun) {
+      this.parityPurgeCursorByTenant.set(tenantId, 0);
+      return inbox;
+    }
+    const cursor = this.parityPurgeCursorByTenant.get(tenantId) ?? 0;
+    const start = ((cursor % inbox.length) + inbox.length) % inbox.length;
+    const batch: InboxTicketState[] = [];
+    for (let index = 0; index < this.parityPurgeMaxChecksPerRun; index += 1) {
+      const row = inbox[(start + index) % inbox.length];
+      if (row) batch.push(row);
+    }
+    this.parityPurgeCursorByTenant.set(tenantId, (start + this.parityPurgeMaxChecksPerRun) % inbox.length);
+    return batch;
   }
 
   private async ingestWorkflowSyncEvent(

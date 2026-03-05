@@ -944,8 +944,9 @@ describe('AutotaskPollingService P0 hardening', () => {
     ]));
   });
 
-  it('purges inbox tickets that still exist in Autotask but are already Complete', async () => {
+  it('syncs terminal status into inbox tickets that still exist in Autotask', async () => {
     const removeSpy = jest.spyOn(workflowService, 'removeInboxTicket').mockResolvedValue(undefined);
+    const syncSpy = jest.spyOn(workflowService, 'processAutotaskSyncEvent');
     const listInboxSpy = jest.spyOn(workflowService, 'listInbox').mockResolvedValue([
       {
         tenant_id: 'tenant-1',
@@ -977,16 +978,98 @@ describe('AutotaskPollingService P0 hardening', () => {
 
       await service.runOnce();
 
-      expect(removeSpy).toHaveBeenCalledWith('tenant-1', 'T20260305.0024', expect.objectContaining({
-        reason: 'autotask_ticket_terminal',
-        metadata: expect.objectContaining({
+      expect(removeSpy).not.toHaveBeenCalled();
+      expect(syncSpy).toHaveBeenCalledWith(expect.objectContaining({
+        tenant_id: 'tenant-1',
+        payload: expect.objectContaining({
           external_id: '132932',
           ticket_number: 'T20260305.0024',
-          remote_status: '5',
+          status: 5,
+          status_label: 'Complete',
         }),
       }));
     } finally {
       removeSpy.mockRestore();
+      syncSpy.mockRestore();
+      listInboxSpy.mockRestore();
+    }
+  });
+
+  it('eventually revisits stale inbox tickets outside the first purge window and syncs terminal status automatically', async () => {
+    const syncSpy = jest.spyOn(workflowService, 'processAutotaskSyncEvent');
+    const listInboxRows = [
+      {
+        tenant_id: 'tenant-1',
+        ticket_id: 'T20260305.0001',
+        external_id: '132901',
+        ticket_number: 'T20260305.0001',
+        status: 'New',
+        comments: [],
+        source_of_truth: 'Autotask',
+        updated_at: '2026-03-05T21:00:00.000Z',
+      },
+      {
+        tenant_id: 'tenant-1',
+        ticket_id: 'T20260305.0002',
+        external_id: '132902',
+        ticket_number: 'T20260305.0002',
+        status: 'New',
+        comments: [],
+        source_of_truth: 'Autotask',
+        updated_at: '2026-03-05T21:01:00.000Z',
+      },
+      {
+        tenant_id: 'tenant-1',
+        ticket_id: 'T20260305.0037',
+        external_id: '132945',
+        ticket_number: 'T20260305.0037',
+        status: 'New',
+        comments: [],
+        source_of_truth: 'Autotask',
+        updated_at: '2026-03-05T22:32:23.056Z',
+      },
+    ] as any[];
+    const listInboxSpy = jest.spyOn(workflowService, 'listInbox').mockResolvedValue(listInboxRows as any);
+
+    try {
+      const service = new AutotaskPollingService({
+        buildPollContext: async () => ({
+          tenantId: 'tenant-1',
+          client: {
+            getTicketStatusOptions: jest.fn().mockResolvedValue([{ id: 1, label: 'New' }, { id: 5, label: 'Complete' }]),
+            searchTickets: jest.fn().mockResolvedValue([]),
+            getTicket: jest.fn().mockImplementation((id: number) => {
+              if (id === 132945) {
+                return Promise.resolve({ id: 132945, ticketNumber: 'T20260305.0037', status: 5 });
+              }
+              return Promise.resolve({ id, ticketNumber: `T${id}`, status: 1 });
+            }),
+          } as any,
+        }),
+        runWithLock: async (fn) => {
+          await fn();
+          return { acquired: true };
+        },
+      });
+      (service as any).parityPurgeMaxChecksPerRun = 2;
+
+      await service.runOnce();
+      expect(syncSpy).not.toHaveBeenCalledWith(expect.objectContaining({
+        payload: expect.objectContaining({ ticket_number: 'T20260305.0037' }),
+      }));
+
+      await service.runOnce();
+      expect(syncSpy).toHaveBeenCalledWith(expect.objectContaining({
+        tenant_id: 'tenant-1',
+        payload: expect.objectContaining({
+          external_id: '132945',
+          ticket_number: 'T20260305.0037',
+          status: 5,
+          status_label: 'Complete',
+        }),
+      }));
+    } finally {
+      syncSpy.mockRestore();
       listInboxSpy.mockRestore();
     }
   });

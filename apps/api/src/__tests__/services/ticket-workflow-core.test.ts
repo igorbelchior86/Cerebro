@@ -184,7 +184,7 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     expect(inbox[0]?.comments[0]?.visibility).toBe('internal');
   });
 
-  it('excludes terminal tickets from inbox list view when local snapshot already says Complete', async () => {
+  it('keeps terminal tickets in inbox list view and reflects the correct status', async () => {
     const gateway: TicketWorkflowGateway = {
       executeCommand: jest.fn(),
     };
@@ -215,7 +215,44 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
 
     const inbox = await service.listInbox(tenantId);
 
-    expect(inbox.map((row) => row.ticket_id)).toEqual(['T20260305.1002']);
+    expect(inbox.map((row) => row.ticket_id)).toEqual(expect.arrayContaining(['T20260305.1002', 'T20260305.1001']));
+    expect(inbox.find((row) => row.ticket_id === 'T20260305.1001')?.status).toBe('Complete');
+  });
+
+  it('projects terminal sync events into inbox instead of hiding the ticket', async () => {
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn(),
+    };
+    const { service } = createService(gateway);
+
+    await service.processAutotaskSyncEvent({
+      event_id: 'evt-complete-1',
+      tenant_id: tenantId,
+      event_type: 'ticket.updated',
+      source: 'Autotask',
+      entity_type: 'ticket',
+      entity_id: 'T20260305.0037',
+      payload: {
+        external_id: '132945',
+        ticket_number: 'T20260305.0037',
+        title: 'Security event detected',
+        status: 5,
+        status_label: 'Complete',
+      },
+      occurred_at: '2026-03-05T22:23:35.783Z',
+      correlation: { trace_id: 'trace-complete-1', ticket_id: 'T20260305.0037' },
+      provenance: { source: 'autotask_reconcile', fetched_at: '2026-03-05T22:23:36.000Z' },
+    });
+
+    const inbox = await service.listInbox(tenantId);
+
+    expect(inbox).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        ticket_id: 'T20260305.0037',
+        ticket_number: 'T20260305.0037',
+        status: 'Complete',
+      }),
+    ]));
   });
 
   it('records audit/provenance for command execution and sync ingestion', async () => {

@@ -1384,3 +1384,21 @@
 **Root cause**: O caminho `playbook/full-flow` tratava `ticket not found` só como falha de background; faltava fechar o ciclo no read model e no `triage_session`.
 **Rule**: Quando um fluxo read-only já prova que o recurso upstream foi deletado, o sistema precisa converter isso imediatamente em purge local tenant-scoped, não esperar reconciliação best-effort.
 **Pattern**: Se os logs mostram `not found` repetido para o mesmo ticket e o inbox continua exibindo o item, revisar handlers que capturam erro sem materializar a transição terminal local.
+
+## Lesson: 2026-03-05 (sidebar da triage não pode aceitar status de duas fontes concorrentes)
+**Mistake**: O card selecionado da sidebar aceitava status vindo de `/playbook/full-flow` e de `/workflow/inbox` ao mesmo tempo.
+**Root cause**: O `full-flow` atualizava `ticket_status_label/ticket_status_value` localmente a cada 3s, enquanto a sidebar reaplicava o inbox canônico a cada 10s, produzindo flip temporal.
+**Rule**: O status de fila da sidebar deve ter uma única source of truth; fluxos derivados como `full-flow` não podem sobrescrever esse campo.
+**Pattern**: Se o mesmo card alterna entre dois status em intervalos fixos de polling, procurar dois effects escrevendo no mesmo slice de estado com precedências diferentes.
+
+## Lesson: 2026-03-05 (mirror do PSA não pode esconder ou purgar ticket Complete por política local)
+**Mistake**: Modelei o inbox como “active-only” e removi/escondi tickets `Complete` quando o Autotask ainda retornava o ticket.
+**Root cause**: Confundi paridade com “ativos != Complete” com espelhamento fiel do PSA; isso empurrou a correção para purge quando o problema real era propagação de status terminal.
+**Rule**: Se o inbox é definido como mirror do PSA, status terminal deve continuar materializado no read model; purge fica restrito a deleção real (`not found`) ou regra explicitamente autorizada.
+**Pattern**: Se o upstream devolve o ticket com novo status, o read model deve receber update canônico; remover o row nesse ponto mascara drift em vez de corrigi-lo.
+
+## Lesson: 2026-03-05 (reconcile automático bounded precisa fairness para não exigir ação manual)
+**Mistake**: Considerei “automático” um reconcile que sempre rechecava só os primeiros `N` tickets do inbox.
+**Root cause**: O poller usava `slice(0, maxChecks)` sem cursor/fairness, então rows stale fora da janela podiam depender de reconcile manual ou esperar indefinidamente sob churn da fila.
+**Rule**: Toda varredura bounded de mirror/paridade precisa cursor ou round-robin por tenant para garantir eventual convergence sem intervenção humana.
+**Pattern**: Se a correção funciona em reconcile manual mas não converge sozinha, procurar starvation em jobs automáticos limitados por batch fixo.

@@ -1325,10 +1325,6 @@ export default function SessionDetail({
             ticket.ticket_id === selectedTicketId ||
             ticket.ticket_id === ticketId;
           if (!isTarget) return ticket;
-          const candidateStatusLabel = normalizePlainText(String(backendTicket.status_label || backendTicket.status || ''), '');
-          const statusValueResolved = isLifecycleStatusLabel(candidateStatusLabel)
-            ? candidateStatusLabel
-            : normalizePlainText(String(ticket.ticket_status_label || ticket.ticket_status_value || ''), '');
           return {
             ...ticket,
             ...(ticketId ? { ticket_id: ticketId } : {}),
@@ -1339,7 +1335,6 @@ export default function SessionDetail({
               : {}),
             ...(site ? { site } : {}),
             ...(createdAt ? { created_at: createdAt } : {}),
-            ...(statusValueResolved ? { ticket_status_value: statusValueResolved, ticket_status_label: statusValueResolved } : {}),
           };
         }));
         const priorityLabel = priorityLabelForLine;

@@ -1272,7 +1272,6 @@ export class TicketWorkflowCoreService {
         derived.domain_snapshots?.['correlates.ticket_metadata']?.status_label,
         derived.domain_snapshots?.['correlates.ticket_metadata']?.status,
       );
-      if (isTerminalStatusLabel(effectiveStatus)) continue;
       deduped.push(derived);
 
     }

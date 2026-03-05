@@ -652,10 +652,11 @@ async function request<T>(path: string, init?: RequestInit, cacheOptions?: Reque
   return pending;
 }
 
-export function listWorkflowInbox() {
+export function listWorkflowInbox(forceFresh = false) {
   return request<WorkflowInboxTicket[]>('/workflow/inbox', undefined, {
     staleTimeMs: 12_000,
     staleWhileRevalidateMs: 2 * 60_000,
+    bypassCache: forceFresh,
   });
 }
 

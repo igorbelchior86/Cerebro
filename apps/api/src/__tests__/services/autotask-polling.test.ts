@@ -270,4 +270,49 @@ describe('AutotaskPollingService P0 hardening', () => {
     await service.runOnce();
     expect(searchTickets).toHaveBeenCalledTimes(1);
   });
+
+  it('does not block workflow ingestion on slow company/contact lookup', async () => {
+    const workflowSync = jest.fn().mockResolvedValue(undefined);
+    const triageRun = jest.fn().mockResolvedValue(undefined);
+    const service = new AutotaskPollingService({
+      buildPollContext: async () => ({
+        tenantId: 'tenant-1',
+        client: {
+          searchTickets: jest.fn().mockResolvedValue([
+            {
+              id: 456,
+              ticketNumber: 'T20260305.0456',
+              title: 'Slow identity lookup case',
+              status: 'New',
+              queueID: 7,
+              companyID: 100,
+              contactID: 200,
+              createDate: '2026-03-05T12:00:00.000Z',
+            },
+          ]),
+          getCompany: jest.fn().mockImplementation(() => new Promise(() => undefined)),
+          getContact: jest.fn().mockImplementation(() => new Promise(() => undefined)),
+        } as any,
+      }),
+      workflowSync,
+      triageRun,
+      runWithLock: async (fn) => {
+        await fn();
+        return { acquired: true };
+      },
+      identityLookupConcurrency: 1,
+      identityLookupPerCallTimeoutMs: 20,
+      identityLookupBudgetMs: 40,
+      identityLookupMaxCompaniesPerRun: 1,
+      identityLookupMaxContactsPerRun: 1,
+    });
+
+    const startedAt = Date.now();
+    await service.runOnce();
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(elapsedMs).toBeLessThan(400);
+    expect(workflowSync).toHaveBeenCalledTimes(1);
+    expect(triageRun).toHaveBeenCalledWith('456');
+  });
 });

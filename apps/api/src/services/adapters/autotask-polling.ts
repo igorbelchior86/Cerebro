@@ -146,6 +146,11 @@ export class AutotaskPollingService {
   private readonly recentTicketMaxRecords: number;
   private readonly triageDispatchConcurrency: number;
   private readonly parityActiveExcludedQueueNames: Set<string>;
+  private readonly identityLookupConcurrency: number;
+  private readonly identityLookupPerCallTimeoutMs: number;
+  private readonly identityLookupBudgetMs: number;
+  private readonly identityLookupMaxCompaniesPerRun: number;
+  private readonly identityLookupMaxContactsPerRun: number;
   private parityBackfillStateCache: ParityBackfillStateFile | null = null;
 
   constructor(input?: {
@@ -159,6 +164,11 @@ export class AutotaskPollingService {
     syncRetryMaxAttempts?: number;
     parityBackfillEnabled?: boolean;
     parityActiveOnly?: boolean;
+    identityLookupConcurrency?: number;
+    identityLookupPerCallTimeoutMs?: number;
+    identityLookupBudgetMs?: number;
+    identityLookupMaxCompaniesPerRun?: number;
+    identityLookupMaxContactsPerRun?: number;
   }) {
     if (Number.isFinite(Number(input?.pollIntervalMs))) {
       this.pollIntervalMs = Math.max(5_000, Number(input?.pollIntervalMs));
@@ -198,6 +208,26 @@ export class AutotaskPollingService {
     this.recentTicketLookbackHours = Math.max(1, Number(process.env.AUTOTASK_POLLER_RECENT_LOOKBACK_HOURS || 24));
     this.recentTicketMaxRecords = Math.max(25, Math.min(500, Number(process.env.AUTOTASK_POLLER_RECENT_MAX_RECORDS || 200)));
     this.triageDispatchConcurrency = Math.max(1, Number(process.env.AUTOTASK_POLLER_TRIAGE_CONCURRENCY || 3));
+    this.identityLookupConcurrency = Math.max(
+      1,
+      Number(input?.identityLookupConcurrency ?? process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_CONCURRENCY ?? 2),
+    );
+    this.identityLookupPerCallTimeoutMs = Math.max(
+      100,
+      Number(input?.identityLookupPerCallTimeoutMs ?? process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_TIMEOUT_MS ?? 450),
+    );
+    this.identityLookupBudgetMs = Math.max(
+      200,
+      Number(input?.identityLookupBudgetMs ?? process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_BUDGET_MS ?? 1200),
+    );
+    this.identityLookupMaxCompaniesPerRun = Math.max(
+      0,
+      Number(input?.identityLookupMaxCompaniesPerRun ?? process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_MAX_COMPANIES ?? 8),
+    );
+    this.identityLookupMaxContactsPerRun = Math.max(
+      0,
+      Number(input?.identityLookupMaxContactsPerRun ?? process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_MAX_CONTACTS ?? 8),
+    );
     this.parityActiveExcludedQueueNames = new Set(
       String(process.env.AUTOTASK_PARITY_ACTIVE_EXCLUDED_QUEUES || 'complete')
         .split(',')
@@ -745,40 +775,95 @@ export class AutotaskPollingService {
       if (!companyName && Number.isFinite(companyId) && companyId > 0) companyIds.add(companyId);
       if (!requesterName && Number.isFinite(contactId) && contactId > 0) contactIds.add(contactId);
     }
+    const lookupStartedAt = this.nowFn();
+    const deadline = lookupStartedAt + this.identityLookupBudgetMs;
+    const prioritizedCompanyIds = Array.from(companyIds).slice(0, this.identityLookupMaxCompaniesPerRun);
+    const prioritizedContactIds = Array.from(contactIds).slice(0, this.identityLookupMaxContactsPerRun);
+    let budgetExhausted = false;
+
+    const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> => {
+      let timer: NodeJS.Timeout | null = null;
+      try {
+        return await Promise.race([
+          promise,
+          new Promise<null>((resolve) => {
+            timer = setTimeout(() => resolve(null), timeoutMs);
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
 
     const getCompanyFn = (context.client as any)?.getCompany;
     if (typeof getCompanyFn === 'function') {
-      await Promise.all(
-        Array.from(companyIds).map(async (id) => {
-          try {
-            const row = await getCompanyFn.call(context.client, id);
-            const name = String((row as any)?.companyName || (row as any)?.name || '').trim();
-            if (name) companyNameById.set(id, name);
-          } catch {
-            // Best effort only.
-          }
-        })
-      );
+      await runWithConcurrencyLimit(prioritizedCompanyIds, this.identityLookupConcurrency, async (id) => {
+        const remainingBudget = deadline - this.nowFn();
+        if (remainingBudget <= 0) {
+          budgetExhausted = true;
+          return;
+        }
+        const timeoutMs = Math.min(this.identityLookupPerCallTimeoutMs, remainingBudget);
+        if (timeoutMs <= 0) return;
+        try {
+          const row = await withTimeout(getCompanyFn.call(context.client, id), timeoutMs);
+          const name = String((row as any)?.companyName || (row as any)?.name || '').trim();
+          if (name) companyNameById.set(id, name);
+        } catch {
+          // Best effort only.
+        }
+      });
     }
 
     const getContactFn = (context.client as any)?.getContact;
     if (typeof getContactFn === 'function') {
-      await Promise.all(
-        Array.from(contactIds).map(async (id) => {
-          try {
-            const row = await getContactFn.call(context.client, id);
-            const firstName = String((row as any)?.firstName || '').trim();
-            const lastName = String((row as any)?.lastName || '').trim();
-            const fullName = `${firstName} ${lastName}`.trim();
-            const name = fullName || String((row as any)?.name || (row as any)?.contactName || '').trim();
-            const email = String((row as any)?.emailAddress || (row as any)?.email || '').trim();
-            if (name) requesterNameByContactId.set(id, name);
-            if (email) contactEmailByContactId.set(id, email);
-          } catch {
-            // Best effort only.
-          }
-        })
-      );
+      await runWithConcurrencyLimit(prioritizedContactIds, this.identityLookupConcurrency, async (id) => {
+        const remainingBudget = deadline - this.nowFn();
+        if (remainingBudget <= 0) {
+          budgetExhausted = true;
+          return;
+        }
+        const timeoutMs = Math.min(this.identityLookupPerCallTimeoutMs, remainingBudget);
+        if (timeoutMs <= 0) return;
+        try {
+          const row = await withTimeout(getContactFn.call(context.client, id), timeoutMs);
+          const firstName = String((row as any)?.firstName || '').trim();
+          const lastName = String((row as any)?.lastName || '').trim();
+          const fullName = `${firstName} ${lastName}`.trim();
+          const name = fullName || String((row as any)?.name || (row as any)?.contactName || '').trim();
+          const email = String((row as any)?.emailAddress || (row as any)?.email || '').trim();
+          if (name) requesterNameByContactId.set(id, name);
+          if (email) contactEmailByContactId.set(id, email);
+        } catch {
+          // Best effort only.
+        }
+      });
+    }
+
+    const truncatedCompanyIds = Math.max(0, companyIds.size - prioritizedCompanyIds.length);
+    const truncatedContactIds = Math.max(0, contactIds.size - prioritizedContactIds.length);
+    if (budgetExhausted || truncatedCompanyIds > 0 || truncatedContactIds > 0) {
+      operationalLogger.warn('adapters.autotask_polling.identity_lookup_degraded', {
+        module: 'adapters.autotask-polling',
+        integration: 'autotask',
+        signal: 'integration_failure',
+        degraded_mode: true,
+        budget_exhausted: budgetExhausted,
+        lookup_budget_ms: this.identityLookupBudgetMs,
+        lookup_timeout_ms: this.identityLookupPerCallTimeoutMs,
+        lookup_concurrency: this.identityLookupConcurrency,
+        company_candidates: companyIds.size,
+        company_capped: prioritizedCompanyIds.length,
+        company_truncated: truncatedCompanyIds,
+        company_resolved: companyNameById.size,
+        contact_candidates: contactIds.size,
+        contact_capped: prioritizedContactIds.length,
+        contact_truncated: truncatedContactIds,
+        contact_resolved: requesterNameByContactId.size,
+        duration_ms: this.nowFn() - lookupStartedAt,
+      }, {
+        tenant_id: context.tenantId || null,
+      });
     }
 
     return { companyNameById, requesterNameByContactId, contactEmailByContactId };

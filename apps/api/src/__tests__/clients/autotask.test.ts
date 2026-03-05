@@ -12,6 +12,7 @@ describe('AutotaskClient', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    AutotaskClient.__resetAuthFailureCooldownForTests();
     client = new AutotaskClient({
       apiIntegrationCode: 'test-code',
       username: 'test@example.com',
@@ -102,6 +103,59 @@ describe('AutotaskClient', () => {
       );
 
       await expect(client.getTicket(123)).rejects.toThrow('Connection refused');
+    });
+
+    it('should short-circuit repeated auth attempts while cooldown is active', async () => {
+      const lockedClient = new AutotaskClient({
+        apiIntegrationCode: 'lock-test-code',
+        username: 'lock-test@example.com',
+        secret: 'lock-test-secret',
+        zoneUrl: 'https://webservices14.autotask.net/atservicesrest/v1.0',
+      });
+
+      (global.fetch as jest.Mock).mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        text: async () => 'Account locked',
+      });
+
+      await expect(lockedClient.getTicket(123)).rejects.toThrow('Autotask API error: 401 Unauthorized');
+
+      await expect(lockedClient.getTicket(123)).rejects.toThrow('authentication cooldown active');
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should bypass previous cooldown after secret rotation for same principal', async () => {
+      const oldSecretClient = new AutotaskClient({
+        apiIntegrationCode: 'lock-test-code',
+        username: 'lock-test@example.com',
+        secret: 'old-secret',
+        zoneUrl: 'https://webservices14.autotask.net/atservicesrest/v1.0',
+      });
+      const newSecretClient = new AutotaskClient({
+        apiIntegrationCode: 'lock-test-code',
+        username: 'lock-test@example.com',
+        secret: 'new-secret',
+        zoneUrl: 'https://webservices14.autotask.net/atservicesrest/v1.0',
+      });
+
+      (global.fetch as jest.Mock)
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 401,
+          statusText: 'Unauthorized',
+          text: async () => 'Account locked',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ item: { id: 123, ticketNumber: 'T20260305.0123' } }),
+          headers: { get: () => 'application/json' },
+        });
+
+      await expect(oldSecretClient.getTicket(123)).rejects.toThrow('Autotask API error: 401 Unauthorized');
+      await expect(newSecretClient.getTicket(123)).resolves.toBeDefined();
+      expect(global.fetch).toHaveBeenCalledTimes(2);
     });
   });
 

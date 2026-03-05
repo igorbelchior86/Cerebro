@@ -1300,3 +1300,27 @@
 **Root cause**: Gate de conectividade existia só em pontos isolados (Settings), não no client HTTP compartilhado.
 **Rule**: Toda chamada para rota de integração deve passar por um guard central que consulte capacidades do tenant e bloqueie conectores inativos.
 **Pattern**: `503` recorrente em endpoints de um conector desconectado indica ausência de gate de capability no cliente.
+
+## Lesson: 2026-03-05 (auth lockout guards must be shared across all Autotask call paths)
+**Mistake**: Tratar lockout apenas no poller e deixar endpoints de leitura/UI continuarem tentando autenticar com credencial já inválida/lockada.
+**Root cause**: Controle de retry/cooldown estava implementado por componente (poller), não no cliente compartilhado da integração.
+**Rule**: Para credenciais de integração, lockout/auth-failure backoff deve existir na camada comum de client adapter, aplicando para rotas, workers e qualquer consumidor.
+**Pattern**: Se existe cooldown em apenas um caminho (ex.: poller) e outros caminhos continuam batendo no provider, haverá lock recorrente apesar de “fix” parcial.
+
+## Lesson: 2026-03-05 (auth cooldown keying must account for credential rotation)
+**Mistake**: Chavear cooldown de auth só por `username + integration code`, mantendo bloqueio ativo após rotação de secret válida.
+**Root cause**: O mecanismo de proteção não diferenciava credencial antiga (inválida) de credencial nova (válida) para o mesmo principal.
+**Rule**: Cooldown de lockout deve considerar material credencial rotacionável (ex.: hash do secret) e/ou ser explicitamente limpo ao salvar nova credencial.
+**Pattern**: Se usuário rotaciona secret e continua recebendo 503 imediato sem nova tentativa ao provider, revisar chave/ciclo de vida do cooldown.
+
+## Lesson: 2026-03-05 (Flow A consistency gates must be enforced at render boundary, not just computed backend-side)
+**Mistake**: Permitir renderização de card com fallback `—` mesmo quando `block_consistency.core_state` indicava `resolving`.
+**Root cause**: O frontend não consumia o gate de consistência como contrato de UI obrigatório; tratava ausência de dados como estado normal de visualização.
+**Rule**: Se o backend expõe estado de bloco (`core_state`), a UI deve condicionar render final a esse estado e mostrar estado explícito de resolução/degradação.
+**Pattern**: Se campos de Bloco A aparecem vazios com placeholders em vez de estado de pipeline, existe quebra entre contrato de consistência e política de render.
+
+## Lesson: 2026-03-05 (identity enrichment must not sit on the critical path before workflow ingest)
+**Mistake**: Resolver company/contact em lote grande e sem budget antes de publicar sync no workflow inbox.
+**Root cause**: Lookup de identidade foi implementado com `Promise.all` amplo, sujeito a latência/rate-limit do PSA, bloqueando ciclo do poller.
+**Rule**: Enriquecimento auxiliar deve ser bounded (timeout por chamada + budget por rodada + limite de cardinalidade) e nunca bloquear ingestão canônica.
+**Pattern**: Se `show` congela enquanto integração externa oscila, procurar N+1 lookup no caminho crítico de polling/intake.

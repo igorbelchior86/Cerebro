@@ -38,6 +38,10 @@ export interface ActiveTicket {
     assigned_resource_id?: number | string;
     assigned_resource_name?: string;
     assigned_resource_email?: string;
+    core_state?: 'resolving' | 'ready' | 'degraded';
+    network_env_body_state?: 'resolving' | 'ready' | 'degraded';
+    hypothesis_checklist_state?: 'resolving' | 'ready' | 'degraded';
+    pipeline_status?: 'queued' | 'processing' | 'retry_scheduled' | 'degraded' | 'dlq' | 'ready';
     isDraft?: boolean;
 }
 

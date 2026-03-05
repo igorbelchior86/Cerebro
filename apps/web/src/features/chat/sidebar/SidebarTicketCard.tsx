@@ -55,6 +55,7 @@ export function SidebarTicketCard({
     labelSuppressedReasonNoise,
     labelJustNow,
 }: SidebarTicketCardProps) {
+    const coreResolving = ticket.core_state === 'resolving';
     const cfg = STATUS_CONFIG[ticket.status] ?? STATUS_CONFIG.pending;
     const priority = ticket.priority ?? 'P3';
     const canSelectTicket = !ticket.isDraft;
@@ -64,14 +65,16 @@ export function SidebarTicketCard({
     const normalized = {
         priority,
         id: normalizeText(ticket.ticket_number ?? ticket.ticket_id, ticket.id),
-        status: STATUS_LABEL[ticket.status] ?? 'PENDING',
-        ticketStatus: resolveTicketStatusLabel(ticket),
-        title: normalizeTicketTitle(ticket.title, labelDefaultIssue),
+        status: coreResolving ? 'RESOLVING' : (STATUS_LABEL[ticket.status] ?? 'PENDING'),
+        ticketStatus: coreResolving ? 'Resolving core data' : resolveTicketStatusLabel(ticket),
+        title: coreResolving ? 'Resolving core ticket data…' : normalizeTicketTitle(ticket.title, labelDefaultIssue),
         company: normalizeText(ticket.company ?? ticket.org, ''),
         requester: normalizeText(ticket.requester ?? ticket.site, ''),
         createdAt: ticket.created_at ?? '',
     };
-    const createdAtLabel = formatCreatedAt(normalized.createdAt, ticket.age, labelJustNow);
+    const createdAtLabel = coreResolving
+        ? (normalized.createdAt ? formatCreatedAt(normalized.createdAt, ticket.age, labelJustNow) : 'Resolving…')
+        : formatCreatedAt(normalized.createdAt, ticket.age, labelJustNow);
 
     return (
         <div
@@ -162,7 +165,7 @@ export function SidebarTicketCard({
                 </span>
                 <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right', display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
                     <MetaIcon type="company" />
-                    {normalized.company || '—'}
+                    {coreResolving ? 'Resolving…' : (normalized.company || '—')}
                 </span>
                 {/* Status badge with inline edit button */}
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
@@ -174,7 +177,21 @@ export function SidebarTicketCard({
                             onClick={(e) => { e.stopPropagation(); onOpenStatusEditor(ticket); }}
                             aria-label="Edit ticket status"
                             title="Edit ticket status"
-                            style={{ width: '16px', height: '16px', borderRadius: '999px', border: '1px solid var(--bento-outline)', background: 'var(--bg-panel)', color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                            disabled={coreResolving}
+                            style={{
+                                width: '16px',
+                                height: '16px',
+                                borderRadius: '999px',
+                                border: '1px solid var(--bento-outline)',
+                                background: 'var(--bg-panel)',
+                                color: 'var(--accent)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: coreResolving ? 'default' : 'pointer',
+                                flexShrink: 0,
+                                opacity: coreResolving ? 0.5 : 1,
+                            }}
                         >
                             <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
                                 <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
@@ -184,7 +201,7 @@ export function SidebarTicketCard({
                 </span>
                 <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'right', display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px' }}>
                     <MetaIcon type="user" />
-                    {normalized.requester || '—'}
+                    {coreResolving ? 'Resolving…' : (normalized.requester || '—')}
                 </span>
             </div>
         </div>

@@ -126,6 +126,9 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
   const rawContactId = row.domain_snapshots?.tickets?.contact_id;
   const contactId: number | string | undefined =
     typeof rawContactId === 'string' || typeof rawContactId === 'number' ? rawContactId : undefined;
+  const coreState = row.block_consistency?.core_state;
+  const networkEnvBodyState = row.block_consistency?.network_env_body_state;
+  const hypothesisChecklistState = row.block_consistency?.hypothesis_checklist_state;
 
   return {
     id: row.ticket_id,
@@ -155,6 +158,10 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
     ...(createdAt ? { created_at: createdAt } : {}),
     ...(queueName ? { queue_name: queueName, queue: queueName } : {}),
     ...(Number.isFinite(queueId) ? { queue_id: queueId } : {}),
+    ...(coreState ? { core_state: coreState } : {}),
+    ...(networkEnvBodyState ? { network_env_body_state: networkEnvBodyState } : {}),
+    ...(hypothesisChecklistState ? { hypothesis_checklist_state: hypothesisChecklistState } : {}),
+    ...(row.pipeline_status ? { pipeline_status: row.pipeline_status } : {}),
     ...(assignedRaw
       ? (Number.isFinite(assignedNumeric)
         ? { assigned_resource_id: assignedNumeric }
@@ -163,7 +170,7 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
   };
 }
 
-export async function loadTriPaneSidebarTickets(): Promise<ActiveTicket[]> {
-  const workflowRows = await listWorkflowInbox();
+export async function loadTriPaneSidebarTickets(options?: { forceFresh?: boolean }): Promise<ActiveTicket[]> {
+  const workflowRows = await listWorkflowInbox(Boolean(options?.forceFresh));
   return workflowRows.map(workflowToSidebarTicket);
 }

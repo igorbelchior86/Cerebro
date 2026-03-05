@@ -397,7 +397,7 @@ export default function HomePage() {
     setIsLoadingTickets(true);
     const fetchTickets = async () => {
       try {
-        const tickets = await loadTriPaneSidebarTickets();
+        const tickets = await loadTriPaneSidebarTickets({ forceFresh: true });
         setSidebarTickets(tickets);
       } catch (err) {
         console.error('Failed to load tickets', err);

@@ -1591,7 +1591,7 @@ export default function SessionDetail({
       if (inFlight) return;
       inFlight = true;
       try {
-        const tickets = await loadTriPaneSidebarTickets();
+        const tickets = await loadTriPaneSidebarTickets({ forceFresh: true });
         if (!cancelled) {
           setSidebarTickets((prev) => mergeSidebarTicketList(prev, tickets));
         }

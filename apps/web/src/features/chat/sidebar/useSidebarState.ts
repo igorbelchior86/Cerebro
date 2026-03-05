@@ -15,7 +15,6 @@ import {
 import {
     SIDEBAR_STATE_KEY,
     SIDEBAR_HIDE_SUPPRESSED_KEY,
-    API,
     GLOBAL_QUEUE_FALLBACKS,
     normalizeText,
     resolveTicketChronology,
@@ -55,8 +54,6 @@ export interface SidebarState {
 
     // Autotask queues and status catalog
     globalQueuesCatalog: AutotaskQueueCatalogItem[];
-    globalQueueTickets: ActiveTicket[];
-    globalQueueTicketsLoading: boolean;
     statusCatalog: AutotaskPicklistOption[];
     statusEditorTarget: ActiveTicket | null;
     statusEditorQuery: string;
@@ -100,8 +97,6 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
     const [selectedPersonalQueue, setSelectedPersonalQueue] = useState('all');
     const [selectedGlobalQueue, setSelectedGlobalQueue] = useState('all');
     const [globalQueuesCatalog, setGlobalQueuesCatalog] = useState<AutotaskQueueCatalogItem[]>([]);
-    const [globalQueueTickets, setGlobalQueueTickets] = useState<ActiveTicket[]>([]);
-    const [globalQueueTicketsLoading, setGlobalQueueTicketsLoading] = useState(false);
     const [hideSuppressed, setHideSuppressed] = useState(true);
     const [theme, setTheme] = useState<'dark' | 'light'>('dark');
     const [clock, setClock] = useState('');
@@ -197,7 +192,7 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
 
     // Fetch Autotask status catalog
     useEffect(() => {
-        if (!statusEditorTarget && tickets.length === 0 && globalQueueTickets.length === 0 && !draftTicket && scope !== 'global') return;
+        if (!statusEditorTarget && tickets.length === 0 && !draftTicket && scope !== 'global') return;
         if (statusCatalog.length > 0) return;
 
         let ignore = false;
@@ -219,7 +214,7 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         })();
 
         return () => { ignore = true; };
-    }, [draftTicket, globalQueueTickets.length, scope, statusCatalog.length, statusEditorTarget, tickets.length]);
+    }, [draftTicket, scope, statusCatalog.length, statusEditorTarget, tickets.length]);
 
     const resolveTicketStatusLabel = useCallback((ticket: ActiveTicket): string => {
         const override = statusOverrides[ticket.id];
@@ -355,14 +350,11 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         });
     };
 
-    // Derived queue values
-    const selectedGlobalQueueId = selectedGlobalQueue.startsWith('queue:')
-        ? Number(selectedGlobalQueue.slice('queue:'.length))
-        : null;
-    const useDirectGlobalQueueSource = scope === 'global' && Number.isFinite(selectedGlobalQueueId);
-    const listTickets = useDirectGlobalQueueSource ? globalQueueTickets : tickets;
+    // Enforce canonical workflow source-of-truth for sidebar rendering.
+    // Global queue selection is applied client-side over workflow inbox data.
+    const listTickets = tickets;
     const listDraftTicket = draftTicket ?? null;
-    const listLoading = useDirectGlobalQueueSource ? globalQueueTicketsLoading : Boolean(isLoading);
+    const listLoading = Boolean(isLoading);
     const suppressedCount = listTickets.filter((t) => Boolean(t.suppressed)).length;
     const ticketsBySuppression = hideSuppressed ? listTickets.filter((t) => !t.suppressed) : listTickets;
     const normalizedSearch = searchQuery.trim().toLowerCase();
@@ -507,69 +499,6 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         }, GLOBAL_QUEUE_REMOVAL_GRACE_MS);
         return () => window.clearTimeout(timeoutId);
     }, [selectedGlobalQueue, hasQueueCatalog, globalQueuesCatalog]);
-
-    // Fetch tickets for a specific global queue
-    useEffect(() => {
-        let ignore = false;
-        if (!useDirectGlobalQueueSource || !Number.isFinite(selectedGlobalQueueId)) {
-            setGlobalQueueTickets([]);
-            setGlobalQueueTicketsLoading(false);
-            return () => { ignore = true; };
-        }
-
-        const fetchGlobalQueueTickets = async () => {
-            setGlobalQueueTicketsLoading(true);
-            try {
-                const params = new URLSearchParams({ queueId: String(selectedGlobalQueueId), limit: '150' });
-                const res = await fetch(`${API}/autotask/sidebar-tickets?${params.toString()}`, { credentials: 'include' });
-                if (!res.ok) { if (!ignore) setGlobalQueueTickets([]); return; }
-                const payload = await res.json().catch(() => null) as { success?: boolean; data?: unknown[] } | null;
-                if (!payload?.success || !Array.isArray(payload.data) || ignore) {
-                    if (!ignore) setGlobalQueueTickets([]);
-                    return;
-                }
-
-                const normalized = payload.data
-                    .map((row) => row as Partial<ActiveTicket>)
-                    .map((row) => {
-                        const internalId = normalizeText(row.id, '');
-                        const displayId = normalizeText(row.ticket_number ?? row.ticket_id, internalId);
-                        if (!internalId && !displayId) return null;
-                        const status = row.status && ['pending', 'processing', 'completed', 'failed'].includes(row.status)
-                            ? row.status : 'pending';
-                        return {
-                            id: internalId || displayId,
-                            ticket_id: displayId || internalId,
-                            ...(row.ticket_number ? { ticket_number: normalizeText(row.ticket_number, displayId || internalId) } : {}),
-                            status,
-                            ...(row.ticket_status_value !== undefined ? { ticket_status_value: row.ticket_status_value } : {}),
-                            ...(row.ticket_status_label ? { ticket_status_label: normalizeText(row.ticket_status_label, '') } : {}),
-                            ...(row.priority ? { priority: row.priority } : {}),
-                            ...(row.title ? { title: row.title } : {}),
-                            ...(row.description ? { description: row.description } : {}),
-                            ...(row.company ? { company: row.company } : {}),
-                            ...(row.requester ? { requester: row.requester } : {}),
-                            ...(row.org ? { org: row.org } : {}),
-                            ...(row.site ? { site: row.site } : {}),
-                            ...(row.created_at ? { created_at: row.created_at } : {}),
-                            ...(row.queue ? { queue: row.queue } : {}),
-                            ...(row.queue_name ? { queue_name: row.queue_name } : {}),
-                            ...(row.queue_id !== undefined ? { queue_id: row.queue_id } : {}),
-                        } as ActiveTicket;
-                    })
-                    .filter((item): item is ActiveTicket => Boolean(item));
-
-                if (!ignore) setGlobalQueueTickets(normalized);
-            } catch {
-                if (!ignore) setGlobalQueueTickets([]);
-            } finally {
-                if (!ignore) setGlobalQueueTicketsLoading(false);
-            }
-        };
-
-        fetchGlobalQueueTickets();
-        return () => { ignore = true; };
-    }, [useDirectGlobalQueueSource, selectedGlobalQueueId]);
 
     const hiddenStatusKeys = scope === 'personal' ? personalHiddenStatusKeys : globalHiddenStatusKeys;
 
@@ -731,8 +660,6 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         clock,
         toggleTheme,
         globalQueuesCatalog,
-        globalQueueTickets,
-        globalQueueTicketsLoading,
         statusCatalog,
         statusEditorTarget,
         statusEditorQuery,

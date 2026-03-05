@@ -1,3 +1,29 @@
+# Task: Canonical flow audit cleanup (remove legacy sidebar dead path)
+**Status**: completed
+**Started**: 2026-03-05T12:43:00-05:00
+
+## Plan
+- [x] Step 1: Confirmar escopo e mapear referências do legado `sidebar-tickets` em API/tests.
+- [x] Step 2: Remover código morto em `autotask-route-handlers.ts`, preservando o stub 410 e helpers usados por `backfill-recent`.
+- [x] Step 3: Excluir os 3 testes obsoletos do endpoint legado.
+- [x] Step 4: Atualizar wiki de arquitetura com evidência do fluxo canônico único.
+- [x] Step 5: Executar validação (`jest` + grep `sidebar-tickets`) e registrar evidências.
+
+## Progress Notes
+- Limpeza do bloco legado de sidebar aplicada em `autotask-route-handlers.ts`; `sortTicketsByCreateDateDesc` e `buildAutotaskTicketSearch` foram mantidos para `backfill-recent`.
+- Testes obsoletos do endpoint legado foram removidos.
+- Documento de arquitetura criado em `wiki/architecture/canonical-flow-audit.md` com diagrama Mermaid válido.
+
+## Review
+- Verification:
+- `cd apps/api && npx jest --passWithNoTests` ✅ (`36 passed, 36 total`; `178 passed, 178 total`)
+- `rg -n "sidebar-tickets" apps/api/src` ✅ (apenas rota deprecada 410 em `autotask-route-handlers.ts`)
+- `rg -n "fetchSidebarTicketsPayload|withTryAdvisoryLock|SidebarTicketRow|classifySidebarTicketsDegradedReason|loadSidebarTicketsWithCoordination" apps/api/src/services/application/route-handlers/autotask-route-handlers.ts` ✅ (sem ocorrências)
+- Documentation:
+- `wiki/architecture/canonical-flow-audit.md`
+
+---
+
 # Task: Stopwatch PSA-confirmed (time entry primário + timer UI no ChatInput)
 **Status**: completed
 **Started**: 2026-03-04T19:26:42-05:00
@@ -1238,3 +1264,100 @@
 
 - Documentation:
 - `wiki/changelog/2026-03-05-legacy-intake-naming-cleanup.md`
+
+# Task: Incident fix — prevent Autotask credential lock from repeated auth attempts
+**Status**: completed
+**Started**: 2026-03-05T11:25:00-05:00
+
+## Plan
+- [x] Step 1: Map all active Autotask auth call paths and identify repeated-attempt vectors.
+- [x] Step 2: Implement shared auth-failure cooldown at Autotask client layer (covers routes + poller).
+- [x] Step 3: Add regression test to prove immediate repeat call does not hit provider after 401.
+- [x] Step 4: Run focused tests + typecheck for changed surface.
+- [x] Step 5: Update wiki changelog with incident RCA/fix details.
+
+## Progress Notes
+- Incident triage points to missing shared auth backoff across UI-driven endpoints (`/autotask/queues`, sidebar metadata reads) despite poller-level cooldown.
+- `AutotaskClient` now enforces principal-level cooldown after auth failures, preventing repeated provider hits during lock/auth-invalid periods.
+- Found production follow-up: cooldown keying by `username+integrationCode` kept 503 active even after secret rotation.
+- Cooldown key now includes secret hash; saving Autotask credentials also clears cooldown for that exact principal+secret.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/integrations typecheck` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/api test -- autotask.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- autotask.sidebar-tickets.test.ts autotask.sidebar-tickets.degradation.test.ts` ✅ (warning de open handles preexistente)
+- Additional incident verification:
+- `pnpm --filter @cerebro/api test -- autotask.test.ts` ✅ (new regression: secret rotation bypasses stale cooldown)
+- Documentation:
+- `wiki/changelog/2026-03-05-autotask-shared-auth-cooldown-guard.md`
+
+# Task: Flow A gating enforcement in sidebar cards (no render with missing core data)
+**Status**: completed
+**Started**: 2026-03-05T12:05:00-05:00
+
+## Plan
+- [x] Step 1: Identify where sidebar renders cards with missing core fields.
+- [x] Step 2: Enforce canonical workflow-only source for global queue list path.
+- [x] Step 3: Propagate core block state into sidebar ticket model.
+- [x] Step 4: Render explicit resolving state instead of fallback dashes when Flow A is unresolved.
+- [x] Step 5: Validate with web typecheck and document in wiki.
+
+## Progress Notes
+- Root cause confirmed: sidebar card rendering ignores `block_consistency.core_state` and falls back to `—` placeholders.
+- Secondary cause confirmed: queue-specific global path could bypass canonical workflow read model by hitting `/autotask/sidebar-tickets` directly.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-05-sidebar-flow-a-gating-enforcement.md`
+
+# Task: P0 incident — canonical hydration lag and stale show counter
+**Status**: completed
+**Started**: 2026-03-05T12:25:00-05:00
+
+## Plan
+- [x] Step 1: Trace Flow A data path from poller payload to workflow inbox projection.
+- [x] Step 2: Remove poller blocking risk from identity enrichment (bounded lookup).
+- [x] Step 3: Force fresh workflow inbox fetch in sidebar polling loop.
+- [x] Step 4: Add regression test for slow identity lookup not blocking sync ingest.
+- [x] Step 5: Validate with tests/typecheck and document in wiki.
+
+## Progress Notes
+- Root cause found: poller performed potentially large company/contact N+1 lookups before sync ingest, with unbounded `Promise.all`; under provider slowness/rate-limits this delayed `show`.
+- Secondary root cause: sidebar periodic refresh could remain visually stale due cache path not forcing fresh fetch during polling loop.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- autotask-polling.test.ts` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-05-poller-identity-bounded-lookup-and-fresh-sidebar-inbox.md`
+
+# Task: Fix stack boot failure (web listener down)
+**Status**: completed
+**Started**: 2026-03-05T12:55:00-05:00
+
+## Plan
+- [x] Step 1: Check stack status and boot logs to identify failing service.
+- [x] Step 2: Fix blocking build/lint errors in web app.
+- [x] Step 3: Re-run web checks and restart stack.
+- [x] Step 4: Verify api/web listener + health.
+- [x] Step 5: Document in wiki changelog.
+
+## Progress Notes
+- Root cause was web build stop on ESLint `no-unused-vars` in `useSidebarState.ts`.
+- Removed stale `API` import and stale `selectedGlobalQueueId` variable from sidebar state hook.
+- Restarted full stack successfully with `api health: ok` and `web health: ok`.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/web lint` ✅ (warnings only; no errors)
+- `pnpm stack:restart` ✅
+- `pnpm stack:status` ✅ (`api listener: running`, `web listener: running`, `api/web health: ok`)
+- Documentation:
+- `wiki/changelog/2026-03-05-web-stack-boot-fix-unused-sidebar-vars.md`

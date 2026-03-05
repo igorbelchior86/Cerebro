@@ -4,6 +4,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { AutotaskTicket, AutotaskDevice } from '@cerebro/types';
+import { createHash } from 'crypto';
 
 // Autotask uses 3 custom headers — NOT Bearer token.
 // Reference: https://webservices.autotask.net/help/developerhelp/Content/APIs/REST/General_Topics/REST_API_Authentication.htm
@@ -47,8 +48,13 @@ export interface AutotaskTicketDraftDefaults {
 
 /** Discovery endpoint — acts as universal entry point for zone lookup */
 const DISCOVERY_BASE = 'https://webservices2.autotask.net/atservicesrest/v1.0';
+const AUTH_FAILURE_COOLDOWN_MS = Math.max(
+  60_000,
+  Number(process.env.AUTOTASK_AUTH_FAILURE_COOLDOWN_MS || 30 * 60 * 1000),
+);
 
 export class AutotaskClient {
+  private static authFailureCooldownByPrincipal = new Map<string, number>();
   private config: AutotaskConfig;
   private zoneBase: string | null;
   private entityFieldsCache = new Map<string, Promise<any[]>>();
@@ -68,6 +74,73 @@ export class AutotaskClient {
     };
   }
 
+  private principalKey(): string {
+    const username = String(this.config.username || '').trim().toLowerCase();
+    const integrationCode = String(this.config.apiIntegrationCode || '').trim();
+    const secretHash = createHash('sha256').update(String(this.config.secret || '')).digest('hex');
+    return `${username}::${integrationCode}::${secretHash}`;
+  }
+
+  private readAuthFailureCooldownUntil(): number | null {
+    const key = this.principalKey();
+    const expiresAt = AutotaskClient.authFailureCooldownByPrincipal.get(key);
+    if (!expiresAt) return null;
+    if (expiresAt <= Date.now()) {
+      AutotaskClient.authFailureCooldownByPrincipal.delete(key);
+      return null;
+    }
+    return expiresAt;
+  }
+
+  private throwIfAuthFailureCooldownActive(stage: 'zone_discovery' | 'request'): void {
+    const expiresAt = this.readAuthFailureCooldownUntil();
+    if (!expiresAt) return;
+    throw new Error(
+      `Autotask authentication cooldown active until ${new Date(expiresAt).toISOString()} (${stage})`,
+    );
+  }
+
+  private markAuthFailureCooldown(): void {
+    const key = this.principalKey();
+    AutotaskClient.authFailureCooldownByPrincipal.set(key, Date.now() + AUTH_FAILURE_COOLDOWN_MS);
+  }
+
+  private clearAuthFailureCooldown(): void {
+    const key = this.principalKey();
+    AutotaskClient.authFailureCooldownByPrincipal.delete(key);
+  }
+
+  private isAuthenticationFailure(status: number, responseBody: string): boolean {
+    if (status === 401) return true;
+    const normalized = String(responseBody || '').toLowerCase();
+    if (status === 403) {
+      return (
+        normalized.includes('unauthorized') ||
+        normalized.includes('authentication') ||
+        normalized.includes('invalid credential') ||
+        normalized.includes('invalid login') ||
+        normalized.includes('locked')
+      );
+    }
+    return normalized.includes('account locked');
+  }
+
+  static __resetAuthFailureCooldownForTests(): void {
+    AutotaskClient.authFailureCooldownByPrincipal.clear();
+  }
+
+  static clearAuthFailureCooldownForPrincipal(input: {
+    username: string;
+    apiIntegrationCode: string;
+    secret: string;
+  }): void {
+    const username = String(input.username || '').trim().toLowerCase();
+    const integrationCode = String(input.apiIntegrationCode || '').trim();
+    const secretHash = createHash('sha256').update(String(input.secret || '')).digest('hex');
+    const key = `${username}::${integrationCode}::${secretHash}`;
+    AutotaskClient.authFailureCooldownByPrincipal.delete(key);
+  }
+
   /**
    * Discover the correct zone URL for this account.
    * Uses the zoneInformation endpoint on webservices2 (universal discovery node).
@@ -75,13 +148,19 @@ export class AutotaskClient {
    */
   async discoverZone(): Promise<string> {
     if (this.zoneBase) return this.zoneBase;
+    this.throwIfAuthFailureCooldownActive('zone_discovery');
 
     const url = `${DISCOVERY_BASE}/zoneInformation?user=${encodeURIComponent(this.config.username)}`;
     const res = await fetch(url, { headers: this.authHeaders() });
     if (!res.ok) {
+      const errorBody = await res.text().catch(() => '');
+      if (this.isAuthenticationFailure(res.status, errorBody)) {
+        this.markAuthFailureCooldown();
+      }
       throw new Error(`Autotask zone discovery failed: ${res.status} ${res.statusText}`);
     }
     const data = await res.json() as { url: string };
+    this.clearAuthFailureCooldown();
     this.zoneBase = `${data.url}/v1.0`;
     return this.zoneBase;
   }
@@ -95,6 +174,7 @@ export class AutotaskClient {
     endpoint: string,
     options?: { params?: Record<string, string | number>; body?: unknown }
   ) {
+    this.throwIfAuthFailureCooldownActive('request');
     const base = await this.discoverZone();
     const url = new URL(`${base}${endpoint}`);
     if (options?.params) {
@@ -112,9 +192,13 @@ export class AutotaskClient {
         typeof (response as any).text === 'function'
           ? await (response as any).text().catch(() => '')
           : '';
+      if (this.isAuthenticationFailure(response.status, errorBody)) {
+        this.markAuthFailureCooldown();
+      }
       const suffix = errorBody ? ` - ${errorBody.slice(0, 800)}` : '';
       throw new Error(`Autotask API error: ${response.status} ${response.statusText}${suffix}`);
     }
+    this.clearAuthFailureCooldown();
 
     if (response.status === 204) {
       return {} as T;

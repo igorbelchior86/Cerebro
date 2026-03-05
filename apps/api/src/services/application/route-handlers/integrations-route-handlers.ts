@@ -284,6 +284,16 @@ router.put('/credentials/:service', async (req, res) => {
          SET credentials = $3, updated_at = NOW()`,
       [tenantId, service, JSON.stringify(merged)]
     );
+    if (service === 'autotask') {
+      const creds = merged as unknown as AutotaskCreds;
+      if (creds?.username && creds?.apiIntegrationCode && creds?.secret) {
+        AutotaskClient.clearAuthFailureCooldownForPrincipal({
+          username: creds.username,
+          apiIntegrationCode: creds.apiIntegrationCode,
+          secret: creds.secret,
+        });
+      }
+    }
     res.json({ success: true, service, updatedAt: new Date().toISOString() });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });

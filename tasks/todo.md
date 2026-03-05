@@ -1633,6 +1633,8 @@
 - Fix direction: keep deletion only for real `not found`, and materialize terminal status via canonical sync event.
 - Follow-up found immediately after deploy: terminal status convergence was still not fully automatic for all rows because parity purge only scanned the first `AUTOTASK_PARITY_PURGE_MAX_CHECKS` inbox tickets per run.
 - Final fix: rotate the parity purge window round-robin per tenant so stale rows outside the top slice are revisited automatically without manual reconcile.
+- Live re-check with `T20260305.0037` found another gap: if the ticket dropped out of the active queue snapshot before the round-robin purge reached it, the inbox could still stay stale for at least one extra cycle.
+- Final-final fix: when queue snapshot covers a queue and an inbox row is missing from that active set, the poller now fetches that exact ticket and syncs terminal status immediately, or removes only if Autotask returns `not found`.
 
 ## Review
 - Verification:
@@ -1641,6 +1643,8 @@
 - `./scripts/stack.sh restart` ✅
 - Live validation: one-off tenant-scoped reconcile of `T20260305.0037` updated inbox from `New` to `Complete` with `status_label=Complete` ✅
 - Automatic convergence guard: regression proves a stale ticket outside the first purge window is revisited on the next automatic poll cycle and synced to `Complete` ✅
+- Immediate convergence guard: regression proves a ticket missing from the active queue snapshot is reconciled in the same run and synced to `Complete` ✅
+- Runtime validation after fresh restart: `T20260305.0037` now converges automatically to `Complete` without manual reconcile; `T20260305.0036` no longer resolves in Autotask and no longer has a live local status row; `T20260305.0038` remained `New` while the direct remote check hit Autotask `429` during validation ✅
 - Documentation:
 - `wiki/changelog/2026-03-05-workflow-inbox-terminal-status-mirror-fix.md`
 

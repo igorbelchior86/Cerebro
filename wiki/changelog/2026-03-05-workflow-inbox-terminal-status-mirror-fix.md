@@ -4,16 +4,18 @@
 - Updated the Autotask parity purge to sync terminal status back into the canonical inbox row instead of removing the ticket.
 - Stopped `TicketWorkflowCoreService.buildInboxListView()` from filtering terminal statuses out of the inbox projection.
 - Changed terminal-status parity scanning to round-robin across the inbox per tenant, so stale rows outside the first bounded batch are revisited automatically.
+- Added active-set diff reconciliation in the queue snapshot path: if a covered inbox row is missing from the active queue result, the poller fetches that exact ticket immediately and syncs terminal status in the same run.
 - Added regressions covering terminal status projection in both the poller and workflow core.
 
 # Why it changed
 - The product requirement was clarified: the workflow inbox must mirror the PSA, not hide or delete `Complete` tickets.
 - The prior implementation treated `Complete` as ineligible for the inbox and therefore masked the real problem: stale status propagation from Autotask into the inbox read model.
 - After the first fix, convergence still was not fully automatic because the bounded purge/reconcile logic only checked the first `N` inbox rows per run. Tickets outside that slice could remain stale unless manually reconciled.
+- A second live check exposed another timing gap: even with round-robin, a ticket that vanished from the queue snapshot active set could remain stale until a later purge pass. That gap needed same-run reconciliation on the queue snapshot diff itself.
 
 # Impact (UI / logic / data)
 - UI: queue cards can now keep showing tickets after they reach `Complete`, with the correct status instead of disappearing.
-- Logic: parity reconciliation now updates terminal status via canonical sync events, rotates the bounded check window fairly across inbox rows, and keeps purge only for true upstream deletions (`not found`).
+- Logic: parity reconciliation now updates terminal status via canonical sync events, rotates the bounded check window fairly across inbox rows, immediately reconciles queue-snapshot active-set misses, and keeps purge only for true upstream deletions (`not found`).
 - Data: existing inbox rows retain their identity/history while receiving updated terminal status labels from Autotask.
 
 # Files touched

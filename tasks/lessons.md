@@ -1402,3 +1402,9 @@
 **Root cause**: O poller usava `slice(0, maxChecks)` sem cursor/fairness, então rows stale fora da janela podiam depender de reconcile manual ou esperar indefinidamente sob churn da fila.
 **Rule**: Toda varredura bounded de mirror/paridade precisa cursor ou round-robin por tenant para garantir eventual convergence sem intervenção humana.
 **Pattern**: Se a correção funciona em reconcile manual mas não converge sozinha, procurar starvation em jobs automáticos limitados por batch fixo.
+
+## Lesson: 2026-03-05 (active-set diff do queue snapshot é sinal de reconciliação imediata, não só de purge eventual)
+**Mistake**: Depois de saber que o queue snapshot não retornou um ticket ainda presente no inbox, deixei a correção depender de uma varredura posterior do purge round-robin.
+**Root cause**: O diff “row do inbox ausente do active set” já era evidência suficiente para buscar aquele ticket específico no PSA, mas o pipeline tratava isso como problema separado e mais lento.
+**Rule**: Se um queue snapshot cobre a fila e um row local some do active set, o sistema deve reconciliar esse ticket imediatamente: sync se existir, purge só se der `not found`.
+**Pattern**: Se um ticket terminal continua stale mesmo após fairness no purge, revisar se o diff entre active set e inbox está sendo ignorado em vez de materializado no mesmo run.

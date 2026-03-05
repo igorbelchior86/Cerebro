@@ -147,6 +147,46 @@ function inboxRowHasCanonicalIdentity(row?: InboxTicketState | null): boolean {
   );
 }
 
+function buildActiveSetKeys(ticket: Record<string, unknown>): string[] {
+  const keys = new Set<string>();
+  const ticketNumber = String((ticket as any)?.ticketNumber || '').trim();
+  const numericId = String((ticket as any)?.id || '').trim();
+  const resolvedRef = resolveTicketReference(ticket);
+  if (ticketNumber) keys.add(`num:${ticketNumber}`);
+  if (numericId) keys.add(`ext:${numericId}`);
+  if (resolvedRef) keys.add(`ref:${resolvedRef}`);
+  return Array.from(keys);
+}
+
+function buildInboxRowKeys(row: InboxTicketState): string[] {
+  const keys = new Set<string>();
+  const ticketId = String(row.ticket_id || '').trim();
+  const ticketNumber = String(
+    row.ticket_number ||
+    row.domain_snapshots?.tickets?.ticket_number ||
+    row.domain_snapshots?.['correlates.ticket_metadata']?.ticket_number ||
+    ''
+  ).trim();
+  const externalId = String(row.external_id || '').trim();
+  if (ticketNumber) keys.add(`num:${ticketNumber}`);
+  if (externalId) keys.add(`ext:${externalId}`);
+  if (ticketId) {
+    keys.add(`ref:${ticketId}`);
+    if (/^T\d{8}\.\d+$/i.test(ticketId)) keys.add(`num:${ticketId}`);
+    if (looksLikeNumericId(ticketId)) keys.add(`ext:${ticketId}`);
+  }
+  return Array.from(keys);
+}
+
+function resolveInboxQueueId(row: InboxTicketState): number | null {
+  const rawValue =
+    row.queue_id ??
+    row.domain_snapshots?.tickets?.queue_id ??
+    row.domain_snapshots?.['correlates.ticket_metadata']?.queue_id;
+  const queueId = Number(rawValue);
+  return Number.isFinite(queueId) ? queueId : null;
+}
+
 async function runWithConcurrencyLimit<T>(
   items: T[],
   concurrency: number,
@@ -786,6 +826,7 @@ export class AutotaskPollingService {
     const excludedQueueIds = scope?.excludedQueueIds || new Set<number>();
     const recentWindowStartIso = new Date(Date.now() - this.parityRecentWindowHours * 60 * 60 * 1000).toISOString();
     const merged = new Map<string, Record<string, unknown>>();
+    const reconcileEligibleQueueIds = new Set<number>();
 
     for (const queue of queues) {
       const queueId = Number((queue as { id?: number }).id);
@@ -831,6 +872,7 @@ export class AutotaskPollingService {
         });
         continue;
       }
+      reconcileEligibleQueueIds.add(queueId);
       const recentRows = recentRowsResult.value;
       const backlogRows = backlogRowsResult.value;
       for (const row of [...recentRows, ...backlogRows] as unknown as Record<string, unknown>[]) {
@@ -876,6 +918,114 @@ export class AutotaskPollingService {
     for (const ticket of rows) {
       await this.ingestWorkflowSyncEvent(ticket, tenantId, 'autotask_reconcile', identityLookup, reconcilePicklistLabels);
     }
+
+    if (reconcileEligibleQueueIds.size > 0) {
+      await this.reconcileInboxAgainstActiveQueueSnapshot(
+        context,
+        tenantId,
+        inboxRows,
+        rows,
+        reconcileEligibleQueueIds,
+        terminalStatusIds,
+        reconcilePicklistLabels,
+      );
+    }
+  }
+
+  private async reconcileInboxAgainstActiveQueueSnapshot(
+    context: AutotaskPollContext,
+    tenantId: string,
+    inboxRows: InboxTicketState[],
+    activeRows: Array<Record<string, unknown>>,
+    eligibleQueueIds: Set<number>,
+    terminalStatusIds: Set<number>,
+    picklistLabels: CanonicalPicklistLabelMaps,
+  ): Promise<void> {
+    const activeKeys = new Set<string>();
+    for (const row of activeRows) {
+      for (const key of buildActiveSetKeys(row)) activeKeys.add(key);
+    }
+
+    const missingRows = inboxRows.filter((row) => {
+      const queueId = resolveInboxQueueId(row);
+      if (queueId === null || !eligibleQueueIds.has(queueId)) return false;
+      const rowKeys = buildInboxRowKeys(row);
+      if (rowKeys.length === 0) return false;
+      return !rowKeys.some((key) => activeKeys.has(key));
+    });
+    if (missingRows.length === 0) return;
+
+    await runWithConcurrencyLimit(
+      missingRows,
+      Math.min(5, this.triageDispatchConcurrency),
+      async (row) => {
+        const externalId = String(row.external_id || '').trim();
+        const ticketNumber = String(
+          row.ticket_number ||
+          row.domain_snapshots?.tickets?.ticket_number ||
+          row.domain_snapshots?.['correlates.ticket_metadata']?.ticket_number ||
+          ''
+        ).trim();
+        const ticketId = String(row.ticket_id || '').trim();
+
+        let remoteTicket: Record<string, unknown> | null = null;
+        try {
+          if (externalId && looksLikeNumericId(externalId)) {
+            remoteTicket = await context.client.getTicket(Number(externalId)) as unknown as Record<string, unknown>;
+          } else if (ticketNumber) {
+            remoteTicket = await context.client.getTicketByTicketNumber(ticketNumber) as unknown as Record<string, unknown>;
+          } else if (ticketId && looksLikeNumericId(ticketId)) {
+            remoteTicket = await context.client.getTicket(Number(ticketId)) as unknown as Record<string, unknown>;
+          } else if (ticketId) {
+            remoteTicket = await context.client.getTicketByTicketNumber(ticketId) as unknown as Record<string, unknown>;
+          }
+        } catch (error) {
+          const message = String((error as Error)?.message || error || '').toLowerCase();
+          if (message.includes('not found')) {
+            remoteTicket = null;
+          } else {
+            return;
+          }
+        }
+
+        if (remoteTicket) {
+          await this.ingestWorkflowSyncEvent(
+            remoteTicket,
+            tenantId,
+            'autotask_reconcile',
+            undefined,
+            picklistLabels,
+          );
+          operationalLogger.info('adapters.autotask_polling.parity_active_set_ticket_reconciled', {
+            module: 'adapters.autotask-polling',
+            remote_status: String((remoteTicket as any).statusLabel || (remoteTicket as any).status || '').trim() || undefined,
+            remote_terminal: !this.isNonCompleteTicket(remoteTicket, terminalStatusIds),
+          }, {
+            tenant_id: tenantId,
+            ticket_id: ticketId || ticketNumber || externalId || null,
+          });
+          return;
+        }
+
+        await workflowService.removeInboxTicket(tenantId, ticketId, {
+          reason: 'autotask_ticket_not_found',
+          correlation: {
+            trace_id: `autotask-active-reconcile-${Date.now()}`,
+            ticket_id: ticketId,
+          },
+          metadata: {
+            external_id: externalId || undefined,
+            ticket_number: ticketNumber || undefined,
+          },
+        });
+        operationalLogger.info('adapters.autotask_polling.parity_active_set_ticket_removed', {
+          module: 'adapters.autotask-polling',
+        }, {
+          tenant_id: tenantId,
+          ticket_id: ticketId || ticketNumber || externalId || null,
+        });
+      },
+    );
   }
 
   private async resolveTerminalStatusIds(context: AutotaskPollContext): Promise<Set<number>> {

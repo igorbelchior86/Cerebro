@@ -995,6 +995,89 @@ describe('AutotaskPollingService P0 hardening', () => {
     }
   });
 
+  it('syncs terminal status immediately when a ticket drops out of the active queue snapshot', async () => {
+    const removeSpy = jest.spyOn(workflowService, 'removeInboxTicket').mockResolvedValue(undefined);
+    const syncSpy = jest.spyOn(workflowService, 'processAutotaskSyncEvent');
+    const listInboxRows = Array.from({ length: 41 }, (_, index) => ({
+      tenant_id: 'tenant-1',
+      ticket_id: `T20260305.${String(index + 1).padStart(4, '0')}`,
+      external_id: String(200000 + index + 1),
+      ticket_number: `T20260305.${String(index + 1).padStart(4, '0')}`,
+      status: 'New',
+      queue_id: 7,
+      comments: [],
+      source_of_truth: 'Autotask',
+      updated_at: `2026-03-05T21:${String(index).padStart(2, '0')}:00.000Z`,
+    })) as any[];
+    listInboxRows[40] = {
+      tenant_id: 'tenant-1',
+      ticket_id: 'T20260305.0037',
+      external_id: '132945',
+      ticket_number: 'T20260305.0037',
+      status: 'New',
+      queue_id: 7,
+      comments: [],
+      source_of_truth: 'Autotask',
+      updated_at: '2026-03-05T22:32:23.056Z',
+    } as any;
+    const listInboxSpy = jest.spyOn(workflowService, 'listInbox').mockResolvedValue(listInboxRows as any);
+
+    try {
+      const service = new AutotaskPollingService({
+        buildPollContext: async () => ({
+          tenantId: 'tenant-1',
+          client: {
+            getTicketQueues: jest.fn().mockResolvedValue([{ id: 7, name: 'Service Desk' }]),
+            getTicketStatusOptions: jest.fn().mockResolvedValue([{ id: 1, label: 'New' }, { id: 5, label: 'Complete' }]),
+            searchTickets: jest.fn().mockImplementation((raw: string) => {
+              const parsed = JSON.parse(raw);
+              const hasQueueFilter = Array.isArray(parsed?.filter) && parsed.filter.some((entry: any) => entry?.field === 'queueID');
+              if (!hasQueueFilter) {
+                return Promise.resolve([]);
+              }
+              return Promise.resolve([
+                {
+                  id: 132946,
+                  ticketNumber: 'T20260305.0038',
+                  status: 1,
+                  queueID: 7,
+                  createDate: '2026-03-05T21:50:00.000Z',
+                },
+              ]);
+            }),
+            getTicket: jest.fn().mockImplementation((id: number) => {
+              if (id === 132945) {
+                return Promise.resolve({ id: 132945, ticketNumber: 'T20260305.0037', status: 5 });
+              }
+              return Promise.resolve({ id, ticketNumber: `T${id}`, status: 1 });
+            }),
+          } as any,
+        }),
+        runWithLock: async (fn) => {
+          await fn();
+          return { acquired: true };
+        },
+      });
+
+      await service.runOnce();
+
+      expect(removeSpy).not.toHaveBeenCalledWith('tenant-1', 'T20260305.0037', expect.anything());
+      expect(syncSpy).toHaveBeenCalledWith(expect.objectContaining({
+        tenant_id: 'tenant-1',
+        payload: expect.objectContaining({
+          external_id: '132945',
+          ticket_number: 'T20260305.0037',
+          status: 5,
+          status_label: 'Complete',
+        }),
+      }));
+    } finally {
+      removeSpy.mockRestore();
+      syncSpy.mockRestore();
+      listInboxSpy.mockRestore();
+    }
+  });
+
   it('eventually revisits stale inbox tickets outside the first purge window and syncs terminal status automatically', async () => {
     const syncSpy = jest.spyOn(workflowService, 'processAutotaskSyncEvent');
     const listInboxRows = [

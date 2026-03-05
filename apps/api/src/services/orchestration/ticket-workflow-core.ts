@@ -395,6 +395,23 @@ type PipelineStatusDetails = {
   consistent_at?: string;
 };
 
+type InboxHydrationStrategy = 'round-robin' | 'oldest-first';
+
+type InboxHydrationRunOptions = {
+  batchSize?: number;
+  remoteBatchSize?: number;
+  strategy?: InboxHydrationStrategy;
+};
+
+type InboxHydrationRunResult = {
+  rows: InboxTicketState[];
+  candidateCount: number;
+  selectedCount: number;
+  hydratedCount: number;
+  remainingCount: number;
+  strategy: InboxHydrationStrategy;
+};
+
 function safeTimeMs(value: unknown): number | null {
   const timestamp = Date.parse(String(value || ''));
   return Number.isFinite(timestamp) ? timestamp : null;
@@ -1174,6 +1191,73 @@ export class TicketWorkflowCoreService {
 
   private clearReconcileFetchFailure(tenantId: string, ticketId: string): void {
     this.reconcileFailureState.delete(this.reconcileFailureKey(tenantId, ticketId));
+  }
+
+  private buildInboxListView(rows: InboxTicketState[]): InboxTicketState[] {
+    const grouped = new Map<string, InboxTicketState[]>();
+    for (const row of rows) {
+      const snapshotTicketNumber = String(
+        row.domain_snapshots?.tickets?.ticket_number ??
+        row.domain_snapshots?.['correlates.ticket_metadata']?.ticket_number ??
+        ''
+      ).trim();
+      const canonicalTicketNumber = String(row.ticket_number || snapshotTicketNumber || '').trim();
+      const canonicalExternalId = String(row.external_id || '').trim();
+      const key =
+        canonicalTicketNumber
+          ? `num:${canonicalTicketNumber}`
+          : canonicalExternalId
+            ? `ext:${canonicalExternalId}`
+            : isTicketNumberLike(row.ticket_id)
+              ? `num:${row.ticket_id}`
+              : `id:${row.ticket_id}`;
+      const current = grouped.get(key) || [];
+      current.push(row);
+      grouped.set(key, current);
+    }
+
+    const deduped: InboxTicketState[] = [];
+    for (const entries of grouped.values()) {
+      const preferred = entries
+        .slice()
+        .sort((a, b) => {
+          const aScore = (isTicketNumberLike(a.ticket_id) ? 10 : 0) + (a.ticket_number ? 5 : 0) + (a.external_id ? 2 : 0);
+          const bScore = (isTicketNumberLike(b.ticket_id) ? 10 : 0) + (b.ticket_number ? 5 : 0) + (b.external_id ? 2 : 0);
+          if (aScore !== bScore) return bScore - aScore;
+          return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+        })[0];
+      if (!preferred) continue;
+      const merged = entries.reduce((acc, item) => ({
+        ...acc,
+        ...(acc.external_id ? {} : item.external_id ? { external_id: item.external_id } : {}),
+        ...(acc.ticket_number ? {} : item.ticket_number ? { ticket_number: item.ticket_number } : {}),
+        ...(acc.title ? {} : item.title ? { title: item.title } : {}),
+        ...(acc.description ? {} : item.description ? { description: item.description } : {}),
+        ...((() => {
+          const company = preferMeaningfulText(
+            acc.company,
+            item.company,
+            ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']
+          );
+          return company ? { company } : {};
+        })()),
+        ...((() => {
+          const requester = preferMeaningfulText(
+            acc.requester,
+            item.requester,
+            ['unknown requester', 'unknown user', 'requester', 'user', 'contact']
+          );
+          return requester ? { requester } : {};
+        })()),
+      }), preferred);
+      deduped.push(this.deriveTicketOperationalState(merged));
+
+    }
+    return deduped.sort((a, b) => {
+      const scoreOrder = this.compareSchedulerPriority(a, b);
+      if (scoreOrder !== 0) return scoreOrder;
+      return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+    });
   }
 
   private mapCommandStatusToConnectorState(status: CommandExecutionStatus): ConnectorCommandStateV1 {
@@ -2418,74 +2502,61 @@ export class TicketWorkflowCoreService {
 
   async listInbox(tenantId: string): Promise<InboxTicketState[]> {
     const rows = await this.repo.listInboxTickets(tenantId);
-    const grouped = new Map<string, InboxTicketState[]>();
-    for (const row of rows) {
-      const snapshotTicketNumber = String(
-        row.domain_snapshots?.tickets?.ticket_number ??
-        row.domain_snapshots?.['correlates.ticket_metadata']?.ticket_number ??
-        ''
-      ).trim();
-      const canonicalTicketNumber = String(row.ticket_number || snapshotTicketNumber || '').trim();
-      const canonicalExternalId = String(row.external_id || '').trim();
-      const key =
-        canonicalTicketNumber
-          ? `num:${canonicalTicketNumber}`
-          : canonicalExternalId
-            ? `ext:${canonicalExternalId}`
-            : isTicketNumberLike(row.ticket_id)
-              ? `num:${row.ticket_id}`
-              : `id:${row.ticket_id}`;
-      const current = grouped.get(key) || [];
-      current.push(row);
-      grouped.set(key, current);
-    }
-
-    const deduped: InboxTicketState[] = [];
-    for (const entries of grouped.values()) {
-      const preferred = entries
-        .slice()
-        .sort((a, b) => {
-          const aScore = (isTicketNumberLike(a.ticket_id) ? 10 : 0) + (a.ticket_number ? 5 : 0) + (a.external_id ? 2 : 0);
-          const bScore = (isTicketNumberLike(b.ticket_id) ? 10 : 0) + (b.ticket_number ? 5 : 0) + (b.external_id ? 2 : 0);
-          if (aScore !== bScore) return bScore - aScore;
-          return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
-        })[0];
-      if (!preferred) continue;
-      const merged = entries.reduce((acc, item) => ({
-        ...acc,
-        ...(acc.external_id ? {} : item.external_id ? { external_id: item.external_id } : {}),
-        ...(acc.ticket_number ? {} : item.ticket_number ? { ticket_number: item.ticket_number } : {}),
-        ...(acc.title ? {} : item.title ? { title: item.title } : {}),
-        ...(acc.description ? {} : item.description ? { description: item.description } : {}),
-        ...((() => {
-          const company = preferMeaningfulText(
-            acc.company,
-            item.company,
-            ['unknown org', 'unknown organization', 'unknown company', 'organization', 'company']
-          );
-          return company ? { company } : {};
-        })()),
-        ...((() => {
-          const requester = preferMeaningfulText(
-            acc.requester,
-            item.requester,
-            ['unknown requester', 'unknown user', 'requester', 'user', 'contact']
-          );
-          return requester ? { requester } : {};
-        })()),
-      }), preferred);
-      deduped.push(this.deriveTicketOperationalState(merged));
-
-    }
-    return deduped.sort((a, b) => {
-      const scoreOrder = this.compareSchedulerPriority(a, b);
-      if (scoreOrder !== 0) return scoreOrder;
-      return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
-    });
+    return this.buildInboxListView(rows);
   }
 
-  private async hydrateMissingOrgRequester(rows: InboxTicketState[]): Promise<InboxTicketState[]> {
-    if (rows.length === 0) return rows;
+  async runInboxHydrationSweep(
+    tenantId: string,
+    options?: InboxHydrationRunOptions,
+  ): Promise<Omit<InboxHydrationRunResult, 'rows'>> {
+    const normalizedTenantId = String(tenantId || '').trim();
+    if (!normalizedTenantId) {
+      return {
+        candidateCount: 0,
+        selectedCount: 0,
+        hydratedCount: 0,
+        remainingCount: 0,
+        strategy: options?.strategy || 'round-robin',
+      };
+    }
+    const view = this.buildInboxListView(await this.repo.listInboxTickets(normalizedTenantId));
+    const result = await this.hydrateMissingOrgRequester(view, options);
+    operationalLogger.info('workflow.inbox.hydration_sweep_applied', {
+      module: 'orchestration.ticket-workflow-core',
+      candidate_count: result.candidateCount,
+      selected_count: result.selectedCount,
+      hydrated_count: result.hydratedCount,
+      remaining_count: result.remainingCount,
+      strategy: result.strategy,
+    }, {
+      tenant_id: normalizedTenantId,
+    });
+    return {
+      candidateCount: result.candidateCount,
+      selectedCount: result.selectedCount,
+      hydratedCount: result.hydratedCount,
+      remainingCount: result.remainingCount,
+      strategy: result.strategy,
+    };
+  }
+
+  private async hydrateMissingOrgRequester(
+    rows: InboxTicketState[],
+    options?: InboxHydrationRunOptions,
+  ): Promise<InboxHydrationRunResult> {
+    const strategy = options?.strategy || 'round-robin';
+    const batchSize = Math.max(0, options?.batchSize ?? this.inboxHydrationBatchSize);
+    const remoteBatchSize = Math.max(0, options?.remoteBatchSize ?? this.inboxHydrationRemoteBatchSize);
+    if (rows.length === 0 || batchSize === 0) {
+      return {
+        rows,
+        candidateCount: 0,
+        selectedCount: 0,
+        hydratedCount: 0,
+        remainingCount: 0,
+        strategy,
+      };
+    }
 
     const allCandidates = rows
       .filter((row) => needsInboxHydration(row))
@@ -2496,15 +2567,37 @@ export class TicketWorkflowCoreService {
         const bUpdated = Date.parse(String(b.updated_at || ''));
         const aRank = Number.isFinite(aCreated) ? aCreated : (Number.isFinite(aUpdated) ? aUpdated : Number.NEGATIVE_INFINITY);
         const bRank = Number.isFinite(bCreated) ? bCreated : (Number.isFinite(bUpdated) ? bUpdated : Number.NEGATIVE_INFINITY);
-        return bRank - aRank;
+        return strategy === 'oldest-first' ? aRank - bRank : bRank - aRank;
       });
+    const candidateCount = allCandidates.length;
+    if (candidateCount === 0) {
+      return {
+        rows,
+        candidateCount: 0,
+        selectedCount: 0,
+        hydratedCount: 0,
+        remainingCount: 0,
+        strategy,
+      };
+    }
     const hydrationTenantId = String(rows[0]?.tenant_id || '').trim() || 'unknown';
-    const candidates = this.selectRoundRobinBatch(
-      hydrationTenantId,
-      allCandidates,
-      this.inboxHydrationBatchSize
-    );
-    if (candidates.length === 0) return rows;
+    const candidates = strategy === 'oldest-first'
+      ? allCandidates.slice(0, batchSize)
+      : this.selectRoundRobinBatch(
+        hydrationTenantId,
+        allCandidates,
+        batchSize
+      );
+    if (candidates.length === 0) {
+      return {
+        rows,
+        candidateCount,
+        selectedCount: 0,
+        hydratedCount: 0,
+        remainingCount: candidateCount,
+        strategy,
+      };
+    }
 
     // First, promote names already present in domain snapshots (zero provider round-trips).
     const localSnapshotUpdates = await mapWithConcurrencyLimit(
@@ -2568,13 +2661,15 @@ export class TicketWorkflowCoreService {
     const hydratedTicketIds = new Set<string>();
     for (const result of localSnapshotUpdates) {
       if (result.status !== 'fulfilled' || !result.value) continue;
-      hydratedTicketIds.add(result.value.ticket_id);
+      if (!needsInboxHydration(result.value)) {
+        hydratedTicketIds.add(result.value.ticket_id);
+      }
     }
 
-    if (this.gateway.fetchTicketSnapshot && this.inboxHydrationRemoteBatchSize > 0) {
+    if (this.gateway.fetchTicketSnapshot && remoteBatchSize > 0) {
       const remoteCandidates = candidates
         .filter((row) => !hydratedTicketIds.has(row.ticket_id))
-        .slice(0, this.inboxHydrationRemoteBatchSize);
+        .slice(0, remoteBatchSize);
 
       const remoteUpdates = await mapWithConcurrencyLimit(
         remoteCandidates,
@@ -2674,15 +2769,42 @@ export class TicketWorkflowCoreService {
       updates.push(...remoteUpdates);
     }
 
-    if (updates.length === 0) return rows;
+    if (updates.length === 0) {
+      return {
+        rows,
+        candidateCount,
+        selectedCount: candidates.length,
+        hydratedCount: 0,
+        remainingCount: candidateCount,
+        strategy,
+      };
+    }
     const hydratedByTicketId = new Map<string, InboxTicketState>();
     for (const result of updates) {
       if (result.status !== 'fulfilled' || !result.value) continue;
       hydratedByTicketId.set(result.value.ticket_id, result.value);
     }
-    if (hydratedByTicketId.size === 0) return rows;
+    if (hydratedByTicketId.size === 0) {
+      return {
+        rows,
+        candidateCount,
+        selectedCount: candidates.length,
+        hydratedCount: 0,
+        remainingCount: candidateCount,
+        strategy,
+      };
+    }
 
-    return rows.map((row) => hydratedByTicketId.get(row.ticket_id) || row);
+    const nextRows = rows.map((row) => hydratedByTicketId.get(row.ticket_id) || row);
+    const remainingCount = nextRows.filter((row) => needsInboxHydration(row)).length;
+    return {
+      rows: nextRows,
+      candidateCount,
+      selectedCount: candidates.length,
+      hydratedCount: Math.max(0, candidateCount - remainingCount),
+      remainingCount,
+      strategy,
+    };
   }
 
   private selectRoundRobinBatch(

@@ -1366,3 +1366,9 @@
 **Root cause**: O batch era capped (`10` companies / `10` contacts por rodada) e a ordenação `createDate desc` deixava tickets antigos permanentemente atrás quando novos tickets faltando identidade continuavam chegando.
 **Rule**: Em jobs de reconciliação/backlog, a política de seleção deve favorecer os itens mais antigos ou aplicar fairness explícita; priorização newest-first serve para intake recente, não para drenagem histórica.
 **Pattern**: Se alguns tickets antigos nunca convergem enquanto tickets novos continuam entrando, revisar starvation causado por ordenação + cap de batch.
+
+## Lesson: 2026-03-05 (hidratação local parcial não pode bloquear fetch remoto do backlog)
+**Mistake**: Considerei qualquer promoção local de snapshot no `hydrateMissingOrgRequester()` como suficiente para tirar o ticket da fila de fetch remoto.
+**Root cause**: Um ticket com apenas `created_at` válido era marcado como “já tratado”, então `company/requester` continuavam vazios mesmo com `fetchTicketSnapshot()` disponível.
+**Rule**: Em pipelines de catch-up, um estágio local só pode encerrar o item se ele realmente sair da condição de incompletude; caso contrário, o estágio remoto ainda deve rodar.
+**Pattern**: Se o contador de candidatos cai pouco mas `updated_at` muda, revisar filtros que confundem “campo secundário preenchido” com “ticket totalmente hidratado”.

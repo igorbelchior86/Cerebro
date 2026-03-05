@@ -860,6 +860,55 @@ describe('AutotaskPollingService P0 hardening', () => {
     }
   });
 
+  it('runs aggressive inbox hydration sweep after recent triage dispatch', async () => {
+    const workflowSync = jest.fn().mockResolvedValue(undefined);
+    const triageRun = jest.fn().mockResolvedValue(undefined);
+    const catchupSpy = jest.spyOn(workflowService, 'runInboxHydrationSweep').mockResolvedValue({
+      candidateCount: 12,
+      selectedCount: 12,
+      hydratedCount: 8,
+      remainingCount: 4,
+      strategy: 'oldest-first',
+    } as any);
+
+    try {
+      const service = new AutotaskPollingService({
+        buildPollContext: async () => ({
+          tenantId: 'tenant-1',
+          client: {
+            searchTickets: jest.fn().mockResolvedValue([
+              {
+                id: 9001,
+                ticketNumber: 'T20260305.9001',
+                title: 'Recent ticket',
+                status: 'New',
+                queueID: 7,
+                createDate: '2026-03-05T18:00:00.000Z',
+              },
+            ]),
+          } as any,
+        }),
+        workflowSync,
+        triageRun,
+        runWithLock: async (fn) => {
+          await fn();
+          return { acquired: true };
+        },
+      });
+
+      await service.runOnce();
+
+      expect(triageRun).toHaveBeenCalledWith('9001', 'tenant-1');
+      expect(catchupSpy).toHaveBeenCalledWith('tenant-1', expect.objectContaining({
+        batchSize: 100,
+        remoteBatchSize: 50,
+        strategy: 'oldest-first',
+      }));
+    } finally {
+      catchupSpy.mockRestore();
+    }
+  });
+
   it('pushes terminal status exclusions into queue snapshot queries', async () => {
     const searchTickets = jest.fn().mockResolvedValue([]);
     const service = new AutotaskPollingService({

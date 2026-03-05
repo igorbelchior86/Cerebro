@@ -198,6 +198,9 @@ export class AutotaskPollingService {
   private readonly identityLookupBudgetMs: number;
   private readonly identityLookupMaxCompaniesPerRun: number;
   private readonly identityLookupMaxContactsPerRun: number;
+  private readonly backlogIdentityCatchupEnabled: boolean;
+  private readonly backlogIdentityCatchupBatchSize: number;
+  private readonly backlogIdentityCatchupRemoteBatchSize: number;
   private parityBackfillStateCache: ParityBackfillStateFile | null = null;
 
   constructor(input?: {
@@ -274,6 +277,17 @@ export class AutotaskPollingService {
     this.identityLookupMaxContactsPerRun = Math.max(
       0,
       Number(input?.identityLookupMaxContactsPerRun ?? process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_MAX_CONTACTS ?? 10),
+    );
+    this.backlogIdentityCatchupEnabled = String(
+      process.env.AUTOTASK_POLLER_BACKLOG_IDENTITY_CATCHUP_ENABLED || 'true'
+    ).toLowerCase() === 'true';
+    this.backlogIdentityCatchupBatchSize = Math.max(
+      0,
+      Number(process.env.AUTOTASK_POLLER_BACKLOG_IDENTITY_CATCHUP_BATCH_SIZE || 100),
+    );
+    this.backlogIdentityCatchupRemoteBatchSize = Math.max(
+      0,
+      Number(process.env.AUTOTASK_POLLER_BACKLOG_IDENTITY_CATCHUP_REMOTE_BATCH_SIZE || 50),
     );
     this.parityActiveExcludedQueueNames = new Set(
       String(process.env.AUTOTASK_PARITY_ACTIVE_EXCLUDED_QUEUES || 'complete')
@@ -537,6 +551,31 @@ export class AutotaskPollingService {
             ticket_count: triageTargets.length,
             concurrency: this.triageDispatchConcurrency,
           });
+        }
+
+        if (
+          this.backlogIdentityCatchupEnabled &&
+          context.tenantId &&
+          this.backlogIdentityCatchupBatchSize > 0 &&
+          this.backlogIdentityCatchupRemoteBatchSize > 0
+        ) {
+          try {
+            await workflowService.runInboxHydrationSweep(context.tenantId, {
+              batchSize: this.backlogIdentityCatchupBatchSize,
+              remoteBatchSize: this.backlogIdentityCatchupRemoteBatchSize,
+              strategy: 'oldest-first',
+            });
+          } catch (error) {
+            operationalLogger.warn('adapters.autotask_polling.backlog_identity_catchup_failed', {
+              module: 'adapters.autotask-polling',
+              integration: 'autotask',
+              signal: 'integration_failure',
+              degraded_mode: true,
+              reason: String((error as Error)?.message || error || 'unknown_error'),
+            }, {
+              tenant_id: context.tenantId,
+            });
+          }
         }
 
         if (this.parityPurgeEnabled) {

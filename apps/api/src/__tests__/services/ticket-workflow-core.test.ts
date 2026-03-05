@@ -619,6 +619,84 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     });
   });
 
+  it('runs explicit inbox hydration sweep with oldest-first backlog priority', async () => {
+    const fetchTicketSnapshot = jest.fn().mockImplementation(async (_tenant: string, ticketRef: string) => {
+      if (ticketRef === 'T20251216.0014') {
+        return {
+          company_name: 'Stintino Management',
+          contact_name: 'Fabio Nogueira',
+          status_label: 'In Progress',
+          assigned_to: '30684567',
+          createDateTime: '2025-12-16T17:55:40.290Z',
+        };
+      }
+      if (ticketRef === 'T20260302.0017') {
+        return {
+          company_name: 'Weaver Bennett & Bland',
+          contact_name: 'Eran Weaver',
+          status_label: 'In Progress',
+          assigned_to: '30684568',
+          createDateTime: '2026-03-02T15:50:32.563Z',
+        };
+      }
+      return null;
+    });
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn(),
+      fetchTicketSnapshot,
+    };
+    const { service, repo } = createService(gateway);
+
+    await repo.upsertInboxTicket({
+      tenant_id: tenantId,
+      ticket_id: 'T20260302.0017',
+      ticket_number: 'T20260302.0017',
+      company: 'Unknown org',
+      requester: 'Unknown requester',
+      created_at: '2026-03-02T15:50:32.563Z',
+      comments: [],
+      source_of_truth: 'Autotask',
+      updated_at: '2026-03-05T21:00:00.000Z',
+    });
+    await repo.upsertInboxTicket({
+      tenant_id: tenantId,
+      ticket_id: 'T20251216.0014',
+      ticket_number: 'T20251216.0014',
+      company: 'Unknown org',
+      requester: 'Unknown requester',
+      created_at: '2025-12-16T17:55:40.290Z',
+      comments: [],
+      source_of_truth: 'Autotask',
+      updated_at: '2026-03-05T21:00:01.000Z',
+    });
+
+    const result = await service.runInboxHydrationSweep(tenantId, {
+      batchSize: 1,
+      remoteBatchSize: 1,
+      strategy: 'oldest-first',
+    });
+    const inbox = await service.listInbox(tenantId);
+    const oldest = inbox.find((row) => row.ticket_id === 'T20251216.0014');
+    const newer = inbox.find((row) => row.ticket_id === 'T20260302.0017');
+
+    expect(result).toMatchObject({
+      candidateCount: 2,
+      selectedCount: 1,
+      hydratedCount: 1,
+      remainingCount: 1,
+      strategy: 'oldest-first',
+    });
+    expect(fetchTicketSnapshot).toHaveBeenCalledWith(tenantId, 'T20251216.0014');
+    expect(oldest).toMatchObject({
+      company: 'Stintino Management',
+      requester: 'Fabio Nogueira',
+    });
+    expect(newer).toMatchObject({
+      company: 'Unknown org',
+      requester: 'Unknown requester',
+    });
+  });
+
   it('does not promote domain snapshots during listInbox read', async () => {
     const fetchTicketSnapshot = jest.fn().mockResolvedValue({
       company_name: 'Ferguson Supply & Box Company',

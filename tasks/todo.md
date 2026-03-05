@@ -1,3 +1,50 @@
+# Task: Catch-up agressivo para backlog antigo sem Org/Requester
+**Status**: completed
+**Started**: 2026-03-05T16:55:00-05:00
+
+## Plan
+- [x] Step 1: Normalizar o pedido do usuário e confirmar o caminho técnico para catch-up explícito read-only.
+- [x] Step 2: Expor um sweep background-safe no workflow core para hidratar unresolved antigos sem depender de `GET /workflow/inbox`.
+- [x] Step 3: Acionar esse sweep pelo poller Autotask com prioridade `oldest-first` e batch agressivo tenant-scoped.
+- [x] Step 4: Adicionar regressões para o workflow core e para o dispatch do poller.
+- [x] Step 5: Validar em testes direcionados, validação monorepo e runtime real; documentar na wiki.
+
+## Progress Notes
+- O `workflowService.listInbox()` já tinha código de hidratação bounded, mas ele não era executado pelo poller e o estágio local promovia `created_at` sozinho como “resolvido”, bloqueando o fetch remoto do ticket.
+- O pedido “zerar isso mais agressivamente” foi implementado sem writes no PSA: somente leituras tenant-scoped em `fetchTicketSnapshot()` + atualização do read model interno.
+- Fix aplicado:
+  - `TicketWorkflowCoreService.runInboxHydrationSweep()` criado para fazer catch-up explícito em background
+  - sweep usa `oldest-first`, `batchSize=100`, `remoteBatchSize=50` por padrão
+  - `hydrateMissingOrgRequester()` só bloqueia o fetch remoto quando o ticket realmente sai de `needsInboxHydration`
+  - `AutotaskPollingService.runOnce()` agora dispara o sweep após o dispatch de triage recente
+  - log operacional novo: `workflow.inbox.hydration_sweep_applied`
+- Evidência live no tenant `9439a8d1-6858-4a9d-a132-a1569b9da5f7`:
+  - antes do catch-up agressivo: `olderMissing=61`
+  - após restart + primeiro ciclo: `olderMissing=44`
+  - após segundo ciclo: `olderMissing=34`
+  - composição restante após segundo ciclo:
+    - `withCompanyId=25`
+    - `withContactId=7`
+    - `withBothIds=6`
+    - `withNoIds=8`
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- autotask-polling.test.ts ticket-workflow-core.test.ts` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm -r lint` ✅ (warnings preexistentes; zero errors)
+- `pnpm -r typecheck` ✅
+- `pnpm -r test` ✅ (`192` testes passando em `apps/api`)
+- `./scripts/stack.sh restart` ✅
+- Runtime/API evidence after restart:
+  - `GET /workflow/inbox` autenticado: `count=124`
+  - backlog antigo sem `Org/Requester`: `61 -> 44 -> 34`
+  - requester agora preenchido em tickets antes travados, por exemplo `T20260218.0021 -> Fabio Nogueira`
+- Documentation:
+- `wiki/changelog/2026-03-05-autotask-aggressive-backlog-identity-catchup.md`
+
+---
+
 # Task: Destravar hidratação de backlog antigo no queue snapshot Autotask
 **Status**: completed
 **Started**: 2026-03-05T15:55:00-05:00

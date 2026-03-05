@@ -8,6 +8,7 @@
 
 import { Router, type Router as ExpressRouter } from 'express';
 import { query, queryOne } from '../../../db/index.js';
+import { AutotaskClient } from '../../../clients/autotask.js';
 
 const router: ExpressRouter = Router();
 
@@ -74,25 +75,29 @@ async function checkAutotask(creds: AutotaskCreds | null): Promise<ServiceResult
   }
 
   const t0 = Date.now();
-  const discoveryUrl = `https://webservices2.autotask.net/atservicesrest/v1.0/zoneInformation?user=${encodeURIComponent(creds.username)}`;
   try {
-    const res = await withTimeout(
-      fetch(discoveryUrl, {
-        headers: {
-          'ApiIntegrationcode': creds.apiIntegrationCode,
-          'UserName': creds.username,
-          'Secret': creds.secret,
-          'Content-Type': 'application/json',
-        },
-      }),
-      6000
-    );
+    const client = new AutotaskClient({
+      apiIntegrationCode: creds.apiIntegrationCode,
+      username: creds.username,
+      secret: creds.secret,
+      ...(creds.zoneUrl ? { zoneUrl: creds.zoneUrl } : {}),
+    });
+    // Connected must mean real read path works, not only zone discovery.
+    const queues = await withTimeout(client.getTicketQueues(), 8000);
     const latencyMs = Date.now() - t0;
-    if (res.ok) return { name: 'Autotask', service: 'autotask', status: 'connected', detail: 'Read-only', latencyMs };
-    if (res.status === 401) return { name: 'Autotask', service: 'autotask', status: 'error', detail: 'Authentication failed — check credentials', latencyMs };
-    return { name: 'Autotask', service: 'autotask', status: 'error', detail: `HTTP ${res.status}`, latencyMs };
+    return {
+      name: 'Autotask',
+      service: 'autotask',
+      status: 'connected',
+      detail: `Read-only (queues ok${Array.isArray(queues) ? `: ${queues.length}` : ''})`,
+      latencyMs,
+    };
   } catch (err) {
-    return { name: 'Autotask', service: 'autotask', status: 'error', detail: (err as Error).message, latencyMs: Date.now() - t0 };
+    const message = String((err as Error).message || err || '');
+    const detail = /401|unauthorized|authentication/i.test(message)
+      ? 'Authentication failed — check credentials'
+      : message;
+    return { name: 'Autotask', service: 'autotask', status: 'error', detail, latencyMs: Date.now() - t0 };
   }
 }
 

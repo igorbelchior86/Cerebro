@@ -295,9 +295,18 @@ function SectionConnections() {
         const hMap: Record<string, HealthResult> = {};
         for (const s of (hJson.services || [])) hMap[s.service] = s;
         setHealth(hMap);
+      } else {
+        // Avoid stale "Connected" badge when health endpoint fails.
+        setHealth({});
       }
-      if (cRes.ok) setSaved(await cRes.json());
+      if (cRes.ok) {
+        setSaved(await cRes.json());
+      } else {
+        setSaved({});
+      }
     } catch (err: unknown) {
+      setHealth({});
+      setSaved({});
       if (userTriggered) setBannerError((err as Error)?.message || 'Failed to load');
     } finally { setLoading(false); }
   }

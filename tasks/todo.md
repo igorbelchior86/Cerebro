@@ -1121,3 +1121,57 @@
 - `pnpm --filter @cerebro/web test` ✅
 - Documentation:
 - `wiki/changelog/2026-03-04-sidebar-dynamic-active-counter-by-selected-view.md`
+
+---
+
+# Task: Canonical JSON Pipeline v5 execution (consistência forte + UI blocos)
+**Status**: completed
+**Started**: 2026-03-05T09:30:00-05:00
+
+## Plan
+- [x] Step 1: Atualizar contratos/tipos V1 (event/snapshot/block states/pipeline status/command state).
+- [x] Step 2: Estender workflow core para estados por bloco, status de pipeline, lag e prioridade determinística (tie-break + TTL first_seen_boost).
+- [x] Step 3: Expor leitura por ticket em `/workflow/tickets/:id` e enriquecer payload de inbox sem quebrar compatibilidade.
+- [x] Step 4: Cobrir com testes (service + route) para TTL, tie-break e semântica retry/DLQ em `pipeline_status`.
+- [x] Step 5: Executar validação (`test`/`typecheck`) no escopo alterado.
+- [x] Step 6: Documentar mudança na wiki (`/wiki/changelog`).
+
+## Progress Notes
+- Contratos V1 adicionados em `packages/types` e exportados no index.
+- Workflow core passou a derivar estados A/B/C e `pipeline_status` por ticket, com `processing_lag_ms`, `retry_count`, `next_retry_at`, `dlq_id`, `consistent_at`.
+- Warm queue com score composto determinístico + tie-break explícito + TTL de 15 minutos para `first_seen_boost`.
+- Rotas novas implementadas: `GET /workflow/tickets/:ticketId`, `GET /workflow/tickets/:ticketId/commands`, `POST /workflow/tickets/:ticketId/reconcile` (compat com legado preservada).
+- Client web (`p0-ui-client`) atualizado para snapshot/commands V1.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/types build` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/api test -- src/__tests__/routes/workflow.reconcile-route.test.ts src/__tests__/services/ticket-workflow-core.test.ts` ✅
+- Documentation:
+- `wiki/changelog/2026-03-05-canonical-json-pipeline-v5-execution.md`
+
+---
+
+# Task: Fix stale Connected badge and enforce real Autotask health semantics
+**Status**: completed
+**Started**: 2026-03-05T10:25:00-05:00
+
+## Plan
+- [x] Step 1: Make Autotask health return `connected` only after real read path succeeds.
+- [x] Step 2: Prevent stale `Connected` badge on Settings when health fetch fails.
+- [x] Step 3: Validate with typecheck.
+- [x] Step 4: Document in wiki changelog.
+
+## Progress Notes
+- Backend health check (`/integrations/health`) for Autotask now instantiates `AutotaskClient` and validates with `getTicketQueues` under timeout before returning `connected`.
+- Health auth failures are normalized to explicit auth error detail.
+- Settings `loadAll()` now clears `health`/`saved` snapshots on failed responses or network errors so stale UI state is not reused.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-05-integrations-health-autotask-real-read-validation.md`

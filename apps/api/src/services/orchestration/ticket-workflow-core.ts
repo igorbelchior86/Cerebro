@@ -4,6 +4,12 @@ import { classifyQueueError } from '../../platform/errors.js';
 import { resolveAutotaskOperation } from '../adapters/autotask-operation-registry.js';
 import type { WorkflowRealtimeTicketChangePayload } from './workflow-realtime.js';
 import { operationalLogger } from '../../lib/operational-logger.js';
+import type {
+  BlockConsistencyStateV1,
+  CanonicalTicketSnapshotV1,
+  ConnectorCommandStateV1,
+  PipelineStatusV1,
+} from '@cerebro/types';
 
 export type WorkflowTargetIntegration =
   | 'Autotask'
@@ -143,6 +149,20 @@ export interface InboxTicketState {
   last_event_occurred_at?: string;
   last_event_id?: string;
   last_command_id?: string;
+  trace_id?: string;
+  intake_received_at?: string;
+  first_seen_at?: string;
+  priority_score?: number;
+  priority_sla_risk?: number;
+  block_consistency?: BlockConsistencyStateV1;
+  pipeline_status?: PipelineStatusV1;
+  pipeline_reason_code?: string;
+  processing_lag_ms?: number;
+  next_retry_at?: string;
+  retry_count?: number;
+  dlq_id?: string;
+  last_background_processed_at?: string;
+  consistent_at?: string;
   source_of_truth: 'Autotask';
   domain_snapshots?: Partial<Record<ReconciliationDomain, Record<string, unknown>>>;
   updated_at: string;
@@ -255,6 +275,7 @@ export interface TicketWorkflowRepository {
   getCommandByIdempotencyKey(tenantId: string, idempotencyKey: string): Promise<WorkflowCommandAttempt | null>;
   upsertCommandAttempt(attempt: WorkflowCommandAttempt): Promise<void>;
   getCommandById(commandId: string): Promise<WorkflowCommandAttempt | null>;
+  listCommandsByTicket(tenantId: string, ticketId: string): Promise<WorkflowCommandAttempt[]>;
   listPendingCommands(filter: PendingCommandFilter): Promise<WorkflowCommandAttempt[]>;
   saveAudit(record: WorkflowAuditRecord): Promise<void>;
   listAuditByTicket(tenantId: string, ticketId: string): Promise<WorkflowAuditRecord[]>;
@@ -299,6 +320,18 @@ function extractCommentBodyForProjection(payload: Record<string, unknown>): stri
   ).trim();
 }
 
+function extractTicketBodyForProjection(payload: Record<string, unknown>): string {
+  return String(
+    payload.ticket_body_html ??
+    payload.ticket_body_plain ??
+    payload.ticket_body ??
+    payload.description_html ??
+    payload.description_plain ??
+    payload.description ??
+    ''
+  ).trim();
+}
+
 function normalizeStatusToken(value: unknown): string {
   return String(value ?? '')
     .trim()
@@ -337,6 +370,273 @@ function computeBackoffMs(attempts: number): number {
   const base = 5_000;
   const cappedExponent = Math.min(Math.max(attempts - 1, 0), 5);
   return Math.min(base * Math.pow(2, cappedExponent), 5 * 60_000);
+}
+
+const BLOCK_TIMEOUT_MS = 10_000;
+const FIRST_SEEN_BOOST_TTL_MS = 15 * 60_000;
+const SCHEDULER_WEIGHTS = {
+  recency: 0.35,
+  slaRisk: 0.30,
+  businessPriority: 0.20,
+  stateStaleness: 0.10,
+  firstSeenBoost: 0.05,
+} as const;
+
+type SchedulerScore = {
+  priority_score: number;
+  sla_risk: number;
+};
+
+type PipelineStatusDetails = {
+  block_consistency: BlockConsistencyStateV1;
+  pipeline_status: PipelineStatusV1;
+  pipeline_reason_code?: string;
+  processing_lag_ms?: number;
+  consistent_at?: string;
+};
+
+function safeTimeMs(value: unknown): number | null {
+  const timestamp = Date.parse(String(value || ''));
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  if (value <= 0) return 0;
+  if (value >= 1) return 1;
+  return value;
+}
+
+function parseNumericPriority(value: unknown): number | null {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
+function inferSlaRisk(row: InboxTicketState): number {
+  const ticketSnapshot = row.domain_snapshots?.tickets || {};
+  const metadataSnapshot = row.domain_snapshots?.['correlates.ticket_metadata'] || {};
+  const joined = [
+    row.status,
+    ticketSnapshot.status,
+    ticketSnapshot.status_label,
+    metadataSnapshot.status,
+    metadataSnapshot.status_label,
+    ticketSnapshot.sla_label,
+    metadataSnapshot.sla_label,
+  ].map((entry) => String(entry || '').toLowerCase());
+
+  if (joined.some((entry) => entry.includes('breach') || entry.includes('overdue') || entry.includes('past due'))) {
+    return 1;
+  }
+  if (joined.some((entry) => entry.includes('risk') || entry.includes('warning') || entry.includes('escalat'))) {
+    return 0.85;
+  }
+  if (joined.some((entry) => entry.includes('critical') || entry.includes('urgent'))) {
+    return 0.75;
+  }
+
+  const dueAt = safeTimeMs((ticketSnapshot as any).sla_due_at ?? (metadataSnapshot as any).sla_due_at);
+  if (dueAt !== null) {
+    const delta = dueAt - Date.now();
+    if (delta <= 0) return 1;
+    if (delta <= 30 * 60_000) return 0.9;
+    if (delta <= 2 * 60 * 60_000) return 0.7;
+  }
+
+  return 0.3;
+}
+
+function inferBusinessPriority(row: InboxTicketState): number {
+  const ticketSnapshot = row.domain_snapshots?.tickets || {};
+  const metadataSnapshot = row.domain_snapshots?.['correlates.ticket_metadata'] || {};
+  const numericPriority = parseNumericPriority((ticketSnapshot as any).priority ?? (metadataSnapshot as any).priority);
+  if (numericPriority !== null) {
+    // Autotask style priority generally uses lower integer as more urgent.
+    if (numericPriority <= 1) return 1;
+    if (numericPriority <= 2) return 0.85;
+    if (numericPriority <= 3) return 0.7;
+    if (numericPriority <= 4) return 0.5;
+    return 0.3;
+  }
+
+  const labels = [
+    (ticketSnapshot as any).priority_label,
+    (metadataSnapshot as any).priority_label,
+    row.status,
+  ].map((entry) => String(entry || '').toLowerCase());
+  if (labels.some((entry) => entry.includes('critical') || entry.includes('urgent') || entry.includes('sev1'))) return 1;
+  if (labels.some((entry) => entry.includes('high') || entry.includes('sev2'))) return 0.8;
+  if (labels.some((entry) => entry.includes('medium') || entry.includes('normal') || entry.includes('sev3'))) return 0.55;
+  if (labels.some((entry) => entry.includes('low') || entry.includes('sev4'))) return 0.3;
+  return 0.4;
+}
+
+function inferRecencyScore(row: InboxTicketState, nowMs: number): number {
+  const reference =
+    safeTimeMs(row.updated_at) ??
+    safeTimeMs(row.last_background_processed_at) ??
+    safeTimeMs(row.last_event_occurred_at) ??
+    safeTimeMs(row.created_at);
+  if (reference === null) return 0;
+  const ageMs = Math.max(0, nowMs - reference);
+  const dayMs = 24 * 60 * 60_000;
+  return clamp01(1 - (ageMs / dayMs));
+}
+
+function inferStateStaleness(row: InboxTicketState, nowMs: number): number {
+  const reference =
+    safeTimeMs(row.last_background_processed_at) ??
+    safeTimeMs(row.last_sync_at) ??
+    safeTimeMs(row.updated_at);
+  if (reference === null) return 1;
+  const staleMs = Math.max(0, nowMs - reference);
+  const maxWindow = 4 * 60 * 60_000;
+  return clamp01(staleMs / maxWindow);
+}
+
+function inferFirstSeenBoost(row: InboxTicketState, nowMs: number): number {
+  const intakeMs = safeTimeMs(row.intake_received_at) ?? safeTimeMs(row.first_seen_at);
+  if (intakeMs === null) return 0;
+  return nowMs - intakeMs <= FIRST_SEEN_BOOST_TTL_MS ? 1 : 0;
+}
+
+function computeSchedulerScore(row: InboxTicketState, nowMs: number): SchedulerScore {
+  const recency = inferRecencyScore(row, nowMs);
+  const slaRisk = inferSlaRisk(row);
+  const businessPriority = inferBusinessPriority(row);
+  const stateStaleness = inferStateStaleness(row, nowMs);
+  const firstSeenBoost = inferFirstSeenBoost(row, nowMs);
+  const score =
+    (SCHEDULER_WEIGHTS.recency * recency) +
+    (SCHEDULER_WEIGHTS.slaRisk * slaRisk) +
+    (SCHEDULER_WEIGHTS.businessPriority * businessPriority) +
+    (SCHEDULER_WEIGHTS.stateStaleness * stateStaleness) +
+    (SCHEDULER_WEIGHTS.firstSeenBoost * firstSeenBoost);
+  return {
+    priority_score: Number(score.toFixed(6)),
+    sla_risk: Number(slaRisk.toFixed(6)),
+  };
+}
+
+function resolveBlockState(isReady: boolean, baselineMs: number | null, nowMs: number): BlockConsistencyStateV1['core_state'] {
+  if (isReady) return 'ready';
+  if (baselineMs === null) return 'resolving';
+  return nowMs - baselineMs >= BLOCK_TIMEOUT_MS ? 'degraded' : 'resolving';
+}
+
+function hasSignalKeys(snapshot: Record<string, unknown> | undefined, keys: string[]): boolean {
+  if (!snapshot) return false;
+  return Object.keys(snapshot).some((key) => keys.some((needle) => key.toLowerCase().includes(needle)));
+}
+
+function deriveBlockConsistency(row: InboxTicketState, nowMs: number): BlockConsistencyStateV1 {
+  const snapshotTicket = row.domain_snapshots?.tickets;
+  const snapshotMeta = row.domain_snapshots?.['correlates.ticket_metadata'];
+  const baselineMs =
+    safeTimeMs(row.last_background_processed_at) ??
+    safeTimeMs(row.intake_received_at) ??
+    safeTimeMs(row.first_seen_at) ??
+    safeTimeMs(row.updated_at);
+
+  const hasCoreReady = Boolean(
+    String(row.ticket_number || row.ticket_id || '').trim()
+    && String(row.title || '').trim()
+    && String(row.requester || '').trim()
+    && String(row.company || '').trim()
+    && String(row.status || '').trim()
+    && String(row.created_at || '').trim()
+  );
+
+  const ticketBody = String(
+    row.description ??
+    (snapshotTicket as any)?.description ??
+    (snapshotMeta as any)?.description ??
+    ''
+  ).trim();
+  const hasNetworkOrEnvSignals =
+    hasSignalKeys(snapshotTicket as Record<string, unknown> | undefined, ['network', 'environment', 'vpn', 'ip', 'firewall', 'gateway', 'wifi', 'switch'])
+    || hasSignalKeys(snapshotMeta as Record<string, unknown> | undefined, ['network', 'environment', 'vpn', 'ip', 'firewall', 'gateway', 'wifi', 'switch'])
+    || Number((snapshotMeta as any)?.network_env_confidence ?? 0) >= 0.6;
+  const hasBlockBReady = Boolean(ticketBody) && hasNetworkOrEnvSignals;
+
+  const hasHypothesisPayload =
+    Array.isArray((snapshotMeta as any)?.hypotheses) ||
+    Array.isArray((snapshotMeta as any)?.checklist) ||
+    String((snapshotMeta as any)?.hypothesis || '').trim().length > 0;
+  const core_state = resolveBlockState(hasCoreReady, baselineMs, nowMs);
+  const network_env_body_state = resolveBlockState(hasBlockBReady, baselineMs, nowMs);
+  const hypothesis_checklist_state = resolveBlockState(
+    hasBlockBReady && hasHypothesisPayload,
+    baselineMs,
+    nowMs
+  );
+  return {
+    core_state,
+    network_env_body_state,
+    hypothesis_checklist_state,
+  };
+}
+
+function derivePipelineStatus(row: InboxTicketState, nowMs: number): PipelineStatusDetails {
+  const blockConsistency = deriveBlockConsistency(row, nowMs);
+  const intakeMs = safeTimeMs(row.intake_received_at) ?? safeTimeMs(row.first_seen_at);
+  const processingLag = intakeMs === null ? undefined : Math.max(0, nowMs - intakeMs);
+  const allReady = Object.values(blockConsistency).every((entry) => entry === 'ready');
+  const hasDegraded = Object.values(blockConsistency).some((entry) => entry === 'degraded');
+  const retryAtMs = safeTimeMs(row.next_retry_at);
+
+  if (row.dlq_id) {
+    return {
+      block_consistency: blockConsistency,
+      pipeline_status: 'dlq',
+      pipeline_reason_code: 'command_dlq',
+      ...(processingLag !== undefined ? { processing_lag_ms: processingLag } : {}),
+    };
+  }
+
+  if (retryAtMs !== null && retryAtMs > nowMs) {
+    return {
+      block_consistency: blockConsistency,
+      pipeline_status: 'retry_scheduled',
+      pipeline_reason_code: 'command_retry_scheduled',
+      ...(processingLag !== undefined ? { processing_lag_ms: processingLag } : {}),
+    };
+  }
+
+  if (hasDegraded) {
+    return {
+      block_consistency: blockConsistency,
+      pipeline_status: 'degraded',
+      pipeline_reason_code: 'block_timeout',
+      ...(processingLag !== undefined ? { processing_lag_ms: processingLag } : {}),
+    };
+  }
+
+  if (allReady) {
+    return {
+      block_consistency: blockConsistency,
+      pipeline_status: 'ready',
+      ...(processingLag !== undefined ? { processing_lag_ms: processingLag } : {}),
+      consistent_at: row.consistent_at || row.last_background_processed_at || row.updated_at,
+    };
+  }
+
+  if (row.last_background_processed_at || row.last_sync_at) {
+    return {
+      block_consistency: blockConsistency,
+      pipeline_status: 'processing',
+      pipeline_reason_code: 'background_processing',
+      ...(processingLag !== undefined ? { processing_lag_ms: processingLag } : {}),
+    };
+  }
+
+  return {
+    block_consistency: blockConsistency,
+    pipeline_status: 'queued',
+    pipeline_reason_code: 'awaiting_background_processing',
+    ...(processingLag !== undefined ? { processing_lag_ms: processingLag } : {}),
+  };
 }
 
 function normalizeFreeText(input: unknown): string {
@@ -391,6 +691,7 @@ function normalizeEventDomainSnapshots(payload: Record<string, unknown>) {
   const sla = asFiniteNumber(payload.sla ?? payload.sla_id ?? payload.serviceLevelAgreementID);
   const slaLabel = String(payload.sla_label ?? payload.serviceLevelAgreementLabel ?? '').trim();
   const commentBody = extractCommentBodyForProjection(payload);
+  const ticketBody = extractTicketBodyForProjection(payload);
   const commentVisibility = String(payload.comment_visibility ?? '').trim().toLowerCase();
   const noteFingerprint = fingerprintText(commentBody);
   const commentCreatedAt = String(payload.comment_created_at ?? '').trim();
@@ -417,6 +718,7 @@ function normalizeEventDomainSnapshots(payload: Record<string, unknown>) {
       ...(subIssueTypeLabel ? { sub_issue_type_label: subIssueTypeLabel } : {}),
       ...(sla !== undefined ? { sla } : {}),
       ...(slaLabel ? { sla_label: slaLabel } : {}),
+      ...(ticketBody ? { ticket_body: ticketBody } : {}),
     },
     ticket_notes: {
       ...(commentBody ? { latest_note_fingerprint: noteFingerprint } : {}),
@@ -704,6 +1006,20 @@ export class InMemoryTicketWorkflowRepository implements TicketWorkflowRepositor
     return this.commandsById.get(commandId) ?? null;
   }
 
+  async listCommandsByTicket(tenantId: string, ticketId: string): Promise<WorkflowCommandAttempt[]> {
+    const normalizedRef = String(ticketId || '').trim();
+    if (!normalizedRef) return [];
+    return Array.from(this.commandsById.values())
+      .filter((attempt) => {
+        if (attempt.command.tenant_id !== tenantId) return false;
+        const correlationRef = String(attempt.command.correlation.ticket_id || '').trim();
+        const payloadRef = String((attempt.command.payload as any)?.ticket_id || '').trim();
+        return correlationRef === normalizedRef || payloadRef === normalizedRef;
+      })
+      .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
+      .map((attempt) => structuredClone(attempt));
+  }
+
   async listPendingCommands(filter: PendingCommandFilter): Promise<WorkflowCommandAttempt[]> {
     const now = new Date(filter.nowIso).getTime();
     const rows = Array.from(this.commandsById.values())
@@ -851,6 +1167,104 @@ export class TicketWorkflowCoreService {
     this.reconcileFailureState.delete(this.reconcileFailureKey(tenantId, ticketId));
   }
 
+  private mapCommandStatusToConnectorState(status: CommandExecutionStatus): ConnectorCommandStateV1 {
+    if (status === 'accepted') return 'accepted';
+    if (status === 'processing' || status === 'retry_pending') return 'pending';
+    if (status === 'completed') return 'completed';
+    if (status === 'dlq') return 'dlq';
+    return 'failed';
+  }
+
+  private deriveTicketOperationalState(row: InboxTicketState): InboxTicketState {
+    const nowMs = Date.now();
+    const schedulerScore = computeSchedulerScore(row, nowMs);
+    const pipeline = derivePipelineStatus(
+      {
+        ...row,
+        priority_score: schedulerScore.priority_score,
+        priority_sla_risk: schedulerScore.sla_risk,
+      },
+      nowMs
+    );
+    return {
+      ...row,
+      priority_score: schedulerScore.priority_score,
+      priority_sla_risk: schedulerScore.sla_risk,
+      block_consistency: pipeline.block_consistency,
+      pipeline_status: pipeline.pipeline_status,
+      ...(pipeline.pipeline_reason_code ? { pipeline_reason_code: pipeline.pipeline_reason_code } : {}),
+      ...(pipeline.processing_lag_ms !== undefined ? { processing_lag_ms: pipeline.processing_lag_ms } : {}),
+      ...(pipeline.consistent_at ? { consistent_at: pipeline.consistent_at } : {}),
+    };
+  }
+
+  private extractTicketRefFromCommand(command: WorkflowCommandEnvelope): string {
+    return String(command.correlation.ticket_id || command.payload.ticket_id || '').trim();
+  }
+
+  private async updateTicketPipelineFromCommand(attempt: WorkflowCommandAttempt): Promise<void> {
+    const ticketRef = this.extractTicketRefFromCommand(attempt.command);
+    if (!ticketRef) return;
+
+    const existing = await this.resolveTicketView(attempt.command.tenant_id, ticketRef);
+    const baseline = existing ?? {
+      tenant_id: attempt.command.tenant_id,
+      ticket_id: ticketRef,
+      comments: [],
+      source_of_truth: 'Autotask' as const,
+      updated_at: nowIso(),
+      intake_received_at: nowIso(),
+      first_seen_at: nowIso(),
+    };
+    const traceId = String(attempt.command.correlation.trace_id || baseline.trace_id || '').trim();
+    const next: InboxTicketState = {
+      ...baseline,
+      ...(traceId ? { trace_id: traceId } : {}),
+      retry_count: attempt.attempts,
+      ...(attempt.next_retry_at ? { next_retry_at: attempt.next_retry_at } : {}),
+      ...(attempt.status === 'retry_pending' ? { pipeline_reason_code: 'command_retry_scheduled' } : {}),
+      ...(attempt.status === 'dlq' ? { dlq_id: attempt.command.command_id, pipeline_reason_code: 'command_dlq' } : {}),
+      last_background_processed_at: nowIso(),
+      updated_at: nowIso(),
+    };
+    if (attempt.status === 'completed' || attempt.status === 'failed' || attempt.status === 'rejected') {
+      delete next.dlq_id;
+      delete next.next_retry_at;
+    }
+    const derived = this.deriveTicketOperationalState(next);
+    await this.repo.upsertInboxTicket(derived);
+  }
+
+  private compareSchedulerPriority(a: InboxTicketState, b: InboxTicketState): number {
+    const priorityScoreDiff = Number(b.priority_score || 0) - Number(a.priority_score || 0);
+    if (priorityScoreDiff !== 0) return priorityScoreDiff;
+
+    const slaRiskDiff = Number(b.priority_sla_risk || 0) - Number(a.priority_sla_risk || 0);
+    if (slaRiskDiff !== 0) return slaRiskDiff;
+
+    const aCreatedMs = safeTimeMs(a.created_at);
+    const bCreatedMs = safeTimeMs(b.created_at);
+    if (aCreatedMs !== null && bCreatedMs !== null && aCreatedMs !== bCreatedMs) {
+      return aCreatedMs - bCreatedMs;
+    }
+
+    return String(a.ticket_id || '').localeCompare(String(b.ticket_id || ''));
+  }
+
+  private async resolveTicketView(tenantId: string, ticketRef: string): Promise<InboxTicketState | null> {
+    const normalizedRef = String(ticketRef || '').trim();
+    if (!normalizedRef) return null;
+    const byId = await this.repo.getInboxTicket(tenantId, normalizedRef);
+    if (byId) return this.deriveTicketOperationalState(byId);
+    const rows = await this.repo.listInboxTickets(tenantId);
+    const candidate = rows.find((row) =>
+      row.ticket_id === normalizedRef
+      || String(row.ticket_number || '').trim() === normalizedRef
+      || String(row.external_id || '').trim() === normalizedRef
+    );
+    return candidate ? this.deriveTicketOperationalState(candidate) : null;
+  }
+
   private async writeAudit(args: Omit<WorkflowAuditRecord, 'audit_id' | 'timestamp'>): Promise<void> {
     await this.repo.saveAudit({
       audit_id: randomUUID(),
@@ -969,6 +1383,7 @@ export class TicketWorkflowCoreService {
       updated_at: createdAt,
     };
     await this.repo.upsertCommandAttempt(attempt);
+    await this.updateTicketPipelineFromCommand(attempt);
     await this.writeAudit({
       tenant_id: command.tenant_id,
       actor: command.actor,
@@ -1004,6 +1419,7 @@ export class TicketWorkflowCoreService {
         delete attempt.next_retry_at;
         attempt.updated_at = nowIso();
         await this.repo.upsertCommandAttempt(attempt);
+        await this.updateTicketPipelineFromCommand(attempt);
         failed += 1;
         await this.writeAudit({
           tenant_id: attempt.command.tenant_id,
@@ -1028,6 +1444,7 @@ export class TicketWorkflowCoreService {
       attempt.status = 'processing';
       attempt.updated_at = nowIso();
       await this.repo.upsertCommandAttempt(attempt);
+      await this.updateTicketPipelineFromCommand(attempt);
 
       try {
         const result = await this.gateway.executeCommand(attempt.command);
@@ -1041,6 +1458,7 @@ export class TicketWorkflowCoreService {
         delete attempt.next_retry_at;
         attempt.updated_at = nowIso();
         await this.repo.upsertCommandAttempt(attempt);
+        await this.updateTicketPipelineFromCommand(attempt);
         completed += 1;
 
         await this.applyLocalProjectionFromCommandResult(attempt, result);
@@ -1100,16 +1518,19 @@ export class TicketWorkflowCoreService {
           attempt.status = 'retry_pending';
           attempt.next_retry_at = new Date(Date.now() + computeBackoffMs(attempt.attempts)).toISOString();
           await this.repo.upsertCommandAttempt(attempt);
+          await this.updateTicketPipelineFromCommand(attempt);
           retried += 1;
         } else if (failureClass === 'transient') {
           attempt.status = 'dlq';
           delete attempt.next_retry_at;
           await this.repo.upsertCommandAttempt(attempt);
+          await this.updateTicketPipelineFromCommand(attempt);
           dlq += 1;
         } else {
           attempt.status = 'failed';
           delete attempt.next_retry_at;
           await this.repo.upsertCommandAttempt(attempt);
+          await this.updateTicketPipelineFromCommand(attempt);
           failed += 1;
         }
 
@@ -1170,6 +1591,8 @@ export class TicketWorkflowCoreService {
       ticket_id: ticketId,
       comments: [],
       source_of_truth: 'Autotask' as const,
+      intake_received_at: nowIso(),
+      first_seen_at: nowIso(),
       updated_at: nowIso(),
     };
     const resolvedCreatedAt = inferCreatedAt(
@@ -1187,6 +1610,12 @@ export class TicketWorkflowCoreService {
     );
 
     const patch = attempt.command.payload as any;
+    const canonicalTicketBody = selectFirstNonEmpty(
+      extractTicketBodyForProjection(patch),
+      existing.description,
+      (existing.domain_snapshots?.tickets as any)?.ticket_body,
+    );
+    const commandTraceId = String(attempt.command.correlation.trace_id || existing.trace_id || '').trim();
     const next: InboxTicketState = {
       ...existing,
       external_id: String((result as any)?.external_ticket_id || existing.external_id || ticketId),
@@ -1198,8 +1627,8 @@ export class TicketWorkflowCoreService {
         }
         : {}),
       ...(String(patch.title ?? existing.title ?? '').trim() ? { title: String(patch.title ?? existing.title).trim() } : {}),
-      ...(String(patch.description ?? existing.description ?? '').trim()
-        ? { description: String(patch.description ?? existing.description).trim() }
+      ...(String(canonicalTicketBody || '').trim()
+        ? { description: String(canonicalTicketBody).trim() }
         : {}),
       ...(resolvedCreatedAt ? { created_at: resolvedCreatedAt } : {}),
       ...(String((result as any)?.snapshot?.company_name ?? (result as any)?.snapshot?.company ?? patch.company_name ?? patch.company ?? existing.company ?? '').trim()
@@ -1252,6 +1681,7 @@ export class TicketWorkflowCoreService {
             }
             : {}),
           ...(resolvedCreatedAt ? { created_at: resolvedCreatedAt } : {}),
+          ...(canonicalTicketBody ? { ticket_body: canonicalTicketBody } : {}),
           ...(String((result as any)?.snapshot?.contact_name ?? (result as any)?.snapshot?.requester ?? patch.requester ?? existing.requester ?? '').trim()
             ? {
               requester_name: String(
@@ -1312,8 +1742,19 @@ export class TicketWorkflowCoreService {
         },
       },
       last_command_id: attempt.command.command_id,
+      ...(commandTraceId ? { trace_id: commandTraceId } : {}),
+      intake_received_at: existing.intake_received_at || existing.first_seen_at || nowIso(),
+      first_seen_at: existing.first_seen_at || existing.intake_received_at || nowIso(),
+      retry_count: attempt.attempts,
+      ...(attempt.status === 'retry_pending' ? { next_retry_at: attempt.next_retry_at } : {}),
+      ...(attempt.status === 'dlq' ? { dlq_id: attempt.command.command_id } : {}),
+      last_background_processed_at: nowIso(),
       updated_at: nowIso(),
     };
+    if (attempt.status === 'completed') {
+      delete next.dlq_id;
+      delete next.next_retry_at;
+    }
 
     const commentBody = extractCommentBodyForProjection(patch as Record<string, unknown>);
     if (commentBody) {
@@ -1403,7 +1844,7 @@ export class TicketWorkflowCoreService {
       }
     }
 
-    await this.repo.upsertInboxTicket(next);
+    await this.repo.upsertInboxTicket(this.deriveTicketOperationalState(next));
     const traceId = attempt.command.correlation.trace_id;
     const comment = next.comments[next.comments.length - 1];
     const changeKind: WorkflowRealtimeTicketChangePayload['change_kind'] =
@@ -1469,6 +1910,11 @@ export class TicketWorkflowCoreService {
     }
 
     const domainSnapshots = normalizeEventDomainSnapshots(payload);
+    const canonicalTicketBody = selectFirstNonEmpty(
+      extractTicketBodyForProjection(payload),
+      existing?.description,
+      (existing?.domain_snapshots?.tickets as any)?.ticket_body,
+    );
     const canonicalCompany = selectFirstMeaningful([
       payload.company_name,
       payload.company,
@@ -1518,6 +1964,7 @@ export class TicketWorkflowCoreService {
       existing?.ticket_number,
       ticketId
     );
+    const eventTraceId = String(event.correlation.trace_id || existing?.trace_id || '').trim();
     const next: InboxTicketState = {
       tenant_id: event.tenant_id,
       ticket_id: ticketId,
@@ -1527,8 +1974,8 @@ export class TicketWorkflowCoreService {
         : {}),
       ...(resolvedCreatedAt ? { created_at: resolvedCreatedAt } : {}),
       ...(String(payload.title ?? existing?.title ?? '').trim() ? { title: String(payload.title ?? existing?.title).trim() } : {}),
-      ...(String(payload.description ?? existing?.description ?? '').trim()
-        ? { description: String(payload.description ?? existing?.description).trim() }
+      ...(String(canonicalTicketBody || '').trim()
+        ? { description: String(canonicalTicketBody).trim() }
         : {}),
       ...(canonicalCompany ? { company: canonicalCompany } : {}),
       ...(canonicalRequester ? { requester: canonicalRequester } : {}),
@@ -1541,6 +1988,10 @@ export class TicketWorkflowCoreService {
       last_event_occurred_at: event.occurred_at,
       last_event_id: event.event_id,
       ...(existing?.last_command_id ? { last_command_id: existing.last_command_id } : {}),
+      ...(eventTraceId ? { trace_id: eventTraceId } : {}),
+      intake_received_at: existing?.intake_received_at || nowIso(),
+      first_seen_at: existing?.first_seen_at || existing?.intake_received_at || nowIso(),
+      last_background_processed_at: nowIso(),
       source_of_truth: 'Autotask',
       domain_snapshots: {
         ...(existing?.domain_snapshots || {}),
@@ -1554,6 +2005,7 @@ export class TicketWorkflowCoreService {
           ...(canonicalAssignedTo ? { assigned_to: canonicalAssignedTo } : {}),
           ...(canonicalQueueId !== undefined ? { queue_id: canonicalQueueId } : {}),
           ...(canonicalQueueName ? { queue_name: canonicalQueueName } : {}),
+          ...(canonicalTicketBody ? { ticket_body: canonicalTicketBody } : {}),
           ...(resolvedCreatedAt ? { created_at: resolvedCreatedAt } : {}),
         },
         'correlates.ticket_metadata': {
@@ -1585,7 +2037,7 @@ export class TicketWorkflowCoreService {
       next.comments = next.comments.slice(-this.maxCommentsPerTicket);
     }
 
-    await this.repo.upsertInboxTicket(next);
+    await this.repo.upsertInboxTicket(this.deriveTicketOperationalState(next));
     for (const aliasId of aliasesToDelete) {
       await this.repo.deleteInboxTicket(event.tenant_id, aliasId);
     }
@@ -2010,10 +2462,14 @@ export class TicketWorkflowCoreService {
           return requester ? { requester } : {};
         })()),
       }), preferred);
-      deduped.push(merged);
+      deduped.push(this.deriveTicketOperationalState(merged));
 
     }
-    return deduped.sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+    return deduped.sort((a, b) => {
+      const scoreOrder = this.compareSchedulerPriority(a, b);
+      if (scoreOrder !== 0) return scoreOrder;
+      return String(b.updated_at || '').localeCompare(String(a.updated_at || ''));
+    });
   }
 
   private async hydrateMissingOrgRequester(rows: InboxTicketState[]): Promise<InboxTicketState[]> {
@@ -2089,7 +2545,7 @@ export class TicketWorkflowCoreService {
             ...(existingSnapshotCreatedAt ? { created_at: existingSnapshotCreatedAt } : {}),
             updated_at: nowIso(),
           };
-          await this.repo.upsertInboxTicket(nextFromSnapshot);
+          await this.repo.upsertInboxTicket(this.deriveTicketOperationalState(nextFromSnapshot));
           return nextFromSnapshot;
         }
         return null;
@@ -2199,7 +2655,7 @@ export class TicketWorkflowCoreService {
             },
             updated_at: nowIso(),
           };
-          await this.repo.upsertInboxTicket(next);
+          await this.repo.upsertInboxTicket(this.deriveTicketOperationalState(next));
           return next;
         }
       );
@@ -2222,18 +2678,22 @@ export class TicketWorkflowCoreService {
     candidates: InboxTicketState[],
     limit: number
   ): InboxTicketState[] {
+    const ranked = candidates
+      .map((candidate) => this.deriveTicketOperationalState(candidate))
+      .sort((a, b) => this.compareSchedulerPriority(a, b));
+
     if (candidates.length <= limit) {
       this.inboxHydrationCursorByTenant.set(tenantId, 0);
-      return candidates;
+      return ranked;
     }
     const cursor = this.inboxHydrationCursorByTenant.get(tenantId) ?? 0;
-    const start = ((cursor % candidates.length) + candidates.length) % candidates.length;
+    const start = ((cursor % ranked.length) + ranked.length) % ranked.length;
     const batch: InboxTicketState[] = [];
     for (let i = 0; i < limit; i += 1) {
-      const candidate = candidates[(start + i) % candidates.length];
+      const candidate = ranked[(start + i) % ranked.length];
       if (candidate) batch.push(candidate);
     }
-    this.inboxHydrationCursorByTenant.set(tenantId, (start + limit) % candidates.length);
+    this.inboxHydrationCursorByTenant.set(tenantId, (start + limit) % ranked.length);
     return batch;
   }
 
@@ -2260,6 +2720,101 @@ export class TicketWorkflowCoreService {
       occurred_at: nowIso(),
       change_kind: 'sync',
     });
+  }
+
+  async getTicketSnapshot(tenantId: string, ticketRef: string): Promise<CanonicalTicketSnapshotV1 | null> {
+    const row = await this.resolveTicketView(tenantId, ticketRef);
+    if (!row) return null;
+
+    const derived = this.deriveTicketOperationalState(row);
+    const snapshot: Record<string, unknown> = {
+      ticket_id: derived.ticket_id,
+      external_id: derived.external_id,
+      ticket_number: derived.ticket_number,
+      created_at: derived.created_at,
+      title: derived.title,
+      description: derived.description,
+      company: derived.company,
+      requester: derived.requester,
+      status: derived.status,
+      assigned_to: derived.assigned_to,
+      queue_id: derived.queue_id,
+      queue_name: derived.queue_name,
+      comments: derived.comments,
+      domain_snapshots: derived.domain_snapshots,
+      source_of_truth: derived.source_of_truth,
+      updated_at: derived.updated_at,
+    };
+
+    return {
+      schema_version: 'v1',
+      tenant_id: derived.tenant_id,
+      ticket_id: derived.ticket_id,
+      snapshot,
+      block_consistency: derived.block_consistency || {
+        core_state: 'resolving',
+        network_env_body_state: 'resolving',
+        hypothesis_checklist_state: 'resolving',
+      },
+      pipeline_status: derived.pipeline_status || 'queued',
+      ...(derived.pipeline_reason_code ? { pipeline_reason_code: derived.pipeline_reason_code } : {}),
+      ...(derived.processing_lag_ms !== undefined ? { processing_lag_ms: derived.processing_lag_ms } : {}),
+      ...(derived.next_retry_at ? { next_retry_at: derived.next_retry_at } : {}),
+      ...(derived.retry_count !== undefined ? { retry_count: derived.retry_count } : {}),
+      ...(derived.dlq_id ? { dlq_id: derived.dlq_id } : {}),
+      ...(derived.last_background_processed_at ? { last_background_processed_at: derived.last_background_processed_at } : {}),
+      ...(derived.consistent_at ? { consistent_at: derived.consistent_at } : {}),
+      ...(derived.trace_id ? { trace_id: derived.trace_id } : {}),
+    };
+  }
+
+  async listTicketCommands(tenantId: string, ticketRef: string): Promise<Array<{
+    command_id: string;
+    state: ConnectorCommandStateV1;
+    execution_status: CommandExecutionStatus;
+    command_type: WorkflowCommandType;
+    requested_at: string;
+    updated_at: string;
+    attempts: number;
+    max_attempts: number;
+    next_retry_at?: string;
+    last_error?: string;
+    trace_id: string;
+    idempotency_key: string;
+  }>> {
+    const resolvedTicket = await this.resolveTicketView(tenantId, ticketRef);
+    const refs = new Set<string>([String(ticketRef || '').trim()]);
+    if (resolvedTicket) {
+      refs.add(String(resolvedTicket.ticket_id || '').trim());
+      refs.add(String(resolvedTicket.ticket_number || '').trim());
+      refs.add(String(resolvedTicket.external_id || '').trim());
+    }
+    refs.delete('');
+
+    const collected = new Map<string, WorkflowCommandAttempt>();
+    for (const ref of refs) {
+      const commands = await this.repo.listCommandsByTicket(tenantId, ref);
+      for (const command of commands) {
+        collected.set(command.command.command_id, command);
+      }
+    }
+
+    return Array.from(collected.values())
+      .sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')))
+      .map((attempt) => ({
+        command_id: attempt.command.command_id,
+        state: this.mapCommandStatusToConnectorState(attempt.status),
+        execution_status: attempt.status,
+        command_type: attempt.command.command_type,
+        requested_at: attempt.command.requested_at,
+        updated_at: attempt.updated_at,
+        attempts: attempt.attempts,
+        max_attempts: attempt.max_attempts,
+        ...(attempt.next_retry_at ? { next_retry_at: attempt.next_retry_at } : {}),
+        ...(attempt.last_error ? { last_error: attempt.last_error } : {}),
+        trace_id: attempt.command.correlation.trace_id,
+        idempotency_key: attempt.command.idempotency_key,
+      }));
   }
 
   async listReconciliationIssues(tenantId: string, ticketId?: string): Promise<ReconciliationIssue[]> {

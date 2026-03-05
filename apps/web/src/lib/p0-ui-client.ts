@@ -126,8 +126,62 @@ export interface WorkflowInboxTicket {
   last_event_occurred_at?: string;
   last_event_id?: string;
   last_command_id?: string;
+  trace_id?: string;
+  intake_received_at?: string;
+  first_seen_at?: string;
+  priority_score?: number;
+  priority_sla_risk?: number;
+  block_consistency?: {
+    core_state: 'resolving' | 'ready' | 'degraded';
+    network_env_body_state: 'resolving' | 'ready' | 'degraded';
+    hypothesis_checklist_state: 'resolving' | 'ready' | 'degraded';
+  };
+  pipeline_status?: 'queued' | 'processing' | 'retry_scheduled' | 'degraded' | 'dlq' | 'ready';
+  pipeline_reason_code?: string;
+  processing_lag_ms?: number;
+  next_retry_at?: string;
+  retry_count?: number;
+  dlq_id?: string;
+  last_background_processed_at?: string;
+  consistent_at?: string;
   source_of_truth: 'Autotask';
   updated_at: string;
+}
+
+export interface WorkflowTicketSnapshotV1 {
+  schema_version: 'v1';
+  tenant_id: string;
+  ticket_id: string;
+  snapshot: Record<string, unknown>;
+  block_consistency: {
+    core_state: 'resolving' | 'ready' | 'degraded';
+    network_env_body_state: 'resolving' | 'ready' | 'degraded';
+    hypothesis_checklist_state: 'resolving' | 'ready' | 'degraded';
+  };
+  pipeline_status: 'queued' | 'processing' | 'retry_scheduled' | 'degraded' | 'dlq' | 'ready';
+  pipeline_reason_code?: string;
+  processing_lag_ms?: number;
+  next_retry_at?: string;
+  retry_count?: number;
+  dlq_id?: string;
+  last_background_processed_at?: string;
+  consistent_at?: string;
+  trace_id?: string;
+}
+
+export interface WorkflowTicketCommandV1 {
+  command_id: string;
+  state: 'accepted' | 'pending' | 'completed' | 'failed' | 'dlq';
+  execution_status: 'accepted' | 'processing' | 'completed' | 'retry_pending' | 'failed' | 'dlq' | 'rejected';
+  command_type: string;
+  requested_at: string;
+  updated_at: string;
+  attempts: number;
+  max_attempts: number;
+  next_retry_at?: string;
+  last_error?: string;
+  trace_id: string;
+  idempotency_key: string;
 }
 
 export interface WorkflowAuditRecord {
@@ -602,6 +656,20 @@ export function listWorkflowInbox() {
   return request<WorkflowInboxTicket[]>('/workflow/inbox', undefined, {
     staleTimeMs: 12_000,
     staleWhileRevalidateMs: 2 * 60_000,
+  });
+}
+
+export function getWorkflowTicketSnapshot(ticketId: string) {
+  return request<WorkflowTicketSnapshotV1>(`/workflow/tickets/${encodeURIComponent(ticketId)}`, undefined, {
+    staleTimeMs: 6_000,
+    staleWhileRevalidateMs: 30_000,
+  });
+}
+
+export function listWorkflowTicketCommands(ticketId: string) {
+  return request<WorkflowTicketCommandV1[]>(`/workflow/tickets/${encodeURIComponent(ticketId)}/commands`, undefined, {
+    staleTimeMs: 4_000,
+    staleWhileRevalidateMs: 20_000,
   });
 }
 

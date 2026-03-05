@@ -695,3 +695,4 @@ export interface ITGlueDocument {
 export * from './cp0-contracts.js';
 export * from './autotask-two-way-contract.js';
 export * from './workflow-realtime.js';
+export * from './canonical-json-pipeline-v1.js';

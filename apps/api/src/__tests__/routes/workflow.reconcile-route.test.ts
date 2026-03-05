@@ -5,6 +5,8 @@ const mockWorkflowService = {
   submitCommand: jest.fn(),
   processPendingCommands: jest.fn(),
   getCommand: jest.fn(),
+  getTicketSnapshot: jest.fn(),
+  listTicketCommands: jest.fn(),
   processAutotaskSyncEvent: jest.fn(),
   reconcileTicket: jest.fn(),
   listReconciliationIssues: jest.fn(),
@@ -17,12 +19,17 @@ jest.mock('../../services/orchestration/workflow-runtime.js', () => ({
 
 import workflowRouter from '../../routes/workflow/workflow.js';
 
-async function invokeReconcileRoute(ticketId: string, correlationId: string) {
+async function invokeWorkflowRoute(
+  method: 'GET' | 'POST',
+  url: string,
+  options?: { correlationId?: string }
+) {
+  const correlationId = options?.correlationId || `trace-${Date.now()}`;
   const headers = new Map<string, string>([['x-correlation-id', correlationId]]);
   const req: any = {
-    method: 'POST',
-    url: `/reconcile/${ticketId}`,
-    originalUrl: `/workflow/reconcile/${ticketId}`,
+    method,
+    url,
+    originalUrl: `/workflow${url}`,
     headers: Object.fromEntries(headers),
     body: {},
     auth: { tid: 'tenant-1', sub: 'user-1', role: 'admin' },
@@ -53,6 +60,13 @@ async function invokeReconcileRoute(ticketId: string, correlationId: string) {
       }
     });
   });
+}
+
+async function invokeReconcileRoute(ticketId: string, correlationId: string, routePrefix: 'legacy' | 'v1' = 'legacy') {
+  const url = routePrefix === 'legacy'
+    ? `/reconcile/${ticketId}`
+    : `/tickets/${ticketId}/reconcile`;
+  return invokeWorkflowRoute('POST', url, { correlationId });
 }
 
 describe('workflow reconcile route', () => {
@@ -124,5 +138,102 @@ describe('workflow reconcile route', () => {
         disposition: 'retry',
       }),
     });
+  });
+
+  it('returns workflow ticket snapshot with pipeline fields', async () => {
+    mockWorkflowService.getTicketSnapshot.mockResolvedValueOnce({
+      schema_version: 'v1',
+      tenant_id: 'tenant-1',
+      ticket_id: 'T20260305.0001',
+      snapshot: { ticket_number: 'T20260305.0001', title: 'VPN unstable' },
+      block_consistency: {
+        core_state: 'ready',
+        network_env_body_state: 'resolving',
+        hypothesis_checklist_state: 'resolving',
+      },
+      pipeline_status: 'processing',
+      pipeline_reason_code: 'background_processing',
+      processing_lag_ms: 4200,
+      trace_id: 'trace-ticket-read',
+    });
+
+    const response = await invokeWorkflowRoute('GET', '/tickets/T20260305.0001', {
+      correlationId: 'trace-ticket-read',
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      data: {
+        schema_version: 'v1',
+        ticket_id: 'T20260305.0001',
+        pipeline_status: 'processing',
+        processing_lag_ms: 4200,
+      },
+    });
+    expect(mockWorkflowService.getTicketSnapshot).toHaveBeenCalledWith('tenant-1', 'T20260305.0001');
+  });
+
+  it('returns ticket command states mapped for ui consumption', async () => {
+    mockWorkflowService.listTicketCommands.mockResolvedValueOnce([
+      {
+        command_id: 'cmd-1',
+        state: 'pending',
+        execution_status: 'retry_pending',
+        command_type: 'status_update',
+        requested_at: '2026-03-05T12:00:00.000Z',
+        updated_at: '2026-03-05T12:00:05.000Z',
+        attempts: 2,
+        max_attempts: 3,
+        next_retry_at: '2026-03-05T12:00:10.000Z',
+        trace_id: 'trace-cmd-1',
+        idempotency_key: 'idem-1',
+      },
+    ]);
+
+    const response = await invokeWorkflowRoute('GET', '/tickets/T20260305.0001/commands', {
+      correlationId: 'trace-cmd-route',
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      count: 1,
+      data: [
+        expect.objectContaining({
+          command_id: 'cmd-1',
+          state: 'pending',
+          execution_status: 'retry_pending',
+        }),
+      ],
+    });
+    expect(mockWorkflowService.listTicketCommands).toHaveBeenCalledWith('tenant-1', 'T20260305.0001');
+  });
+
+  it('supports v1 reconcile alias route /tickets/:id/reconcile', async () => {
+    mockWorkflowService.reconcileTicket.mockResolvedValueOnce({
+      matched: true,
+      classification: 'match',
+      domains: [],
+    });
+
+    const response = await invokeReconcileRoute('T20260305.0002', 'trace-reconcile-v1', 'v1');
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      success: true,
+      data: expect.objectContaining({
+        matched: true,
+        classification: 'match',
+      }),
+    });
+    expect(mockWorkflowService.reconcileTicket).toHaveBeenCalledWith(
+      'tenant-1',
+      'T20260305.0002',
+      expect.objectContaining({
+        trace_id: 'trace-reconcile-v1',
+        ticket_id: 'T20260305.0002',
+      }),
+    );
   });
 });

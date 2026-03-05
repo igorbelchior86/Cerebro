@@ -1124,4 +1124,117 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
       }),
     });
   });
+
+  it('applies deterministic warm-queue ordering and first_seen_boost ttl (15m)', async () => {
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn(),
+    };
+    const { service, repo } = createService(gateway);
+    const nowIso = new Date().toISOString();
+    const nowMinus16m = new Date(Date.now() - (16 * 60 * 1000)).toISOString();
+
+    await repo.upsertInboxTicket({
+      tenant_id: tenantId,
+      ticket_id: 'TIE-BREAK-2',
+      ticket_number: 'TIE-BREAK-2',
+      title: 'Printer issue',
+      description: 'Ticket body present',
+      company: 'Acme',
+      requester: 'John',
+      status: 'At Risk',
+      created_at: '2026-03-05T10:00:00.000Z',
+      intake_received_at: nowIso,
+      first_seen_at: nowIso,
+      comments: [],
+      source_of_truth: 'Autotask',
+      domain_snapshots: {
+        tickets: { network_ip: '10.0.0.8' },
+      },
+      updated_at: nowIso,
+    });
+
+    await repo.upsertInboxTicket({
+      tenant_id: tenantId,
+      ticket_id: 'TIE-BREAK-1',
+      ticket_number: 'TIE-BREAK-1',
+      title: 'Printer issue',
+      description: 'Ticket body present',
+      company: 'Acme',
+      requester: 'John',
+      status: 'In Progress',
+      created_at: '2026-03-05T09:59:00.000Z',
+      intake_received_at: nowIso,
+      first_seen_at: nowIso,
+      comments: [],
+      source_of_truth: 'Autotask',
+      domain_snapshots: {
+        tickets: { network_ip: '10.0.0.7' },
+      },
+      updated_at: nowIso,
+    });
+
+    await repo.upsertInboxTicket({
+      tenant_id: tenantId,
+      ticket_id: 'BOOST-EXPIRED',
+      ticket_number: 'BOOST-EXPIRED',
+      title: 'Low priority ticket',
+      description: 'Ticket body present',
+      company: 'Acme',
+      requester: 'Mary',
+      status: 'New',
+      created_at: '2026-03-05T10:05:00.000Z',
+      intake_received_at: nowMinus16m,
+      first_seen_at: nowMinus16m,
+      comments: [],
+      source_of_truth: 'Autotask',
+      domain_snapshots: {
+        tickets: { network_ip: '10.0.0.9' },
+      },
+      updated_at: nowIso,
+    });
+
+    const inbox = await service.listInbox(tenantId);
+    const tieBreak2 = inbox.find((row) => row.ticket_id === 'TIE-BREAK-2');
+    const tieBreak1 = inbox.find((row) => row.ticket_id === 'TIE-BREAK-1');
+    const boostExpired = inbox.find((row) => row.ticket_id === 'BOOST-EXPIRED');
+    expect(inbox[0]?.ticket_id).toBe('TIE-BREAK-2');
+    expect((tieBreak2?.priority_score || 0)).toBeGreaterThan((tieBreak1?.priority_score || 0));
+    expect((tieBreak1?.priority_score || 0)).toBeGreaterThan((boostExpired?.priority_score || 0));
+  });
+
+  it('surfaces retry_scheduled and dlq pipeline statuses in ticket snapshot', async () => {
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn().mockRejectedValue(new WorkflowTransientError('Autotask timeout')),
+    };
+    const { service, repo } = createService(gateway, 2);
+    const command = buildCommandEnvelope({
+      tenantId,
+      targetIntegration: 'Autotask',
+      commandType: 'status_update',
+      payload: { ticket_id: 'PIPE-9001', status: 'In Progress' },
+      actor,
+      idempotencyKey: 'pipeline-retry-dlq',
+      correlation: { trace_id: 'trace-pipeline', ticket_id: 'PIPE-9001' },
+    });
+
+    await service.submitCommand(command);
+    await service.processPendingCommands();
+
+    const retrySnapshot = await service.getTicketSnapshot(tenantId, 'PIPE-9001');
+    expect(retrySnapshot).toBeTruthy();
+    expect(retrySnapshot?.pipeline_status).toBe('retry_scheduled');
+    expect(retrySnapshot?.next_retry_at).toBeTruthy();
+
+    const commandState = await service.getCommand(command.command_id);
+    expect(commandState?.status).toBe('retry_pending');
+    if (commandState) {
+      commandState.next_retry_at = new Date(Date.now() - 1_000).toISOString();
+      await repo.upsertCommandAttempt(commandState);
+    }
+
+    await service.processPendingCommands();
+    const dlqSnapshot = await service.getTicketSnapshot(tenantId, 'PIPE-9001');
+    expect(dlqSnapshot?.pipeline_status).toBe('dlq');
+    expect(dlqSnapshot?.dlq_id).toBe(command.command_id);
+  });
 });

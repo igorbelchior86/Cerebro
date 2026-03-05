@@ -265,7 +265,43 @@ router.post('/sync/autotask', async (req, res, next) => {
   }
 });
 
-router.post('/reconcile/:ticketId', async (req, res, next) => {
+router.get('/tickets/:ticketId', async (req, res, next) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const ticketId = String(req.params.ticketId || '').trim();
+    if (!ticketId) {
+      res.status(400).json({ error: 'ticketId required' });
+      return;
+    }
+    const snapshot = await workflowService.getTicketSnapshot(tenantId, ticketId);
+    if (!snapshot) {
+      res.status(404).json({ error: 'Ticket not found' });
+      return;
+    }
+    res.json({ success: true, data: snapshot, timestamp: new Date().toISOString() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/tickets/:ticketId/commands', async (req, res, next) => {
+  try {
+    const tenantId = requireTenant(req, res);
+    if (!tenantId) return;
+    const ticketId = String(req.params.ticketId || '').trim();
+    if (!ticketId) {
+      res.status(400).json({ error: 'ticketId required' });
+      return;
+    }
+    const rows = await workflowService.listTicketCommands(tenantId, ticketId);
+    res.json({ success: true, data: rows, count: rows.length, timestamp: new Date().toISOString() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+async function handleReconcileRequest(req: Request, res: Response, next: (error?: any) => void) {
   try {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
@@ -314,7 +350,10 @@ router.post('/reconcile/:ticketId', async (req, res, next) => {
     }
     next(error);
   }
-});
+}
+
+router.post('/reconcile/:ticketId', handleReconcileRequest);
+router.post('/tickets/:ticketId/reconcile', handleReconcileRequest);
 
 router.get('/reconciliation-issues', async (req, res, next) => {
   try {

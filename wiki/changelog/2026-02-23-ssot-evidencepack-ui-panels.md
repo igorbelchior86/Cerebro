@@ -2,7 +2,7 @@
 # What changed
 - EvidencePack ticket/org/user fields now prefer SSOT values when available.
 - Triage UI (left list + center + right panel) now prioritizes SSOT fields for display.
-- Email ingestion list endpoint merges SSOT payload into list rows.
+- Ticket intake list endpoint merges SSOT payload into list rows.
 
 # Why it changed
 - Ensure a single source of truth for ticket identity and core fields across all UI panels.
@@ -15,7 +15,7 @@
 
 # Files touched
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/services/prepare-context.ts
-- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/app/[locale]/(chat)/triage/[id]/page.tsx
 - /Users/igorbelchior/Documents/Github/Cerebro/wiki/features/ssot-evidencepack-ui-panels.md
 

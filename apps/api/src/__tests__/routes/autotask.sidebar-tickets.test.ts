@@ -2,6 +2,7 @@ import express from 'express';
 import request from 'supertest';
 import router from '../../services/application/route-handlers/autotask-route-handlers.js';
 import { AutotaskClient } from '../../clients/index.js';
+import * as db from '../../db/index.js';
 
 describe('GET /autotask/sidebar-tickets', () => {
   const originalEnv = {
@@ -15,6 +16,7 @@ describe('GET /autotask/sidebar-tickets', () => {
     process.env.AUTOTASK_USERNAME = 'test-user';
     process.env.AUTOTASK_SECRET = 'test-secret';
     jest.restoreAllMocks();
+    jest.spyOn(db, 'queryOne').mockResolvedValue({ email: 'admin@cerebro.local' } as any);
   });
 
   afterAll(() => {
@@ -31,6 +33,10 @@ describe('GET /autotask/sidebar-tickets', () => {
     jest.spyOn(AutotaskClient.prototype, 'getTicketQueues').mockResolvedValue([]);
 
     const app = express();
+    app.use((req, _res, next) => {
+      (req as any).auth = { sub: 'master-user', tid: '', role: 'owner', scope: 'full' };
+      next();
+    });
     app.use('/autotask', router);
     app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       res.status(500).json({ error: String(err?.message || err) });
@@ -49,6 +55,10 @@ describe('GET /autotask/sidebar-tickets', () => {
     jest.spyOn(AutotaskClient.prototype, 'getTicketQueues').mockResolvedValue([]);
 
     const app = express();
+    app.use((req, _res, next) => {
+      (req as any).auth = { sub: 'master-user', tid: '', role: 'owner', scope: 'full' };
+      next();
+    });
     app.use('/autotask', router);
     app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       res.status(500).json({ error: String(err?.message || err) });

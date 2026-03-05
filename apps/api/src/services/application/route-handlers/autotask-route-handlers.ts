@@ -10,6 +10,7 @@ import { triageOrchestrator } from '../../orchestration/triage-orchestrator.js';
 import { classifyQueueError } from '../../../platform/errors.js';
 import { tenantContext } from '../../../lib/tenantContext.js';
 import { buildTenantCacheKey, buildTenantDomainTag, distributedCache } from '../../cache/distributed-cache.js';
+import { canUseEnvCredentialsForUser } from '../../identity/env-credential-policy.js';
 import type { AutotaskTicket } from '@cerebro/types';
 
 const router: ExpressRouter = Router();
@@ -83,7 +84,10 @@ function getClient() {
   });
 }
 
-async function getTenantScopedClient(tenantIdFromRequest?: string | null): Promise<AutotaskClient | null> {
+async function getTenantScopedClient(
+  tenantIdFromRequest?: string | null,
+  actorUserId?: string | null
+): Promise<AutotaskClient | null> {
   const tenantId = String(tenantIdFromRequest || tenantContext.getStore()?.tenantId || '').trim();
   try {
     if (tenantId) {
@@ -100,12 +104,17 @@ async function getTenantScopedClient(tenantIdFromRequest?: string | null): Promi
           ...(creds.zoneUrl ? { zoneUrl: creds.zoneUrl } : {}),
         });
       }
-      return null;
+      const canUseEnvCredentials = await canUseEnvCredentialsForUser(actorUserId);
+      if (!canUseEnvCredentials) return null;
+      return getClient();
     }
   } catch {
-    // Fall back to env-based client below.
+    const canUseEnvCredentials = await canUseEnvCredentialsForUser(actorUserId);
+    if (!canUseEnvCredentials) return null;
+    return getClient();
   }
-  if (tenantId) return null;
+  const canUseEnvCredentials = await canUseEnvCredentialsForUser(actorUserId);
+  if (!canUseEnvCredentials) return null;
   return getClient();
 }
 
@@ -672,7 +681,7 @@ function resolvePicklistLabel(options: Array<{ id: number; label: string }>, raw
  */
 router.get('/ticket/:id', async (req, res, next) => {
   try {
-    const client = await getTenantScopedClient(req.auth?.tid);
+    const client = await getTenantScopedClient(req.auth?.tid, req.auth?.sub);
     if (!client) { res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' }); return; }
     const ticketId = parseInt(req.params.id, 10);
     const ticket = await client.getTicket(ticketId);
@@ -692,7 +701,7 @@ router.get('/ticket/:id', async (req, res, next) => {
  */
 router.get('/tickets/search', async (req, res, next) => {
   try {
-    const client = await getTenantScopedClient(req.auth?.tid);
+    const client = await getTenantScopedClient(req.auth?.tid, req.auth?.sub);
     if (!client) { res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' }); return; }
     const filter = req.query.filter as string;
     if (!filter) {
@@ -717,7 +726,7 @@ router.get('/tickets/search', async (req, res, next) => {
  */
 router.get('/device/:id', async (req, res, next) => {
   try {
-    const client = await getTenantScopedClient(req.auth?.tid);
+    const client = await getTenantScopedClient(req.auth?.tid, req.auth?.sub);
     if (!client) { res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' }); return; }
     const deviceId = parseInt(req.params.id, 10);
     const device = await client.getDevice(deviceId);
@@ -737,7 +746,7 @@ router.get('/device/:id', async (req, res, next) => {
  */
 router.get('/company/:companyId/devices', async (req, res, next) => {
   try {
-    const client = await getTenantScopedClient(req.auth?.tid);
+    const client = await getTenantScopedClient(req.auth?.tid, req.auth?.sub);
     if (!client) { res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' }); return; }
     const companyId = parseInt(req.params.companyId, 10);
     const devices = await client.getDevicesByCompany(companyId);
@@ -758,7 +767,7 @@ router.get('/company/:companyId/devices', async (req, res, next) => {
  */
 router.get('/ticket/:id/notes', async (req, res, next) => {
   try {
-    const client = await getTenantScopedClient(req.auth?.tid);
+    const client = await getTenantScopedClient(req.auth?.tid, req.auth?.sub);
     if (!client) { res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' }); return; }
     const requestedRef = String(req.params.id || '').trim();
     if (!requestedRef) {
@@ -796,7 +805,7 @@ router.get('/ticket/:id/notes', async (req, res, next) => {
 
 router.get('/ticket-field-options', async (req, res, next) => {
   try {
-    const client = await getTenantScopedClient(req.auth?.tid);
+    const client = await getTenantScopedClient(req.auth?.tid, req.auth?.sub);
     if (!client) {
       res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
       return;
@@ -914,7 +923,7 @@ router.get('/ticket-field-options', async (req, res, next) => {
 
 router.get('/ticket-draft-defaults', async (req, res, next) => {
   try {
-    const client = await getTenantScopedClient(req.auth?.tid);
+    const client = await getTenantScopedClient(req.auth?.tid, req.auth?.sub);
     if (!client) {
       res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
       return;
@@ -963,7 +972,7 @@ router.get('/ticket-draft-defaults', async (req, res, next) => {
  */
 router.get('/queues', async (req, res, next) => {
   try {
-    const client = await getTenantScopedClient(req.auth?.tid);
+    const client = await getTenantScopedClient(req.auth?.tid, req.auth?.sub);
     if (!client) {
       res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
       return;
@@ -1022,7 +1031,7 @@ router.get('/queues', async (req, res, next) => {
  */
 router.get('/companies/search', async (req, res, next) => {
   try {
-    const client = await getTenantScopedClient(req.auth?.tid);
+    const client = await getTenantScopedClient(req.auth?.tid, req.auth?.sub);
     if (!client) {
       res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
       return;
@@ -1108,7 +1117,7 @@ router.get('/companies/search', async (req, res, next) => {
  */
 router.get('/contacts/search', async (req, res, next) => {
   try {
-    const client = await getTenantScopedClient(req.auth?.tid);
+    const client = await getTenantScopedClient(req.auth?.tid, req.auth?.sub);
     if (!client) {
       res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
       return;
@@ -1205,7 +1214,7 @@ router.get('/contacts/search', async (req, res, next) => {
  */
 router.get('/resources/search', async (req, res, next) => {
   try {
-    const client = await getTenantScopedClient(req.auth?.tid);
+    const client = await getTenantScopedClient(req.auth?.tid, req.auth?.sub);
     if (!client) {
       res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
       return;
@@ -1290,7 +1299,7 @@ router.get('/resources/search', async (req, res, next) => {
 router.get('/sidebar-tickets', async (req, res, next) => {
   try {
     const tenantScope = String(req.auth?.tid || tenantContext.getStore()?.tenantId || 'global').trim().toLowerCase();
-    const client = await getTenantScopedClient(req.auth?.tid);
+    const client = await getTenantScopedClient(req.auth?.tid, req.auth?.sub);
     if (!client) {
       res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
       return;
@@ -1393,7 +1402,7 @@ router.get('/sidebar-tickets', async (req, res, next) => {
  */
 router.post('/backfill-recent', async (req, res, next) => {
   try {
-    const client = await getTenantScopedClient(req.auth?.tid);
+    const client = await getTenantScopedClient(req.auth?.tid, req.auth?.sub);
     if (!client) {
       res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
       return;
@@ -1494,7 +1503,7 @@ router.post('/backfill-recent', async (req, res, next) => {
  */
 router.patch('/ticket/:ticketId/context', async (req, res, next) => {
   try {
-    const client = await getTenantScopedClient(req.auth?.tid);
+    const client = await getTenantScopedClient(req.auth?.tid, req.auth?.sub);
     if (!client) {
       res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
       return;
@@ -1655,7 +1664,7 @@ router.patch('/ticket/:ticketId/context', async (req, res, next) => {
  */
 router.post('/ticket/:ticketId/attachments', async (req, res, next) => {
   try {
-    const client = await getTenantScopedClient(req.auth?.tid);
+    const client = await getTenantScopedClient(req.auth?.tid, req.auth?.sub);
     if (!client) {
       res.status(503).json({ error: 'Integration not configured. Add credentials in Settings → Connections.' });
       return;

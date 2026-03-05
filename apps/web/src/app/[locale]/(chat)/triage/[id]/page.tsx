@@ -1905,7 +1905,7 @@ export default function SessionDetail({
 
   const handleToggleManualSuppression = async () => {
     // Legacy suppression control is intentionally disabled in this flow.
-    setError('Manual suppression is disabled in this flow. Email ingestion endpoints were removed from the UI integration path.');
+    setError('Manual suppression is disabled in this flow. Ticket intake endpoints were removed from the UI integration path.');
   };
 
   const displayTickets = sidebarTickets;

@@ -7,7 +7,7 @@
   - `Created by` / `Created on ... by ...`
 - Applied in both:
   - ingestion parser (new records)
-  - `/email-ingestion/list` raw fallback (existing records)
+  - `/ticket-intake/list` raw fallback (existing records)
 
 # Why it changed
 - Tickets can be created by dispatcher/admin on behalf of another user. Sidebar should show the real user context.
@@ -19,7 +19,7 @@
 
 # Files touched
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/services/email/email-parser.ts
-- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts
 
 # Date
 - 2026-02-20

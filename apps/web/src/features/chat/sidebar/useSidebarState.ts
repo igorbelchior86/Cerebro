@@ -374,7 +374,7 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         const normalized = normalizeText(ticket.queue_name ?? ticket.queue ?? '', '');
         const lowered = normalized.toLowerCase();
         if (!normalized) return '';
-        if (['unknown', 'n/a', 'none', 'null', 'email ingestion'].includes(lowered)) return '';
+        if (['unknown', 'n/a', 'none', 'null', 'ticket intake'].includes(lowered)) return '';
         return normalized;
     };
     const getTicketQueueId = (ticket: ActiveTicket) => {

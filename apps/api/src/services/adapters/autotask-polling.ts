@@ -117,6 +117,7 @@ export class AutotaskPollingService {
   private intervalId: NodeJS.Timeout | null = null;
   private isPolling = false;
   private rateLimitCooldownUntil: number | null = null;
+  private authFailureCooldownUntil: number | null = null;
   private pollIntervalMs = 60 * 1000;
   private readonly advisoryLockNamespace = 41023;
   private readonly advisoryLockKey = 1;
@@ -126,6 +127,7 @@ export class AutotaskPollingService {
   private readonly runWithLockFn: (fn: () => Promise<void>) => Promise<PollLockResult>;
   private readonly nowFn: () => number;
   private readonly retryBackoffMsFn: (attempt: number) => number;
+  private readonly authFailureCooldownMs: number;
   private readonly syncRetryMaxAttempts: number;
   private readonly syncRetryQueue = new Map<string, SyncRetryEntry>();
   private readonly syncDlq = new Map<string, SyncRetryEntry>();
@@ -174,6 +176,10 @@ export class AutotaskPollingService {
       const exponent = Math.min(Math.max(attempt - 1, 0), 6);
       return Math.min(base * Math.pow(2, exponent), 60_000);
     });
+    this.authFailureCooldownMs = Math.max(
+      60_000,
+      Number(process.env.AUTOTASK_POLLER_AUTH_FAILURE_COOLDOWN_MS || 30 * 60 * 1000),
+    );
     this.syncRetryMaxAttempts = Math.max(1, Number(input?.syncRetryMaxAttempts ?? 5));
     this.parityBackfillEnabled = Boolean(input?.parityBackfillEnabled ?? false);
     this.parityActiveOnly = Boolean(
@@ -246,29 +252,25 @@ export class AutotaskPollingService {
         }
       }
     } catch {
-      // Fall through to env fallback if DB is unavailable / table not ready.
+      // Fail closed: never use global env credentials in tenant poller runtime.
+      return null;
     }
 
-    const apiIntegrationCode =
-      process.env.AUTOTASK_API_INTEGRATION_CODE ||
-      process.env.AUTOTASK_API_INTEGRATIONCODE ||
-      '';
-    const username =
-      process.env.AUTOTASK_USERNAME ||
-      process.env.AUTOTASK_API_USER ||
-      '';
-    const secret =
-      process.env.AUTOTASK_SECRET ||
-      process.env.AUTOTASK_API_SECRET ||
-      '';
-    const zoneUrl = process.env.AUTOTASK_ZONE_URL || undefined;
-    const tenantId = preferredTenantId;
+    return null;
+  }
 
-    if (!apiIntegrationCode || !username || !secret) return null;
-    return {
-      ...(tenantId ? { tenantId } : {}),
-      credentials: { apiIntegrationCode, username, secret, ...(zoneUrl ? { zoneUrl } : {}) },
-    };
+  private isAuthenticationFailure(error: unknown): boolean {
+    const classifiedReason = String(classifyQueueError(error).reason || '').toLowerCase();
+    const message = String((error as Error)?.message || error || '').toLowerCase();
+    const combined = `${classifiedReason} ${message}`;
+    return (
+      combined.includes('401') ||
+      combined.includes('403') ||
+      combined.includes('unauthorized') ||
+      combined.includes('authentication') ||
+      combined.includes('invalid credentials') ||
+      combined.includes('locked')
+    );
   }
 
   private async buildPollContext(): Promise<AutotaskPollContext | null> {
@@ -339,6 +341,19 @@ export class AutotaskPollingService {
     this.isPolling = true;
     try {
       const now = this.nowFn();
+      if (this.authFailureCooldownUntil && now < this.authFailureCooldownUntil) {
+        operationalLogger.warn('adapters.autotask_polling.auth_cooldown_active', {
+          module: 'adapters.autotask-polling',
+          integration: 'autotask',
+          signal: 'integration_failure',
+          degraded_mode: true,
+          cooldown_until: new Date(this.authFailureCooldownUntil).toISOString(),
+        });
+        return;
+      }
+      if (this.authFailureCooldownUntil && now >= this.authFailureCooldownUntil) {
+        this.authFailureCooldownUntil = null;
+      }
       if (this.rateLimitCooldownUntil && now < this.rateLimitCooldownUntil) {
         operationalLogger.warn('adapters.autotask_polling.rate_limit_cooldown_active', {
           module: 'adapters.autotask-polling',
@@ -448,6 +463,7 @@ export class AutotaskPollingService {
         }
 
       });
+      this.authFailureCooldownUntil = null;
       if (!lock.acquired) {
         operationalLogger.info('adapters.autotask_polling.lock_not_acquired', {
           module: 'adapters.autotask-polling',
@@ -457,7 +473,16 @@ export class AutotaskPollingService {
       }
     } catch (error) {
       const classified = classifyQueueError(error);
-      if (classified.code === 'RATE_LIMIT') {
+      if (this.isAuthenticationFailure(error)) {
+        this.authFailureCooldownUntil = this.nowFn() + this.authFailureCooldownMs;
+        operationalLogger.warn('adapters.autotask_polling.auth_cooldown_entered', {
+          module: 'adapters.autotask-polling',
+          integration: 'autotask',
+          signal: 'integration_failure',
+          degraded_mode: true,
+          cooldown_until: new Date(this.authFailureCooldownUntil).toISOString(),
+        });
+      } else if (classified.code === 'RATE_LIMIT') {
         this.rateLimitCooldownUntil = this.nowFn() + (15 * 60 * 1000);
         operationalLogger.warn('adapters.autotask_polling.rate_limit_cooldown_entered', {
           module: 'adapters.autotask-polling',

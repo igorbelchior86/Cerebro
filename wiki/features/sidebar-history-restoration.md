@@ -1,6 +1,6 @@
 # Sidebar History Restoration
 # What changed
-- Updated `/email-ingestion/list` to include both:
+- Updated `/ticket-intake/list` to include both:
   - `tickets_processed` records
   - `triage_sessions` history (with latest `evidence_packs` payload)
 - Added merge + dedupe by `ticket_id`.
@@ -16,7 +16,7 @@
 - Data: No schema changes.
 
 # Files touched
-- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts
 
 # Date
 - 2026-02-20

@@ -1,6 +1,6 @@
 # Sidebar Order by Ticket Sequence (TYYYYMMDD.NNNN)
 # What changed
-- Updated sidebar list ordering logic in `/email-ingestion/list` to prioritize canonical ticket sequence from `ticket_id` (`TYYYYMMDD.NNNN`) instead of mutable timestamps.
+- Updated sidebar list ordering logic in `/ticket-intake/list` to prioritize canonical ticket sequence from `ticket_id` (`TYYYYMMDD.NNNN`) instead of mutable timestamps.
 - Applied the same ordering policy in SQL and in the final in-memory sort to avoid post-query reorder drift.
 
 # Why it changed
@@ -12,7 +12,7 @@
 - Data: no schema changes.
 
 # Files touched
-- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts
 
 # Date
 - 2026-02-21

@@ -1,6 +1,6 @@
 # PrepareContext: Autotask Primary, Email Fallback
 # What changed
-- Updated `PrepareContextService` intake logic for `T...` tickets to try Autotask first (`ticketNumber` query) before using email-ingestion tables.
+- Updated `PrepareContextService` intake logic for `T...` tickets to try Autotask first (`ticketNumber` query) before using ticket-intake tables.
 - Added explicit fallback behavior and logs when Autotask lookup fails (e.g., `404`), then reuses existing email DB/raw fallback path.
 - Tracked actual intake source (`autotask` or `email`) during preparation and persisted it in the ticket text artifact metadata.
 - Improved `AutotaskClient` query parsing to support real query response shape using `items` (in addition to legacy `records`).

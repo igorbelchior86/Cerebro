@@ -22,7 +22,7 @@ After moving to an Autotask-first pipeline, some UI fields still showed `unknown
 
 | Lookup (Autotask) | Trigger field from `Tickets` | Promote to SSOT (`autotask_authoritative`) | Also sync to SSOT canonical fields | UI/API consumers (current) |
 |---|---|---|---|---|
-| `Companies/{companyID}` | `companyID` | `company_id`, `company_name` | `ticket_ssot.company` | Sidebar list `/email-ingestion/list` (`company/org`), triage detail header/context via `ssot.company`, `/playbook/full-flow` `data.ticket.company` |
+| `Companies/{companyID}` | `companyID` | `company_id`, `company_name` | `ticket_ssot.company` | Sidebar list `/ticket-intake/list` (`company/org`), triage detail header/context via `ssot.company`, `/playbook/full-flow` `data.ticket.company` |
 | `Contacts/{contactID}` | `contactID` | `contact_id`, `contact_name`, `contact_email` | `ticket_ssot.requester_name`, `ticket_ssot.requester_email` | Sidebar list requester label, triage detail requester/user fallbacks, `/playbook/full-flow` `data.ticket.requester(_normalized)` |
 | `Resources/{assignedResourceID}` | `assignedResourceID` | `assigned_resource_id`, `assigned_resource_name`, `assigned_resource_email` | (none yet; retained as authoritative metadata) | Exposed via `/playbook/full-flow` canonical ticket payload for future UI use |
 | `Tickets` (base) | poller/search result | `ticket_number`, `ticket_id_numeric`, `title`, `description` | `ticket_ssot.ticket_id`, `ticket_ssot.title` (and `description_clean` kept normalized separately) | Triage header/title, timeline request message, sidebar ID/title |

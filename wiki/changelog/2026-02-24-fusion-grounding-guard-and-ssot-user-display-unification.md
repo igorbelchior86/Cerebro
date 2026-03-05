@@ -8,7 +8,7 @@
   - LLM-provided `links`/`inferences` are no longer merged into the audit/SSOT; only pipeline-generated deterministic links/inferences are used
 - Strengthened fusion prompt wording to explicitly forbid invented systems/evidence and changed the schema example value away from a real-looking person name.
 - Unified “User” display semantics across UI surfaces:
-  - `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts` sidebar list mapping now derives the displayed user from SSOT using a shared rule: use `affected_user_name` only when it is specific; otherwise use `requester_name`
+  - `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts` sidebar list mapping now derives the displayed user from SSOT using a shared rule: use `affected_user_name` only when it is specific; otherwise use `requester_name`
   - `/Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/app/[locale]/(chat)/triage/[id]/page.tsx` center/right panel now use the same SSOT-derived user selection logic (including local snapshot refresh path)
 
 # Why it changed
@@ -27,7 +27,7 @@
 
 # Files touched
 - `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/services/prepare-context.ts`
-- `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts`
+- `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts`
 - `/Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/app/[locale]/(chat)/triage/[id]/page.tsx`
 - `/Users/igorbelchior/Documents/Github/Cerebro/tasks/todo.md`
 - `/Users/igorbelchior/Documents/Github/Cerebro/tasks/lessons.md`

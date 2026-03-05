@@ -16,7 +16,7 @@ The previous SSOT promotion stored `company_id` (authoritative ID) but not the c
 - `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/clients/autotask.ts`
 - `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/services/prepare-context.ts`
 - `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/playbook.ts`
-- `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts`
+- `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts`
 - `/Users/igorbelchior/Documents/Github/Cerebro/tasks/todo.md`
 - `/Users/igorbelchior/Documents/Github/Cerebro/tasks/lessons.md`
 

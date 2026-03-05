@@ -5,7 +5,7 @@
 - `auth` rotas autenticadas de usuário (`mfa/setup|enable|disable`, `me`, `me/profile`, `invite actor lookup`) agora usam `tenant_id` explícito.
 - `workflow-runtime` usa `tenant_id` no lookup de credencial Autotask.
 - `client-resolver` removeu fallback para credencial global “latest”.
-- `email-ingestion` passou a exigir autenticação e lookup tenant-scoped para credenciais de sidebar.
+- `ticket-intake` passou a exigir autenticação e lookup tenant-scoped para credenciais de sidebar.
 - `autotask-polling` restringiu DB lookup ao tenant explicitamente configurado por env.
 
 # Why it changed
@@ -20,7 +20,7 @@
 # Files touched
 - apps/api/src/index.ts
 - apps/api/src/services/application/route-handlers/auth-route-handlers.ts
-- apps/api/src/services/application/route-handlers/email-ingestion-route-handlers.ts
+- apps/api/src/services/application/route-handlers/ticket-intake-route-handlers.ts
 - apps/api/src/services/context/client-resolver.ts
 - apps/api/src/services/orchestration/workflow-runtime.ts
 - apps/api/src/services/adapters/autotask-polling.ts

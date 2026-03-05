@@ -16,7 +16,7 @@ import diagnoseRoutes from './routes/ai/diagnose.js';
 import playbookRoutes from './routes/ai/playbook.js';
 import integrationsRoutes from './routes/integrations/integrations.js';
 import chatRoutes from './routes/workflow/chat.js';
-import emailIngestionRoutes from './routes/ingestion/email-ingestion.js';
+import ticketIntakeRoutes from './routes/ingestion/ticket-intake.js';
 import authRoutes from './routes/identity/auth.js';
 import platformAdminRoutes from './routes/platform/admin.js';
 import workflowRoutes from './routes/workflow/workflow.js';
@@ -105,8 +105,7 @@ app.use('/workflow', requireAuth, workflowRoutes);
 app.use('/manager-ops', requireAuth, managerOpsRoutes);
 
 // UI still uses these endpoints as a local inbox/session list API.
-// Email ingestion polling is disabled, but read/query routes remain mounted.
-app.use('/email-ingestion', requireAuth, emailIngestionRoutes);
+app.use('/ticket-intake', requireAuth, ticketIntakeRoutes);
 
 // ─── Error Handling ──────────────────────────────────────────
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

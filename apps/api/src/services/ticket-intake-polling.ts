@@ -1,10 +1,10 @@
-import { backfillPendingEmailTickets, ingestSupportMailboxOnce } from './application/route-handlers/email-ingestion-route-handlers.js';
+import { backfillPendingEmailTickets, ingestSupportMailboxOnce } from './application/route-handlers/ticket-intake-route-handlers.js';
 import { withTryAdvisoryLock } from '../db/index.js';
 
-export class EmailIngestionPollingService {
+export class TicketIntakePollingService {
     private intervalId: NodeJS.Timeout | null = null;
     private isPolling = false;
-    private pollIntervalMs = parseInt(process.env.EMAIL_INGEST_POLL_INTERVAL_MS || '60000', 10);
+    private pollIntervalMs = parseInt(process.env.TICKET_INTAKE_POLL_INTERVAL_MS || '60000', 10);
     private readonly advisoryLockNamespace = 41023;
     private readonly advisoryLockKey = 2;
 
@@ -17,19 +17,19 @@ export class EmailIngestionPollingService {
         );
 
         if (this.intervalId) {
-            console.log('[EmailIngestionPolling] Already running.');
+            console.log('[TicketIntakePolling] Already running.');
             return;
         }
 
         if (!hasGraphCreds) {
-            console.warn('[EmailIngestionPolling] Missing Graph credentials. New-email ingestion disabled; backfill still enabled.');
+            console.warn('[TicketIntakePolling] Missing Graph credentials. New-ticket intake disabled; backfill still enabled.');
         }
 
-        console.log(`[EmailIngestionPolling] Starting polling. Interval: ${this.pollIntervalMs}ms`);
-        this.poll().catch((err) => console.error('[EmailIngestionPolling] Initial poll failed:', err));
+        console.log(`[TicketIntakePolling] Starting polling. Interval: ${this.pollIntervalMs}ms`);
+        this.poll().catch((err) => console.error('[TicketIntakePolling] Initial poll failed:', err));
 
         this.intervalId = setInterval(() => {
-            this.poll().catch((err) => console.error('[EmailIngestionPolling] Poll failed:', err));
+            this.poll().catch((err) => console.error('[TicketIntakePolling] Poll failed:', err));
         }, this.pollIntervalMs);
     }
 
@@ -37,7 +37,7 @@ export class EmailIngestionPollingService {
         if (this.intervalId) {
             clearInterval(this.intervalId);
             this.intervalId = null;
-            console.log('[EmailIngestionPolling] Stopped.');
+            console.log('[TicketIntakePolling] Stopped.');
         }
     }
 
@@ -55,16 +55,16 @@ export class EmailIngestionPollingService {
                 if (hasGraphCreds) {
                     const { processed } = await ingestSupportMailboxOnce(process.env.GRAPH_MAILBOX_ADDRESS);
                     if (processed > 0) {
-                        console.log(`[EmailIngestionPolling] Processed ${processed} email ticket(s).`);
+                        console.log(`[TicketIntakePolling] Processed ${processed} email ticket(s).`);
                     }
                 }
                 const backfill = await backfillPendingEmailTickets(25);
                 if (backfill.processed > 0) {
-                    console.log(`[EmailIngestionPolling] Backfilled ${backfill.processed} pending ticket(s).`);
+                    console.log(`[TicketIntakePolling] Backfilled ${backfill.processed} pending ticket(s).`);
                 }
             });
             if (!lock.acquired) {
-                console.log('[EmailIngestionPolling] Another instance holds the polling lock. Skipping this iteration.');
+                console.log('[TicketIntakePolling] Another instance holds the polling lock. Skipping this iteration.');
             }
         } finally {
             this.isPolling = false;
@@ -72,4 +72,4 @@ export class EmailIngestionPollingService {
     }
 }
 
-export const emailIngestionPollingService = new EmailIngestionPollingService();
+export const ticketIntakePollingService = new TicketIntakePollingService();

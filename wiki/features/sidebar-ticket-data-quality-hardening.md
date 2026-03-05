@@ -1,6 +1,6 @@
 # Sidebar Ticket Data Quality Hardening
 # What changed
-- Updated `/email-ingestion/list` merge logic to drop failed session stubs that have neither parsed ticket data nor evidence payload.
+- Updated `/ticket-intake/list` merge logic to drop failed session stubs that have neither parsed ticket data nor evidence payload.
 - Added quality-based precedence when merging session + processed ticket fields:
   - prefer processed title/requester/company when available
   - fallback to sanitized evidence payload fields
@@ -17,7 +17,7 @@
 - Data: No schema changes; backward compatible.
 
 # Files touched
-- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/services/email/email-parser.ts
 
 # Date

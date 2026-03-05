@@ -1,6 +1,6 @@
 # Changelog: Session-only Ticket Fallback
 # What changed
-- `/email-ingestion/list` now enriches missing session-only ticket cards from `tickets_raw`.
+- `/ticket-intake/list` now enriches missing session-only ticket cards from `tickets_raw`.
 - Fixed title precedence bug to include raw fallback title.
 
 # Why it changed
@@ -12,7 +12,7 @@
 - Data: No migration.
 
 # Files touched
-- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/services/email/email-parser.ts
 
 # Date

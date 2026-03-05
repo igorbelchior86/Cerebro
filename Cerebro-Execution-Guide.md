@@ -320,7 +320,7 @@ Make Cerebro operationally usable: a technician/dispatcher can work tickets with
 **In**
 - Inbox list + ticket detail + basic actions (assign/status/comment)
 - Internal vs public comments
-- Basic threading (chat/email ingestion projection)
+- Basic threading (chat/ticket intake projection)
 - Realtime updates (SSE/WebSocket) for ticket state changes
 
 **Out**

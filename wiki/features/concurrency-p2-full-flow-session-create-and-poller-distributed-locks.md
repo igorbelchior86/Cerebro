@@ -4,7 +4,7 @@ P2 concurrency fixes: atomic `/playbook/full-flow` session auto-create and distr
 # What changed
 - `/playbook/full-flow` session resolution for ticket IDs now uses a DB transaction plus PostgreSQL transaction-scoped advisory lock (`pg_advisory_xact_lock`) to serialize concurrent requests per ticket.
 - Added a reusable DB helper `withTryAdvisoryLock(...)` for session-level advisory locks around long-running work.
-- `AutotaskPollingService` and `EmailIngestionPollingService` now acquire a DB-backed advisory lock before each polling cycle.
+- `AutotaskPollingService` and `TicketIntakePollingService` now acquire a DB-backed advisory lock before each polling cycle.
 - Existing local `isPolling` guards were preserved as same-process overlap protection.
 
 # Why it changed
@@ -20,7 +20,7 @@ Two remaining concurrency risks from the audit were still open:
 # Files touched
 - `apps/api/src/routes/playbook.ts`
 - `apps/api/src/services/autotask-polling.ts`
-- `apps/api/src/services/email-ingestion-polling.ts`
+- `apps/api/src/services/ticket-intake-polling.ts`
 - `apps/api/src/db/index.ts`
 
 # Date

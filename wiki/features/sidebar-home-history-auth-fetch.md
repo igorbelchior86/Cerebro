@@ -1,6 +1,6 @@
 # Sidebar Home History Auth Fetch
 # What changed
-- Updated home route sidebar fetch (`/email-ingestion/list`) to include session credentials.
+- Updated home route sidebar fetch (`/ticket-intake/list`) to include session credentials.
 - Added failure visibility via status logging.
 
 # Why it changed

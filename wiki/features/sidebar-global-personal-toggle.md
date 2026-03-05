@@ -14,8 +14,8 @@ Sidebar Left Panel: Global/Personal Toggle with Queue Dropdown (UI-first)
 
 - Bugfix: after checking the Autotask Tickets API docs (`queueID` is the canonical queue field), we found the sidebar pipeline was promoting a backend placeholder (`"Unknown"`) as `queue_name`; backend and frontend now ignore queue placeholders so Global filtering does not treat them as real queue metadata.
 
-- Payload inspection (`/email-ingestion/list`) showed the sidebar was receiving pseudo-queue values (`"Email Ingestion"`) and no real `queue_id`; backend/frontend now treat `Email Ingestion` as a placeholder, but true queue filtering still depends on real Autotask queue metadata being hydrated into the list payload.
-- Bugfix (wiring): `apps/api/src/routes/email-ingestion.ts` already had an on-demand queue hydration helper (Autotask lookup + cache), but `/email-ingestion/list` was not calling it. The route now invokes hydration before `res.json`, and the hydration limit was increased to match the list window (200 items) so queue-specific filtering can reflect the visible sidebar dataset.
+- Payload inspection (`/ticket-intake/list`) showed the sidebar was receiving pseudo-queue values (`"Ticket Intake"`) and no real `queue_id`; backend/frontend now treat `Ticket Intake` as a placeholder, but true queue filtering still depends on real Autotask queue metadata being hydrated into the list payload.
+- Bugfix (wiring): `apps/api/src/routes/ticket-intake.ts` already had an on-demand queue hydration helper (Autotask lookup + cache), but `/ticket-intake/list` was not calling it. The route now invokes hydration before `res.json`, and the hydration limit was increased to match the list window (200 items) so queue-specific filtering can reflect the visible sidebar dataset.
 - Bugfix (identifier mismatch): queue hydration originally assumed sidebar `ticket_id` was always the Autotask entity `id` and called `GET /tickets/{id}` only. Many sidebar rows carry the Autotask `ticketNumber` (e.g. `T20260225.0013`), so hydration now detects `ticketNumber` format and resolves by `ticketNumber` query (with fallback for numeric strings that are not entity IDs).
 - Investigation result (Autotask vs sidebar): after the identifier fix, queue metadata hydration succeeds for the sidebar payload (no remaining `missingQueue` in the tested local dataset). Remaining differences between Autotask queue views and Cerebro sidebar are due to ingestion coverage: some tickets visible in Autotask today were not yet present in `tickets_processed`, `triage_sessions`, or `ticket_ssot`, so they cannot appear in the sidebar regardless of queue filtering.
 - UI identifier fix: sidebar ticket display now prioritizes the Autotask `ticketNumber` (`TYYYYMMDD.NNNN`) instead of the internal numeric Autotask entity id. The payload keeps the internal `id` for selection/actions and exposes/uses `ticket_number` + `ticket_id` (display) for operator-facing UI.
@@ -33,11 +33,11 @@ Sidebar Left Panel: Global/Personal Toggle with Queue Dropdown (UI-first)
   - `Personal`: filters by assigned technician when assignment metadata exists.
   - `Global`: filters by selected queue when queue metadata exists.
 - Data: Added backend API `GET /autotask/queues` (Autotask `Tickets.queueID` picklist metadata) and frontend queue catalog fetch in `ChatSidebar`. The sidebar list payload now also includes `queue`, `queue_name`, `queue_id`, and `assigned_resource_*` when available, so Global/Personal filtering can apply to real Autotask metadata.
-- Data/logic: the legacy pseudo-queue label `Email Ingestion` is explicitly blocked from being treated as queue metadata in filtering paths. Queue hydration is now executed inside the sidebar list route (with cache), not just defined as dead helper code.
+- Data/logic: the legacy pseudo-queue label `Ticket Intake` is explicitly blocked from being treated as queue metadata in filtering paths. Queue hydration is now executed inside the sidebar list route (with cache), not just defined as dead helper code.
 - Data/logic: queue hydration now supports both Autotask entity `id` and `ticketNumber` lookups, which is required because the sidebar payload `ticket_id` may contain the displayed `ticketNumber` string (`TYYYYMMDD.NNNN`) instead of the internal numeric entity id.
 - UI/data contract: `id` remains the internal/stable identifier used for selection, while `ticket_id` (display) and `ticket_number` now prefer the canonical Autotask `ticketNumber` so the sidebar matches what technicians see in Autotask.
 - Data source split by scope:
-  - `Personal` and `Global / All queues`: Cerebro pipeline list payload (`/email-ingestion/list`, legacy route name).
+  - `Personal` and `Global / All queues`: Cerebro pipeline list payload (`/ticket-intake/list`, legacy route name).
   - `Global / specific queue`: direct Autotask queue query (`/autotask/sidebar-tickets`) with sidebar-shape normalization.
 - Reconciliation impact (local validation): after seeding recent missing Autotask tickets into `tickets_processed`, the sidebar list increased from 175 to 196 items and all tested “today” Autotask tickets matched the sidebar coverage.
 
@@ -47,7 +47,7 @@ Sidebar Left Panel: Global/Personal Toggle with Queue Dropdown (UI-first)
 - `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/clients/autotask.ts`
 - `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/autotask.ts`
 - `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/services/prepare-context.ts`
-- `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts`
+- `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts`
 - `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/autotask.ts`
 - `/Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/components/ChatSidebar.tsx`
 

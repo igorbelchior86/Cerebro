@@ -31,24 +31,11 @@ async function getTenantAutotaskClient(tenantId: string): Promise<AutotaskClient
       });
     }
   } catch {
-    // fall through to env creds
+    // Keep failing closed for tenant-scoped workflow paths.
   }
 
-  // Never fall back to global env credentials for tenant-scoped workflow paths.
-  // This prevents accidental cross-tenant credential bleed.
-  if (tenantId) return null;
-
-  const code = String(process.env.AUTOTASK_API_INTEGRATION_CODE || '').trim();
-  const username = String(process.env.AUTOTASK_USERNAME || '').trim();
-  const secret = String(process.env.AUTOTASK_SECRET || '').trim();
-  const zoneUrl = String(process.env.AUTOTASK_ZONE_URL || '').trim();
-  if (!code || !username || !secret) return null;
-  return new AutotaskClient({
-    apiIntegrationCode: code,
-    username,
-    secret,
-    ...(zoneUrl ? { zoneUrl } : {}),
-  });
+  // Only tenant DB credentials are accepted for workflow runtime.
+  return null;
 }
 
 const workflowRepo = new InMemoryTicketWorkflowRepository({

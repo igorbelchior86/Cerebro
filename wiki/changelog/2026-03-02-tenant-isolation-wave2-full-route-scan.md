@@ -3,9 +3,9 @@
 - Wave 2 de hardening multi-tenant aplicada após varredura de rotas/serviços.
 - Foram corrigidos:
 - queries de usuário autenticado sem `tenant_id` no `auth-route-handlers`.
-- lookup de credenciais sem tenant em `workflow-runtime` e `email-ingestion`.
+- lookup de credenciais sem tenant em `workflow-runtime` e `ticket-intake`.
 - fallback global em `client-resolver` para evitar bleed cross-tenant.
-- endpoint `/email-ingestion/*` passou a exigir `requireAuth`.
+- endpoint `/ticket-intake/*` passou a exigir `requireAuth`.
 - polling de Autotask no DB agora respeita tenant explícito configurado.
 
 # Why it changed
@@ -19,7 +19,7 @@
 # Files touched
 - apps/api/src/index.ts
 - apps/api/src/services/application/route-handlers/auth-route-handlers.ts
-- apps/api/src/services/application/route-handlers/email-ingestion-route-handlers.ts
+- apps/api/src/services/application/route-handlers/ticket-intake-route-handlers.ts
 - apps/api/src/services/context/client-resolver.ts
 - apps/api/src/services/orchestration/workflow-runtime.ts
 - apps/api/src/services/adapters/autotask-polling.ts

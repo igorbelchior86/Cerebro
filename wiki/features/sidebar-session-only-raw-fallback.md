@@ -12,7 +12,7 @@
 - Data: No schema changes.
 
 # Files touched
-- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/services/email/email-parser.ts
 
 # Date

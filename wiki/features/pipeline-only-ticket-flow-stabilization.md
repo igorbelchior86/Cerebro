@@ -1,6 +1,6 @@
 # Pipeline-only Ticket Flow Stabilization
 # What changed
-- Enforced a single source for sidebar ticket cards in `GET /email-ingestion/list`: latest pipeline session per `ticket_id`.
+- Enforced a single source for sidebar ticket cards in `GET /ticket-intake/list`: latest pipeline session per `ticket_id`.
 - Removed `tickets_raw` enrichment fallback and multi-source union (`fromSessions + fromProcessed`) from list assembly.
 - Made field precedence deterministic: processed ticket fields first, pipeline evidence fields only when processed values are missing.
 - Changed evidence lookup to use the latest evidence pack available for the same ticket across sessions (pipeline-only continuity on retries).
@@ -23,7 +23,7 @@
 - Data: No schema changes; only read/assembly logic changed.
 
 # Files touched
-- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/app/[locale]/(chat)/triage/[id]/page.tsx
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/components/ChatSidebar.tsx
 

@@ -23,7 +23,7 @@
 - `apps/api/src/routes/ai/diagnose.ts`
 - `apps/api/src/services/application/route-handlers/playbook-route-handlers.ts`
 - `apps/api/src/services/adapters/autotask-polling.ts`
-- `apps/api/src/services/adapters/email-ingestion-polling.ts`
+- `apps/api/src/services/adapters/ticket-intake-polling.ts`
 - `apps/api/src/services/adapters/email/email-parser.ts`
 - `apps/api/src/services/adapters/email/graph-client.ts`
 - `apps/api/src/services/adapters/email/pg-store.ts`

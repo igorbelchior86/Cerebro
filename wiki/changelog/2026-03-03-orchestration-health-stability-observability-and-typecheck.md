@@ -53,7 +53,7 @@
 - `apps/api/src/services/playbook-writer.ts`
 - `apps/api/src/services/prepare-context.ts`
 - `apps/api/src/services/validate-policy.ts`
-- `apps/api/src/services/email-ingestion-polling.ts`
+- `apps/api/src/services/ticket-intake-polling.ts`
 - `tasks/todo.md`
 - `tasks/lessons.md`
 

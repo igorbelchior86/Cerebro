@@ -280,6 +280,7 @@ function SectionConnections() {
   const [formData, setFormData] = useState<Record<string, string>>({});
 
   const [bannerError, setBannerError] = useState('');
+  const isMaskedPlaceholder = (value: string) => value.includes('•');
 
   // userTriggered=true → show error banner; false (auto-load on mount) → silent
   async function loadAll(userTriggered = false) {
@@ -500,8 +501,19 @@ function SectionConnections() {
                       onClick={() => {
                         const creds: Record<string, string> = {};
                         for (const f of fields) {
-                          const v = formData[f.key] || (s as Record<string, string>)?.[f.key] || (f.options ? f.options[0]?.value ?? '' : '');
-                          if (v) creds[f.key] = v;
+                          const typed = String(formData[f.key] || '').trim();
+                          if (typed && !isMaskedPlaceholder(typed)) {
+                            creds[f.key] = typed;
+                            continue;
+                          }
+                          if (f.options) {
+                            const fallback = String((s as Record<string, string>)?.[f.key] || f.options[0]?.value || '').trim();
+                            if (fallback && !isMaskedPlaceholder(fallback)) creds[f.key] = fallback;
+                            continue;
+                          }
+                          if (f.type === 'password') continue;
+                          const existing = String((s as Record<string, string>)?.[f.key] || '').trim();
+                          if (existing && !isMaskedPlaceholder(existing)) creds[f.key] = existing;
                         }
                         save(id, creds);
                       }}

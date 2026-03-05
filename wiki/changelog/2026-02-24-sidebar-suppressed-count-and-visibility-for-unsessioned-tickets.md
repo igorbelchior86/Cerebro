@@ -1,6 +1,6 @@
 # 2026-02-24 Sidebar Suppressed Count And Visibility For Unsessioned Tickets
 # What changed
-- Fixed `/email-ingestion/list` so the sidebar list is anchored on `tickets_processed` (inbox source of truth) instead of `triage_sessions`.
+- Fixed `/ticket-intake/list` so the sidebar list is anchored on `tickets_processed` (inbox source of truth) instead of `triage_sessions`.
 - `triage_sessions`, `evidence_packs`, and `ticket_ssot` are now optional joins for enrichment/status display.
 - Manually suppressed tickets with no triage session now reappear when the "hide suppressed" filter is turned off.
 - Suppressed ticket count now includes manually suppressed tickets that have not entered the pipeline yet.
@@ -15,7 +15,7 @@
 - Data: No schema changes in this fix; query-only correction.
 
 # Files touched
-- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts
 - /Users/igorbelchior/Documents/Github/Cerebro/tasks/todo.md
 - /Users/igorbelchior/Documents/Github/Cerebro/tasks/lessons.md
 

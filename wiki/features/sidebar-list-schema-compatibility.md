@@ -1,6 +1,6 @@
 # Sidebar List Schema Compatibility
 # What changed
-- Updated `/email-ingestion/list` to detect whether `tickets_processed.company` exists before selecting it.
+- Updated `/ticket-intake/list` to detect whether `tickets_processed.company` exists before selecting it.
 - Added fallback projection (`'' AS company`) when column is absent.
 - Preserved merged history behavior (`tickets_processed` + `triage_sessions`/`evidence_packs`).
 
@@ -13,7 +13,7 @@
 - Data: No new migration required for this fix.
 
 # Files touched
-- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts
 
 # Date
 - 2026-02-20

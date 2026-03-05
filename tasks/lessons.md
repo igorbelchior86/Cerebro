@@ -1,3 +1,21 @@
+## Lesson: 2026-03-05 (literal cleanup requests require exact term-preservation in planning and verification)
+**Mistake**: Ao registrar o plano, deixei uma substituição automática alterar a descrição do próprio requisito e o checklist ficou semanticamente errado.
+**Root cause**: Executei refactor textual em massa sem proteger artefatos de controle (`tasks/todo.md`) antes de validar o resultado final.
+**Rule**: Em pedidos de limpeza literal de nomenclatura, preservar o termo-alvo no plano e validar com grep zero-occurrence antes de concluir.
+**Pattern**: Se o plano muda o nome do problema durante um replace global, interromper e corrigir imediatamente os artefatos de governança.
+
+## Lesson: 2026-03-05 (env credential fallback must be explicit and master-only in multi-tenant integrations)
+**Mistake**: Manter caminhos de fallback para credenciais de `env` em runtime tenant-scoped e rotas de integração sem política explícita por ator.
+**Root cause**: O fallback global “por conveniência” permitia tentativa de autenticação fora do escopo esperado e dificultava isolamento por tenant.
+**Rule**: Em integrações multi-tenant, fallback de credenciais de `env` só pode existir com política explícita de ator privilegiado (`admin@cerebro.local`); workers/poller devem falhar fechado sem credencial tenant-scoped em DB.
+**Pattern**: Se uma rota/worker consegue construir client externo sem `tenant_id` + credencial DB válida, tratar como risco de isolamento e remover fallback.
+
+## Lesson: 2026-03-05 (masked placeholders must never be persisted as credentials)
+**Mistake**: Reutilizar valores mascarados (`••••`) do payload/UI como se fossem segredos reais no update de credenciais.
+**Root cause**: Fluxo de save fazia fallback para valores exibidos e mascarados, sobrescrevendo segredos válidos com placeholders inválidos.
+**Rule**: Placeholders mascarados devem ser ignorados na escrita; updates de credenciais precisam fazer merge com valores existentes e preservar campos sensíveis omitidos.
+**Pattern**: Se o frontend mostra segredo mascarado e o backend aceita esse valor em `PUT`, haverá quebra silenciosa de autenticação em produção.
+
 ## Lesson: 2026-03-04 (quando o usuário corrige o desenho: priorizar PSA truth over heuristic learning)
 **Mistake**: Propor mecanismo de “aprendizado” de política de tempo antes de priorizar espelhamento direto do valor final confirmado pelo PSA.
 **Root cause**: Foco excessivo em inferência local, apesar de existir caminho mais simples/seguro: enviar comando e refletir o resultado persistido no PSA.
@@ -846,7 +864,7 @@
 **Pattern**: Usuário questiona "não deveria evitar pipeline/token?" => faltou guardar/checar estado no backend e adicionar guard no worker/orchestrator.
 
 ## Lesson: 2026-02-24 (sidebar list queries must anchor on source-of-truth inbox table, not processing sessions)
-**Mistake**: A lista `/email-ingestion/list` ancorava em `triage_sessions`, então tickets manualmente suprimidos antes de qualquer sessão desapareciam totalmente da sidebar (inclusive do contador de suprimidos).
+**Mistake**: A lista `/ticket-intake/list` ancorava em `triage_sessions`, então tickets manualmente suprimidos antes de qualquer sessão desapareciam totalmente da sidebar (inclusive do contador de suprimidos).
 **Root cause**: Modelei a sidebar como "tickets com sessão" em vez de "tickets do inbox", mas o novo fluxo de supressão manual atua em `tickets_processed` e pode ocorrer antes do pipeline.
 **Rule**: Se a UI representa o inbox de tickets, a query deve ancorar em `tickets_processed`; dados de pipeline (`triage_sessions`, `evidence_packs`, `ticket_ssot`) entram como joins opcionais.
 **Pattern**: Filtro toggle não revela itens e contador não bate após ação backend em ticket ainda não processado => verificar se a query base exclui itens sem sessão/artefatos.
@@ -894,7 +912,7 @@
 **Pattern**: Requisitos de UI que descrevem forma/interação (ex.: slider vs toggle) não podem ser normalizados para controles semanticamente parecidos.
 
 ## Lesson: 2026-02-25 (do not reintroduce removed ingestion paths during UI integration)
-**Mistake**: Ao planejar a integração de queues reais para o modo Global, considerei voltar a mexer em `/email-ingestion/list`, apesar do usuário já ter sinalizado que esse caminho não é mais a base correta.
+**Mistake**: Ao planejar a integração de queues reais para o modo Global, considerei voltar a mexer em `/ticket-intake/list`, apesar do usuário já ter sinalizado que esse caminho não é mais a base correta.
 **Root cause**: Eu tentei otimizar o impacto visual imediato reutilizando um endpoint antigo, em vez de seguir estritamente o boundary atual da integração Autotask.
 **Rule**: Quando o usuário corrige que um fluxo foi descontinuado, não reintroduzir esse fluxo nem como atalho de UI; integrar diretamente no boundary atual.
 **Pattern**: Pedido de integração nova + endpoint legado “conveniente” => confirmar o boundary de verdade e evitar atalhos regressivos.
@@ -919,12 +937,12 @@
 
 ## Lesson: 2026-02-25 (inspect payload before iterating UI filter fixes)
 **Mistake**: Eu iterei no filtro `Global` várias vezes antes de olhar o payload real da sidebar.
-**Root cause**: Assumi que o problema era apenas comparação de IDs/labels na UI, quando o payload nem tinha queue metadata real (só pseudo-queue `Email Ingestion`).
+**Root cause**: Assumi que o problema era apenas comparação de IDs/labels na UI, quando o payload nem tinha queue metadata real (só pseudo-queue `Ticket Intake`).
 **Rule**: Em bugs de filtro/lista, inspecionar o payload real recebido pela UI nas primeiras etapas, antes de múltiplos ajustes de comparação.
 **Pattern**: `All` funciona e filtros específicos falham repetidamente => dump do payload real imediatamente (`curl`/Network tab) para validar campos e valores.
 
 ## Lesson: 2026-02-25 (defined helper != active behavior)
-**Mistake**: Eu conclui que a hidratação on-demand de queues estava em jogo porque a função existia no arquivo, sem confirmar se a rota `/email-ingestion/list` realmente a invocava.
+**Mistake**: Eu conclui que a hidratação on-demand de queues estava em jogo porque a função existia no arquivo, sem confirmar se a rota `/ticket-intake/list` realmente a invocava.
 **Root cause**: Verifiquei presença de código auxiliar e assumi ligação funcional, em vez de rastrear o fluxo até o `res.json`.
 **Rule**: Ao depurar bugs de integração interna, sempre confirmar o wiring completo (definição -> chamada -> efeito no payload), não apenas a existência da função.
 **Pattern**: Função/helper sofisticado já presente mas comportamento inalterado => procurar ausência de chamada no caminho principal antes de alterar lógica.
@@ -953,7 +971,7 @@
 **Pattern**: Se a tarefa depende de outputs de outros agentes (D/E), rodar um "revalidation pass" e atualizar evidência/riscos.
 
 ## Lesson: 2026-02-26 (remove deprecated paths immediately when user says zero references)
-**Mistake**: Mantive fallback/merge com um caminho legado (`email-ingestion`) após o usuário já ter definido que esse fluxo foi removido e não deveria ter nenhuma referência.
+**Mistake**: Mantive fallback/merge com um caminho legado (`ticket-intake`) após o usuário já ter definido que esse fluxo foi removido e não deveria ter nenhuma referência.
 **Root cause**: Eu priorizei continuidade de metadata/UX local acima de uma restrição arquitetural explícita e repetida pelo usuário.
 **Rule**: Quando o usuário disser que um fluxo legado foi removido e quer zero referência, eliminar completamente chamadas, fallbacks, comentários e docs relacionados naquele path antes de qualquer refinamento.
 **Pattern**: Integração UI em boundary novo + fonte legado “conveniente” => risco de violar regra de arquitetura se eu tentar mesclar por conveniência.

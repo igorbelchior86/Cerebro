@@ -1,6 +1,6 @@
 # Cross-reference Canonical Requester/Site Fix
 # What changed
-- Backend `/email-ingestion/list` now:
+- Backend `/ticket-intake/list` now:
   - prioritizes canonical requester from iterative enrichment,
   - computes `site` independently,
   - removes `site: requester` mapping.
@@ -15,7 +15,7 @@
 - Data: no migration required.
 
 # Files touched
-- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/app/[locale]/(chat)/triage/[id]/page.tsx
 - /Users/igorbelchior/Documents/Github/Cerebro/wiki/features/cross-reference-canonical-requester-site-fix.md
 

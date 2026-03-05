@@ -22,7 +22,7 @@ The previous implementation promoted Autotask IDs but left requester display fie
 - `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/clients/autotask.ts`
 - `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/services/prepare-context.ts`
 - `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/playbook.ts`
-- `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts`
+- `/Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts`
 - `/Users/igorbelchior/Documents/Github/Cerebro/tasks/todo.md`
 - `/Users/igorbelchior/Documents/Github/Cerebro/wiki/changelog/2026-02-25-autotask-contact-resource-authoritative-promotion.md`
 

@@ -244,4 +244,30 @@ describe('AutotaskPollingService P0 hardening', () => {
     // 2 attempts total for the event (retry then DLQ), no unbounded retries.
     expect(workflowSync).toHaveBeenCalledTimes(2);
   });
+
+  it('enters auth cooldown after 401 and skips immediate retries', async () => {
+    let now = 30_000;
+    const searchTickets = jest.fn().mockRejectedValue(new Error('Autotask API error: 401 Unauthorized'));
+    const service = new AutotaskPollingService({
+      buildPollContext: async () => ({
+        tenantId: 'tenant-1',
+        client: {
+          searchTickets,
+        } as any,
+      }),
+      runWithLock: async (fn) => {
+        await fn();
+        return { acquired: true };
+      },
+      now: () => now,
+    });
+
+    await service.runOnce();
+    expect(searchTickets).toHaveBeenCalledTimes(1);
+    expect((service as any).authFailureCooldownUntil).toBeGreaterThan(now);
+
+    now += 10_000;
+    await service.runOnce();
+    expect(searchTickets).toHaveBeenCalledTimes(1);
+  });
 });

@@ -13,7 +13,7 @@ function buildBasePack(): EvidencePack {
       description: 'Foxit fails to print attachment',
       created_at: new Date().toISOString(),
       priority: 'Medium',
-      queue: 'Email Ingestion',
+      queue: 'Ticket Intake',
       category: 'Support',
     },
     org: { id: 'org-1', name: 'Org 1' },

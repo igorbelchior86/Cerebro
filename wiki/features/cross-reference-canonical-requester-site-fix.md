@@ -1,6 +1,6 @@
 # Cross-reference Canonical Requester/Site Fix
 # What changed
-- Fixed ticket list mapping to stop reusing requester as site in `/email-ingestion/list`.
+- Fixed ticket list mapping to stop reusing requester as site in `/ticket-intake/list`.
 - Added canonical requester precedence from iterative enrichment (`affected_user_name` / `requester_name`) when building sidebar ticket payload.
 - Added explicit site extraction fallback from raw ticket body, independent from requester.
 - Updated triage page bindings to prioritize canonical requester/company from `full-flow.ticket` before sidebar fallback fields.
@@ -14,7 +14,7 @@
 - Data: no schema changes.
 
 # Files touched
-- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/app/[locale]/(chat)/triage/[id]/page.tsx
 
 # Date

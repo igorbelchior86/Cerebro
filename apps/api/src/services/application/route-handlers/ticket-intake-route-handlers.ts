@@ -6,6 +6,7 @@ import { emailParser } from '../../adapters/email/email-parser.js';
 import { pgStore } from '../../adapters/email/pg-store.js';
 import { triageOrchestrator } from '../../orchestration/triage-orchestrator.js';
 import { operationalLogger } from '../../../lib/operational-logger.js';
+import { canUseEnvCredentialsForUser } from '../../identity/env-credential-policy.js';
 
 const router: Router = Router();
 
@@ -41,7 +42,10 @@ function correlationFromRequest(req?: Request, fallbackTicketId?: string) {
     };
 }
 
-async function getAutotaskClientForSidebar(tenantId?: string): Promise<AutotaskClient | null> {
+async function getAutotaskClientForSidebar(
+    tenantId?: string,
+    actorUserId?: string | null
+): Promise<AutotaskClient | null> {
     try {
         if (tenantId) {
             const row = await queryOne<{ credentials: AutotaskCreds }>(
@@ -61,13 +65,13 @@ async function getAutotaskClientForSidebar(tenantId?: string): Promise<AutotaskC
                     ...(creds.zoneUrl ? { zoneUrl: creds.zoneUrl } : {}),
                 });
             }
-            return null;
         }
     } catch {
-        // Fallback to env vars below when DB credential lookup is unavailable.
+        // Continue to policy-gated env fallback below.
     }
 
-    if (tenantId) return null;
+    const canUseEnvCredentials = await canUseEnvCredentialsForUser(actorUserId);
+    if (!canUseEnvCredentials) return null;
 
     const code = String(process.env.AUTOTASK_API_INTEGRATION_CODE || '').trim();
     const username = String(process.env.AUTOTASK_USERNAME || '').trim();
@@ -124,7 +128,8 @@ function writeSidebarQueueCache(ticketId: string, queueId: number | null, queueN
 
 async function hydrateAutotaskQueueMetadataForSidebar(
     items: Array<Record<string, any>>,
-    tenantId?: string
+    tenantId?: string,
+    actorUserId?: string | null
 ): Promise<void> {
     const candidates = items
         .filter((item) => {
@@ -135,7 +140,7 @@ async function hydrateAutotaskQueueMetadataForSidebar(
             if (!(isNumericTicketId || isAutotaskTicketNumber)) return false;
             const hasQueueId = Number.isFinite(Number(item?.queue_id));
             const queueName = String(item?.queue_name || item?.queue || '').trim().toLowerCase();
-            const hasMeaningfulQueueName = !!queueName && !['unknown', 'queue', 'email ingestion'].includes(queueName);
+            const hasMeaningfulQueueName = !!queueName && !['unknown', 'queue', 'ticket intake'].includes(queueName);
             return !(hasQueueId || hasMeaningfulQueueName);
         })
         .slice(0, SIDEBAR_QUEUE_ENRICH_LIMIT);
@@ -162,7 +167,7 @@ async function hydrateAutotaskQueueMetadataForSidebar(
 
     if (remaining.length === 0) return;
 
-    const client = await getAutotaskClientForSidebar(tenantId);
+    const client = await getAutotaskClientForSidebar(tenantId, actorUserId);
     if (!client) return;
 
     let queueCatalog = new Map<number, string>();
@@ -211,16 +216,16 @@ async function hydrateAutotaskQueueMetadataForSidebar(
 
 export async function ingestSupportMailboxOnce(mailbox?: string): Promise<{ processed: number }> {
     const mailboxAddress = mailbox || process.env.GRAPH_MAILBOX_ADDRESS || 'help@refreshtech.com';
-    operationalLogger.info('routes.email_ingestion.ingest.started', {
-        module: 'routes.email-ingestion',
+    operationalLogger.info('routes.ticket_intake.ingest.started', {
+        module: 'routes.ticket-intake',
         mailbox_address: mailboxAddress,
     });
 
     const emails = await graphClient.fetchSupportEmails(mailboxAddress);
 
     if (!emails || emails.length === 0) {
-        operationalLogger.info('routes.email_ingestion.ingest.no_new_emails', {
-            module: 'routes.email-ingestion',
+        operationalLogger.info('routes.ticket_intake.ingest.no_new_emails', {
+            module: 'routes.ticket-intake',
             mailbox_address: mailboxAddress,
         });
         return { processed: 0 };
@@ -246,8 +251,8 @@ export async function ingestSupportMailboxOnce(mailbox?: string): Promise<{ proc
             try {
                 await graphClient.markEmailAsRead(mailboxAddress, messageId);
             } catch (markErr: any) {
-                operationalLogger.warn('routes.email_ingestion.ingest.mark_read_failed', {
-                    module: 'routes.email-ingestion',
+                operationalLogger.warn('routes.ticket_intake.ingest.mark_read_failed', {
+                    module: 'routes.ticket-intake',
                     mailbox_address: mailboxAddress,
                     message_id: messageId,
                     reason: String(markErr?.message || 'unknown'),
@@ -258,16 +263,16 @@ export async function ingestSupportMailboxOnce(mailbox?: string): Promise<{ proc
 
             processedCount++;
         } catch (err: any) {
-            operationalLogger.error('routes.email_ingestion.ingest.email_processing_failed', err, {
-                module: 'routes.email-ingestion',
+            operationalLogger.error('routes.ticket_intake.ingest.email_processing_failed', err, {
+                module: 'routes.ticket-intake',
                 email_id: String(email.id || ''),
                 mailbox_address: mailboxAddress,
             });
         }
     }
 
-    operationalLogger.info('routes.email_ingestion.ingest.completed', {
-        module: 'routes.email-ingestion',
+    operationalLogger.info('routes.ticket_intake.ingest.completed', {
+        module: 'routes.ticket-intake',
         mailbox_address: mailboxAddress,
         processed_count: processedCount,
     });
@@ -301,8 +306,8 @@ export async function backfillPendingEmailTickets(limit = 20): Promise<{ process
             await triageOrchestrator.runPipeline(row.id, undefined, 'email');
             processed++;
         } catch (err: any) {
-            operationalLogger.error('routes.email_ingestion.backfill.ticket_failed', err, {
-                module: 'routes.email-ingestion',
+            operationalLogger.error('routes.ticket_intake.backfill.ticket_failed', err, {
+                module: 'routes.ticket-intake',
                 ticket_id: row.id,
             }, {
                 ticket_id: row.id,
@@ -310,8 +315,8 @@ export async function backfillPendingEmailTickets(limit = 20): Promise<{ process
         }
     }
     if (processed > 0) {
-        operationalLogger.info('routes.email_ingestion.backfill.completed', {
-            module: 'routes.email-ingestion',
+        operationalLogger.info('routes.ticket_intake.backfill.completed', {
+            module: 'routes.ticket-intake',
             processed_count: processed,
         });
     }
@@ -323,9 +328,9 @@ router.post('/ingest', async (req: Request, res: Response) => {
         const result = await ingestSupportMailboxOnce();
         return res.json({ message: 'Ingestion completed', processed: result.processed });
     } catch (error: any) {
-        operationalLogger.error('routes.email_ingestion.ingest_route.failed', error, {
-            module: 'routes.email-ingestion',
-            route: 'POST /email-ingestion/ingest',
+        operationalLogger.error('routes.ticket_intake.ingest_route.failed', error, {
+            module: 'routes.ticket-intake',
+            route: 'POST /ticket-intake/ingest',
         }, correlationFromRequest(req));
         return res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
@@ -644,7 +649,7 @@ router.get('/list', async (req: Request, res: Response) => {
                     ssot?.autotask_authoritative?.queue_name || packTicket.queue || '',
                     ''
                 );
-                const queueName = isMeaningful(queueNameCandidate, 'Unknown', 'queue', 'Email Ingestion')
+                const queueName = isMeaningful(queueNameCandidate, 'Unknown', 'queue', 'Ticket Intake')
                     ? queueNameCandidate
                     : '';
                 const queueIdRaw = ssot?.autotask_authoritative?.queue_id;
@@ -705,19 +710,23 @@ router.get('/list', async (req: Request, res: Response) => {
             .slice(0, 200);
 
         try {
-            await hydrateAutotaskQueueMetadataForSidebar(mapped as Array<Record<string, any>>, tenantId);
+            await hydrateAutotaskQueueMetadataForSidebar(
+                mapped as Array<Record<string, any>>,
+                tenantId,
+                req.auth?.sub
+            );
         } catch (hydrationError: any) {
-            operationalLogger.warn('routes.email_ingestion.list.sidebar_hydration_failed', {
-                module: 'routes.email-ingestion',
+            operationalLogger.warn('routes.ticket_intake.list.sidebar_hydration_failed', {
+                module: 'routes.ticket-intake',
                 reason: String(hydrationError?.message || hydrationError || 'unknown'),
             }, correlationFromRequest(req));
         }
 
         res.json({ success: true, data: mapped });
     } catch (error: any) {
-        operationalLogger.error('routes.email_ingestion.list.failed', error, {
-            module: 'routes.email-ingestion',
-            route: 'GET /email-ingestion/list',
+        operationalLogger.error('routes.ticket_intake.list.failed', error, {
+            module: 'routes.ticket-intake',
+            route: 'GET /ticket-intake/list',
         }, correlationFromRequest(req));
         res.status(500).json({ error: error.message || 'Internal Server Error' });
     }
@@ -796,9 +805,9 @@ router.patch('/tickets/:ticketId/manual-suppression', async (req: Request, res: 
             suppression_reason_label: suppressed ? 'Manual suppression' : null,
         });
     } catch (error: any) {
-        operationalLogger.error('routes.email_ingestion.manual_suppression_patch.failed', error, {
-            module: 'routes.email-ingestion',
-            route: 'PATCH /email-ingestion/tickets/:ticketId/manual-suppression',
+        operationalLogger.error('routes.ticket_intake.manual_suppression_patch.failed', error, {
+            module: 'routes.ticket-intake',
+            route: 'PATCH /ticket-intake/tickets/:ticketId/manual-suppression',
         }, correlationFromRequest(req, String(req.params.ticketId || '').trim()));
         return res.status(500).json({ error: error.message || 'Internal Server Error' });
     }

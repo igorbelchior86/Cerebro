@@ -1175,3 +1175,66 @@
 - `pnpm --filter @cerebro/web typecheck` ✅
 - Documentation:
 - `wiki/changelog/2026-03-05-integrations-health-autotask-real-read-validation.md`
+
+---
+
+# Task: Autotask auth lockout mitigation + env credentials admin-only enforcement
+**Status**: completed
+**Started**: 2026-03-05T10:35:00-05:00
+
+## Plan
+- [x] Step 1: Enforce policy so only `admin@cerebro.local` can use Autotask env credentials.
+- [x] Step 2: Remove tenant poller/workflow env fallback paths to fail closed on missing DB credentials.
+- [x] Step 3: Add auth-failure cooldown in Autotask poller to prevent repeated 401 loops/lockouts.
+- [x] Step 4: Prevent masked credential placeholders from being persisted on integration save.
+- [x] Step 5: Validate with targeted tests/typechecks and document in wiki.
+
+## Progress Notes
+- Added centralized policy helper (`env-credential-policy`) and wired it into Autotask/env fallback paths in route handlers.
+- Poller now enters explicit cooldown on authentication failures (`401/403/unauthorized/locked`) and skips immediate retry loops.
+- Integration credential PUT now merges with existing stored values and ignores masked placeholders (`••••`) to avoid corrupting secrets/code.
+- Settings UI save flow now avoids re-submitting masked placeholders and sends only meaningful values.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- autotask-polling.test.ts autotask.sidebar-tickets.test.ts integrations.credentials.test.ts env-credential-policy.test.ts` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-05-autotask-auth-lockout-and-env-credential-policy.md`
+
+---
+
+# Task: Remove all legacy intake references and filenames
+**Status**: completed
+**Started**: 2026-03-05T11:05:00-05:00
+
+## Plan
+- [x] Step 1: Rename runtime files/routes from legacy intake naming to `ticket-intake` and update imports/usages.
+- [x] Step 2: Replace all legacy intake identifiers/strings with `ticket-intake` variants.
+- [x] Step 3: Remove/rename legacy duplicate polling modules with old names.
+- [x] Step 4: Update wiki/tasks references so repository has zero legacy intake mentions.
+- [x] Step 5: Verify with grep + typecheck/tests and document changelog.
+
+## Open Questions
+- None. Execute full literal removal as requested.
+
+## Review
+- What changed:
+- Renamed runtime files:
+- `apps/api/src/routes/ingestion/ticket-intake.ts`
+- `apps/api/src/services/application/route-handlers/ticket-intake-route-handlers.ts`
+- `apps/api/src/services/adapters/ticket-intake-polling.ts`
+- `apps/api/src/services/ticket-intake-polling.ts`
+- Updated API mount/import in `apps/api/src/index.ts` to `/ticket-intake`.
+- Replaced all repository occurrences of legacy intake variants (including wiki/task docs) with `ticket-intake`.
+- Removed old compiled artifacts under `apps/api/dist` with legacy intake naming.
+
+- Verification:
+- `rg -n "ticket-intake|ticket_intake|TicketIntake|ticketIntake" apps/api/src apps/web/src wiki tasks` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/api test -- autotask-polling.test.ts autotask.sidebar-tickets.test.ts integrations.credentials.test.ts env-credential-policy.test.ts` ✅
+
+- Documentation:
+- `wiki/changelog/2026-03-05-legacy-intake-naming-cleanup.md`

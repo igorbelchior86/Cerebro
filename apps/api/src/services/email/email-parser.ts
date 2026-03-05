@@ -5,7 +5,7 @@ export interface ParsedTicket {
     company?: string;
     requester: string;
     createdAt: string;
-    source: 'email_ingestion';
+    source: 'ticket_intake';
     status: 'new' | 'updated';
     rawBody: string;
     isReply: boolean;
@@ -189,7 +189,7 @@ export class EmailParser {
             company,
             requester,
             createdAt,
-            source: 'email_ingestion',
+            source: 'ticket_intake',
             status: isReply ? 'updated' : 'new',
             rawBody: bodyText,
             isReply

@@ -1,4 +1,4 @@
--- Migration: Email Ingestion Tables for Tickets
+-- Migration: Ticket Intake Tables for Tickets
 
 CREATE TABLE IF NOT EXISTS tickets_raw (
     message_id VARCHAR(255) PRIMARY KEY,
@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS tickets_processed (
     title VARCHAR(255) NOT NULL,
     description TEXT,
     requester VARCHAR(255),
-    source VARCHAR(50) DEFAULT 'email_ingestion',
+    source VARCHAR(50) DEFAULT 'ticket_intake',
     status VARCHAR(50) DEFAULT 'new',
     raw_body TEXT,
     is_reply BOOLEAN DEFAULT FALSE,

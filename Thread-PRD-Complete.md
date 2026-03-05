@@ -1128,7 +1128,7 @@ Objetivo: resumir a tese de produto, execução e risco em formato de leitura r�
 2. **Ticket CRUD + PSA sync** (Autotask first)
 3. **Simple Triage AI** (using OpenAI GPT-4)
 4. **Basic workflows** (pre-built only)
-5. **Email ingestion**
+5. **Ticket intake**
 6. **IT Glue context enrichment (basic)**
 7. **Ninja alert ingestion + device context (basic)**
 

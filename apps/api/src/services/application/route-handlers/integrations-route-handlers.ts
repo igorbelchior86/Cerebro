@@ -42,6 +42,45 @@ interface ServiceResult {
   latencyMs?: number;
 }
 
+type CredentialRecord = Record<string, unknown>;
+const MASK_PLACEHOLDER_CHAR = '•';
+
+function isMaskedPlaceholder(value: unknown): boolean {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) return false;
+  return normalized.includes(MASK_PLACEHOLDER_CHAR);
+}
+
+function mergeCredentialPayload(existing: CredentialRecord | null, incoming: CredentialRecord): CredentialRecord {
+  const merged: CredentialRecord = { ...(existing || {}) };
+  for (const [key, rawValue] of Object.entries(incoming)) {
+    if (rawValue === undefined || rawValue === null) continue;
+    if (typeof rawValue === 'string') {
+      const value = rawValue.trim();
+      if (!value) continue;
+      if (isMaskedPlaceholder(value)) continue;
+      merged[key] = value;
+      continue;
+    }
+    merged[key] = rawValue;
+  }
+  return merged;
+}
+
+function credentialsAreComplete(service: string, credentials: CredentialRecord): boolean {
+  const read = (key: string): string => String(credentials[key] ?? '').trim();
+  if (service === 'autotask') {
+    return Boolean(read('apiIntegrationCode') && read('username') && read('secret'));
+  }
+  if (service === 'ninjaone') {
+    return Boolean(read('clientId') && read('clientSecret'));
+  }
+  if (service === 'itglue') {
+    return Boolean(read('apiKey'));
+  }
+  return false;
+}
+
 // ─── DB helpers ────────────────────────────────────────────────
 // Table created by migration 002 + 006. No ensureTable() needed.
 
@@ -217,7 +256,7 @@ router.put('/credentials/:service', async (req, res) => {
     return;
   }
 
-  const credentials = req.body as Record<string, unknown>;
+  const credentials = req.body as CredentialRecord;
   if (!credentials || typeof credentials !== 'object') {
     res.status(400).json({ error: 'Request body must be a JSON object with credentials' });
     return;
@@ -230,12 +269,20 @@ router.put('/credentials/:service', async (req, res) => {
   }
 
   try {
+    const existing = await getCredentials<CredentialRecord>(tenantId, service);
+    const merged = mergeCredentialPayload(existing, credentials);
+    if (service === 'ninjaone' && !String(merged.region ?? '').trim()) merged.region = 'us';
+    if (service === 'itglue' && !String(merged.region ?? '').trim()) merged.region = 'us';
+    if (!credentialsAreComplete(service, merged)) {
+      res.status(400).json({ error: 'Missing required credential fields' });
+      return;
+    }
     await query(
       `INSERT INTO integration_credentials (tenant_id, service, credentials, updated_at)
        VALUES ($1, $2, $3, NOW())
        ON CONFLICT (tenant_id, service) DO UPDATE
          SET credentials = $3, updated_at = NOW()`,
-      [tenantId, service, JSON.stringify(credentials)]
+      [tenantId, service, JSON.stringify(merged)]
     );
     res.json({ success: true, service, updatedAt: new Date().toISOString() });
   } catch (err) {

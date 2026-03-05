@@ -4,7 +4,7 @@
 - Added conditional trigger for background processing only when artifacts are missing.
 - Hardened triage page polling with stale-response guard (request sequence) and in-flight overlap protection.
 - Updated ticket list fetch to include credentials and SSOT merge behavior that preserves meaningful ticket identity fields.
-- Updated `/email-ingestion/list` status normalization to preserve `processing` and `failed`, and merge duplicate ticket rows without degrading meaningful fields.
+- Updated `/ticket-intake/list` status normalization to preserve `processing` and `failed`, and merge duplicate ticket rows without degrading meaningful fields.
 
 # Why it changed
 - Polling every 3s was repeatedly scheduling pipeline jobs and allowing overlapping responses to overwrite newer state.
@@ -18,7 +18,7 @@
 
 # Files touched
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/playbook.ts
-- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/app/[locale]/(chat)/triage/[id]/page.tsx
 
 # Date

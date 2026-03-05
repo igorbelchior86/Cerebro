@@ -18,7 +18,7 @@
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/web/src/app/[locale]/(chat)/triage/[id]/page.tsx
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/services/email/email-parser.ts
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/services/email/pg-store.ts
-- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/email-ingestion.ts
+- /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/routes/ticket-intake.ts
 - /Users/igorbelchior/Documents/Github/Cerebro/apps/api/src/db/migrations/007_tickets_processed_company.sql
 
 # Date

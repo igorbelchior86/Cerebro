@@ -3,7 +3,7 @@ Phase 7 Console Elimination and Correlation Completion
 
 # What changed
 - Replaced all remaining `console.log/info/warn/error` occurrences in `apps/api/src` with `operationalLogger`.
-- Standardized route-level logging in auth, workflow realtime, and email-ingestion handlers with structured event names.
+- Standardized route-level logging in auth, workflow realtime, and ticket-intake handlers with structured event names.
 - Added request correlation helpers in HTTP handlers to propagate `tenant_id`, `trace_id`, and `ticket_id` when applicable.
 - Replaced DB and AI service console outputs with structured operational events.
 
@@ -20,7 +20,7 @@ Phase 7 Console Elimination and Correlation Completion
 # Files touched
 - `apps/api/src/services/application/route-handlers/auth-route-handlers.ts`
 - `apps/api/src/services/application/route-handlers/workflow-route-handlers.ts`
-- `apps/api/src/services/application/route-handlers/email-ingestion-route-handlers.ts`
+- `apps/api/src/services/application/route-handlers/ticket-intake-route-handlers.ts`
 - `apps/api/src/db/index.ts`
 - `apps/api/src/services/ai/diagnose.ts`
 - `apps/api/src/services/ai/llm-adapter.ts`

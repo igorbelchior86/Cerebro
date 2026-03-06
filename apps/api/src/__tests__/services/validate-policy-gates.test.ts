@@ -1,5 +1,5 @@
 import type { DiagnosisOutput, EvidencePack } from '@cerebro/types';
-import { ValidatePolicyService } from '../../services/domain/validate-policy.js';
+import { ValidatePolicyService, isSafeToGenerate } from '../../services/domain/validate-policy.js';
 
 type CalibratedHypothesis = DiagnosisOutput['top_hypotheses'][number] & {
   grounding_status?: 'unsupported' | 'weak';
@@ -396,5 +396,34 @@ describe('validate policy quality gates', () => {
     expect(result.status).toBe('blocked');
     expect(result.safe_to_generate_playbook).toBe(false);
     expect(result.blocking_reasons).toContain('destructive_action_requires_human_approval');
+  });
+
+  it('treats advisory needs_more_info as still eligible for playbook generation', () => {
+    const service = new ValidatePolicyService({ profile: 'strict' });
+    const pack = buildPack();
+    pack.entity_resolution = {
+      extracted_entities: pack.entity_resolution!.extracted_entities,
+      actor_candidates: [{ id: 'c-1', name: 'John Example', score: 0.6, score_breakdown: { exact_name: 0.4, email: 0.2, phone: 0, company_normalized: 0 } }],
+      status: 'ambiguous',
+      disambiguation_question: 'Confirm if actor is John Example',
+    };
+
+    const result = service.validate(buildDiagnosis(), pack);
+    expect(result.status).toBe('needs_more_info');
+    expect(result.safe_to_generate_playbook).toBe(true);
+    expect(isSafeToGenerate(result)).toBe(true);
+  });
+
+  it('treats blocked validation as ineligible for playbook generation', () => {
+    const service = new ValidatePolicyService({ profile: 'standard' });
+    const diagnosis = buildDiagnosis();
+    diagnosis.recommended_actions = [
+      { action: 'Factory reset the firewall to clear bad config state', risk: 'high' },
+    ];
+
+    const result = service.validate(diagnosis, buildPack());
+    expect(result.status).toBe('blocked');
+    expect(result.safe_to_generate_playbook).toBe(false);
+    expect(isSafeToGenerate(result)).toBe(false);
   });
 });

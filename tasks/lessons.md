@@ -16,6 +16,24 @@
 **Rule**: Badge principal da sidebar deve representar o pipeline de análise quando `pipeline_status`/`block_consistency` existirem; status textual do ticket só pode ser fallback secundário.
 **Pattern**: Se abrir um card `done` e faltarem blocos centrais obrigatórios, revisar imediatamente qualquer mapeamento que derive “concluído” do status do ticket em vez dos artefatos da análise.
 
+## Lesson: 2026-03-06 (canonical inbox rows must never fall back to PSA status for a done badge)
+**Mistake**: Mesmo depois de priorizar `pipeline_status`, ainda deixei um caminho onde a linha canônica do inbox podia cair para o status textual do ticket para decidir o badge final.
+**Root cause**: O adapter ainda tratava ausência de mapeamento explícito como permissão para consultar o status do ticket, o que reabria o mesmo bug por um caminho mais sutil.
+**Rule**: Se a linha já veio do fluxo canônico com `pipeline_status` ou `block_consistency`, o badge deve ser decidido só por esse estado canônico; `DONE` exige `hypothesis_checklist_state = ready`.
+**Pattern**: Se o card mostra `Done` antes do bloco C estar pronto, procurar imediatamente qualquer fallback do read model canônico para texto do PSA.
+
+## Lesson: 2026-03-06 (selected-ticket UI must not visually complete before its own checklist renderer can materialize block C)
+**Mistake**: Mesmo com o inbox canônico corrigido, a página ainda tratava “playbook existe” como suficiente para marcar o ticket aberto como pronto.
+**Root cause**: A sidebar e o header local fechavam o ciclo antes de confirmar se o markdown do playbook já rendia uma checklist real na própria tela.
+**Rule**: Para o ticket atualmente aberto, a UI só pode refletir conclusão quando a checklist já for renderizável; presença bruta de `playbook` não basta.
+**Pattern**: Se `DONE` aparece e a checklist ainda está vazia por alguns segundos, revisar imediatamente qualquer estado local que use `Boolean(playbook)` em vez de “checklist renderizável”.
+
+## Lesson: 2026-03-06 (advisory validation must not dead-end the playbook pipeline)
+**Mistake**: Alguns caminhos do pipeline ainda tratavam `needs_more_info` como bloqueio final para a geração do playbook, mesmo quando a própria validação marcava o caso como seguro para seguir.
+**Root cause**: Cada módulo fazia sua própria checagem usando `safe_to_generate_playbook` ou `status`, em vez de usar uma regra compartilhada para distinguir aviso de qualidade versus bloqueio duro.
+**Rule**: Geração de playbook deve seguir a regra única `isSafeToGenerate`: casos `needs_more_info` seguros continuam com playbook investigativo; apenas `blocked`/risk-gate para de verdade.
+**Pattern**: Se o ticket fica eternamente em `processing` ou `needs_more_info` apesar de já haver diagnóstico e validação concluídos, revisar imediatamente gates duplicados entre rota, orquestrador e writer.
+
 ## Lesson: 2026-03-06 (timer handoff must not reuse stale resolved ids from the previous selection)
 **Mistake**: Mantive `data.session.ticket_id` na resolução do timer durante a troca de ticket, mesmo quando esse valor ainda pertencia ao ticket anterior.
 **Root cause**: A lógica de aliases do stopwatch aceitava um identificador resolvido, porém stale, e isso contaminava a hidratação do timer do ticket recém-selecionado.

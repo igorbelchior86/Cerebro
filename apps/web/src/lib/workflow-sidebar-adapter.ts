@@ -1,24 +1,32 @@
 import type { ActiveTicket } from '@/components/ChatSidebar';
 import { listWorkflowInbox, type WorkflowInboxTicket } from '@/lib/p0-ui-client';
 
-function mapPipelineStatusToSidebarStatus(row: WorkflowInboxTicket): ActiveTicket['status'] | null {
+function hasCanonicalWorkflowState(row: WorkflowInboxTicket): boolean {
+  return Boolean(row.pipeline_status || row.block_consistency);
+}
+
+function mapPipelineStatusToSidebarStatus(row: WorkflowInboxTicket): ActiveTicket['status'] {
   const pipeline = row.pipeline_status;
-  if (pipeline === 'ready') return 'completed';
+  const blocks = row.block_consistency;
+  const stageAReady = blocks?.core_state === 'ready';
+  const stageBReady = blocks?.network_env_body_state === 'ready';
+  const stageCReady = blocks?.hypothesis_checklist_state === 'ready';
+
+  if (pipeline === 'ready' && stageAReady && stageBReady && stageCReady) return 'completed';
   if (pipeline === 'dlq' || pipeline === 'degraded') return 'failed';
   if (pipeline === 'processing') return 'processing';
   if (pipeline === 'retry_scheduled' || pipeline === 'queued') return 'pending';
 
-  const blocks = row.block_consistency ? Object.values(row.block_consistency) : [];
-  if (blocks.length === 3 && blocks.every((entry) => entry === 'ready')) return 'completed';
-  if (blocks.some((entry) => entry === 'degraded')) return 'failed';
-  if (blocks.some((entry) => entry === 'ready' || entry === 'resolving')) return 'processing';
-  return null;
+  const blockStates = blocks ? Object.values(blocks) : [];
+  if (stageAReady && stageBReady && stageCReady) return 'completed';
+  if (blockStates.some((entry) => entry === 'degraded')) return 'failed';
+  if (blockStates.some((entry) => entry === 'ready' || entry === 'resolving')) return 'processing';
+  return 'pending';
 }
 
 function mapWorkflowStatusToSidebarStatus(status?: string): ActiveTicket['status'] {
   const normalized = String(status || '').toLowerCase();
   if (/fail|error|dlq/.test(normalized)) return 'failed';
-  if (/complete|resolved|closed|done/.test(normalized)) return 'completed';
   if (/progress|assign|working|triage/.test(normalized)) return 'processing';
   return 'pending';
 }
@@ -143,7 +151,9 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
   const coreState = row.block_consistency?.core_state;
   const networkEnvBodyState = row.block_consistency?.network_env_body_state;
   const hypothesisChecklistState = row.block_consistency?.hypothesis_checklist_state;
-  const pipelineDrivenStatus = mapPipelineStatusToSidebarStatus(row);
+  const pipelineDrivenStatus = hasCanonicalWorkflowState(row)
+    ? mapPipelineStatusToSidebarStatus(row)
+    : null;
 
   return {
     id: row.ticket_id,

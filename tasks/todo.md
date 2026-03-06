@@ -44,6 +44,9 @@
   - hotfix complementar após evidência visual em produção: a projeção backend passou a reconhecer checklist apenas dentro da seção `Checklist` / `Resolution Steps`, para impedir `Done` falso com listas de outras seções
   - hotfix complementar após segunda evidência visual em produção: o merge local da sidebar deixou de reaproveitar `prev.status` quando o payload novo já traz `pipeline_status` / `block_consistency`
   - causa raiz adicional confirmada: a própria tela preservava `DONE` do card anterior/antigo durante o merge de cache, mesmo com o header já em `Processing pipeline`
+  - refactor complementar orientado pelo `canonical-flow-audit`: quando o card já vem do read model canônico (`pipeline_status` / `block_consistency`), o adapter nunca mais usa o status textual do ticket para promover `DONE`; `completed` agora só sai quando A/B/C chegam até `C=ready`
+  - refactor complementar após cronologia observada em UI: a página de triagem agora só trata o ticket aberto como realmente “pronto” quando a checklist já é renderizável a partir do markdown; se o card selecionado chegar como `DONE` antes disso, ele é rebaixado localmente para `processing` até o bloco C aparecer de fato na tela
+  - refactor complementar após investigação do gate `diagnose -> playbook`: `needs_more_info` deixou de bloquear eternamente a geração de playbook; agora o pipeline usa a regra compartilhada `isSafeToGenerate`, que continua barrando apenas casos realmente `blocked` / risco duro
 
 ## Review
 - Verification:
@@ -53,6 +56,7 @@
 - `pnpm --filter @cerebro/web typecheck` ✅
 - `pnpm --filter @cerebro/web lint` ✅
 - `pnpm --filter @cerebro/web build` ✅
+- `pnpm --filter @cerebro/web typecheck` ⚠️ falhou nesta rodada por ausência de `.next/types` no ambiente atual, apesar de `build` e `lint` terem passado
 - Observação:
   - o `build` do web continuou mostrando apenas o warning já existente do plugin Next no ESLint, sem bloquear a entrega
 - Documentation:

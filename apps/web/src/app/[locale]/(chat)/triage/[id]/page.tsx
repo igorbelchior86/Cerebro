@@ -293,6 +293,33 @@ function deserializeWorkspaceCache(raw: string): CachedTicketWorkspaceState | nu
   }
 }
 
+function hasRenderableChecklistInPlaybook(markdown?: string): boolean {
+  if (!markdown) return false;
+  const lines = markdown.split('\n');
+  const checklistHeadings = ['checklist', 'resolution steps'];
+  let start = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = (lines[i] || '').match(/^\s*##+\s+(.+?)\s*$/);
+    if (!match) continue;
+    const heading = String(match[1] || '').trim().toLowerCase();
+    if (checklistHeadings.some((alias) => heading.includes(alias))) {
+      start = i + 1;
+      break;
+    }
+  }
+
+  if (start < 0) return false;
+
+  for (let i = start; i < lines.length; i++) {
+    const line = (lines[i] || '').replace(/\r/g, '');
+    if (/^\s*##+\s+/.test(line)) break;
+    if (/^\s*(?:\d+\.\s+|[-*]\s+(?:\[[ xX]\]\s+)?).+/.test(line)) return true;
+  }
+
+  return false;
+}
+
 function computePersistedStopwatchElapsedMs(
   state: { elapsedMs: number; running: boolean; startedAtMs?: number | undefined },
   now: number
@@ -1769,6 +1796,10 @@ export default function SessionDetail({
             steps: m.steps?.map((s) => `${s.label}:${s.status}`) ?? [],
           }))
         );
+        const hasRenderableChecklist = hasRenderableChecklistInPlaybook(newData.playbook?.content_md);
+        const nextPlaybookReady = Boolean(newData.playbook) && hasRenderableChecklist;
+        const nextPlaybookStatus: 'loading' | 'ready' | 'error' = nextPlaybookReady ? 'ready' : 'loading';
+
         if (signature !== timelineSignatureRef.current) {
           timelineSignatureRef.current = signature;
           setMessages((prev) => {
@@ -1777,8 +1808,8 @@ export default function SessionDetail({
             persistWorkspaceCache([selectedTicketId, ticketId, newData.session.ticket_id], {
               data: newData,
               messages: nextMessages,
-              playbookReady: Boolean(newData.playbook),
-              playbookStatus: newData.playbook ? 'ready' : 'loading',
+              playbookReady: nextPlaybookReady,
+              playbookStatus: nextPlaybookStatus,
               timelineSignature: signature,
             });
             return nextMessages;
@@ -1787,14 +1818,14 @@ export default function SessionDetail({
           persistWorkspaceCache([selectedTicketId, ticketId, newData.session.ticket_id], {
             data: newData,
             messages: messagesRef.current,
-            playbookReady: Boolean(newData.playbook),
-            playbookStatus: newData.playbook ? 'ready' : 'loading',
+            playbookReady: nextPlaybookReady,
+            playbookStatus: nextPlaybookStatus,
             timelineSignature: signature,
           });
         }
 
-        setPlaybookReady(Boolean(newData.playbook));
-        setPlaybookStatus(newData.playbook ? 'ready' : 'loading');
+        setPlaybookReady(nextPlaybookReady);
+        setPlaybookStatus(nextPlaybookStatus);
       } catch (err) {
         if (cancelled || reqSeq !== flowRequestSeqRef.current) return;
         setError(axios.isAxiosError(err) ? err.message : String(err));
@@ -2209,7 +2240,19 @@ export default function SessionDetail({
     setError('Manual suppression is disabled in this flow. Ticket intake endpoints were removed from the UI integration path.');
   };
 
-  const displayTickets = sidebarTickets;
+  const displayTickets = sidebarTickets.map((ticket) => {
+    const isCurrentTicket =
+      ticket.id === selectedTicketId ||
+      ticket.ticket_id === selectedTicketId ||
+      ticket.ticket_number === selectedTicketId;
+    if (!isCurrentTicket) return ticket;
+    if (ticket.status !== 'completed') return ticket;
+    if (playbookReady) return ticket;
+    return {
+      ...ticket,
+      status: 'processing' as const,
+    };
+  });
   const selectedTicket = selectedSidebarTicket
     ?? findSidebarTicketMatch(displayTickets, data?.session?.ticket_id || '')
     ?? findSidebarTicketMatch(displayTickets, timerTicketId);

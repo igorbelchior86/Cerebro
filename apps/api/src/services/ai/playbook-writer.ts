@@ -11,6 +11,7 @@ import type {
 } from '@cerebro/types';
 import { getDefaultLLMProvider } from './llm-adapter.js';
 import { explainPlaybookGuardBlock, shouldBlockPlaybookOutput } from '../domain/evidence-guardrails.js';
+import { isSafeToGenerate } from '../domain/validate-policy.js';
 
 const INTERNAL_LEAK_PATTERNS: RegExp[] = [
   /\bllm\b/i,
@@ -58,7 +59,7 @@ export class PlaybookWriterService {
     pack: EvidencePack
   ): Promise<PlaybookOutput> {
     // ─── Check if safe to proceed ──────────────────────────────
-    if (!validation.safe_to_generate_playbook) {
+    if (!isSafeToGenerate(validation)) {
       throw new Error(
         `Cannot generate playbook - validation status: ${validation.status}. ` +
         `Violations: ${validation.violations.map((v) => v.detail).join(', ')}`

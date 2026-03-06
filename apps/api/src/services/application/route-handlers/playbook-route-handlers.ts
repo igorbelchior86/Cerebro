@@ -14,7 +14,7 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import { queryOne, execute, transaction } from '../../../db/index.js';
 import { diagnoseEvidencePack } from '../../ai/diagnose.js';
-import { validateDiagnosis } from '../../domain/validate-policy.js';
+import { isSafeToGenerate, validateDiagnosis } from '../../domain/validate-policy.js';
 import { PrepareContextService } from '../../context/prepare-context.js';
 import { AutotaskClient } from '../../../clients/autotask.js';
 import { operationalLogger } from '../../../lib/operational-logger.js';
@@ -952,7 +952,7 @@ router.get('/full-flow', async (req, res) => {
 
         const shouldRevalidate =
           !currentValidation ||
-          (!currentValidation.safe_to_generate_playbook && !playbook);
+          (!isSafeToGenerate(currentValidation) && !playbook);
 
         // 3. Validation
         if (shouldRevalidate && currentDiagnosis && currentPack) {
@@ -1000,7 +1000,7 @@ router.get('/full-flow', async (req, res) => {
           await syncWorkflowProjection({ pack: currentPack, diagnosis: currentDiagnosis, validation: currentValidation, playbook });
         }
 
-        if (currentValidation && !currentValidation.safe_to_generate_playbook) {
+        if (currentValidation && !isSafeToGenerate(currentValidation)) {
           await execute(
             `UPDATE triage_sessions
              SET status = $1,
@@ -1021,7 +1021,7 @@ router.get('/full-flow', async (req, res) => {
         }
 
         // 4. Playbook
-        if (!playbook && currentValidation?.safe_to_generate_playbook && currentDiagnosis && currentPack) {
+        if (!playbook && currentValidation && isSafeToGenerate(currentValidation) && currentDiagnosis && currentPack) {
           operationalLogger.info('routes.ai.playbook.full_flow.background_playbook_started', {
             module: 'routes.ai.playbook',
             session_id: sessionId,

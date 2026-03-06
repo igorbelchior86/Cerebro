@@ -5,7 +5,7 @@ import type { DiagnosisOutput, EvidencePack, PlaybookOutput, ValidationOutput } 
 import { tenantContext } from '../../lib/tenantContext.js';
 import { PrepareContextService, persistEvidencePack } from '../context/prepare-context.js';
 import { DiagnoseService } from '../ai/diagnose.js';
-import { ValidatePolicyService } from '../domain/validate-policy.js';
+import { ValidatePolicyService, isSafeToGenerate } from '../domain/validate-policy.js';
 import { PlaybookWriterService } from '../ai/playbook-writer.js';
 import { operationalLogger } from '../../lib/operational-logger.js';
 import { workflowService } from './workflow-runtime.js';
@@ -363,7 +363,7 @@ export class TriageOrchestrator {
                 );
                 await syncWorkflowProjection({ pack, diagnosis, validation });
 
-                if (!validation.safe_to_generate_playbook) {
+                if (!isSafeToGenerate(validation)) {
                     operationalLogger.warn('orchestration.triage.validation_blocked', {
                         module: 'orchestration.triage-orchestrator',
                         session_id: sid,

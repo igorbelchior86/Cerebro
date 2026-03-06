@@ -1,3 +1,27 @@
+## Lesson: 2026-03-06 (timer handoff must not reuse stale resolved ids from the previous selection)
+**Mistake**: Mantive `data.session.ticket_id` na resolução do timer durante a troca de ticket, mesmo quando esse valor ainda pertencia ao ticket anterior.
+**Root cause**: A lógica de aliases do stopwatch aceitava um identificador resolvido, porém stale, e isso contaminava a hidratação do timer do ticket recém-selecionado.
+**Rule**: Em handoff de timer entre entidades, resolver a chave ativa apenas a partir da nova seleção e de aliases já provados daquela seleção.
+**Pattern**: Se o timer “engasga” e volta com o tempo do item anterior após trocar de contexto, revisar imediatamente fallbacks que ainda consultam estado assíncrono da entidade anterior.
+
+## Lesson: 2026-03-06 (cache restore for a newly selected entity must never read keys from the previously active entity)
+**Mistake**: Ao restaurar a coluna central, incluí `data.session.ticket_id` na busca de cache mesmo durante a troca de ticket, o que ainda apontava para o ticket anterior.
+**Root cause**: Misturei identificadores do ticket recém-selecionado com um identificador resolvido, porém stale, da entidade anterior.
+**Rule**: Em handoff de seleção, a restauração de cache deve usar apenas chaves derivadas da nova seleção; qualquer chave proveniente do estado anterior precisa ser excluída.
+**Pattern**: Se um item novo/sem histórico mostra por alguns segundos a UI do item anterior, revisar imediatamente lookup de cache contaminado por estado stale.
+
+## Lesson: 2026-03-06 (warm UI state that must survive refresh cannot live only in memory)
+**Mistake**: Corrigi o retrocesso da coluna central só com cache em memória do componente, o que resolveu troca de ticket sem remount mas falhou no refresh normal da página.
+**Root cause**: O requisito real era sobreviver ao reload do navegador; `useRef`/estado local não atravessam esse boundary.
+**Rule**: Se o usuário reporta perda de estado após refresh normal, mover o cache quente mínimo necessário para `sessionStorage` ou outra persistência de sessão apropriada.
+**Pattern**: Se “funciona ao navegar dentro da tela, mas quebra ao dar refresh”, o problema é boundary de persistência, não de render local.
+
+## Lesson: 2026-03-06 (ticket switching must restore warm state, not always replay cold-start placeholders)
+**Mistake**: Mesmo após manter a troca de ticket in-place, deixei a coluna central resetar para `Unassigned` e para a mensagem inicial de análise sempre que o ticket era selecionado de novo.
+**Root cause**: O fluxo de troca limpava `data` e `messages` incondicionalmente antes de verificar se aquele ticket já tinha um último estado conhecido localmente.
+**Rule**: Em workspaces com troca rápida entre entidades, a UI deve restaurar o último estado conhecido por entidade e só usar placeholders frios quando não existir cache local dessa entidade.
+**Pattern**: Se uma entidade já foi carregada antes e a UI volta para “starting/loading/unassigned” ao revisitá-la, revisar resets incondicionais no handler/effect de seleção.
+
 ## Lesson: 2026-03-06 (when the user states a behavioral rule, complete the transition semantics end-to-end)
 **Mistake**: Implementei a troca de contexto do ticket e a persistência do timer, mas deixei de completar a semântica explícita de entrada/saída: auto-start ao entrar no ticket e auto-pause ao sair.
 **Root cause**: Foquei na fonte de verdade do identificador do timer e na hidratação da UI, mas não fechei o ciclo de vida comportamental completo do requisito.

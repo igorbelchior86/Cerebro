@@ -182,6 +182,22 @@ interface PersistedStopwatchState {
   sync?: StopwatchSyncFeedback;
 }
 
+interface CachedTicketWorkspaceState {
+  data: SessionData | null;
+  messages: Message[];
+  playbookReady: boolean;
+  playbookStatus: 'loading' | 'ready' | 'error';
+  timelineSignature: string;
+}
+
+type SerializedCachedTicketWorkspaceState = {
+  data: SessionData | null;
+  messages: Array<Omit<Message, 'timestamp'> & { timestamp?: string }>;
+  playbookReady: boolean;
+  playbookStatus: 'loading' | 'ready' | 'error';
+  timelineSignature: string;
+};
+
 function findSidebarTicketMatch(tickets: ActiveTicket[], ticketRef: string): ActiveTicket | undefined {
   const normalized = String(ticketRef || '').trim();
   if (!normalized) return undefined;
@@ -203,6 +219,78 @@ function buildStopwatchStorageKeys(...ticketRefs: Array<string | undefined | nul
     keys.push(`cerebro:time-entry-stopwatch:${normalized}`);
   }
   return keys;
+}
+
+function buildWorkspaceCacheStorageKeys(...ticketRefs: Array<string | undefined | null>): string[] {
+  const seen = new Set<string>();
+  const keys: string[] = [];
+  for (const ticketRef of ticketRefs) {
+    const normalized = String(ticketRef || '').trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    keys.push(`cerebro:ticket-workspace:${normalized}`);
+  }
+  return keys;
+}
+
+function serializeWorkspaceCache(state: CachedTicketWorkspaceState): string {
+  const payload: SerializedCachedTicketWorkspaceState = {
+    data: state.data,
+    messages: state.messages.map((message) => {
+      const serializedMessage: Omit<Message, 'timestamp'> & { timestamp?: string } = {
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        ...(message.channel ? { channel: message.channel } : {}),
+        ...(message.type ? { type: message.type } : {}),
+        ...(message.delivery ? { delivery: message.delivery } : {}),
+        ...(message.steps ? { steps: message.steps } : {}),
+        ...(message.ticketTextVariant ? { ticketTextVariant: message.ticketTextVariant } : {}),
+        ...(message.attachments ? { attachments: message.attachments } : {}),
+      };
+      if (message.timestamp instanceof Date) {
+        serializedMessage.timestamp = message.timestamp.toISOString();
+      }
+      return serializedMessage;
+    }),
+    playbookReady: state.playbookReady,
+    playbookStatus: state.playbookStatus,
+    timelineSignature: state.timelineSignature,
+  };
+  return JSON.stringify(payload);
+}
+
+function deserializeWorkspaceCache(raw: string): CachedTicketWorkspaceState | null {
+  try {
+    const parsed = JSON.parse(raw) as SerializedCachedTicketWorkspaceState;
+    return {
+      data: parsed.data ?? null,
+      messages: Array.isArray(parsed.messages)
+        ? parsed.messages.map((message) => {
+          const restoredMessage: Message = {
+            id: message.id,
+            role: message.role,
+            content: message.content,
+            ...(message.channel ? { channel: message.channel } : {}),
+            ...(message.type ? { type: message.type } : {}),
+            ...(message.delivery ? { delivery: message.delivery } : {}),
+            ...(message.steps ? { steps: message.steps } : {}),
+            ...(message.ticketTextVariant ? { ticketTextVariant: message.ticketTextVariant } : {}),
+            ...(message.attachments ? { attachments: message.attachments } : {}),
+          };
+          if (message.timestamp) {
+            restoredMessage.timestamp = new Date(message.timestamp);
+          }
+          return restoredMessage;
+        })
+        : [],
+      playbookReady: Boolean(parsed.playbookReady),
+      playbookStatus: parsed.playbookStatus === 'error' || parsed.playbookStatus === 'loading' ? parsed.playbookStatus : 'ready',
+      timelineSignature: String(parsed.timelineSignature || ''),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function computePersistedStopwatchElapsedMs(
@@ -401,6 +489,7 @@ export default function SessionDetail({
   const [playbookReady, setPlaybookReady] = useState(false);
   const [playbookStatus, setPlaybookStatus] = useState<'loading' | 'ready' | 'error'>('ready');
   const timelineSignatureRef = useRef('');
+  const messagesRef = useRef<Message[]>([]);
   const flowRequestSeqRef = useRef(0);
   const hardRefreshInProgressRef = useRef(false);
   const sidebarTicketsRef = useRef<ActiveTicket[]>([]);
@@ -415,6 +504,7 @@ export default function SessionDetail({
     priority: string;
     createdAt?: string;
   }>>({});
+  const ticketWorkspaceCacheRef = useRef<Record<string, CachedTicketWorkspaceState>>({});
 
   // Add state for real tickets
   const [sidebarTickets, setSidebarTickets] = useState<ActiveTicket[]>([]);
@@ -457,10 +547,18 @@ export default function SessionDetail({
   const timerTicketId = String(
     selectedSidebarTicket?.ticket_id ||
     snapshotTicketId ||
-    data?.session?.ticket_id ||
     selectedTicketId ||
     ''
   ).trim();
+  const persistWorkspaceCache = (ticketRefs: Array<string | undefined | null>, state: CachedTicketWorkspaceState) => {
+    const storageKeys = buildWorkspaceCacheStorageKeys(...ticketRefs);
+    ticketWorkspaceCacheRef.current[selectedTicketId] = state;
+    if (typeof window === 'undefined') return;
+    const serialized = serializeWorkspaceCache(state);
+    for (const storageKey of storageKeys) {
+      window.sessionStorage.setItem(storageKey, serialized);
+    }
+  };
   const persistStopwatchSnapshot = (
     storageKeys: string[],
     state: PersistedStopwatchState,
@@ -493,6 +591,10 @@ export default function SessionDetail({
   }, [stopwatchElapsedMs, stopwatchRunning, stopwatchStartedAtMs, stopwatchSync]);
 
   useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (headerMenuRef.current && !headerMenuRef.current.contains(event.target as Node)) {
         setIsHeaderMenuOpen(false);
@@ -511,7 +613,6 @@ export default function SessionDetail({
     const storageKeys = buildStopwatchStorageKeys(
       timerTicketId,
       selectedTicketId,
-      data?.session?.ticket_id,
       selectedSidebarTicket?.ticket_id
     );
     const previousStorageKeys = activeStopwatchStorageKeysRef.current;
@@ -586,21 +687,19 @@ export default function SessionDetail({
     return () => {
       persistStopwatchSnapshot(activeStopwatchStorageKeysRef.current, stopwatchStateRef.current, Date.now(), false);
     };
-  }, [timerTicketId, selectedTicketId, data?.session?.ticket_id, selectedSidebarTicket?.ticket_id]);
+  }, [timerTicketId, selectedTicketId, selectedSidebarTicket?.ticket_id]);
 
   useEffect(() => {
     if (!stopwatchHydratedRef.current || typeof window === 'undefined') return;
     const storageKeys = buildStopwatchStorageKeys(
       timerTicketId,
       selectedTicketId,
-      data?.session?.ticket_id,
       selectedSidebarTicket?.ticket_id
     );
     persistStopwatchSnapshot(storageKeys, stopwatchStateRef.current, Date.now());
   }, [
     timerTicketId,
     selectedTicketId,
-    data?.session?.ticket_id,
     selectedSidebarTicket?.ticket_id,
     stopwatchElapsedMs,
     stopwatchRunning,
@@ -1668,7 +1767,23 @@ export default function SessionDetail({
           timelineSignatureRef.current = signature;
           setMessages((prev) => {
             const userOnly = prev.filter((m) => m.role === 'user');
-            return [...timeline, ...userOnly];
+            const nextMessages = [...timeline, ...userOnly];
+            persistWorkspaceCache([selectedTicketId, ticketId, newData.session.ticket_id], {
+              data: newData,
+              messages: nextMessages,
+              playbookReady: Boolean(newData.playbook),
+              playbookStatus: newData.playbook ? 'ready' : 'loading',
+              timelineSignature: signature,
+            });
+            return nextMessages;
+          });
+        } else {
+          persistWorkspaceCache([selectedTicketId, ticketId, newData.session.ticket_id], {
+            data: newData,
+            messages: messagesRef.current,
+            playbookReady: Boolean(newData.playbook),
+            playbookStatus: newData.playbook ? 'ready' : 'loading',
+            timelineSignature: signature,
           });
         }
 
@@ -1695,11 +1810,28 @@ export default function SessionDetail({
   }, [selectedTicketId]);
 
   useEffect(() => {
+    let cachedWorkspace = ticketWorkspaceCacheRef.current[selectedTicketId];
+    if (!cachedWorkspace && typeof window !== 'undefined') {
+      const storageKeys = buildWorkspaceCacheStorageKeys(
+        selectedTicketId,
+        selectedSidebarTicket?.ticket_id,
+        snapshotTicketId
+      );
+      for (const storageKey of storageKeys) {
+        const raw = window.sessionStorage.getItem(storageKey);
+        if (!raw) continue;
+        const restored = deserializeWorkspaceCache(raw);
+        if (!restored) continue;
+        cachedWorkspace = restored;
+        ticketWorkspaceCacheRef.current[selectedTicketId] = restored;
+        break;
+      }
+    }
     setLoading(true);
     setError('');
-    setData(null);
-    setPlaybookReady(false);
-    setPlaybookStatus('loading');
+    setData(cachedWorkspace?.data ?? null);
+    setPlaybookReady(cachedWorkspace?.playbookReady ?? false);
+    setPlaybookStatus(cachedWorkspace?.playbookStatus ?? 'loading');
     setContextOverrides({});
     setActiveContextEditor(null);
     setContextEditorQuery('');
@@ -1708,18 +1840,20 @@ export default function SessionDetail({
     setResolvedOrgIdFallback(null);
     setWorkflowActionError('');
     setWorkflowActionFeedback(null);
-    timelineSignatureRef.current = '';
-    setMessages([
-      {
-        id: `init-${selectedTicketId}`,
-        role: 'assistant',
-        content: t('startingAnalysis'),
-        timestamp: new Date(),
-        type: 'status',
-        channel: 'internal_ai',
-      },
-    ]);
-  }, [selectedTicketId, t]);
+    timelineSignatureRef.current = cachedWorkspace?.timelineSignature ?? '';
+    setMessages(
+      cachedWorkspace?.messages ?? [
+        {
+          id: `init-${selectedTicketId}`,
+          role: 'assistant',
+          content: t('startingAnalysis'),
+          timestamp: new Date(),
+          type: 'status',
+          channel: 'internal_ai',
+        },
+      ]
+    );
+  }, [selectedTicketId, selectedSidebarTicket?.ticket_id, snapshotTicketId, t]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1974,6 +2108,13 @@ export default function SessionDetail({
     hardRefreshInProgressRef.current = true;
     flowRequestSeqRef.current += 1; // invalidate in-flight polling responses
     delete ticketSnapshotRef.current[ticket];
+    delete ticketWorkspaceCacheRef.current[ticket];
+    if (typeof window !== 'undefined') {
+      const storageKeys = buildWorkspaceCacheStorageKeys(ticket, selectedSidebarTicket?.ticket_id, data?.session?.ticket_id);
+      for (const storageKey of storageKeys) {
+        window.sessionStorage.removeItem(storageKey);
+      }
+    }
     setLoading(true);
     setError('');
     setPlaybookReady(false);

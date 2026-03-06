@@ -19,3 +19,8 @@ command = "scripts/start-api.sh"
 name = "Restart Stack"
 icon = "debug"
 command = "scripts/stack.sh restart"
+
+[[actions]]
+name = "Test"
+icon = "test"
+command = "cd \"/Users/igorbelchior/Documents/Github/Cerebro\" && docker-compose up -d postgres redis mailpit && pnpm dev"

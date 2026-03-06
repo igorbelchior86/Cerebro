@@ -40,6 +40,10 @@
   - troca de ticket limpa `data`, overrides/context editor e feedback local do ticket anterior para impedir vazamento visual/funcional.
   - o timer passou a hidratar e persistir por aliases do ticket selecionado/canônico, preservando o estado do ticket anterior em background.
   - correção complementar: ao entrar em um ticket, o timer desse ticket sempre auto-inicia; ao sair, o ticket anterior é consolidado e salvo como pausado em background.
+  - correção complementar: a coluna central agora restaura o último estado conhecido por ticket antes do novo fetch, evitando retroceder para `Unassigned` e para o placeholder inicial quando aquele ticket já foi resolvido antes.
+  - correção complementar: o último estado conhecido da coluna central agora também é persistido em `sessionStorage`, então refresh normal da página continua restaurando `Primary` / `Secondary` e timeline já exibidos para o ticket.
+  - hotfix de regressão: a restauração da coluna central deixou de considerar o `ticket_id` antigo vindo de `data.session`, evitando que a troca para um ticket novo/sem análise fique presa por alguns segundos no ticket anterior.
+  - hotfix de regressão: o timer deixou de considerar `data.session.ticket_id` stale do ticket anterior durante a troca, evitando reutilizar o tempo do ticket antigo ao abrir um ticket novo/sem análise.
 
 ## Review
 - Verification:

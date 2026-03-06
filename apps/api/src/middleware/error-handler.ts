@@ -9,7 +9,7 @@ export interface APIError {
   statusCode: number;
   message: string;
   error?: string;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
   timestamp: string;
   requestId?: string;
 }
@@ -45,7 +45,7 @@ export const errorHandler = (
   err: Error | AppError,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ) => {
   const timestamp = new Date().toISOString();
   const requestId = req.headers['x-request-id'] as string || 'unknown';
@@ -62,8 +62,6 @@ export const errorHandler = (
   let statusCode = 500;
   let message = 'Internal Server Error';
   let error = 'INTERNAL_ERROR';
-  const details: Record<string, any> = {};
-
   // Handle AppError instances
   if (err instanceof AppError) {
     statusCode = err.statusCode;
@@ -126,7 +124,9 @@ export const errorHandler = (
 /**
  * Async route wrapper to catch errors
  */
-export const asyncHandler = (fn: Function) => {
+export const asyncHandler = (
+  fn: (req: Request, res: Response, next: NextFunction) => unknown | Promise<unknown>
+) => {
   return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };

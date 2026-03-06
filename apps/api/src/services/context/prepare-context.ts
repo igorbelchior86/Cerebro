@@ -136,8 +136,6 @@ import type {
   TicketSSOT,
   TicketContextAppendix,
   ScopeMeta,
-  ITGlueWanCandidate,
-  ITGlueInfraCandidate,
   FacetContext,
   DeviceResolutionResult,
   ItglueEnrichedPayload,
@@ -154,6 +152,29 @@ const ITGLUE_ROUND2_REQUEST_BUDGET = 120;
 const NINJA_EXTRACTOR_VERSION = 'v1-summary-2026-02-23';
 const ITGLUE_MAX_SCOPE_ORGS = 4;
 type JsonRecord = Record<string, unknown>;
+type ITGlueRecord = JsonRecord & { id?: string | number; attributes?: JsonRecord };
+type ITGlueDocumentRecord = ITGlueRecord & { name?: string; body?: string };
+type NinjaDeviceRecord = JsonRecord & {
+  id?: string | number;
+  manufacturer?: string;
+  vendor?: string;
+  model?: string;
+  serialNumber?: string;
+  hostname?: string;
+  systemName?: string;
+};
+type NinjaSoftwareRecord = JsonRecord & { deviceId?: string | number };
+type FusionFieldCandidateInput = Parameters<typeof buildFusionFieldCandidates>[0];
+type FusionLinksAndInferencesInput = Parameters<typeof buildFusionLinksAndInferences>[0];
+type FusionSanitizeInput = Parameters<typeof sanitizeFusionAdjudicationOutput>[0];
+type FusionFallbackInput = Parameters<typeof buildDeterministicFusionFallbackResolutions>[0];
+type BroadHistorySearchInput = Parameters<typeof buildBroadHistorySearchPlan>[0];
+type FinalNinjaRefinementInput = Parameters<typeof shouldRunFinalNinjaRefinement>[0];
+type RelatedCasesArgs = Parameters<typeof findRelatedCases>;
+type RelatedCasesBroadArgs = Parameters<typeof findRelatedCasesBroad>;
+type RelatedCasesByTermsArgs = Parameters<typeof findRelatedCasesByTerms>;
+type EvidenceRefFacts = DigestFact[];
+type FacetActions = ReturnType<typeof buildFacetActions>;
 
 function asJsonRecord(value: unknown): JsonRecord {
   return value && typeof value === 'object' ? (value as JsonRecord) : {};
@@ -908,7 +929,6 @@ export class PrepareContextService {
     try {
       const orgSeed = normalizedTicket?.organizationHint || itglueOrgMatch?.name || companyName || '';
       if (orgSeed) {
-        // @ts-ignore
         ninjaOrgMatch = await this.resolveNinjaOrg(ninjaoneClient, orgSeed);
       }
       if (ninjaOrgMatch) {
@@ -936,9 +956,9 @@ export class PrepareContextService {
           ninjaCollectionErrors.push(`alerts: ${(ninjaOrgFetch[2].reason as Error)?.message || String(ninjaOrgFetch[2].reason)}`);
         }
         if (ninjaOrgFetch[3].status === 'fulfilled') {
-          const orgDeviceIds = new Set((ninjaOrgDevices || []).map((d: any) => Number(d?.id)).filter(Number.isFinite));
-          ninjaSoftwareInventory = (ninjaOrgFetch[3].value || []).filter((row: any) => {
-            const deviceId = Number(row?.deviceId);
+          const orgDeviceIds = new Set((ninjaOrgDevices || []).map((device: NinjaDeviceRecord) => Number(device.id)).filter(Number.isFinite));
+          ninjaSoftwareInventory = (ninjaOrgFetch[3].value || []).filter((row: NinjaSoftwareRecord) => {
+            const deviceId = Number(row.deviceId);
             return orgDeviceIds.size === 0 || orgDeviceIds.has(deviceId);
           });
         } else {
@@ -1104,7 +1124,6 @@ export class PrepareContextService {
     ].filter(Boolean);
 
     const historyScopeCompany = companyName && companyName.toLowerCase() !== 'unknown' ? companyName : undefined;
-    // @ts-ignore
     relatedCases = (await findRelatedCasesByTerms(historyTerms, input.orgId, historyScopeCompany)).map((rc) => ({
       ...rc,
       tenant_id: tenantId,
@@ -1145,17 +1164,20 @@ export class PrepareContextService {
           )
         );
         const flattened = historyDocs.flat().slice(0, 6);
-        const extraDocs = flattened.map((doc: any, idx: number) => ({
-          id: String(doc.id),
-          source: 'itglue' as const,
-          title: String(doc.name || `History doc ${idx + 1}`),
-          snippet: String((doc as any).body || '').substring(0, 500),
-          relevance: 0.4 - idx * 0.05,
-          raw_ref: doc as unknown as Record<string, unknown>,
-          tenant_id: tenantId,
-          org_id: itglueOrgMatch?.id || null,
-          source_workspace: sourceWorkspace,
-        }));
+        const extraDocs = flattened.map((entry, idx: number) => {
+          const doc = entry as unknown as ITGlueDocumentRecord;
+          return {
+            id: String(doc.id),
+            source: 'itglue' as const,
+            title: String(doc.name || `History doc ${idx + 1}`),
+            snippet: String(doc.body || '').substring(0, 500),
+            relevance: 0.4 - idx * 0.05,
+            raw_ref: doc as unknown as Record<string, unknown>,
+            tenant_id: tenantId,
+            org_id: itglueOrgMatch?.id || null,
+            source_workspace: sourceWorkspace,
+          };
+        });
         docs = this.mergeDocsById(docs, extraDocs);
         sourceFindings.push({
           source: 'itglue',
@@ -1573,7 +1595,6 @@ export class PrepareContextService {
           terms: historySearchPlan.terms,
         })
         : [];
-      // @ts-ignore
       relatedCases = broadRelatedCases.map((rc) => ({
         ...rc,
         tenant_id: tenantId,
@@ -1586,7 +1607,6 @@ export class PrepareContextService {
         round: 8,
         search_terms: historySearchPlan.terms.slice(0, 28),
         strategies: historySearchPlan.strategies,
-        // @ts-ignore
         matched_case_ids: broadRelatedCases.map((c) => c.ticket_id).slice(0, 10),
         matched_case_count: broadRelatedCases.length,
         ...(!hasHistoryScope ? { blocked_reason: 'missing_org_or_company_scope' as const } : {}),
@@ -1649,7 +1669,6 @@ export class PrepareContextService {
       const currentRecords = flattenEnrichmentFields(iterativeEnrichment.sections);
       iterativeEnrichment.rounds = buildEnrichmentRounds(currentRecords, sourceFindings);
       iterativeEnrichment.completed_rounds = iterativeEnrichment.rounds.at(-1)?.round ?? iterativeEnrichment.completed_rounds;
-      // @ts-ignore
 
       const calibration = applyHistoryConfidenceCalibration({
         sections: iterativeEnrichment.sections,
@@ -1657,7 +1676,6 @@ export class PrepareContextService {
       });
       iterativeEnrichment.sections = calibration.sections;
       historyCalibrationAppendix = calibration.appendix;
-      // @ts-ignore
       const calibratedRecords = flattenEnrichmentFields(iterativeEnrichment.sections);
       iterativeEnrichment.coverage = computeEnrichmentCoverage(calibratedRecords);
       iterativeEnrichment.rounds = buildEnrichmentRounds(calibratedRecords, sourceFindings);
@@ -1706,17 +1724,20 @@ export class PrepareContextService {
           const extraDocs = finalDocsRaw
             .flat()
             .slice(0, 10)
-            .map((doc: any, idx: number) => ({
-              id: String(doc.id),
-              source: 'itglue' as const,
-              title: String(doc.name || `Final refinement doc ${idx + 1}`),
-              snippet: String((doc as any).body || '').substring(0, 600),
-              relevance: 0.35 - idx * 0.03,
-              raw_ref: doc as unknown as Record<string, unknown>,
-              tenant_id: tenantId,
-              org_id: itglueOrgMatch.id,
-              source_workspace: sourceWorkspace,
-            }));
+            .map((entry, idx: number) => {
+              const doc = entry as unknown as ITGlueDocumentRecord;
+              return {
+                id: String(doc.id),
+                source: 'itglue' as const,
+                title: String(doc.name || `Final refinement doc ${idx + 1}`),
+                snippet: String(doc.body || '').substring(0, 600),
+                relevance: 0.35 - idx * 0.03,
+                raw_ref: doc as unknown as Record<string, unknown>,
+                tenant_id: tenantId,
+                org_id: itglueOrgMatch.id,
+                source_workspace: sourceWorkspace,
+              };
+            });
           const beforeDocs = scopedDocs.length;
           docs = this.mergeDocsById(docs, extraDocs);
           const acceptedExtraDocs = extraDocs.filter((doc) => {
@@ -1860,7 +1881,6 @@ export class PrepareContextService {
         }
       }
 
-      // @ts-ignore
       finalFieldsUpdated.push(
         ...applyFinalRefinementToEnrichment({
           sections: iterativeEnrichment.sections,
@@ -2063,10 +2083,10 @@ export class PrepareContextService {
   }
 
   private async resolveDeviceDeterministically(input: {
-    devices: any[];
+    devices: NinjaDeviceRecord[];
     ticketText: string;
     requesterName: string;
-    itglueConfigs: any[];
+    itglueConfigs: ITGlueRecord[];
     deviceHints: string[];
     ninjaoneClient: NinjaOneClient;
     sourceWorkspace: string;
@@ -2089,7 +2109,10 @@ export class PrepareContextService {
     const actorEmails = extractEmails(input.ticketText);
     const actorTokens = [...new Set([...requesterTokens, ...buildRequesterTokens(input.ticketText)])];
     const configHints = input.itglueConfigs
-      .map((c: any) => String(c?.attributes?.hostname || c?.attributes?.name || '').toLowerCase())
+      .map((config) => {
+        const attrs = asJsonRecord(config.attributes);
+        return String(attrs.hostname || attrs.name || '').toLowerCase();
+      })
       .filter(Boolean);
 
     // 1) Primary strategy: ticket actor identity x Ninja last logged-in user.
@@ -2097,7 +2120,7 @@ export class PrepareContextService {
     const USER_CORRELATION_DEVICE_LIMIT = 60;
     const userCandidates = await Promise.all(
       input.devices.slice(0, USER_CORRELATION_DEVICE_LIMIT).map(async (device) => {
-        let details: any = null;
+        let details: JsonRecord | null = null;
         let loggedInAt = '';
         let loggedInUser = this.extractLoggedInUser(device) || '';
         if (!loggedInUser && device?.id) {
@@ -2216,7 +2239,7 @@ export class PrepareContextService {
     const strongMatch = winner.score >= 0.65;
     const selectedDevice = winner.device;
 
-    let details: any = null;
+    let details: JsonRecord | null = null;
     let loggedInUser = '';
     let loggedInAt = '';
     let checks: Signal[] = [];
@@ -2302,7 +2325,7 @@ export class PrepareContextService {
     ticketText: string;
     requesterName: string;
     companyName: string;
-    contacts: any[];
+    contacts: ITGlueRecord[];
     orgScopeId: string | null;
     tenantId: string | null;
     sourceWorkspace: string;
@@ -2350,8 +2373,8 @@ export class PrepareContextService {
     const normalizedRequester = normalizeName(input.requesterName).toLowerCase();
     const normalizedCompany = normalizeName(input.companyName).toLowerCase();
     const scoredCandidates = input.contacts
-      .map((contact: any) => {
-        const attrs = contact?.attributes || {};
+      .map((contact) => {
+        const attrs = asJsonRecord(contact.attributes);
         const name = normalizeName(
           String(
             itgAttr(attrs, 'name') ||
@@ -2481,10 +2504,10 @@ export class PrepareContextService {
 
   private verifyCapabilityChain(input: {
     required: boolean;
-    device: any | null;
-    deviceDetails: any | null;
+    device: JsonRecord | null;
+    deviceDetails: JsonRecord | null;
     ticketText: string;
-    itglueAssets: any[];
+    itglueAssets: ITGlueRecord[];
     sourceWorkspace: string;
     tenantId: string | null;
     orgId: string | null;
@@ -2519,7 +2542,7 @@ export class PrepareContextService {
     };
   }
 
-  private extractDeviceHardwareInfo(device: any, details: any, assets: any[]): {
+  private extractDeviceHardwareInfo(device: JsonRecord | null, details: JsonRecord | null, assets: ITGlueRecord[]): {
     manufacturer?: string;
     model?: string;
     serial?: string;
@@ -2529,17 +2552,18 @@ export class PrepareContextService {
     if (!device) {
       return { matchReason: 'device not resolved' };
     }
+    const systemDetails = asJsonRecord(details?.system);
     const manufacturer = String(
       details?.manufacturer ||
       details?.vendor ||
-      details?.system?.manufacturer ||
+      systemDetails.manufacturer ||
       device?.manufacturer ||
       device?.vendor ||
       ''
     ).trim();
     const model = String(
       details?.model ||
-      details?.system?.model ||
+      systemDetails.model ||
       device?.model ||
       details?.systemModel ||
       ''
@@ -2547,13 +2571,13 @@ export class PrepareContextService {
     const serial = String(
       details?.serialNumber ||
       details?.serial ||
-      details?.system?.serialNumber ||
-      details?.system?.biosSerialNumber ||
+      systemDetails.serialNumber ||
+      systemDetails.biosSerialNumber ||
       device?.serialNumber ||
       ''
     ).trim();
-    const dockAsset = assets.find((asset: any) =>
-      /dock|adapter|usb-c|thunderbolt/i.test(String(JSON.stringify(asset?.attributes || {})))
+    const dockAsset = assets.find((asset) =>
+      /dock|adapter|usb-c|thunderbolt/i.test(String(JSON.stringify(asset.attributes || {})))
     );
     const dockOrAdapter = dockAsset
       ? String((dockAsset?.attributes?.name || dockAsset?.attributes?.description || 'Dock/Adapter')).trim()
@@ -2629,7 +2653,7 @@ export class PrepareContextService {
     capabilityVerification: CapabilityVerification;
     facetContext: FacetContext;
     scopeMeta: ScopeMeta;
-    device: any;
+    device: JsonRecord | null;
     loggedInUser: string;
     requesterName: string;
     inferredPhoneProvider: string | null;
@@ -2741,18 +2765,36 @@ export class PrepareContextService {
 
     const missingCritical = [...input.missingData];
 
-    // @ts-ignore
     const candidateActions: DigestAction[] = buildFacetActions(input.facetContext)
-      .map((action) => ({
-        // @ts-ignore
-        ...action,
-        // @ts-ignore
-        evidence_refs: action.evidence_refs
-          // @ts-ignore
-          .flatMap((kind) => resolveEvidenceRefsByKind(kind, factsConfirmed))
-          .slice(0, 6),
-      }))
-      .filter((action) => action.evidence_refs.length > 0);
+      .map((action): DigestAction | null => {
+        const evidenceKinds = Array.isArray(action.evidence_refs)
+          ? action.evidence_refs.filter((kind): kind is string => typeof kind === 'string')
+          : [];
+        const evidenceRefs = evidenceKinds
+          .flatMap((kind) => this.resolveEvidenceRefsByKind(kind, factsConfirmed))
+          .slice(0, 6);
+        const actionText = typeof action.action === 'string' && action.action.trim()
+          ? action.action
+          : typeof action.label === 'string' && action.label.trim()
+            ? action.label
+            : '';
+
+        if (!actionText || evidenceRefs.length === 0) {
+          return null;
+        }
+
+        const digestAction: DigestAction = {
+          action: actionText,
+          evidence_refs: evidenceRefs,
+        };
+
+        if (typeof action.rationale === 'string' && action.rationale.trim()) {
+          digestAction.rationale = action.rationale;
+        }
+
+        return digestAction;
+      })
+      .filter((action): action is DigestAction => action !== null);
 
     const sourcesByFacet: Record<string, string[]> = {};
     for (const finding of input.sourceFindings) {
@@ -2788,15 +2830,15 @@ export class PrepareContextService {
     inferredCompany: string;
     requesterName: string;
     entityResolution: EntityResolution;
-    device: any | null;
-    deviceDetails: any | null;
+    device: JsonRecord | null;
+    deviceDetails: JsonRecord | null;
     loggedInUser: string;
     loggedInAt: string;
     inferredPhoneProvider: string | null;
     sourceFindings: SourceFinding[];
-    itglueConfigs: any[];
-    itgluePasswords: any[];
-    itglueAssets: any[];
+    itglueConfigs: ITGlueRecord[];
+    itgluePasswords: ITGlueRecord[];
+    itglueAssets: ITGlueRecord[];
     itglueEnriched?: ItglueEnrichedPayload | null;
     docs: Doc[];
     ninjaChecks: Signal[];
@@ -3061,8 +3103,8 @@ export class PrepareContextService {
 
   private buildEndpointEnrichmentSection(input: {
     ticketNarrative: string;
-    device: any | null;
-    deviceDetails: any | null;
+    device: JsonRecord | null;
+    deviceDetails: JsonRecord | null;
     loggedInUser: string;
     loggedInAt: string;
     ninjaChecks: Signal[];
@@ -3075,16 +3117,17 @@ export class PrepareContextService {
       device: input.device,
       deviceDetails: input.deviceDetails,
     });
+    const os = asJsonRecord(input.deviceDetails?.os);
     const osName = String(
       input.device?.osName ||
       input.deviceDetails?.osName ||
-      input.deviceDetails?.os?.name ||
+      os.name ||
       ''
     ).trim();
     const osVersion = String(
       input.device?.osVersion ||
       input.deviceDetails?.osVersion ||
-      [input.deviceDetails?.os?.buildNumber, input.deviceDetails?.os?.releaseId].filter(Boolean).join(' / ') ||
+      [os.buildNumber, os.releaseId].filter(Boolean).join(' / ') ||
       ''
     ).trim();
     const lastCheckIn = this.enrichmentEngine.normalizeTimeValue(
@@ -3166,39 +3209,30 @@ export class PrepareContextService {
 
   private buildNetworkEnrichmentSection(input: {
     ticketNarrative: string;
-    device: any | null;
-    deviceDetails: any | null;
+    device: JsonRecord | null;
+    deviceDetails: JsonRecord | null;
     docs: Doc[];
-    itglueConfigs: any[];
-    itgluePasswords: any[];
-    itglueAssets: any[];
+    itglueConfigs: ITGlueRecord[];
+    itgluePasswords: ITGlueRecord[];
+    itglueAssets: ITGlueRecord[];
     itglueEnriched: ItglueEnrichedPayload | null;
     ninjaChecks: Signal[];
-    // @ts-ignore
     inferredPhoneProvider: string | null;
-    // @ts-ignore
   }): IterativeEnrichmentSections['network'] {
-    // @ts-ignore
     const wanCandidate = this.extractITGlueWanCandidate({
       ticketNarrative: input.ticketNarrative,
       itglueAssets: input.itglueAssets,
       itglueConfigs: input.itglueConfigs,
       docs: input.docs,
     });
-    // @ts-ignore
     const narrativeLocationContext = this.enrichmentEngine.inferLocationContext(input.ticketNarrative);
     const locationContext = narrativeLocationContext !== 'unknown'
-      // @ts-ignore
       ? narrativeLocationContext
-      // @ts-ignore
       : wanCandidate?.location_hint
-        // @ts-ignore
         ? 'office'
         : 'unknown';
     const publicIp = this.enrichmentEngine.resolvePublicIp(input.device, input.deviceDetails);
-    // @ts-ignore
     const itglueLlmIsp = this.pickEnrichedValue(input.itglueEnriched, 'isp_name');
-    // @ts-ignore
     const ispName = itglueLlmIsp || wanCandidate?.isp_name || this.inferIspName({
       ticketNarrative: input.ticketNarrative,
       docs: input.docs,
@@ -3208,14 +3242,11 @@ export class PrepareContextService {
     const phoneProviderConnected = Boolean(input.inferredPhoneProvider);
 
     return {
-      // @ts-ignore
       location_context: buildField({
         value: locationContext,
         status: locationContext === 'unknown' ? 'unknown' : 'inferred',
         confidence: locationContext === 'unknown' ? 0 : narrativeLocationContext !== 'unknown' ? 0.65 : 0.75,
-        // @ts-ignore
         sourceSystem: locationContext === 'unknown' ? 'unknown' : narrativeLocationContext !== 'unknown' ? 'ticket_narrative' : 'itglue',
-        // @ts-ignore
         sourceRef: locationContext === 'unknown' ? undefined : narrativeLocationContext !== 'unknown' ? 'ticket.text' : wanCandidate?.source_ref,
         round: narrativeLocationContext !== 'unknown' ? 1 : 2,
       }),
@@ -3224,20 +3255,14 @@ export class PrepareContextService {
         status: publicIp ? 'confirmed' : 'unknown',
         confidence: publicIp ? 0.9 : 0,
         sourceSystem: publicIp ? 'ninjaone' : 'unknown',
-        // @ts-ignore
         sourceRef: publicIp ? 'ninja.device.publicIP/ipAddresses' : undefined,
-        // @ts-ignore
         round: 1,
       }),
       isp_name: buildField({
         value: ispName || 'unknown',
-        // @ts-ignore
         status: ispName ? 'inferred' : 'unknown',
-        // @ts-ignore
         confidence: itglueLlmIsp ? 0.75 : wanCandidate?.isp_name ? Math.max(0.65, wanCandidate.confidence) : ispName ? 0.6 : 0,
-        // @ts-ignore
         sourceSystem: itglueLlmIsp ? 'itglue_llm' : wanCandidate?.isp_name ? 'itglue' : ispName ? 'cross_correlation' : 'unknown',
-        // @ts-ignore
         sourceRef: itglueLlmIsp ? 'itglue_org_snapshot' : wanCandidate?.isp_name ? wanCandidate.source_ref : ispName ? 'ticket/docs/itglue keyword' : undefined,
         round: ispName ? 2 : 1,
       }),
@@ -3377,17 +3402,17 @@ export class PrepareContextService {
     const map = new Map<string, T>();
     const scoreRow = (row: T | undefined | null) => {
       if (!row || typeof row !== 'object') return 0;
-      const attrs = (row as any)?.attributes;
-      const attrKeys = attrs && typeof attrs === 'object' ? Object.keys(attrs).length : 0;
-      return attrKeys + Object.keys(row as any).length * 0.01;
+      const record = asJsonRecord(row);
+      const attrs = asJsonRecord(record.attributes);
+      return Object.keys(attrs).length + Object.keys(record).length * 0.01;
     };
     for (const row of base || []) {
-      const id = String((row as any)?.id || '').trim();
+      const id = String(asJsonRecord(row).id || '').trim();
       if (!id) continue;
       map.set(id, row);
     }
     for (const row of extra || []) {
-      const id = String((row as any)?.id || '').trim();
+      const id = String(asJsonRecord(row).id || '').trim();
       if (!id) continue;
       const existing = map.get(id);
       if (!existing || scoreRow(row) >= scoreRow(existing)) {
@@ -3407,15 +3432,15 @@ export class PrepareContextService {
     return Array.from(map.values());
   }
 
-  private parseITGlueOrgParentId(org: any): string | null {
-    const attrs = org?.attributes || {};
+  private parseITGlueOrgParentId(org: ITGlueRecord): string | null {
+    const attrs = asJsonRecord(org.attributes);
     const value = itgAttr(attrs, 'parent_id');
     const text = String(value ?? '').trim();
     return text ? text : null;
   }
 
-  private parseITGlueOrgAncestorIds(org: any): string[] {
-    const attrs = org?.attributes || {};
+  private parseITGlueOrgAncestorIds(org: ITGlueRecord): string[] {
+    const attrs = asJsonRecord(org.attributes);
     const raw = itgAttr(attrs, 'ancestor_ids');
     if (Array.isArray(raw)) {
       return raw.map((v) => String(v || '').trim()).filter(Boolean);
@@ -3440,9 +3465,12 @@ export class PrepareContextService {
     companyName?: string
   ): Promise<Array<{ id: string; name: string; reason: string }>> {
     const orgs = await itglueClient.getOrganizations(1000);
-    const byId = new Map<string, any>(
+    const byId = new Map<string, ITGlueRecord>(
       orgs
-        .map((org: any): [string, any] => [String(org?.id || '').trim(), org])
+        .map((org): [string, ITGlueRecord] => {
+          const record = org as ITGlueRecord;
+          return [String(record.id || '').trim(), record];
+        })
         .filter(([id]) => Boolean(id))
     );
     const matched = byId.get(String(matchedOrg.id)) || null;
@@ -3453,11 +3481,11 @@ export class PrepareContextService {
     const matchedId = String(matchedOrg.id);
     const matchedAncestors = new Set(this.parseITGlueOrgAncestorIds(matched));
     const matchedParentId = this.parseITGlueOrgParentId(matched);
-    const familyCandidates: Array<{ org: any; score: number; reason: string; priority: number }> = [];
-    const push = (org: any, reason: string, priority: number) => {
-      const id = String(org?.id || '').trim();
+    const familyCandidates: Array<{ org: ITGlueRecord; score: number; reason: string; priority: number }> = [];
+    const push = (org: ITGlueRecord, reason: string, priority: number) => {
+      const id = String(org.id || '').trim();
       if (!id) return;
-      const attrs = org?.attributes || {};
+      const attrs = asJsonRecord(org.attributes);
       const name = String(itgAttr(attrs, 'name') || '').trim() || id;
       const shortName = String(itgAttr(attrs, 'short_name') || '').trim();
       const score = companyName ? scoreOrgNameMatch(companyName, name, shortName) : 0;
@@ -3575,15 +3603,15 @@ export class PrepareContextService {
     sections: IterativeEnrichmentSections;
     ticket: TicketLike;
     ticketNarrative: string;
-    normalizedTicket: any | null;
-    itglueContacts: any[];
-    itglueConfigs: any[];
+    normalizedTicket: JsonRecord | null;
+    itglueContacts: ITGlueRecord[];
+    itglueConfigs: ITGlueRecord[];
     itglueEnriched: ItglueEnrichedPayload | null;
     ninjaEnriched: NinjaEnrichedPayload | null;
-    ninjaOrgDevices: any[];
-    ninjaSoftwareInventory: any[];
-    device: any | null;
-    deviceDetails: any | null;
+    ninjaOrgDevices: NinjaDeviceRecord[];
+    ninjaSoftwareInventory: NinjaSoftwareRecord[];
+    device: JsonRecord | null;
+    deviceDetails: JsonRecord | null;
     loggedInUser: string;
     loggedInAt: string;
   }): Promise<{
@@ -3670,26 +3698,26 @@ export class PrepareContextService {
   }
 
   private buildFusionFieldCandidates(input: {
-    sections: IterativeEnrichmentSections;
-    ticket: TicketLike;
-    normalizedTicket: any | null;
-    itglueEnriched: ItglueEnrichedPayload | null;
-    ninjaEnriched: NinjaEnrichedPayload | null;
-    device: any | null;
-    deviceDetails: any | null;
-    loggedInUser: string;
-    loggedInAt: string;
+    sections: FusionFieldCandidateInput['sections'];
+    ticket: FusionFieldCandidateInput['ticket'];
+    normalizedTicket: JsonRecord | null;
+    itglueEnriched: FusionFieldCandidateInput['itglueEnriched'];
+    ninjaEnriched: FusionFieldCandidateInput['ninjaEnriched'];
+    device: JsonRecord | null;
+    deviceDetails: JsonRecord | null;
+    loggedInUser: FusionFieldCandidateInput['loggedInUser'];
+    loggedInAt: FusionFieldCandidateInput['loggedInAt'];
   }, supportedPaths: Set<string>): FusionFieldCandidate[] {
     return buildFusionFieldCandidates(input, supportedPaths);
   }
 
   private buildFusionLinksAndInferences(input: {
-    ticket: TicketLike;
-    ticketNarrative: string;
-    itglueContacts: any[];
-    ninjaSoftwareInventory: any[];
-    device: any | null;
-    loggedInUser: string;
+    ticket: FusionLinksAndInferencesInput['ticket'];
+    ticketNarrative: FusionLinksAndInferencesInput['ticketNarrative'];
+    itglueContacts: ITGlueRecord[];
+    ninjaSoftwareInventory: NinjaSoftwareRecord[];
+    device: JsonRecord | null;
+    loggedInUser: FusionLinksAndInferencesInput['loggedInUser'];
   }): { links: FusionLink[]; inferences: FusionInference[] } {
     return buildFusionLinksAndInferences(input);
   }
@@ -3704,7 +3732,7 @@ export class PrepareContextService {
     return buildFusionAdjudicationPrompt(input);
   }
 
-  private sanitizeFusionAdjudicationOutput(parsed: any, supportedPaths: Set<string>): FusionAdjudicationOutput {
+  private sanitizeFusionAdjudicationOutput(parsed: FusionSanitizeInput, supportedPaths: Set<string>): FusionAdjudicationOutput {
     return sanitizeFusionAdjudicationOutput(parsed, supportedPaths);
   }
 
@@ -3723,8 +3751,8 @@ export class PrepareContextService {
 
   private buildDeterministicFusionFallbackResolutions(input: {
     sections: IterativeEnrichmentSections;
-    itglueContacts: any[];
-    loggedInUser: string;
+    itglueContacts: FusionFallbackInput['itglueContacts'];
+    loggedInUser: FusionFallbackInput['loggedInUser'];
   }, links: FusionLink[]): FusionFieldResolution[] {
     return buildDeterministicFusionFallbackResolutions(input, links);
   }
@@ -3736,26 +3764,26 @@ export class PrepareContextService {
     return applyFusionResolutionsToSections(sections, resolutions);
   }
 
-  private buildFacetActions(facets: FacetContext): any[] {
+  private buildFacetActions(facets: FacetContext): FacetActions {
     return buildFacetActions(facets);
   }
 
-  private resolveEvidenceRefsByKind(kind: string, facts: any[]): string[] {
-    return resolveEvidenceRefsByKind(kind, facts);
+  private resolveEvidenceRefsByKind(kind: string, facts: EvidenceRefFacts): string[] {
+    return resolveEvidenceRefsByKind(
+      kind,
+      facts.map((fact) => ({
+        id: fact.id,
+        kind,
+        evidence_refs: fact.evidence_refs,
+      }))
+    );
   }
 
-  private async findRelatedCases(...args: any[]): Promise<any> {
-    return (findRelatedCases as any)(...args);
+  private async findRelatedCases(...args: RelatedCasesArgs): Promise<Awaited<ReturnType<typeof findRelatedCases>>> {
+    return findRelatedCases(...args);
   }
 
-  private buildBroadHistorySearchPlan(input: {
-    ticket: TicketLike;
-    ticketNarrative: string;
-    normalizedTicket: any | null;
-    sections: IterativeEnrichmentSections;
-    docs: Doc[];
-    fusionAudit?: Record<string, unknown>;
-  }): { terms: string[]; strategies: string[] } {
+  private buildBroadHistorySearchPlan(input: BroadHistorySearchInput): { terms: string[]; strategies: string[] } {
     return buildBroadHistorySearchPlan(input);
   }
 
@@ -3772,17 +3800,17 @@ export class PrepareContextService {
   private shouldRunFinalNinjaRefinement(input: {
     sections: IterativeEnrichmentSections;
     finalRefinementPlanTargets: string[];
-    currentDevice: any | null;
+    currentDevice: FinalNinjaRefinementInput['currentDevice'];
   }): boolean {
     return shouldRunFinalNinjaRefinement(input);
   }
 
-  private async findRelatedCasesBroad(...args: any[]): Promise<RelatedCase[]> {
-    return (findRelatedCasesBroad as any)(...args);
+  private async findRelatedCasesBroad(...args: RelatedCasesBroadArgs): Promise<RelatedCase[]> {
+    return findRelatedCasesBroad(...args);
   }
 
-  private async findRelatedCasesByTerms(...args: any[]): Promise<RelatedCase[]> {
-    return (findRelatedCasesByTerms as any)(...args);
+  private async findRelatedCasesByTerms(...args: RelatedCasesByTermsArgs): Promise<RelatedCase[]> {
+    return findRelatedCasesByTerms(...args);
   }
 
   private normalizeHistoryTerms(terms: string[]): Array<{ term: string; normalized: string; weight: number }> {

@@ -1,5 +1,28 @@
 import { query, execute } from '../../db/index.js';
 
+type ProcessedTicketUpdate = {
+    timestamp: string;
+    content: string | null;
+};
+
+type ProcessedTicketRow = {
+    id: string;
+    updates: ProcessedTicketUpdate[] | null;
+};
+
+type ProcessedTicket = {
+    id: string;
+    title: string | null;
+    description: string | null;
+    company?: string | null;
+    requester: string | null;
+    source: string | null;
+    status: string | null;
+    rawBody: string | null;
+    isReply: boolean;
+    createdAt?: string | null;
+};
+
 export class PgStore {
     private hasCompanyColumnCache: boolean | null = null;
 
@@ -20,7 +43,7 @@ export class PgStore {
     /**
      * Saves the raw email payload to the tickets_raw table.
      */
-    async saveRawEmail(messageId: string, emailData: any) {
+    async saveRawEmail(messageId: string, emailData: unknown) {
         try {
             await execute(
                 `INSERT INTO tickets_raw (message_id, email_data)
@@ -37,18 +60,18 @@ export class PgStore {
     /**
      * Saves or updates a processed ticket in the tickets_processed table.
      */
-    async saveProcessedTicket(ticket: any) {
+    async saveProcessedTicket(ticket: ProcessedTicket) {
         try {
             const includeCompany = await this.hasCompanyColumn();
             // Check if ticket exists
-            const existing = await query<any>(
+            const existing = await query<ProcessedTicketRow>(
                 `SELECT id, updates FROM tickets_processed WHERE id = $1`,
                 [ticket.id]
             );
 
             if (existing.length > 0 && ticket.isReply) {
                 // Append update/activity
-                const currentUpdates = existing[0].updates || [];
+                const currentUpdates = Array.isArray(existing[0]?.updates) ? existing[0].updates : [];
                 const newUpdate = {
                     timestamp: new Date().toISOString(),
                     content: ticket.rawBody,

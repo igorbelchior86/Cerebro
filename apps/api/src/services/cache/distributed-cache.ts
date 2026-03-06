@@ -75,6 +75,22 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function errorMessage(error: unknown): string {
+  if (!isPlainObject(error)) return String(error || 'unknown');
+  const message = error.message;
+  return typeof message === 'string' && message.trim() ? message : String(error || 'unknown');
+}
+
+function isCacheRecordShape(value: unknown): value is CacheRecord<unknown> {
+  if (!isPlainObject(value)) return false;
+  return (
+    typeof value.createdAt === 'number' &&
+    typeof value.freshUntil === 'number' &&
+    typeof value.staleUntil === 'number' &&
+    'value' in value
+  );
+}
+
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map((item) => stableStringify(item)).join(',')}]`;
@@ -209,7 +225,7 @@ class RedisCacheBackend {
         client.on('error', (error) => {
           operationalLogger.warn('cache.redis.client_error', {
             module: 'services.cache.distributed-cache',
-            error_message: String((error as any)?.message || error || 'unknown'),
+            error_message: errorMessage(error),
           });
         });
         await client.connect();
@@ -218,7 +234,7 @@ class RedisCacheBackend {
       } catch (error) {
         operationalLogger.warn('cache.redis.connect_failed', {
           module: 'services.cache.distributed-cache',
-          error_message: String((error as any)?.message || error || 'unknown'),
+          error_message: errorMessage(error),
         });
         this.client = null;
         return null;
@@ -315,7 +331,7 @@ export class DistributedCacheService {
   private readonly memory = new MemoryCacheBackend();
   private readonly redis = new RedisCacheBackend();
   private readonly breaker = new CircuitBreaker();
-  private readonly inFlight = new Map<string, Promise<CacheReadResult<any>>>();
+  private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly statsInternal = {
     hits: 0,
     misses: 0,
@@ -357,7 +373,7 @@ export class DistributedCacheService {
     const maxPayloadBytes = input.maxPayloadBytes ?? DEFAULT_MAX_PAYLOAD_BYTES;
     const now = nowMs();
 
-    const cached = await this.readCacheRecord<T>(input.key, input.resource);
+    const cached = await this.readCacheRecord(input.key, input.resource);
     if (cached) {
       const parsed = this.parseCacheRecord<T>(cached.raw);
       if (parsed && parsed.staleUntil > now) {
@@ -392,7 +408,7 @@ export class DistributedCacheService {
 
     this.statsInternal.misses += 1;
     return this.withLocalSingleflight(input.key, async () => {
-      const secondRead = await this.readCacheRecord<T>(input.key, input.resource);
+      const secondRead = await this.readCacheRecord(input.key, input.resource);
       if (secondRead) {
         const secondParsed = this.parseCacheRecord<T>(secondRead.raw);
         if (secondParsed && secondParsed.staleUntil > nowMs()) {
@@ -421,7 +437,7 @@ export class DistributedCacheService {
         this.statsInternal.lockContended += 1;
         for (let i = 0; i < WAIT_ON_LOCK_ATTEMPTS; i += 1) {
           await new Promise((resolve) => setTimeout(resolve, WAIT_ON_LOCK_MS));
-          const read = await this.readCacheRecord<T>(input.key, input.resource);
+          const read = await this.readCacheRecord(input.key, input.resource);
           const parsed = read ? this.parseCacheRecord<T>(read.raw) : null;
           if (parsed && parsed.staleUntil > nowMs()) {
             const stale = parsed.freshUntil <= nowMs();
@@ -481,7 +497,7 @@ export class DistributedCacheService {
           },
         };
       } catch (error) {
-        const staleFallback = await this.readCacheRecord<T>(input.key, input.resource);
+        const staleFallback = await this.readCacheRecord(input.key, input.resource);
         const staleParsed = staleFallback ? this.parseCacheRecord<T>(staleFallback.raw) : null;
         if (input.allowStaleOnError !== false && staleParsed && staleParsed.staleUntil > nowMs()) {
           this.statsInternal.staleServed += 1;
@@ -545,13 +561,13 @@ export class DistributedCacheService {
           module: 'services.cache.distributed-cache',
           resource: input.resource,
           key: input.key,
-          error_message: String((error as any)?.message || error || 'unknown'),
+          error_message: errorMessage(error),
         });
       } finally {
         await this.releaseLock(lockKey, input.resource);
       }
     })();
-    this.inFlight.set(refreshKey, task as Promise<any>);
+    this.inFlight.set(refreshKey, task);
     try {
       await task;
     } finally {
@@ -566,29 +582,20 @@ export class DistributedCacheService {
       .finally(() => {
         this.inFlight.delete(key);
       });
-    this.inFlight.set(key, task as Promise<any>);
+    this.inFlight.set(key, task);
     return task;
   }
 
   private parseCacheRecord<T>(raw: string): CacheRecord<T> | null {
     try {
-      const parsed = JSON.parse(raw) as CacheRecord<T>;
-      if (
-        !parsed ||
-        typeof parsed !== 'object' ||
-        typeof parsed.createdAt !== 'number' ||
-        typeof parsed.freshUntil !== 'number' ||
-        typeof parsed.staleUntil !== 'number'
-      ) {
-        return null;
-      }
-      return parsed;
+      const parsed: unknown = JSON.parse(raw);
+      return isCacheRecordShape(parsed) ? (parsed as CacheRecord<T>) : null;
     } catch {
       return null;
     }
   }
 
-  private async readCacheRecord<T>(key: string, resource: string): Promise<RawCacheHit | null> {
+  private async readCacheRecord(key: string, resource: string): Promise<RawCacheHit | null> {
     const redisKey = toRedisKey(key);
     const bypassed = this.breaker.shouldBypass(resource);
 
@@ -605,7 +612,7 @@ export class DistributedCacheService {
           module: 'services.cache.distributed-cache',
           resource,
           key,
-          error_message: String((error as any)?.message || error || 'unknown'),
+          error_message: errorMessage(error),
         });
       }
     }
@@ -634,7 +641,7 @@ export class DistributedCacheService {
           module: 'services.cache.distributed-cache',
           resource,
           key,
-          error_message: String((error as any)?.message || error || 'unknown'),
+          error_message: errorMessage(error),
         });
       }
     }

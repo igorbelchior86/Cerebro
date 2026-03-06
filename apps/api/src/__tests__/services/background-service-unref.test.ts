@@ -8,19 +8,30 @@ import { TicketIntakePollingService as LegacyTicketIntakePollingService } from '
 import { TicketIntakePollingService as AdapterTicketIntakePollingService } from '../../services/adapters/ticket-intake-polling.js';
 import { TriageOrchestrator as LegacyTriageOrchestrator } from '../../services/triage-orchestrator.js';
 
+type LegacyTriageInternals = {
+  startRetryListener(): void;
+  processPendingSessions(): Promise<void>;
+};
+type LegacyTicketIntakeInternals = {
+  start(): void;
+  stop(): void;
+  poll(): Promise<void>;
+};
+
 describe('background service interval unref coverage', () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
   it('unrefs intervals in legacy pollers and orchestrator listeners', async () => {
-    const handles = Array.from({ length: 4 }, () => ({ unref: jest.fn() })) as any[];
-    const setIntervalSpy = jest.spyOn(global, 'setInterval').mockImplementation((() => handles.shift()) as any);
-    const clearIntervalSpy = jest.spyOn(global, 'clearInterval').mockImplementation((() => undefined) as any);
+    const handles = Array.from({ length: 4 }, () => ({ unref: jest.fn() } as unknown as NodeJS.Timeout));
+    const setIntervalSpy = jest.spyOn(global, 'setInterval').mockImplementation(() => handles.shift() ?? handles[0]!);
+    const clearIntervalSpy = jest.spyOn(global, 'clearInterval').mockImplementation(() => undefined);
 
     const legacyOrchestrator = new LegacyTriageOrchestrator();
-    const legacyRetrySpy = jest.spyOn(legacyOrchestrator as any, 'processPendingSessions').mockResolvedValue(undefined);
-    legacyOrchestrator.startRetryListener();
+    const legacyOrchestratorInternals = legacyOrchestrator as unknown as LegacyTriageInternals;
+    const legacyRetrySpy = jest.spyOn(legacyOrchestratorInternals, 'processPendingSessions').mockImplementation(async () => undefined);
+    legacyOrchestratorInternals.startRetryListener();
     await Promise.resolve();
 
     const legacyAutotask = new LegacyAutotaskPollingService();
@@ -29,13 +40,15 @@ describe('background service interval unref coverage', () => {
     await Promise.resolve();
 
     const legacyTicketIntake = new LegacyTicketIntakePollingService();
-    const legacyTicketPollSpy = jest.spyOn(legacyTicketIntake as any, 'poll').mockResolvedValue(undefined);
-    legacyTicketIntake.start();
+    const legacyTicketIntakeInternals = legacyTicketIntake as unknown as LegacyTicketIntakeInternals;
+    const legacyTicketPollSpy = jest.spyOn(legacyTicketIntakeInternals, 'poll').mockImplementation(async () => undefined);
+    legacyTicketIntakeInternals.start();
     await Promise.resolve();
 
     const adapterTicketIntake = new AdapterTicketIntakePollingService();
-    const adapterTicketPollSpy = jest.spyOn(adapterTicketIntake as any, 'poll').mockResolvedValue(undefined);
-    adapterTicketIntake.start();
+    const adapterTicketIntakeInternals = adapterTicketIntake as unknown as LegacyTicketIntakeInternals;
+    const adapterTicketPollSpy = jest.spyOn(adapterTicketIntakeInternals, 'poll').mockImplementation(async () => undefined);
+    adapterTicketIntakeInternals.start();
     await Promise.resolve();
 
     expect(legacyRetrySpy).toHaveBeenCalledTimes(1);
@@ -43,7 +56,7 @@ describe('background service interval unref coverage', () => {
     expect(legacyTicketPollSpy).toHaveBeenCalledTimes(1);
     expect(adapterTicketPollSpy).toHaveBeenCalledTimes(1);
 
-    for (const handle of setIntervalSpy.mock.results.map((result) => result.value as any)) {
+    for (const handle of setIntervalSpy.mock.results.map((result) => result.value as NodeJS.Timeout)) {
       expect(handle.unref).toHaveBeenCalledTimes(1);
     }
 

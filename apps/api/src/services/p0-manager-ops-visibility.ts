@@ -114,12 +114,12 @@ export class P0ManagerOpsVisibilityService {
     return candidates
       .sort((a, b) => b.sortKey - a.sortKey || a.ticket_id.localeCompare(b.ticket_id))
       .slice(0, Math.max(1, Math.min(50, input.sampleSize)))
-      .map(({ sortKey, ...rest }) => ({
-        ticket_id: rest.ticket_id,
-        reason: rest.reason,
-        confidence: rest.confidence,
-        hitl_status: rest.hitl_status,
-        ...(rest.sla_status ? { sla_status: rest.sla_status } : {}),
+      .map((candidate) => ({
+        ticket_id: candidate.ticket_id,
+        reason: candidate.reason,
+        confidence: candidate.confidence,
+        hitl_status: candidate.hitl_status,
+        ...(candidate.sla_status ? { sla_status: candidate.sla_status } : {}),
       }));
   }
 

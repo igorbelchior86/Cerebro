@@ -146,7 +146,7 @@ export function assertSamlConditions(
 
 export async function parseAcsResponse(
   provider: TenantSamlProviderRecord,
-  req: any,
+  req: Parameters<ReturnType<typeof buildServiceProvider>['parseLoginResponse']>[2],
   expectedInResponseTo: string,
 ): Promise<{
   email: string;
@@ -158,7 +158,10 @@ export async function parseAcsResponse(
   const sp = buildServiceProvider(provider);
   const idp = buildIdentityProvider(provider);
   const parsed = await sp.parseLoginResponse(idp, 'post', req);
-  const extract = (parsed as any)?.extract as ExtractResult;
+  const extract = ((parsed as { extract?: ExtractResult } | null)?.extract) as ExtractResult | undefined;
+  if (!extract) {
+    throw new Error('SAML response missing extracted assertion data');
+  }
 
   assertSamlConditions(extract, provider, expectedInResponseTo);
 

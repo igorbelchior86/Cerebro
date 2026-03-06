@@ -7,24 +7,34 @@ import type {
 import { resolveAutotaskOperation } from '../adapters/autotask-operation-registry.js';
 import { normalizeTextForAutotask } from '../adapters/autotask-text-normalizer.js';
 
+type JsonRecord = Record<string, unknown>;
+
 export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
   constructor(private readonly clientFactory: (tenantId: string) => Promise<AutotaskClient | null>) { }
   private statusLabelCache = new Map<AutotaskClient, Map<string, string>>();
 
-  private readTicketNumber(ticket: any): string {
+  private asRecord(value: unknown): JsonRecord {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as JsonRecord)
+      : {};
+  }
+
+  private readTicketNumber(ticket: unknown): string {
+    const record = this.asRecord(ticket);
     return String(
-      ticket?.ticketNumber ??
-      ticket?.ticketnumber ??
-      ticket?.ticket_number ??
+      record.ticketNumber ??
+      record.ticketnumber ??
+      record.ticket_number ??
       ''
     ).trim();
   }
 
-  private readRequesterName(ticket: any): string {
+  private readRequesterName(ticket: unknown): string {
+    const record = this.asRecord(ticket);
     return String(
-      ticket?.contactName ??
-      ticket?.requesterName ??
-      ticket?.requester ??
+      record.contactName ??
+      record.requesterName ??
+      record.requester ??
       ''
     ).trim();
   }
@@ -55,6 +65,21 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
       if (normalized) return normalized;
     }
     return undefined;
+  }
+
+  private readIdentifier(value: unknown): string | number | undefined {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+    const normalized = value.trim();
+    if (!normalized) {
+      return undefined;
+    }
+    const parsed = this.parsePositiveInt(normalized);
+    return parsed ?? normalized;
   }
 
   private mapTimeEntryMirrorSnapshot(
@@ -138,7 +163,7 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
 
     try {
       const resource = await client.getResource(resourceId);
-      return this.parsePositiveInt((resource as any)?.defaultServiceDeskRoleID);
+      return this.parsePositiveInt(this.asRecord(resource).defaultServiceDeskRoleID);
     } catch {
       return null;
     }
@@ -149,7 +174,7 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
     const raw = String(ticketRef || '').trim();
     if (/^\d+$/.test(raw)) return Number(raw);
     const ticket = await client.getTicketByTicketNumber(raw);
-    const id = Number((ticket as any)?.id);
+    const id = Number(this.asRecord(ticket).id);
     return Number.isFinite(id) ? id : raw;
   }
 
@@ -161,7 +186,7 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
     if (!raw || /^\d+$/.test(raw)) return statusValue;
     try {
       const options = await client.getTicketStatusOptions();
-      const match = options.find((option: any) => option.label.trim().toLowerCase() === raw.toLowerCase());
+      const match = options.find((option) => option.label.trim().toLowerCase() === raw.toLowerCase());
       if (match) return match.id;
     } catch {
       // Keep original status if metadata lookup fails.
@@ -175,7 +200,7 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
       throw new Error('Autotask integration is not configured for this tenant');
     }
 
-    const payload = command.payload as any;
+    const payload = this.asRecord(command.payload);
     const operation = resolveAutotaskOperation(command.command_type, payload || {});
     if (operation.rejected) {
       throw new Error(`Unsupported Autotask command_type by frozen matrix: ${command.command_type} (${operation.reason})`);
@@ -203,9 +228,10 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
         serviceLevelAgreementID: payload.sla ?? payload.serviceLevelAgreementID,
         status: payload.status,
       });
+      const createdRecord = this.asRecord(created);
       return {
         kind: 'created',
-        external_ticket_id: String((created as any)?.id ?? ''),
+        external_ticket_id: String(createdRecord.id ?? ''),
         external_ticket_number: this.readTicketNumber(created),
         snapshot: this.mapTicketSnapshot(created),
       };
@@ -377,9 +403,11 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
         payload,
         typeof entry === 'object' && entry ? (entry as Record<string, unknown>) : {}
       );
+      const entryRecord = this.asRecord(entry);
+      const entryId = this.readIdentifier(entryRecord.id);
       return {
         kind: 'time_entry',
-        entry_id: (entry as any)?.id ?? undefined,
+        ...(entryId !== undefined ? { entry_id: entryId } : {}),
         ...(mirror.workedHours !== null ? { worked_hours: mirror.workedHours } : {}),
         ...(mirror.workedMinutes !== null ? { worked_minutes: mirror.workedMinutes } : {}),
         ...(mirror.billableHours !== null ? { billable_hours: mirror.billableHours } : {}),
@@ -407,9 +435,12 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
         payload,
         typeof entry === 'object' && entry ? (entry as Record<string, unknown>) : {}
       );
+      const entryRecord = this.asRecord(entry);
+      const entryId = this.readIdentifier(entryRecord.id)
+        ?? this.readIdentifier(payload.time_entry_id ?? payload.id);
       return {
         kind: 'time_entry',
-        entry_id: (entry as any)?.id ?? Number(payload.time_entry_id ?? payload.id),
+        ...(entryId !== undefined ? { entry_id: entryId } : {}),
         ...(mirror.workedHours !== null ? { worked_hours: mirror.workedHours } : {}),
         ...(mirror.workedMinutes !== null ? { worked_minutes: mirror.workedMinutes } : {}),
         ...(mirror.billableHours !== null ? { billable_hours: mirror.billableHours } : {}),
@@ -558,63 +589,67 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
     return map;
   }
 
-  private async enrichTicketSnapshot(client: AutotaskClient, ticket: any): Promise<Record<string, unknown>> {
+  private async enrichTicketSnapshot(client: AutotaskClient, ticket: unknown): Promise<Record<string, unknown>> {
     const snapshot = this.mapTicketSnapshot(ticket);
-    const companyId = Number(ticket?.companyID ?? ticket?.companyId);
+    const ticketRecord = this.asRecord(ticket);
+    const companyId = Number(ticketRecord.companyID ?? ticketRecord.companyId);
     // Guard companyId > 0: Number(null) = 0, Number.isFinite(0) = true — getCompany(0) would throw.
-    if (!String((snapshot as any).company_name || (snapshot as any).company || '').trim() && Number.isFinite(companyId) && companyId > 0) {
+    if (!String(snapshot.company_name || snapshot.company || '').trim() && Number.isFinite(companyId) && companyId > 0) {
       try {
         const company = await client.getCompany(companyId);
-        const companyName = String((company as any)?.companyName || (company as any)?.name || '').trim();
+        const companyRecord = this.asRecord(company);
+        const companyName = String(companyRecord.companyName || companyRecord.name || '').trim();
         if (companyName) {
-          (snapshot as any).company_name = companyName;
-          (snapshot as any).company = companyName;
+          snapshot.company_name = companyName;
+          snapshot.company = companyName;
         }
       } catch (companyErr) {
         // Company enrichment is best-effort only — log for visibility.
         console.warn('[autotask-gateway] enrichTicketSnapshot: company lookup failed',
-          JSON.stringify({ companyId, ticket_id: ticket?.id, error: String((companyErr as Error)?.message || companyErr) }));
+          JSON.stringify({ companyId, ticket_id: ticketRecord.id, error: String((companyErr as Error)?.message || companyErr) }));
       }
     }
-    const contactId = Number(ticket?.contactID ?? ticket?.contactId);
+    const contactId = Number(ticketRecord.contactID ?? ticketRecord.contactId);
     // Guard contactId > 0: same null→0 issue.
-    if (!String((snapshot as any).contact_name || '').trim() && Number.isFinite(contactId) && contactId > 0) {
+    if (!String(snapshot.contact_name || '').trim() && Number.isFinite(contactId) && contactId > 0) {
       try {
         const contact = await client.getContact(contactId);
-        const firstName = String((contact as any)?.firstName || '').trim();
-        const lastName = String((contact as any)?.lastName || '').trim();
+        const contactRecord = this.asRecord(contact);
+        const firstName = String(contactRecord.firstName || '').trim();
+        const lastName = String(contactRecord.lastName || '').trim();
         const fullName = `${firstName} ${lastName}`.trim();
-        const contactName = fullName || String((contact as any)?.name || '').trim();
-        const email = String((contact as any)?.emailAddress || (contact as any)?.email || '').trim();
+        const contactName = fullName || String(contactRecord.name || '').trim();
+        const email = String(contactRecord.emailAddress || contactRecord.email || '').trim();
         if (contactName) {
-          (snapshot as any).contact_name = contactName;
-          (snapshot as any).requester = contactName;
+          snapshot.contact_name = contactName;
+          snapshot.requester = contactName;
         }
         if (email) {
-          (snapshot as any).contact_email = email;
+          snapshot.contact_email = email;
         }
       } catch (contactErr) {
         // Contact enrichment is best-effort only — log for visibility.
         console.warn('[autotask-gateway] enrichTicketSnapshot: contact lookup failed',
-          JSON.stringify({ contactId, ticket_id: ticket?.id, error: String((contactErr as Error)?.message || contactErr) }));
+          JSON.stringify({ contactId, ticket_id: ticketRecord.id, error: String((contactErr as Error)?.message || contactErr) }));
       }
     }
-    const status = String(ticket?.status ?? '').trim();
+    const status = String(ticketRecord.status ?? '').trim();
     if (!status) return snapshot;
     const labels = await this.getStatusLabelMap(client);
     const label = labels.get(status);
     if (label) snapshot.status_label = label;
-    const ticketId = Number(ticket?.id);
+    const ticketId = Number(ticketRecord.id);
     if (Number.isFinite(ticketId)) {
       try {
         const notes = await client.getTicketNotes(ticketId);
         const latest = Array.isArray(notes) && notes.length > 0 ? notes[notes.length - 1] : null;
-        const latestText = String((latest as any)?.noteText || '').trim();
+        const latestRecord = this.asRecord(latest);
+        const latestText = String(latestRecord.noteText || '').trim();
         if (latestText) {
           snapshot.latest_note_text = latestText;
           snapshot.latest_note_fingerprint = this.fingerprintText(latestText);
         }
-        const createdAt = String((latest as any)?.createDate || '').trim();
+        const createdAt = String(latestRecord.createDate || '').trim();
         if (createdAt) snapshot.latest_note_created_at = createdAt;
       } catch {
         // Notes enrichment is best-effort only.
@@ -638,31 +673,32 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
     return `fnv1a32:${(hash >>> 0).toString(16)}`;
   }
 
-  private mapTicketSnapshot(ticket: any): Record<string, unknown> {
+  private mapTicketSnapshot(ticket: unknown): Record<string, unknown> {
+    const ticketRecord = this.asRecord(ticket);
     const ticketNumber = this.readTicketNumber(ticket);
     const requesterName = this.readRequesterName(ticket);
-    const companyName = String(ticket?.companyName ?? ticket?.company ?? '').trim();
-    const createdAt = String(ticket?.createDateTime ?? ticket?.createDate ?? ticket?.created_at ?? ticket?.createdAt ?? '').trim();
+    const companyName = String(ticketRecord.companyName ?? ticketRecord.company ?? '').trim();
+    const createdAt = String(ticketRecord.createDateTime ?? ticketRecord.createDate ?? ticketRecord.created_at ?? ticketRecord.createdAt ?? '').trim();
     return {
-      id: ticket?.id,
+      id: ticketRecord.id,
       ticket_number: ticketNumber || undefined,
       ...(createdAt ? { created_at: createdAt } : {}),
-      title: ticket?.title ?? ticket?.summary,
-      description: ticket?.description,
-      status: ticket?.status,
-      assigned_to: ticket?.assignedResourceID,
-      queue_id: ticket?.queueID,
-      company_id: ticket?.companyID,
-      contact_id: ticket?.contactID,
+      title: ticketRecord.title ?? ticketRecord.summary,
+      description: ticketRecord.description,
+      status: ticketRecord.status,
+      assigned_to: ticketRecord.assignedResourceID,
+      queue_id: ticketRecord.queueID,
+      company_id: ticketRecord.companyID,
+      contact_id: ticketRecord.contactID,
       ...(companyName ? { company_name: companyName, company: companyName } : {}),
       ...(requesterName ? { contact_name: requesterName, requester: requesterName } : {}),
       // Numeric picklist IDs — labels are resolved in enrichTicketSnapshot via getStatusLabelMap.
       // For priority/issueType/subIssueType/SLA, labels must be resolved separately (see TODO below).
-      ...(ticket?.priority !== undefined && ticket?.priority !== null ? { priority: ticket.priority } : {}),
-      ...(ticket?.issueType !== undefined && ticket?.issueType !== null ? { issue_type: ticket.issueType } : {}),
-      ...(ticket?.subIssueType !== undefined && ticket?.subIssueType !== null ? { sub_issue_type: ticket.subIssueType } : {}),
-      ...(ticket?.serviceLevelAgreementID !== undefined && ticket?.serviceLevelAgreementID !== null
-        ? { sla: ticket.serviceLevelAgreementID }
+      ...(ticketRecord.priority !== undefined && ticketRecord.priority !== null ? { priority: ticketRecord.priority } : {}),
+      ...(ticketRecord.issueType !== undefined && ticketRecord.issueType !== null ? { issue_type: ticketRecord.issueType } : {}),
+      ...(ticketRecord.subIssueType !== undefined && ticketRecord.subIssueType !== null ? { sub_issue_type: ticketRecord.subIssueType } : {}),
+      ...(ticketRecord.serviceLevelAgreementID !== undefined && ticketRecord.serviceLevelAgreementID !== null
+        ? { sla: ticketRecord.serviceLevelAgreementID }
         : {}),
     };
   }

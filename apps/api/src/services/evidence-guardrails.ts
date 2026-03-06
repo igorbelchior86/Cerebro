@@ -65,10 +65,10 @@ function normalize(text: string): string {
 }
 
 export function collectDirectEvidenceText(pack: EvidencePack): string {
-  const sourceFindings = ((pack as any).source_findings || []) as Array<{
+  const sourceFindings = ((pack as EvidencePack & { source_findings?: Array<{
     summary?: string;
     details?: string[];
-  }>;
+  }> }).source_findings || []);
   const chunks: string[] = [
     pack.ticket.title,
     pack.ticket.description,

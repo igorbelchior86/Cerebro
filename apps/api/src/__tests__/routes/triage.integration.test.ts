@@ -65,7 +65,7 @@ describe('Triage Endpoints - Schema & Structure', () => {
         503: 'SERVICE_UNAVAILABLE'
       };
 
-      Object.entries(errorMapping).forEach(([status, errorType]) => {
+      Object.entries(errorMapping).forEach(([_status, errorType]) => {
         expect(typeof errorType).toBe('string');
       });
     });
@@ -82,7 +82,7 @@ describe('Triage Endpoints - Schema & Structure', () => {
         'completed': []
       };
 
-      Object.entries(validTransitions).forEach(([from, tos]) => {
+      Object.entries(validTransitions).forEach(([_from, tos]) => {
         expect(Array.isArray(tos)).toBe(true);
       });
     });

@@ -57,6 +57,14 @@ const PROFILE_DEFAULTS: Record<GatingProfile, Pick<ValidationConfig, 'minHypothe
   },
 };
 
+type JsonRecord = Record<string, unknown>;
+
+function asJsonRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : {};
+}
+
 export class ValidatePolicyService {
   private config: ValidationConfig;
   private profile: GatingProfile;
@@ -117,17 +125,17 @@ export class ValidatePolicyService {
     }
 
     const enrichedHypotheses = (diagnosis.top_hypotheses || []).map((h) => {
-      const anyH = h as any;
+      const extras = asJsonRecord(h);
       return {
         raw: h,
-        groundingStatus: String(anyH.grounding_status || '').toLowerCase(),
-        supportScore: Number(anyH.support_score ?? NaN),
-        relevanceScore: Number(anyH.relevance_score ?? NaN),
+        groundingStatus: String(extras.grounding_status || '').toLowerCase(),
+        supportScore: Number(extras.support_score ?? NaN),
+        relevanceScore: Number(extras.relevance_score ?? NaN),
         anchorEligible:
-          anyH.playbook_anchor_eligible === undefined
+          extras.playbook_anchor_eligible === undefined
             ? true
-            : Boolean(anyH.playbook_anchor_eligible),
-        calibratedConfidence: Number(anyH.calibrated_confidence ?? h.confidence ?? 0),
+            : Boolean(extras.playbook_anchor_eligible),
+        calibratedConfidence: Number(extras.calibrated_confidence ?? h.confidence ?? 0),
       };
     });
 
@@ -436,7 +444,6 @@ export class ValidatePolicyService {
     }
 
     const hasRiskGate = violations.some((v) => v.type === 'risk_gate');
-    const hasNoEvidence = violations.some((v) => v.type === 'no_evidence');
     const hasHardQualityStop =
       blockingReasons.includes('cross_tenant_candidate_detected') ||
       blockingReasons.includes('diagnose_top_hypothesis_unsupported') ||

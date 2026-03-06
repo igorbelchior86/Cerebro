@@ -13,6 +13,15 @@ import { toSseChunk } from '../../orchestration/workflow-realtime.js';
 
 const router: ExpressRouter = Router();
 
+type JsonRecord = Record<string, unknown>;
+type CommandEnvelopeInput = Parameters<typeof buildCommandEnvelope>[0];
+
+function asRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : {};
+}
+
 function requireTenant(req: Request, res: Response): string | null {
   const tenantId = req.auth?.tid;
   if (!tenantId) {
@@ -46,7 +55,7 @@ async function invalidateWorkflowDomainCache(tenantId: string): Promise<void> {
     operationalLogger.warn('routes.workflow.cache.invalidate_failed', {
       module: 'routes.workflow',
       tenant_id: tenantId,
-      error_message: String((error as any)?.message || error || 'unknown'),
+      error_message: String(asRecord(error).message ?? error ?? 'unknown'),
     }, {
       tenant_id: tenantId,
     });
@@ -144,7 +153,7 @@ router.post('/commands', async (req, res, next) => {
   try {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;
-    const body = (req.body || {}) as Record<string, any>;
+    const body = (req.body || {}) as JsonRecord;
 
     const commandType = String(body.command_type || '').trim();
     const targetIntegration = String(body.target_integration || '').trim() || 'Autotask';
@@ -154,13 +163,13 @@ router.post('/commands', async (req, res, next) => {
       return;
     }
 
-    const payload = typeof body.payload === 'object' && body.payload ? body.payload : {};
+    const payload = asRecord(body.payload);
     const ticketId = String(payload.ticket_id || body.ticket_id || '').trim() || undefined;
 
     const envelope = buildCommandEnvelope({
       tenantId,
-      targetIntegration: targetIntegration as any,
-      commandType: commandType as any,
+      targetIntegration: targetIntegration as CommandEnvelopeInput['targetIntegration'],
+      commandType: commandType as CommandEnvelopeInput['commandType'],
       payload,
       actor: {
         kind: 'user',
@@ -168,7 +177,7 @@ router.post('/commands', async (req, res, next) => {
         origin: 'api',
       },
       idempotencyKey,
-      auditMetadata: typeof body.audit_metadata === 'object' && body.audit_metadata ? body.audit_metadata : {},
+      auditMetadata: asRecord(body.audit_metadata),
       correlation: correlationFromRequest(req, ticketId),
     });
 
@@ -237,7 +246,7 @@ router.post('/sync/autotask', async (req, res, next) => {
     const event: WorkflowEventEnvelope = {
       event_id: String(body.event_id),
       tenant_id: tenantId,
-      event_type: body.event_type as any,
+      event_type: body.event_type as WorkflowEventEnvelope['event_type'],
       source: 'Autotask',
       entity_type: 'ticket',
       entity_id: ticketId,
@@ -250,7 +259,7 @@ router.post('/sync/autotask', async (req, res, next) => {
         ...(body.correlation?.command_id ? { command_id: String(body.correlation.command_id) } : {}),
       },
       provenance: {
-        source: (body.provenance?.source as any) || 'autotask_webhook',
+        source: body.provenance?.source || 'autotask_webhook',
         fetched_at: String(body.provenance?.fetched_at || new Date().toISOString()),
         ...(body.provenance?.adapter_version ? { adapter_version: String(body.provenance.adapter_version) } : {}),
         ...(body.provenance?.sync_cursor ? { sync_cursor: String(body.provenance.sync_cursor) } : {}),
@@ -301,7 +310,7 @@ router.get('/tickets/:ticketId/commands', async (req, res, next) => {
   }
 });
 
-async function handleReconcileRequest(req: Request, res: Response, next: (error?: any) => void) {
+async function handleReconcileRequest(req: Request, res: Response, next: (error?: unknown) => void) {
   try {
     const tenantId = requireTenant(req, res);
     if (!tenantId) return;

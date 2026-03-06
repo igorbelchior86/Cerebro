@@ -1,5 +1,49 @@
 import type { EvidencePack } from '@cerebro/types';
 
+type IntakeContext = NonNullable<EvidencePack['intake_context']>;
+type JsonRecord = Record<string, unknown>;
+type DeviceRecord = NonNullable<EvidencePack['device']>;
+type DeviceConfidence = DeviceRecord['confidence'];
+
+type TicketLike = {
+    ticketNumber?: string;
+    id?: string | number;
+    title?: string;
+    description?: string;
+    createDate?: string;
+    priority?: number;
+    queueName?: string;
+};
+
+type TicketSsotLike = {
+    ticket_id?: string;
+    title?: string;
+    description_clean?: string;
+    created_at?: string;
+    requester_name?: string;
+    requester_email?: string;
+    company?: string;
+};
+
+type OrgMatchLike = { name?: string };
+
+type EntityResolutionLike = {
+    resolved_actor?: {
+        name?: string;
+        email?: string;
+    };
+};
+
+type DeviceLike = JsonRecord & {
+    id?: string | number;
+    hostname?: string;
+    systemName?: string;
+};
+
+type CapabilityVerificationLike = {
+    device_match_strong?: boolean;
+};
+
 export class EvidenceBuilder {
     private pack: Partial<EvidencePack> = {};
 
@@ -25,7 +69,7 @@ export class EvidenceBuilder {
         this.pack.tenant_id = details.tenantId;
         this.pack.source_workspace = details.sourceWorkspace;
 
-        const intake: any = {};
+        const intake: IntakeContext = {};
         if (details.intakeContext.organization_hint !== undefined) intake.organization_hint = details.intakeContext.organization_hint;
         if (details.intakeContext.device_hints !== undefined) intake.device_hints = details.intakeContext.device_hints;
         if (details.intakeContext.symptoms !== undefined) intake.symptoms = details.intakeContext.symptoms;
@@ -35,7 +79,7 @@ export class EvidenceBuilder {
         return this;
     }
 
-    setTicket(ticket: any, ssot: any) {
+    setTicket(ticket: TicketLike, ssot: TicketSsotLike) {
         this.pack.ticket = {
             id: ssot.ticket_id || ticket.ticketNumber || String(ticket.id),
             title: ssot.title || ticket.title || '',
@@ -48,7 +92,13 @@ export class EvidenceBuilder {
         return this;
     }
 
-    setOrg(resolvedOrgId: string | null, ssot: any, companyName: string, itglueOrgMatch: any, ninjaOrgMatch: any) {
+    setOrg(
+        resolvedOrgId: string | null,
+        ssot: TicketSsotLike,
+        companyName: string,
+        itglueOrgMatch: OrgMatchLike | null,
+        ninjaOrgMatch: OrgMatchLike | null
+    ) {
         this.pack.org = {
             id: resolvedOrgId || 'unknown',
             name: ssot.company || companyName || itglueOrgMatch?.name || ninjaOrgMatch?.name || 'Organization',
@@ -56,10 +106,10 @@ export class EvidenceBuilder {
         return this;
     }
 
-    setUser(entityResolution: any, ssot: any) {
+    setUser(entityResolution: EntityResolutionLike | null, ssot: TicketSsotLike) {
         if (entityResolution?.resolved_actor) {
             this.pack.user = {
-                name: entityResolution.resolved_actor.name,
+                name: entityResolution.resolved_actor.name || 'Unknown user',
                 email: entityResolution.resolved_actor.email || '',
             };
         } else {
@@ -72,49 +122,58 @@ export class EvidenceBuilder {
     }
 
     setContextArrays(data: {
-        signals: any[];
-        relatedCases: any[];
-        externalStatus: any;
-        docs: any[];
-        sourceFindings: any[];
+        signals: EvidencePack['signals'];
+        relatedCases: EvidencePack['related_cases'];
+        externalStatus: EvidencePack['external_status'];
+        docs: EvidencePack['docs'];
+        sourceFindings: EvidencePack['source_findings'];
     }) {
         this.pack.signals = data.signals;
         this.pack.related_cases = data.relatedCases;
         this.pack.external_status = data.externalStatus;
         this.pack.docs = data.docs;
-        this.pack.source_findings = data.sourceFindings;
+        if (data.sourceFindings !== undefined) {
+            this.pack.source_findings = data.sourceFindings;
+        }
         return this;
     }
 
     setEnrichmentData(data: {
-        networkStack?: any;
-        entityResolution: any;
-        evidenceDigest: any;
-        rejectedEvidence: any[];
-        capabilityVerification: any;
-        iterativeEnrichment: any;
-        missingData: any[];
+        networkStack?: EvidencePack['network_stack'];
+        entityResolution: EvidencePack['entity_resolution'];
+        evidenceDigest: EvidencePack['evidence_digest'];
+        rejectedEvidence: EvidencePack['rejected_evidence'];
+        capabilityVerification: EvidencePack['capability_verification'];
+        iterativeEnrichment: EvidencePack['iterative_enrichment'];
+        missingData: EvidencePack['missing_data'];
     }) {
         if (data.networkStack) this.pack.network_stack = data.networkStack;
-        this.pack.entity_resolution = data.entityResolution;
-        this.pack.evidence_digest = data.evidenceDigest;
-        this.pack.rejected_evidence = data.rejectedEvidence;
-        this.pack.capability_verification = data.capabilityVerification;
-        this.pack.iterative_enrichment = data.iterativeEnrichment;
-        if (data.missingData?.length > 0) {
+        if (data.entityResolution !== undefined) this.pack.entity_resolution = data.entityResolution;
+        if (data.evidenceDigest !== undefined) this.pack.evidence_digest = data.evidenceDigest;
+        if (data.rejectedEvidence !== undefined) this.pack.rejected_evidence = data.rejectedEvidence;
+        if (data.capabilityVerification !== undefined) this.pack.capability_verification = data.capabilityVerification;
+        if (data.iterativeEnrichment !== undefined) this.pack.iterative_enrichment = data.iterativeEnrichment;
+        if (data.missingData && data.missingData.length > 0) {
             this.pack.missing_data = data.missingData;
         }
         return this;
     }
 
-    setDeviceFromNinja(device: any, deviceDetails: any, capabilityVerification: any, normalizedLastSeen: string, resolveDeviceOsLabel: (d: any, dd: any) => string) {
+    setDeviceFromNinja(
+        device: DeviceLike | null,
+        deviceDetails: JsonRecord | null,
+        capabilityVerification: CapabilityVerificationLike | null,
+        normalizedLastSeen: string,
+        resolveDeviceOsLabel: (device: DeviceLike, details: JsonRecord) => string
+    ) {
         if (device) {
+            const confidence: DeviceConfidence = capabilityVerification?.device_match_strong ? 'high' : 'medium';
             this.pack.device = {
-                ninja_device_id: device.id,
-                hostname: device.hostname || device.systemName || String(device.id),
-                os: resolveDeviceOsLabel(device, deviceDetails),
+                ninja_device_id: String(device.id || ''),
+                hostname: device.hostname || device.systemName || String(device.id || 'unknown-device'),
+                os: resolveDeviceOsLabel(device, deviceDetails ?? {}),
                 last_seen: normalizedLastSeen || new Date().toISOString(),
-                confidence: capabilityVerification?.device_match_strong ? 'high' as const : 'medium' as const,
+                confidence,
             };
         }
         return this;

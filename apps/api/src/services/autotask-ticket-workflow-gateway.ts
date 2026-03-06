@@ -7,16 +7,39 @@ import type {
 import { resolveAutotaskOperation } from './autotask-operation-registry.js';
 import { normalizeTextForAutotask } from './autotask-text-normalizer.js';
 
+type JsonRecord = Record<string, unknown>;
+
 export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
   constructor(private readonly clientFactory: (tenantId: string) => Promise<AutotaskClient | null>) {}
   private statusLabelCache = new Map<AutotaskClient, Map<string, string>>();
+
+  private asRecord(value: unknown): JsonRecord {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as JsonRecord)
+      : {};
+  }
+
+  private readIdentifier(value: unknown): string | number | undefined {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+    const normalized = value.trim();
+    if (!normalized) {
+      return undefined;
+    }
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : normalized;
+  }
 
   private async resolveWriteTicketId(client: AutotaskClient, ticketRef: string | number): Promise<string | number> {
     if (typeof ticketRef === 'number') return ticketRef;
     const raw = String(ticketRef || '').trim();
     if (/^\d+$/.test(raw)) return Number(raw);
     const ticket = await client.getTicketByTicketNumber(raw);
-    const id = Number((ticket as any)?.id);
+    const id = Number(this.asRecord(ticket).id);
     return Number.isFinite(id) ? id : raw;
   }
 
@@ -42,7 +65,7 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
       throw new Error('Autotask integration is not configured for this tenant');
     }
 
-    const payload = command.payload as any;
+    const payload = this.asRecord(command.payload);
     const operation = resolveAutotaskOperation(command.command_type, payload || {});
     if (operation.rejected) {
       throw new Error(`Unsupported Autotask command_type by frozen matrix: ${command.command_type} (${operation.reason})`);
@@ -60,8 +83,8 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
       });
       return {
         kind: 'created',
-        external_ticket_id: String((created as any)?.id ?? ''),
-        external_ticket_number: String((created as any)?.ticketNumber ?? ''),
+        external_ticket_id: String(this.asRecord(created).id ?? ''),
+        external_ticket_number: String(this.asRecord(created).ticketNumber ?? ''),
         snapshot: this.mapTicketSnapshot(created),
       };
     }
@@ -212,9 +235,10 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
         hoursWorked: payload.hours_worked ?? payload.hoursWorked,
         summaryNotes,
       });
+      const entryId = this.readIdentifier(this.asRecord(entry).id);
       return {
         kind: 'time_entry',
-        entry_id: (entry as any)?.id ?? undefined,
+        ...(entryId !== undefined ? { entry_id: entryId } : {}),
       };
     }
 
@@ -234,7 +258,12 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
           ...(normalizedSummaryNotesCamel !== undefined ? { summaryNotes: normalizedSummaryNotesCamel } : {}),
         }
       );
-      return { kind: 'time_entry', entry_id: (entry as any)?.id ?? Number(payload.time_entry_id ?? payload.id) };
+      const entryId = this.readIdentifier(this.asRecord(entry).id)
+        ?? this.readIdentifier(payload.time_entry_id ?? payload.id);
+      return {
+        kind: 'time_entry',
+        ...(entryId !== undefined ? { entry_id: entryId } : {}),
+      };
     }
 
     if (operation.operation.handler === 'time_entry_delete') {
@@ -378,24 +407,26 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
     return map;
   }
 
-  private async enrichTicketSnapshot(client: AutotaskClient, ticket: any): Promise<Record<string, unknown>> {
+  private async enrichTicketSnapshot(client: AutotaskClient, ticket: unknown): Promise<Record<string, unknown>> {
+    const ticketRecord = this.asRecord(ticket);
     const snapshot = this.mapTicketSnapshot(ticket);
-    const status = String(ticket?.status ?? '').trim();
+    const status = String(ticketRecord.status ?? '').trim();
     if (!status) return snapshot;
     const labels = await this.getStatusLabelMap(client);
     const label = labels.get(status);
     if (label) snapshot.status_label = label;
-    const ticketId = Number(ticket?.id);
+    const ticketId = Number(ticketRecord.id);
     if (Number.isFinite(ticketId)) {
       try {
         const notes = await client.getTicketNotes(ticketId);
         const latest = Array.isArray(notes) && notes.length > 0 ? notes[notes.length - 1] : null;
-        const latestText = String((latest as any)?.noteText || '').trim();
+        const latestRecord = this.asRecord(latest);
+        const latestText = String(latestRecord.noteText || '').trim();
         if (latestText) {
           snapshot.latest_note_text = latestText;
           snapshot.latest_note_fingerprint = this.fingerprintText(latestText);
         }
-        const createdAt = String((latest as any)?.createDate || '').trim();
+        const createdAt = String(latestRecord.createDate || '').trim();
         if (createdAt) snapshot.latest_note_created_at = createdAt;
       } catch {
         // Notes enrichment is best-effort only.
@@ -419,18 +450,19 @@ export class AutotaskTicketWorkflowGateway implements TicketWorkflowGateway {
     return `fnv1a32:${(hash >>> 0).toString(16)}`;
   }
 
-  private mapTicketSnapshot(ticket: any): Record<string, unknown> {
-    const createdAt = String(ticket?.createDateTime ?? ticket?.createDate ?? ticket?.created_at ?? ticket?.createdAt ?? '').trim();
+  private mapTicketSnapshot(ticket: unknown): Record<string, unknown> {
+    const ticketRecord = this.asRecord(ticket);
+    const createdAt = String(ticketRecord.createDateTime ?? ticketRecord.createDate ?? ticketRecord.created_at ?? ticketRecord.createdAt ?? '').trim();
     return {
-      id: ticket?.id,
-      ticket_number: ticket?.ticketNumber,
+      id: ticketRecord.id,
+      ticket_number: ticketRecord.ticketNumber,
       ...(createdAt ? { created_at: createdAt } : {}),
-      title: ticket?.title ?? ticket?.summary,
-      description: ticket?.description,
-      status: ticket?.status,
-      assigned_to: ticket?.assignedResourceID,
-      queue_id: ticket?.queueID,
-      company_id: ticket?.companyID,
+      title: ticketRecord.title ?? ticketRecord.summary,
+      description: ticketRecord.description,
+      status: ticketRecord.status,
+      assigned_to: ticketRecord.assignedResourceID,
+      queue_id: ticketRecord.queueID,
+      company_id: ticketRecord.companyID,
     };
   }
 }

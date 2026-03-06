@@ -1,7 +1,15 @@
 import type { DiagnosisOutput, EvidencePack } from '@cerebro/types';
 import { ValidatePolicyService } from '../../services/domain/validate-policy.js';
 
-function buildField(value: unknown, status: 'confirmed' | 'inferred' | 'unknown' | 'conflict' = 'confirmed') {
+type CalibratedHypothesis = DiagnosisOutput['top_hypotheses'][number] & {
+  grounding_status?: 'unsupported' | 'weak';
+  support_score?: number;
+  relevance_score?: number;
+  calibrated_confidence?: number;
+  playbook_anchor_eligible?: boolean;
+};
+
+function buildField<T>(value: T, status: 'confirmed' | 'inferred' | 'unknown' | 'conflict' = 'confirmed') {
   return {
     value,
     status,
@@ -214,11 +222,14 @@ describe('validate policy quality gates', () => {
   it('blocks generation when top hypothesis is explicitly unsupported by diagnose grounding', () => {
     const service = new ValidatePolicyService({ profile: 'standard' });
     const diagnosis = buildDiagnosis();
-    (diagnosis.top_hypotheses[0] as any).grounding_status = 'unsupported';
-    (diagnosis.top_hypotheses[0] as any).support_score = 0.12;
-    (diagnosis.top_hypotheses[0] as any).relevance_score = 0.78;
-    (diagnosis.top_hypotheses[0] as any).calibrated_confidence = 0.68;
-    (diagnosis.top_hypotheses[0] as any).playbook_anchor_eligible = false;
+    const topHypothesis = diagnosis.top_hypotheses[0] as CalibratedHypothesis | undefined;
+    expect(topHypothesis).toBeDefined();
+    if (!topHypothesis) return;
+    topHypothesis.grounding_status = 'unsupported';
+    topHypothesis.support_score = 0.12;
+    topHypothesis.relevance_score = 0.78;
+    topHypothesis.calibrated_confidence = 0.68;
+    topHypothesis.playbook_anchor_eligible = false;
 
     const result = service.validate(diagnosis, buildPack());
     expect(result.safe_to_generate_playbook).toBe(false);
@@ -233,12 +244,13 @@ describe('validate policy quality gates', () => {
       confidence: 0.62,
       evidence: ['fact-ticket-T1'],
       tests: ['Investigate further'],
-    })) as any;
-    diagnosis.top_hypotheses.forEach((h: any) => {
-      h.grounding_status = 'weak';
-      h.support_score = 0.3;
-      h.relevance_score = 0.55;
-      h.playbook_anchor_eligible = false;
+    })) as CalibratedHypothesis[];
+    diagnosis.top_hypotheses.forEach((hypothesis) => {
+      const calibratedHypothesis = hypothesis as CalibratedHypothesis;
+      calibratedHypothesis.grounding_status = 'weak';
+      calibratedHypothesis.support_score = 0.3;
+      calibratedHypothesis.relevance_score = 0.55;
+      calibratedHypothesis.playbook_anchor_eligible = false;
     });
 
     const result = service.validate(diagnosis, buildPack());
@@ -329,7 +341,7 @@ describe('validate policy quality gates', () => {
           switch_make_model: buildField('unknown', 'unknown'),
         },
       },
-    } as any;
+    } satisfies NonNullable<EvidencePack['iterative_enrichment']>;
 
     const result = service.validate(buildDiagnosis(), pack);
     expect(result.status).toBe('needs_more_info');

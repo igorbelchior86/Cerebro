@@ -3,7 +3,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { Router } from 'express';
-import type { PlaybookOutput, ValidationOutput } from '@cerebro/types';
+import type { DiagnosisOutput, EvidencePack, PlaybookOutput, ValidationOutput } from '@cerebro/types';
 import { generatePlaybook } from '../../ai/playbook-writer.js';
 import {
   getEvidencePack,
@@ -36,7 +36,7 @@ interface AutotaskCreds {
 }
 
 function isMissingAutotaskTicketError(error: unknown): boolean {
-  const message = String((error as any)?.message || error || '').toLowerCase();
+  const message = String(((error && typeof error === 'object' && !Array.isArray(error)) ? (error as Record<string, unknown>).message : undefined) ?? error ?? '').toLowerCase();
   return (
     message.includes('ticket') &&
     (
@@ -91,6 +91,20 @@ type AuthoritativeFieldDiff = {
   local: unknown;
   autotask: unknown;
 };
+
+type JsonRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : {};
+}
+
+function asRecordArray(value: unknown): JsonRecord[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is JsonRecord => Boolean(entry && typeof entry === 'object' && !Array.isArray(entry)))
+    : [];
+}
 
 function pickFirstNumber(...values: unknown[]): number | null {
   for (const value of values) {
@@ -176,21 +190,22 @@ async function applyAutotaskReviewerOverlay(
   } catch {
     return null;
   }
+  const remoteTicketRecord = asRecord(remoteTicket);
 
-  const companyId = pickFirstNumber((remoteTicket as any)?.companyID, (remoteTicket as any)?.companyId);
-  const contactId = pickFirstNumber((remoteTicket as any)?.contactID, (remoteTicket as any)?.contactId);
-  const primaryResourceId = pickFirstNumber((remoteTicket as any)?.assignedResourceID, (remoteTicket as any)?.assignedResourceId);
-  const secondaryResourceId = pickFirstNumber((remoteTicket as any)?.secondaryResourceID, (remoteTicket as any)?.secondaryResourceId);
-  const queueId = pickFirstNumber((remoteTicket as any)?.queueID, (remoteTicket as any)?.queueId);
-  const priorityId = pickFirstNumber((remoteTicket as any)?.priority, (remoteTicket as any)?.priorityID, (remoteTicket as any)?.priorityId);
-  const issueTypeId = pickFirstNumber((remoteTicket as any)?.issueType, (remoteTicket as any)?.issueTypeID, (remoteTicket as any)?.issueTypeId);
-  const subIssueTypeId = pickFirstNumber((remoteTicket as any)?.subIssueType, (remoteTicket as any)?.subIssueTypeID, (remoteTicket as any)?.subIssueTypeId);
+  const companyId = pickFirstNumber(remoteTicketRecord.companyID, remoteTicketRecord.companyId);
+  const contactId = pickFirstNumber(remoteTicketRecord.contactID, remoteTicketRecord.contactId);
+  const primaryResourceId = pickFirstNumber(remoteTicketRecord.assignedResourceID, remoteTicketRecord.assignedResourceId);
+  const secondaryResourceId = pickFirstNumber(remoteTicketRecord.secondaryResourceID, remoteTicketRecord.secondaryResourceId);
+  const queueId = pickFirstNumber(remoteTicketRecord.queueID, remoteTicketRecord.queueId);
+  const priorityId = pickFirstNumber(remoteTicketRecord.priority, remoteTicketRecord.priorityID, remoteTicketRecord.priorityId);
+  const issueTypeId = pickFirstNumber(remoteTicketRecord.issueType, remoteTicketRecord.issueTypeID, remoteTicketRecord.issueTypeId);
+  const subIssueTypeId = pickFirstNumber(remoteTicketRecord.subIssueType, remoteTicketRecord.subIssueTypeID, remoteTicketRecord.subIssueTypeId);
   const serviceLevelAgreementId = pickFirstNumber(
-    (remoteTicket as any)?.serviceLevelAgreementID,
-    (remoteTicket as any)?.serviceLevelAgreementId,
-    (remoteTicket as any)?.sla,
+    remoteTicketRecord.serviceLevelAgreementID,
+    remoteTicketRecord.serviceLevelAgreementId,
+    remoteTicketRecord.sla,
   );
-  const statusValue = pickFirstText((remoteTicket as any)?.status, (remoteTicket as any)?.statusValue);
+  const statusValue = pickFirstText(remoteTicketRecord.status, remoteTicketRecord.statusValue);
 
   const [
     company,
@@ -218,54 +233,59 @@ async function applyAutotaskReviewerOverlay(
 
   const queueLabelMap = new Map<number, string>();
   for (const option of queueOptions || []) {
-    const id = Number((option as any)?.id);
-    const label = String((option as any)?.label || '').trim();
+    const optionRecord = asRecord(option);
+    const id = Number(optionRecord.id);
+    const label = String(optionRecord.label || '').trim();
     if (Number.isFinite(id) && label) queueLabelMap.set(id, label);
   }
 
-  const contactName = `${String((contact as any)?.firstName || '').trim()} ${String((contact as any)?.lastName || '').trim()}`.trim();
-  const primaryName = `${String((primaryResource as any)?.firstName || '').trim()} ${String((primaryResource as any)?.lastName || '').trim()}`.trim();
-  const secondaryName = `${String((secondaryResource as any)?.firstName || '').trim()} ${String((secondaryResource as any)?.lastName || '').trim()}`.trim();
+  const companyRecord = asRecord(company);
+  const contactRecord = asRecord(contact);
+  const primaryResourceRecord = asRecord(primaryResource);
+  const secondaryResourceRecord = asRecord(secondaryResource);
+  const contactName = `${String(contactRecord.firstName || '').trim()} ${String(contactRecord.lastName || '').trim()}`.trim();
+  const primaryName = `${String(primaryResourceRecord.firstName || '').trim()} ${String(primaryResourceRecord.lastName || '').trim()}`.trim();
+  const secondaryName = `${String(secondaryResourceRecord.firstName || '').trim()} ${String(secondaryResourceRecord.lastName || '').trim()}`.trim();
   const priorityLabel = resolvePicklistLabel(priorityOptionRows, priorityId);
   const issueTypeLabel = resolvePicklistLabel(issueTypeOptionRows, issueTypeId);
   const subIssueTypeLabel = resolvePicklistLabel(subIssueTypeOptionRows, subIssueTypeId);
   const serviceLevelAgreementLabel = resolvePicklistLabel(slaOptionRows, serviceLevelAgreementId);
   const statusLabel =
     resolvePicklistLabel(statusOptionRows, statusValue) ||
-    pickFirstText((remoteTicket as any)?.statusName, (remoteTicket as any)?.statusLabel);
+    pickFirstText(remoteTicketRecord.statusName, remoteTicketRecord.statusLabel);
 
   const authoritativeOverlay: Record<string, unknown> = {
     company_id: companyId,
-    company: pickFirstText((company as any)?.companyName, (remoteTicket as any)?.companyName, (remoteTicket as any)?.company),
+    company: pickFirstText(companyRecord.companyName, remoteTicketRecord.companyName, remoteTicketRecord.company),
     contact_id: contactId,
-    contact_name: pickFirstText(contactName, (remoteTicket as any)?.contactName, (remoteTicket as any)?.requesterName),
-    contact_email: String((contact as any)?.emailAddress || '').trim() || null,
+    contact_name: pickFirstText(contactName, remoteTicketRecord.contactName, remoteTicketRecord.requesterName),
+    contact_email: String(contactRecord.emailAddress || '').trim() || null,
     status: statusValue,
     status_label: statusLabel,
     priority: priorityId,
     priority_label: priorityLabel,
-    additional_contacts: (remoteTicket as any)?.additionalContactIDs ?? (remoteTicket as any)?.additionalContactIds ?? null,
+    additional_contacts: remoteTicketRecord.additionalContactIDs ?? remoteTicketRecord.additionalContactIds ?? null,
     issue_type: issueTypeId,
     issue_type_label: issueTypeLabel,
     sub_issue_type: subIssueTypeId,
     sub_issue_type_label: subIssueTypeLabel,
-    source: (remoteTicket as any)?.source ?? null,
-    due_date: (remoteTicket as any)?.dueDateTime ?? (remoteTicket as any)?.dueDate ?? null,
+    source: remoteTicketRecord.source ?? null,
+    due_date: remoteTicketRecord.dueDateTime ?? remoteTicketRecord.dueDate ?? null,
     sla: serviceLevelAgreementId,
     sla_label: serviceLevelAgreementLabel,
     queue_id: queueId,
     queue_name: Number.isFinite(Number(queueId)) ? (queueLabelMap.get(Number(queueId)) || null) : null,
     assigned_resource_id: primaryResourceId,
     assigned_resource_name: primaryName || null,
-    assigned_resource_email: String((primaryResource as any)?.email || '').trim() || null,
+    assigned_resource_email: String(primaryResourceRecord.email || '').trim() || null,
     secondary_resource_id: secondaryResourceId,
     secondary_resource_name: secondaryName || null,
-    secondary_resource_email: String((secondaryResource as any)?.email || '').trim() || null,
+    secondary_resource_email: String(secondaryResourceRecord.email || '').trim() || null,
     created_at: pickFirstText(
-      (remoteTicket as any)?.createDateTime,
-      (remoteTicket as any)?.createDate,
-      (remoteTicket as any)?.created_at,
-      (remoteTicket as any)?.createdAt,
+      remoteTicketRecord.createDateTime,
+      remoteTicketRecord.createDate,
+      remoteTicketRecord.created_at,
+      remoteTicketRecord.createdAt,
     ),
   };
 
@@ -303,10 +323,11 @@ async function getAutotaskTicketNotesForFeed(ticketRef: string, tenantId?: strin
       numericTicketId = Number(ref);
     } else {
       const remoteTicket = await client.getTicketByTicketNumber(ref);
+      const remoteTicketRecord = asRecord(remoteTicket);
       numericTicketId = Number(
-        (remoteTicket as any)?.id ??
-        (remoteTicket as any)?.ticketID ??
-        (remoteTicket as any)?.ticketId
+        remoteTicketRecord.id ??
+        remoteTicketRecord.ticketID ??
+        remoteTicketRecord.ticketId
       );
     }
   } catch {
@@ -375,8 +396,9 @@ async function resolveOrCreateFullFlowSession(ticketId: string, tenantId: string
 }
 
 function isTransientProviderError(error: unknown): boolean {
-  const message = String((error as any)?.message || error || '').toLowerCase();
-  if ((error as any)?.name === 'LLMQuotaExceededError') return true;
+  const errorRecord = asRecord(error);
+  const message = String(errorRecord.message ?? error ?? '').toLowerCase();
+  if (errorRecord.name === 'LLMQuotaExceededError') return true;
   return message.includes('[geminilimiter]') ||
     message.includes('rpd limit reached') ||
     message.includes('resource_exhausted') ||
@@ -516,7 +538,7 @@ router.get('/full-flow', async (req, res) => {
         module: 'routes.ai.playbook',
         session_id: sessionId,
       }, { ticket_id: ticketId });
-      const existingPack = await queryOne<{ payload: any }>(
+      const existingPack = await queryOne<{ payload: JsonRecord | null }>(
         `SELECT ep.payload
          FROM evidence_packs ep
          WHERE ep.session_id = $1
@@ -524,10 +546,13 @@ router.get('/full-flow', async (req, res) => {
          LIMIT 1`,
         [sessionId]
       );
-      const existingOrgId = String(existingPack?.payload?.org?.id || '').trim();
+      const existingPackPayload = asRecord(existingPack?.payload);
+      const existingPackOrg = asRecord(existingPackPayload.org);
+      const existingPackDevice = asRecord(existingPackPayload.device);
+      const existingOrgId = String(existingPackOrg.id || '').trim();
       const existingNinjaOrgId = String(
-        existingPack?.payload?.device?.organizationId ||
-        existingPack?.payload?.device?.organization_id ||
+        existingPackDevice.organizationId ||
+        existingPackDevice.organization_id ||
         ''
       ).trim();
       await execute(
@@ -659,7 +684,7 @@ router.get('/full-flow', async (req, res) => {
     }, { ticket_id: ticketId });
     let pack = await getEvidencePack(sessionId);
     if (!pack) {
-      const result = await queryOne<{ payload: any }>(
+      const result = await queryOne<{ payload: EvidencePack | null }>(
         `SELECT payload
          FROM evidence_packs
          WHERE session_id = $1
@@ -685,7 +710,7 @@ router.get('/full-flow', async (req, res) => {
         session_id: sessionId,
       }, { ticket_id: ticketId });
     }
-    const ticketResult = await queryOne<{ payload: any }>(
+    const ticketResult = await queryOne<{ payload: JsonRecord | null }>(
       `SELECT to_jsonb(tp) AS payload
        FROM tickets_processed tp
        WHERE tp.id = $1
@@ -693,13 +718,12 @@ router.get('/full-flow', async (req, res) => {
        LIMIT 1`,
       [ticketId]
     );
-    const packTicket = (pack as any)?.ticket || {};
-    const packOrg = (pack as any)?.org || {};
-    const packUser = (pack as any)?.user || {};
-    const normalizedTicketSection = (pack as any)?.iterative_enrichment?.sections?.ticket || {};
-    const round0Finding = Array.isArray((pack as any)?.source_findings)
-      ? (pack as any).source_findings.find((f: any) => Number(f?.round) === 0)
-      : null;
+    const packRecord = asRecord(pack);
+    const packTicket = asRecord(packRecord.ticket);
+    const packOrg = asRecord(packRecord.org);
+    const packUser = asRecord(packRecord.user);
+    const normalizedTicketSection = asRecord(asRecord(asRecord(packRecord.iterative_enrichment).sections).ticket);
+    const round0Finding = asRecordArray(packRecord.source_findings).find((finding) => Number(finding.round) === 0) || null;
     const round0Details = Array.isArray(round0Finding?.details) ? round0Finding.details : [];
     const normalizationMethod = String(
       round0Details.find((d: string) => String(d).startsWith('method:')) || ''
@@ -707,69 +731,75 @@ router.get('/full-flow', async (req, res) => {
     const normalizationConfidence = String(
       round0Details.find((d: string) => String(d).startsWith('confidence:')) || ''
     ).replace('confidence:', '').trim();
-    const dbTicket = ticketResult?.payload || {};
-    const manuallySuppressed = Boolean((dbTicket as any)?.manual_suppressed);
-    const ssotResult = await queryOne<{ payload: any }>(
+    const dbTicket = asRecord(ticketResult?.payload);
+    const manuallySuppressed = Boolean(dbTicket.manual_suppressed);
+    const ssotResult = await queryOne<{ payload: JsonRecord | null }>(
       `SELECT payload FROM ticket_ssot WHERE ticket_id = $1 ORDER BY updated_at DESC LIMIT 1`,
       [String(ticketId || rawId || '')]
     );
-    const ssot = ssotResult?.payload || null;
+    const ssot = asRecord(ssotResult?.payload);
+    const ssotAutotask = asRecord(ssot.autotask_authoritative);
     const ticketTextArtifact = await getTicketTextArtifact(String(ticketId || rawId || ''));
     const ticketContextAppendix = await getTicketContextAppendix(String(ticketId || rawId || ''));
+    const normalizedDescriptionField = asRecord(normalizedTicketSection.description_clean);
+    const normalizedRequesterNameField = asRecord(normalizedTicketSection.requester_name);
+    const normalizedRequesterEmailField = asRecord(normalizedTicketSection.requester_email);
+    const normalizedAffectedNameField = asRecord(normalizedTicketSection.affected_user_name);
+    const normalizedAffectedEmailField = asRecord(normalizedTicketSection.affected_user_email);
     const normalizedDescription = String(
-      normalizedTicketSection?.description_clean?.value || ''
+      normalizedDescriptionField.value || ''
     ).trim();
     const normalizedRequesterName = String(
-      normalizedTicketSection?.requester_name?.value || ''
+      normalizedRequesterNameField.value || ''
     ).trim();
     const normalizedRequesterEmail = String(
-      normalizedTicketSection?.requester_email?.value || ''
+      normalizedRequesterEmailField.value || ''
     ).trim();
     const normalizedAffectedName = String(
-      normalizedTicketSection?.affected_user_name?.value || ''
+      normalizedAffectedNameField.value || ''
     ).trim();
     const normalizedAffectedEmail = String(
-      normalizedTicketSection?.affected_user_email?.value || ''
+      normalizedAffectedEmailField.value || ''
     ).trim();
 
     const canonicalTicket = {
-      id: String(ssot?.autotask_authoritative?.ticket_number || ssot?.ticket_id || ticketId || dbTicket.id || rawId),
-      autotask_ticket_id_numeric: ssot?.autotask_authoritative?.ticket_id_numeric ?? null,
-      title: ssot?.autotask_authoritative?.title ?? ssot?.title ?? dbTicket.title ?? packTicket.title ?? null,
-      description: ssot?.autotask_authoritative?.description ?? ssot?.description_clean ?? dbTicket.description ?? packTicket.description ?? null,
-      description_normalized: ssot?.description_clean ?? (normalizedDescription || null),
-      requester: ssot?.autotask_authoritative?.contact_name ?? ssot?.requester_name ?? dbTicket.requester ?? packUser.name ?? null,
-      requester_normalized: ssot?.autotask_authoritative?.contact_name ?? ssot?.requester_name ?? (normalizedRequesterName || null),
-      requester_email_normalized: ssot?.autotask_authoritative?.contact_email ?? ssot?.requester_email ?? (normalizedRequesterEmail || null),
-      affected_user_normalized: ssot?.affected_user_name ?? (normalizedAffectedName || null),
-      affected_user_email_normalized: ssot?.affected_user_email ?? (normalizedAffectedEmail || null),
-      company: ssot?.autotask_authoritative?.company_name ?? ssot?.company ?? dbTicket.company ?? packOrg.name ?? null,
-      company_id: ssot?.autotask_authoritative?.company_id ?? null,
-      contact_id: ssot?.autotask_authoritative?.contact_id ?? null,
-      contact_name: ssot?.autotask_authoritative?.contact_name ?? null,
-      contact_email: ssot?.autotask_authoritative?.contact_email ?? null,
-      assigned_resource_id: ssot?.autotask_authoritative?.assigned_resource_id ?? null,
-      assigned_resource_name: ssot?.autotask_authoritative?.assigned_resource_name ?? null,
-      assigned_resource_email: ssot?.autotask_authoritative?.assigned_resource_email ?? null,
-      secondary_resource_id: ssot?.autotask_authoritative?.secondary_resource_id ?? null,
-      secondary_resource_name: ssot?.autotask_authoritative?.secondary_resource_name ?? null,
-      secondary_resource_email: ssot?.autotask_authoritative?.secondary_resource_email ?? null,
-      status: ssot?.autotask_authoritative?.status ?? dbTicket.status ?? null,
-      status_label: ssot?.autotask_authoritative?.status_label ?? null,
+      id: String(ssotAutotask.ticket_number || ssot.ticket_id || ticketId || dbTicket.id || rawId),
+      autotask_ticket_id_numeric: ssotAutotask.ticket_id_numeric ?? null,
+      title: ssotAutotask.title ?? ssot.title ?? dbTicket.title ?? packTicket.title ?? null,
+      description: ssotAutotask.description ?? ssot.description_clean ?? dbTicket.description ?? packTicket.description ?? null,
+      description_normalized: ssot.description_clean ?? (normalizedDescription || null),
+      requester: ssotAutotask.contact_name ?? ssot.requester_name ?? dbTicket.requester ?? packUser.name ?? null,
+      requester_normalized: ssotAutotask.contact_name ?? ssot.requester_name ?? (normalizedRequesterName || null),
+      requester_email_normalized: ssotAutotask.contact_email ?? ssot.requester_email ?? (normalizedRequesterEmail || null),
+      affected_user_normalized: ssot.affected_user_name ?? (normalizedAffectedName || null),
+      affected_user_email_normalized: ssot.affected_user_email ?? (normalizedAffectedEmail || null),
+      company: ssotAutotask.company_name ?? ssot.company ?? dbTicket.company ?? packOrg.name ?? null,
+      company_id: ssotAutotask.company_id ?? null,
+      contact_id: ssotAutotask.contact_id ?? null,
+      contact_name: ssotAutotask.contact_name ?? null,
+      contact_email: ssotAutotask.contact_email ?? null,
+      assigned_resource_id: ssotAutotask.assigned_resource_id ?? null,
+      assigned_resource_name: ssotAutotask.assigned_resource_name ?? null,
+      assigned_resource_email: ssotAutotask.assigned_resource_email ?? null,
+      secondary_resource_id: ssotAutotask.secondary_resource_id ?? null,
+      secondary_resource_name: ssotAutotask.secondary_resource_name ?? null,
+      secondary_resource_email: ssotAutotask.secondary_resource_email ?? null,
+      status: ssotAutotask.status ?? dbTicket.status ?? null,
+      status_label: ssotAutotask.status_label ?? null,
       created_at:
-        ssot?.autotask_authoritative?.created_at ??
+        ssotAutotask.created_at ??
         dbTicket.created_at ??
-        ssot?.created_at ??
+        ssot.created_at ??
         sessionRow?.created_at ??
         null,
-      priority: ssot?.autotask_authoritative?.priority_id ?? dbTicket.priority ?? 'P3',
-      priority_label: ssot?.autotask_authoritative?.priority_label ?? null,
-      issue_type: ssot?.autotask_authoritative?.issue_type_id ?? dbTicket.issue_type ?? null,
-      issue_type_label: ssot?.autotask_authoritative?.issue_type_label ?? null,
-      sub_issue_type: ssot?.autotask_authoritative?.sub_issue_type_id ?? dbTicket.sub_issue_type ?? null,
-      sub_issue_type_label: ssot?.autotask_authoritative?.sub_issue_type_label ?? null,
-      sla: ssot?.autotask_authoritative?.service_level_agreement_id ?? dbTicket.sla ?? null,
-      sla_label: ssot?.autotask_authoritative?.service_level_agreement_label ?? null,
+      priority: ssotAutotask.priority_id ?? dbTicket.priority ?? 'P3',
+      priority_label: ssotAutotask.priority_label ?? null,
+      issue_type: ssotAutotask.issue_type_id ?? dbTicket.issue_type ?? null,
+      issue_type_label: ssotAutotask.issue_type_label ?? null,
+      sub_issue_type: ssotAutotask.sub_issue_type_id ?? dbTicket.sub_issue_type ?? null,
+      sub_issue_type_label: ssotAutotask.sub_issue_type_label ?? null,
+      sla: ssotAutotask.service_level_agreement_id ?? dbTicket.sla ?? null,
+      sla_label: ssotAutotask.service_level_agreement_label ?? null,
       normalization_audit: {
         round: round0Finding ? 0 : null,
         method: normalizationMethod || null,
@@ -788,7 +818,7 @@ router.get('/full-flow', async (req, res) => {
       req.auth?.tid || null,
     );
 
-    const diagResult = await queryOne<{ payload: any }>(
+    const diagResult = await queryOne<{ payload: DiagnosisOutput | null }>(
       `SELECT payload
        FROM llm_outputs
        WHERE session_id = $1 AND step = 'diagnose'
@@ -800,9 +830,9 @@ router.get('/full-flow', async (req, res) => {
 
     const valResult = await queryOne<{
       status: string;
-      violations: any;
-      required_fixes: any;
-      req_questions: any;
+      violations: ValidationOutput['violations'];
+      required_fixes: ValidationOutput['required_fixes'];
+      req_questions: ValidationOutput['required_questions'];
       safe_to_proceed: boolean;
     }>(
       `SELECT status, violations, required_fixes, req_questions, safe_to_proceed
@@ -813,14 +843,14 @@ router.get('/full-flow', async (req, res) => {
       [sessionId]
     );
     const validation: ValidationOutput | null = valResult ? {
-      status: valResult.status as any,
+      status: valResult.status as ValidationOutput['status'],
       violations: valResult.violations,
       required_fixes: valResult.required_fixes,
       required_questions: valResult.req_questions,
       safe_to_generate_playbook: valResult.safe_to_proceed
     } : null;
 
-    const playbookRow = await queryOne<{ content_md: string; content_json: any }>(
+    const playbookRow = await queryOne<{ content_md: string; content_json: JsonRecord | null }>(
       `SELECT content_md, content_json
        FROM playbooks
        WHERE session_id = $1
@@ -828,7 +858,7 @@ router.get('/full-flow', async (req, res) => {
        LIMIT 1`,
       [sessionId]
     );
-    const playbookResult = await queryOne<{ payload: any }>(
+    const playbookResult = await queryOne<{ payload: JsonRecord | null }>(
       `SELECT payload
        FROM llm_outputs
        WHERE session_id = $1 AND step = 'playbook'
@@ -1005,7 +1035,7 @@ router.get('/full-flow', async (req, res) => {
           signal: 'integration_failure',
           degraded_mode: true,
         }, { ticket_id: ticketId });
-        const bgMessage = String((bgErr as any)?.message || bgErr || '');
+        const bgMessage = String(asRecord(bgErr).message ?? bgErr ?? '');
         if (isMissingAutotaskTicketError(bgErr)) {
           await markSessionDeletedFromAutotask(sessionId, ticketId, sessionTenantId, bgMessage);
           operationalLogger.info('routes.ai.playbook.full_flow.stale_ticket_removed', {

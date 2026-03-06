@@ -4,6 +4,11 @@
 
 import { AutotaskClient } from '../../clients/autotask';
 
+type AutotaskTicketLike = {
+  id?: number;
+  ticketNumber?: string;
+};
+
 // Mock fetch
 global.fetch = jest.fn();
 
@@ -73,7 +78,7 @@ describe('AutotaskClient', () => {
       });
 
       const result = await client.getTicket(123);
-      expect((result as any).ticketNumber).toBe('T20260225.0123');
+      expect((result as AutotaskTicketLike).ticketNumber).toBe('T20260225.0123');
     });
 
     it('should throw error if ticket not found', async () => {
@@ -190,7 +195,7 @@ describe('AutotaskClient', () => {
 
       const result = await client.searchTickets('{"op":"eq","field":"ticketNumber","value":"T20260225.9999"}', 5, 0);
       expect(result).toHaveLength(1);
-      expect((result[0] as any).ticketNumber).toBe('T20260225.9999');
+      expect((result[0] as AutotaskTicketLike).ticketNumber).toBe('T20260225.9999');
     });
 
     it('should follow nextPageUrl until all query pages are collected', async () => {
@@ -220,7 +225,7 @@ describe('AutotaskClient', () => {
       const result = await client.searchTickets('{"op":"gt","field":"createDate","value":"2026-03-01T00:00:00.000Z"}', 2, 0);
 
       expect(result).toHaveLength(3);
-      expect((result[2] as any).ticketNumber).toBe('T20260305.0103');
+      expect((result[2] as AutotaskTicketLike).ticketNumber).toBe('T20260305.0103');
       expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe(
         'https://webservices14.autotask.net/atservicesrest/v1.0/Tickets/query?nextId=page-2',
       );
@@ -235,7 +240,7 @@ describe('AutotaskClient', () => {
       });
 
       const result = await client.getTicketByTicketNumber('T20260225.0001');
-      expect((result as any).id).toBe(111);
+      expect((result as AutotaskTicketLike).id).toBe(111);
     });
   });
 
@@ -259,7 +264,7 @@ describe('AutotaskClient', () => {
       expect(createUrl.pathname.toLowerCase()).toContain('/tickets');
       const fetchByIdUrl = new URL((global.fetch as jest.Mock).mock.calls[1][0] as string);
       expect(fetchByIdUrl.pathname.toLowerCase()).toContain('/tickets/1234');
-      expect((result as any).ticketNumber).toBe('T20260302.1234');
+      expect((result as AutotaskTicketLike).ticketNumber).toBe('T20260302.1234');
     });
 
     it('should PATCH /tickets with body id when updating by ticket number', async () => {

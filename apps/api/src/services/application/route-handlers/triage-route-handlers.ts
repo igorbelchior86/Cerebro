@@ -121,8 +121,8 @@ router.patch('/sessions/:id', async (req, res, next) => {
         data: updated,
         timestamp: new Date().toISOString(),
       });
-    } catch (err: any) {
-      if (err.message.startsWith('Invalid status')) {
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith('Invalid status')) {
         res.status(400).json({ error: err.message });
         return;
       }

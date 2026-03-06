@@ -10,7 +10,7 @@ export const tenantMiddleware = (req: Request, res: Response, next: NextFunction
     // For safety and local development, we might also read a header.
 
     // Example: Assuming auth middleware sets req.user
-    const user = (req as any).user;
+    const user = (req as Request & { user?: { tenantId?: string } }).user;
     let tenantId: string | undefined = undefined;
 
     if (user && user.tenantId) {

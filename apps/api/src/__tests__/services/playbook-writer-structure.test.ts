@@ -1,8 +1,12 @@
 import { PlaybookWriterService } from '../../services/ai/playbook-writer.js';
 
+type PlaybookWriterInternals = {
+  validatePlaybookStructure(markdown: string): void;
+};
+
 describe('PlaybookWriter structure contract (Phase 5)', () => {
   it('accepts playbook with field-guide sections (context, hypotheses, checklist, escalation)', () => {
-    const service = new PlaybookWriterService() as any;
+    const service = new PlaybookWriterService() as unknown as PlaybookWriterInternals;
     const markdown = `# [T1] - Wifi outage troubleshooting
 
 ## 📋 Context
@@ -31,7 +35,7 @@ describe('PlaybookWriter structure contract (Phase 5)', () => {
   });
 
   it('rejects playbook missing escalation section', () => {
-    const service = new PlaybookWriterService() as any;
+    const service = new PlaybookWriterService() as unknown as PlaybookWriterInternals;
     const markdown = `# [T1] - Wifi outage troubleshooting
 
 ## 📋 Context

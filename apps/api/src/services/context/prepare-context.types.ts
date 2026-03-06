@@ -213,15 +213,20 @@ export interface FacetContext {
     requiresCapabilityVerification: boolean;
 }
 
+type LooseJsonRecord = {
+    [key: string]: unknown;
+    [index: number]: unknown;
+};
+
 export interface DeviceResolutionResult {
-    device: any | null;
+    device: LooseJsonRecord | null;
     checks: Signal[];
     loggedInUser: string;
     loggedInAt?: string;
     reason: string;
     strongMatch: boolean;
     score: number;
-    details?: any | null;
+    details?: LooseJsonRecord | null;
 }
 
 export interface AutotaskCreds {

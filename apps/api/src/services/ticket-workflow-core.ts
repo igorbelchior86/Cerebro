@@ -239,6 +239,8 @@ type PendingCommandFilter = {
   limit: number;
 };
 
+type JsonRecord = Record<string, unknown>;
+
 export interface TicketWorkflowRepository {
   getCommandByIdempotencyKey(tenantId: string, idempotencyKey: string): Promise<WorkflowCommandAttempt | null>;
   upsertCommandAttempt(attempt: WorkflowCommandAttempt): Promise<void>;
@@ -274,6 +276,17 @@ function extractCommentBodyForProjection(payload: Record<string, unknown>): stri
   ).trim();
 }
 
+function asJsonRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : {};
+}
+
+function messageFromError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error || '');
+}
+
 function normalizeStatusToken(value: unknown): string {
   return String(value ?? '')
     .trim()
@@ -293,7 +306,7 @@ function statusesMatch(localStatus: unknown, remoteStatus: unknown, remoteStatus
 
 function classifyError(error: unknown): 'transient' | 'terminal' {
   if (error instanceof WorkflowTransientError) return 'transient';
-  const message = String((error as any)?.message || error || '').toLowerCase();
+  const message = messageFromError(error).toLowerCase();
   if (
     message.includes('timeout') ||
     message.includes('429') ||
@@ -728,6 +741,13 @@ export class TicketWorkflowCoreService {
 
       try {
         const result = await this.gateway.executeCommand(attempt.command);
+        const resultRecord = asJsonRecord(result);
+        const externalTicketId = String(
+          resultRecord.external_ticket_id ||
+          attempt.command.correlation.ticket_id ||
+          attempt.command.payload.ticket_id ||
+          ''
+        );
         attempt.attempts += 1;
         attempt.status = 'completed';
         attempt.result = {
@@ -743,12 +763,7 @@ export class TicketWorkflowCoreService {
         await this.applyLocalProjectionFromCommandResult(attempt, result);
         this.publishRealtime({
           tenant_id: attempt.command.tenant_id,
-          ticket_id: String(
-            (result as any)?.external_ticket_id ||
-            attempt.command.correlation.ticket_id ||
-            attempt.command.payload.ticket_id ||
-            ''
-          ),
+          ticket_id: externalTicketId,
           trace_id: attempt.command.correlation.trace_id,
           command_id: attempt.command.command_id,
           occurred_at: nowIso(),
@@ -767,12 +782,7 @@ export class TicketWorkflowCoreService {
           target: auditTarget(
             'Autotask',
             'ticket',
-            String(
-              (result as any)?.external_ticket_id ||
-              attempt.command.correlation.ticket_id ||
-              attempt.command.payload.ticket_id ||
-              ''
-            ) || undefined
+            externalTicketId || undefined
           ),
           result: 'success',
           correlation: { ...attempt.command.correlation, command_id: attempt.command.command_id },
@@ -788,7 +798,7 @@ export class TicketWorkflowCoreService {
       } catch (error) {
         const failureClass = classifyError(error);
         attempt.attempts += 1;
-        attempt.last_error = String((error as any)?.message || error || 'unknown error');
+        attempt.last_error = messageFromError(error) || 'unknown error';
         attempt.updated_at = nowIso();
 
         if (failureClass === 'transient' && attempt.attempts < attempt.max_attempts) {
@@ -856,8 +866,9 @@ export class TicketWorkflowCoreService {
 
   private async applyLocalProjectionFromCommandResult(attempt: WorkflowCommandAttempt, result: WorkflowExecutionResult): Promise<void> {
     const tenantId = attempt.command.tenant_id;
+    const resultRecord = asJsonRecord(result);
     const ticketId =
-      String((result as any)?.external_ticket_id || attempt.command.correlation.ticket_id || attempt.command.payload.ticket_id || '').trim();
+      String(resultRecord.external_ticket_id || attempt.command.correlation.ticket_id || attempt.command.payload.ticket_id || '').trim();
     if (!ticketId) return;
 
     const existing = (await this.repo.getInboxTicket(tenantId, ticketId)) ?? {
@@ -868,21 +879,24 @@ export class TicketWorkflowCoreService {
       updated_at: nowIso(),
     };
 
-    const patch = attempt.command.payload as any;
+    const patch = attempt.command.payload;
+    const resultExternalId = String(resultRecord.external_ticket_id || existing.external_id || ticketId).trim();
+    const resultStatus = String(resultRecord.status ?? existing.status ?? '').trim();
+    const resultAssignedTo = String(resultRecord.assigned_to ?? existing.assigned_to ?? '').trim();
     const next: InboxTicketState = {
       ...existing,
-      external_id: String((result as any)?.external_ticket_id || existing.external_id || ticketId),
+      external_id: resultExternalId,
       ...(String(patch.title ?? existing.title ?? '').trim() ? { title: String(patch.title ?? existing.title).trim() } : {}),
       ...(String(patch.description ?? existing.description ?? '').trim()
         ? { description: String(patch.description ?? existing.description).trim() }
         : {}),
-      ...(String(patch.status ?? (result as any)?.status ?? existing.status ?? '').trim()
-        ? { status: String(patch.status ?? (result as any)?.status ?? existing.status).trim() }
+      ...(String(patch.status ?? resultStatus).trim()
+        ? { status: String(patch.status ?? resultStatus).trim() }
         : {}),
-      ...(String(patch.assignee_resource_id ?? patch.assigned_to ?? (result as any)?.assigned_to ?? existing.assigned_to ?? '').trim()
+      ...(String(patch.assignee_resource_id ?? patch.assigned_to ?? resultAssignedTo).trim()
         ? {
             assigned_to: String(
-              patch.assignee_resource_id ?? patch.assigned_to ?? (result as any)?.assigned_to ?? existing.assigned_to
+              patch.assignee_resource_id ?? patch.assigned_to ?? resultAssignedTo
             ).trim(),
           }
         : {}),
@@ -894,16 +908,16 @@ export class TicketWorkflowCoreService {
         ...(existing.domain_snapshots || {}),
         tickets: {
           ...(existing.domain_snapshots?.tickets || {}),
-          ...(String((result as any)?.external_ticket_id || existing.external_id || ticketId).trim()
-            ? { external_id: String((result as any)?.external_ticket_id || existing.external_id || ticketId).trim() }
+          ...(resultExternalId
+            ? { external_id: resultExternalId }
             : {}),
-          ...(String(patch.status ?? (result as any)?.status ?? existing.status ?? '').trim()
-            ? { status: String(patch.status ?? (result as any)?.status ?? existing.status).trim() }
+          ...(String(patch.status ?? resultStatus).trim()
+            ? { status: String(patch.status ?? resultStatus).trim() }
             : {}),
-          ...(String(patch.assignee_resource_id ?? patch.assigned_to ?? (result as any)?.assigned_to ?? existing.assigned_to ?? '').trim()
+          ...(String(patch.assignee_resource_id ?? patch.assigned_to ?? resultAssignedTo).trim()
             ? {
               assigned_to: String(
-                patch.assignee_resource_id ?? patch.assigned_to ?? (result as any)?.assigned_to ?? existing.assigned_to
+                patch.assignee_resource_id ?? patch.assigned_to ?? resultAssignedTo
               ).trim(),
             }
             : {}),
@@ -911,18 +925,18 @@ export class TicketWorkflowCoreService {
         },
         'correlates.resources': {
           ...(existing.domain_snapshots?.['correlates.resources'] || {}),
-          ...(String(patch.assignee_resource_id ?? patch.assigned_to ?? (result as any)?.assigned_to ?? existing.assigned_to ?? '').trim()
+          ...(String(patch.assignee_resource_id ?? patch.assigned_to ?? resultAssignedTo).trim()
             ? {
               assigned_to: String(
-                patch.assignee_resource_id ?? patch.assigned_to ?? (result as any)?.assigned_to ?? existing.assigned_to
+                patch.assignee_resource_id ?? patch.assigned_to ?? resultAssignedTo
               ).trim(),
             }
             : {}),
         },
         'correlates.ticket_metadata': {
           ...(existing.domain_snapshots?.['correlates.ticket_metadata'] || {}),
-          ...(String(patch.status ?? (result as any)?.status ?? existing.status ?? '').trim()
-            ? { status: String(patch.status ?? (result as any)?.status ?? existing.status).trim() }
+          ...(String(patch.status ?? resultStatus).trim()
+            ? { status: String(patch.status ?? resultStatus).trim() }
             : {}),
           ...(Number.isFinite(Number(patch.queue_id)) ? { queue_id: Number(patch.queue_id) } : {}),
         },
@@ -931,7 +945,7 @@ export class TicketWorkflowCoreService {
       updated_at: nowIso(),
     };
 
-    const commentBody = extractCommentBodyForProjection(patch as Record<string, unknown>);
+    const commentBody = extractCommentBodyForProjection(patch);
     if (commentBody) {
       next.comments = [
         ...(existing.comments || []),
@@ -956,8 +970,8 @@ export class TicketWorkflowCoreService {
       };
     }
 
-    if ((result as any)?.snapshot && typeof (result as any).snapshot === 'object') {
-      const snapshot = (result as any).snapshot as Record<string, unknown>;
+    const snapshot = asJsonRecord(resultRecord.snapshot);
+    if (Object.keys(snapshot).length > 0) {
       if (snapshot.title) next.title = String(snapshot.title);
       if (snapshot.description) next.description = String(snapshot.description);
       if (snapshot.status) next.status = String(snapshot.status);
@@ -970,9 +984,9 @@ export class TicketWorkflowCoreService {
     const changeKind: WorkflowRealtimeTicketChangePayload['change_kind'] =
       commentBody
         ? 'comment'
-        : String(patch.assignee_resource_id ?? patch.assigned_to ?? (result as any)?.assigned_to ?? '').trim()
+        : String(patch.assignee_resource_id ?? patch.assigned_to ?? resultAssignedTo).trim()
           ? 'assigned'
-          : String(patch.status ?? (result as any)?.status ?? '').trim()
+          : String(patch.status ?? resultStatus).trim()
             ? 'status'
             : 'sync';
     this.publishRealtime({
@@ -1266,20 +1280,21 @@ export class TicketWorkflowCoreService {
       queue_id: local?.queue_id,
       ticket_number: String((local?.domain_snapshots?.tickets?.ticket_number ?? local?.ticket_id ?? '') || ''),
     };
+    const remoteRecord = asJsonRecord(remote);
     const remoteTicket = {
-      status: String((remote as any).status || ''),
-      status_label: String((remote as any).status_label || ''),
-      assigned_to: String((remote as any).assigned_to || ''),
-      queue_id: Number((remote as any).queue_id),
-      ticket_number: String((remote as any).ticket_number || ''),
+      status: String(remoteRecord.status || ''),
+      status_label: String(remoteRecord.status_label || ''),
+      assigned_to: String(remoteRecord.assigned_to || ''),
+      queue_id: Number(remoteRecord.queue_id),
+      ticket_number: String(remoteRecord.ticket_number || ''),
     };
     const localLastComment = local?.comments && local.comments.length > 0 ? local.comments[local.comments.length - 1] : undefined;
     const localNoteFingerprint =
       String((local?.domain_snapshots?.ticket_notes?.latest_note_fingerprint as string) || '').trim() ||
       fingerprintText(localLastComment?.body || '');
     const remoteNoteFingerprint =
-      String((remote as any)?.latest_note_fingerprint || '').trim() ||
-      fingerprintText((remote as any)?.latest_note_text || '');
+      String(remoteRecord.latest_note_fingerprint || '').trim() ||
+      fingerprintText(remoteRecord.latest_note_text || '');
 
     const domains: ReconciliationDomainResult[] = [];
     const ticketMismatch =

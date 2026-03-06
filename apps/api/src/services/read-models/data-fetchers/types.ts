@@ -30,7 +30,9 @@ export interface FetchResult {
     docs?: EvidencePack['docs'];
 
     // Raw data returned for logging or fusion/enrichment engine
-    raw?: Record<string, any>;
+    raw?: Record<string, unknown> & {
+        autotaskTickets?: unknown[];
+    };
 }
 
 export interface DataSourceFetcher {

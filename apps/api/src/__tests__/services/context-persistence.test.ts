@@ -1,5 +1,6 @@
 import { execute, queryOne, transaction } from '../../db/index.js';
 import { persistEvidencePack, persistTicketSSOT } from '../../services/context/persistence.js';
+import type { PoolClient } from 'pg';
 
 jest.mock('../../db/index.js', () => ({
   query: jest.fn(),
@@ -76,7 +77,7 @@ describe('context persistence concurrency guards', () => {
           }
           throw new Error(`Unexpected SQL in test double: ${normalized}`);
         }),
-      } as any;
+      } as unknown as PoolClient;
 
       try {
         return await callback(client);
@@ -86,8 +87,8 @@ describe('context persistence concurrency guards', () => {
     });
 
     await Promise.all([
-      persistEvidencePack('session-1', { ticket: { id: 'A' } } as any),
-      persistEvidencePack('session-1', { ticket: { id: 'B' } } as any),
+      persistEvidencePack('session-1', { ticket: { id: 'A' } } as Parameters<typeof persistEvidencePack>[1]),
+      persistEvidencePack('session-1', { ticket: { id: 'B' } } as Parameters<typeof persistEvidencePack>[1]),
     ]);
 
     expect(transactionMock).toHaveBeenCalledTimes(2);
@@ -147,11 +148,11 @@ describe('context persistence concurrency guards', () => {
 
     transactionMock.mockResolvedValue(undefined as never);
 
-    const oldPersist = persistTicketSSOT('ticket-1', 'session-old', { title: 'old' } as any);
+    const oldPersist = persistTicketSSOT('ticket-1', 'session-old', { title: 'old' } as Parameters<typeof persistTicketSSOT>[2]);
     await Promise.resolve();
 
     latestSessionId = 'session-new';
-    const newPersist = persistTicketSSOT('ticket-1', 'session-new', { title: 'new' } as any);
+    const newPersist = persistTicketSSOT('ticket-1', 'session-new', { title: 'new' } as Parameters<typeof persistTicketSSOT>[2]);
     await Promise.resolve();
     if (allowOldWrite) allowOldWrite();
 

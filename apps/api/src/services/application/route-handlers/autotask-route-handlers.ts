@@ -22,6 +22,14 @@ interface AutotaskCreds {
   zoneUrl?: string;
 }
 
+type JsonRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : {};
+}
+
 const ticketFieldKeys = [
   'queue',
   'priority',
@@ -188,11 +196,13 @@ function stringifyStructuredSearch(filter: Array<Record<string, unknown>>, maxRe
 }
 
 function sortTicketsByCreateDateDesc(a: AutotaskTicket, b: AutotaskTicket): number {
-  const at = new Date(String((a as any)?.createDate || 0)).getTime();
-  const bt = new Date(String((b as any)?.createDate || 0)).getTime();
+  const aRecord = asRecord(a);
+  const bRecord = asRecord(b);
+  const at = new Date(String(aRecord.createDate || 0)).getTime();
+  const bt = new Date(String(bRecord.createDate || 0)).getTime();
   const delta = (Number.isFinite(bt) ? bt : 0) - (Number.isFinite(at) ? at : 0);
   if (delta !== 0) return delta;
-  return String((b as any)?.ticketNumber || b.id || '').localeCompare(String((a as any)?.ticketNumber || a.id || ''));
+  return String(bRecord.ticketNumber || b.id || '').localeCompare(String(aRecord.ticketNumber || a.id || ''));
 }
 
 function buildAutotaskTicketSearch(options: {
@@ -349,7 +359,7 @@ router.get('/ticket/:id/notes', async (req, res, next) => {
       ticketId = Number.parseInt(requestedRef, 10);
     } else {
       const ticket = await client.getTicketByTicketNumber(requestedRef);
-      ticketId = Number((ticket as any)?.id);
+      ticketId = Number(asRecord(ticket).id);
     }
     if (!Number.isFinite(ticketId)) {
       res.status(404).json({ error: `Ticket ${requestedRef} not found` });
@@ -637,10 +647,11 @@ router.get('/companies/search', async (req, res, next) => {
           );
           return rows
             .map((row) => {
-              const id = Number((row as any)?.id);
-              const name = String((row as any)?.companyName || '').trim();
-              const isActiveRaw = (row as any)?.isActive;
-              const isInactiveRaw = (row as any)?.isInactive;
+              const rowRecord = asRecord(row);
+              const id = Number(rowRecord.id);
+              const name = String(rowRecord.companyName || '').trim();
+              const isActiveRaw = rowRecord.isActive;
+              const isInactiveRaw = rowRecord.isInactive;
               const isActive = typeof isActiveRaw === 'boolean'
                 ? isActiveRaw
                 : typeof isInactiveRaw === 'boolean'
@@ -731,19 +742,20 @@ router.get('/contacts/search', async (req, res, next) => {
           const rows = await client.searchContacts(stringifyStructuredSearch(filter, limit), limit);
           return rows
             .map((row) => {
-              const id = Number((row as any)?.id);
-              const firstName = String((row as any)?.firstName || '').trim();
-              const lastName = String((row as any)?.lastName || '').trim();
+              const rowRecord = asRecord(row);
+              const id = Number(rowRecord.id);
+              const firstName = String(rowRecord.firstName || '').trim();
+              const lastName = String(rowRecord.lastName || '').trim();
               const fullName = `${firstName} ${lastName}`.trim();
-              const name = fullName || String((row as any)?.displayName || '').trim();
-              const rowCompanyId = Number((row as any)?.companyID);
+              const name = fullName || String(rowRecord.displayName || '').trim();
+              const rowCompanyId = Number(rowRecord.companyID);
               if (!Number.isFinite(id) || !name) return null;
               return {
                 id,
                 name,
                 ...(Number.isFinite(rowCompanyId) ? { companyId: rowCompanyId } : {}),
-                ...(typeof (row as any)?.emailAddress === 'string'
-                  ? { email: String((row as any).emailAddress).trim() }
+                ...(typeof rowRecord.emailAddress === 'string'
+                  ? { email: String(rowRecord.emailAddress).trim() }
                   : {}),
               };
             })
@@ -816,18 +828,19 @@ router.get('/resources/search', async (req, res, next) => {
           const rows = await client.searchResources(stringifyStructuredSearch(filter, providerLimit), providerLimit);
           const data = rows
             .map((row) => {
-              const id = Number((row as any)?.id);
-              const defaultRoleId = Number((row as any)?.defaultServiceDeskRoleID);
-              const firstName = String((row as any)?.firstName || '').trim();
-              const lastName = String((row as any)?.lastName || '').trim();
+              const rowRecord = asRecord(row);
+              const id = Number(rowRecord.id);
+              const defaultRoleId = Number(rowRecord.defaultServiceDeskRoleID);
+              const firstName = String(rowRecord.firstName || '').trim();
+              const lastName = String(rowRecord.lastName || '').trim();
               const fullName = `${firstName} ${lastName}`.trim();
-              const name = fullName || String((row as any)?.userName || '').trim();
+              const name = fullName || String(rowRecord.userName || '').trim();
               // Assignment flow requires a valid default service desk role for the resource.
               if (!Number.isFinite(id) || !name || !Number.isFinite(defaultRoleId)) return null;
               return {
                 id,
                 name,
-                ...(typeof (row as any)?.email === 'string' ? { email: String((row as any).email).trim() } : {}),
+                ...(typeof rowRecord.email === 'string' ? { email: String(rowRecord.email).trim() } : {}),
               };
             })
             .filter((item) => {
@@ -898,11 +911,15 @@ router.post('/backfill-recent', async (req, res, next) => {
       .slice()
       .sort(sortTicketsByCreateDateDesc);
 
-    const ticketKeys = tickets.map((ticket) => String((ticket as any)?.ticketNumber || (ticket as any)?.id || '').trim()).filter(Boolean);
+    const ticketKeys = tickets.map((ticket) => {
+      const ticketRecord = asRecord(ticket);
+      return String(ticketRecord.ticketNumber || ticketRecord.id || '').trim();
+    }).filter(Boolean);
     const coverage = await getExistingTicketCoverageMap(ticketKeys);
 
     const missing = tickets.filter((ticket) => {
-      const key = String((ticket as any)?.ticketNumber || (ticket as any)?.id || '').trim();
+      const ticketRecord = asRecord(ticket);
+      const key = String(ticketRecord.ticketNumber || ticketRecord.id || '').trim();
       const hit = coverage.get(key);
       return !(hit?.inProcessed || hit?.inSessions || hit?.inSsot);
     });
@@ -912,7 +929,7 @@ router.post('/backfill-recent', async (req, res, next) => {
     const pipelineErrors: Array<{ ticket_id: string; error: string }> = [];
 
     for (const ticket of missing) {
-      const raw = ticket as any;
+      const raw = asRecord(ticket);
       const ticketKey = String(raw.ticketNumber || raw.id || '').trim();
       if (!ticketKey) continue;
 
@@ -936,8 +953,8 @@ router.post('/backfill-recent', async (req, res, next) => {
         try {
           await triageOrchestrator.runPipeline(ticketKey, undefined, 'autotask');
           pipelineTriggered += 1;
-        } catch (err: any) {
-          pipelineErrors.push({ ticket_id: ticketKey, error: String(err?.message || err || 'unknown error') });
+        } catch (err) {
+          pipelineErrors.push({ ticket_id: ticketKey, error: String(asRecord(err).message ?? err ?? 'unknown error') });
         }
       }
     }
@@ -955,12 +972,15 @@ router.post('/backfill-recent', async (req, res, next) => {
         seededProcessed,
         pipelineTriggered,
         pipelineErrorsCount: pipelineErrors.length,
-        sampleMissing: missing.slice(0, 10).map((ticket) => ({
-          id: (ticket as any)?.id ?? null,
-          ticketNumber: (ticket as any)?.ticketNumber ?? null,
-          queueID: (ticket as any)?.queueID ?? null,
-          title: (ticket as any)?.title ?? null,
-        })),
+        sampleMissing: missing.slice(0, 10).map((ticket) => {
+          const ticketRecord = asRecord(ticket);
+          return {
+            id: ticketRecord.id ?? null,
+            ticketNumber: ticketRecord.ticketNumber ?? null,
+            queueID: ticketRecord.queueID ?? null,
+            title: ticketRecord.title ?? null,
+          };
+        }),
         ...(pipelineErrors.length > 0 ? { pipelineErrors: pipelineErrors.slice(0, 10) } : {}),
       },
       timestamp: new Date().toISOString(),
@@ -1032,18 +1052,21 @@ router.patch('/ticket/:ticketId/context', async (req, res, next) => {
       ? await client.getTicket(Number(ticketId))
       : await client.getTicketByTicketNumber(ticketId);
 
-    const authoritativeCompanyId = Number((ticket as any)?.companyID);
-    const authoritativeContactId = Number((ticket as any)?.contactID);
+    const ticketRecord = asRecord(ticket);
+    const authoritativeCompanyId = Number(ticketRecord.companyID);
+    const authoritativeContactId = Number(ticketRecord.contactID);
     const company = Number.isFinite(authoritativeCompanyId)
       ? await client.getCompany(authoritativeCompanyId).catch(() => null)
       : null;
     const contact = Number.isFinite(authoritativeContactId)
       ? await client.getContact(authoritativeContactId).catch(() => null)
       : null;
-    const authoritativePriorityId = Number((ticket as any)?.priority);
-    const authoritativeIssueTypeId = Number((ticket as any)?.issueType);
-    const authoritativeSubIssueTypeId = Number((ticket as any)?.subIssueType);
-    const authoritativeServiceLevelAgreementId = Number((ticket as any)?.serviceLevelAgreementID);
+    const authoritativePriorityId = Number(ticketRecord.priority);
+    const authoritativeIssueTypeId = Number(ticketRecord.issueType);
+    const authoritativeSubIssueTypeId = Number(ticketRecord.subIssueType);
+    const authoritativeServiceLevelAgreementId = Number(ticketRecord.serviceLevelAgreementID);
+    const companyRecord = asRecord(company);
+    const contactRecord = asRecord(contact);
 
     const [priorityOptions, issueTypeOptions, subIssueTypeOptions, serviceLevelAgreementOptions] = await Promise.all([
       client.getTicketPriorityOptions().catch(() => []),
@@ -1052,32 +1075,32 @@ router.patch('/ticket/:ticketId/context', async (req, res, next) => {
       client.getTicketServiceLevelAgreementOptions().catch(() => []),
     ]);
 
-    const authoritativePriorityLabel = resolvePicklistLabel(priorityOptions, (ticket as any)?.priority);
-    const authoritativeIssueTypeLabel = resolvePicklistLabel(issueTypeOptions, (ticket as any)?.issueType);
-    const authoritativeSubIssueTypeLabel = resolvePicklistLabel(subIssueTypeOptions, (ticket as any)?.subIssueType);
-    const authoritativeServiceLevelAgreementLabel = resolvePicklistLabel(serviceLevelAgreementOptions, (ticket as any)?.serviceLevelAgreementID);
+    const authoritativePriorityLabel = resolvePicklistLabel(priorityOptions, ticketRecord.priority);
+    const authoritativeIssueTypeLabel = resolvePicklistLabel(issueTypeOptions, ticketRecord.issueType);
+    const authoritativeSubIssueTypeLabel = resolvePicklistLabel(subIssueTypeOptions, ticketRecord.subIssueType);
+    const authoritativeServiceLevelAgreementLabel = resolvePicklistLabel(serviceLevelAgreementOptions, ticketRecord.serviceLevelAgreementID);
 
-    const ticketKey = String((ticket as any)?.ticketNumber || ticketId).trim();
+    const ticketKey = String(ticketRecord.ticketNumber || ticketId).trim();
     const latestSession = await queryOne<{ id: string }>(
       `SELECT id FROM triage_sessions WHERE ticket_id = $1 ORDER BY created_at DESC LIMIT 1`,
       [ticketKey]
     );
 
     const ssotPatch = {
-      ...(company && String((company as any)?.companyName || '').trim()
-        ? { company: String((company as any)?.companyName || '').trim() }
+      ...(company && String(companyRecord.companyName || '').trim()
+        ? { company: String(companyRecord.companyName || '').trim() }
         : {}),
-      ...(contact && `${String((contact as any)?.firstName || '').trim()} ${String((contact as any)?.lastName || '').trim()}`.trim()
-        ? { requester_name: `${String((contact as any)?.firstName || '').trim()} ${String((contact as any)?.lastName || '').trim()}`.trim() }
+      ...(contact && `${String(contactRecord.firstName || '').trim()} ${String(contactRecord.lastName || '').trim()}`.trim()
+        ? { requester_name: `${String(contactRecord.firstName || '').trim()} ${String(contactRecord.lastName || '').trim()}`.trim() }
         : {}),
       autotask_authoritative: {
-        ticket_number: String((ticket as any)?.ticketNumber || ticketKey),
-        ticket_id_numeric: Number.isFinite(Number((ticket as any)?.id)) ? Number((ticket as any)?.id) : null,
+        ticket_number: String(ticketRecord.ticketNumber || ticketKey),
+        ticket_id_numeric: Number.isFinite(Number(ticketRecord.id)) ? Number(ticketRecord.id) : null,
         company_id: Number.isFinite(authoritativeCompanyId) ? authoritativeCompanyId : null,
-        company_name: String((company as any)?.companyName || '').trim() || null,
+        company_name: String(companyRecord.companyName || '').trim() || null,
         contact_id: Number.isFinite(authoritativeContactId) ? authoritativeContactId : null,
-        contact_name: `${String((contact as any)?.firstName || '').trim()} ${String((contact as any)?.lastName || '').trim()}`.trim() || null,
-        contact_email: String((contact as any)?.emailAddress || '').trim() || null,
+        contact_name: `${String(contactRecord.firstName || '').trim()} ${String(contactRecord.lastName || '').trim()}`.trim() || null,
+        contact_email: String(contactRecord.emailAddress || '').trim() || null,
         priority_id: Number.isFinite(authoritativePriorityId) ? authoritativePriorityId : null,
         priority_label: authoritativePriorityLabel,
         issue_type_id: Number.isFinite(authoritativeIssueTypeId) ? authoritativeIssueTypeId : null,
@@ -1096,10 +1119,10 @@ router.patch('/ticket/:ticketId/context', async (req, res, next) => {
       data: {
         ticketId: ticketKey,
         companyId: Number.isFinite(authoritativeCompanyId) ? authoritativeCompanyId : null,
-        companyName: String((company as any)?.companyName || '').trim() || null,
+        companyName: String(companyRecord.companyName || '').trim() || null,
         contactId: Number.isFinite(authoritativeContactId) ? authoritativeContactId : null,
-        contactName: `${String((contact as any)?.firstName || '').trim()} ${String((contact as any)?.lastName || '').trim()}`.trim() || null,
-        contactEmail: String((contact as any)?.emailAddress || '').trim() || null,
+        contactName: `${String(contactRecord.firstName || '').trim()} ${String(contactRecord.lastName || '').trim()}`.trim() || null,
+        contactEmail: String(contactRecord.emailAddress || '').trim() || null,
         priorityId: Number.isFinite(authoritativePriorityId) ? authoritativePriorityId : null,
         priorityLabel: authoritativePriorityLabel,
         issueTypeId: Number.isFinite(authoritativeIssueTypeId) ? authoritativeIssueTypeId : null,
@@ -1182,10 +1205,11 @@ router.post('/ticket/:ticketId/attachments', async (req, res, next) => {
           contentType,
           dataBase64,
         });
+        const createdRecord = asRecord(created);
         results.push({
           fileName,
           uploaded: true,
-          attachmentId: String((created as any)?.id || (created as any)?.item?.id || ''),
+          attachmentId: String(createdRecord.id || asRecord(createdRecord.item).id || ''),
         });
       } catch (err) {
         results.push({

@@ -3,6 +3,13 @@ import { queryOne } from '../../../db/index.js';
 import type { DataSourceFetcher, DataSourceContext, FetchResult } from './types.js';
 import type { AutotaskTicket } from '@cerebro/types';
 import { operationalLogger } from '../../../lib/operational-logger.js';
+
+type AutotaskCredentials = {
+    apiIntegrationCode: string;
+    username: string;
+    secret: string;
+    zoneUrl?: string;
+};
 export class AutotaskFetcher implements DataSourceFetcher {
     name = 'autotask';
 
@@ -22,7 +29,7 @@ export class AutotaskFetcher implements DataSourceFetcher {
             apiIntegrationCode: creds.apiIntegrationCode,
             username: creds.username,
             secret: creds.secret,
-            zoneUrl: creds.zoneUrl,
+            ...(creds.zoneUrl ? { zoneUrl: creds.zoneUrl } : {}),
         });
 
         // Discover zone if needed
@@ -107,12 +114,12 @@ export class AutotaskFetcher implements DataSourceFetcher {
         return result;
     }
 
-    private async getCredentials(context: DataSourceContext): Promise<any | null> {
+    private async getCredentials(context: DataSourceContext): Promise<AutotaskCredentials | null> {
         const tenantId = String(context.tenantId || '').trim();
         if (!tenantId) return null;
 
         try {
-            const row = await queryOne<{ credentials: any }>(`
+            const row = await queryOne<{ credentials: AutotaskCredentials }>(`
         SELECT credentials
         FROM integration_credentials
         WHERE tenant_id = $1 AND service = 'autotask'

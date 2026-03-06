@@ -19,6 +19,23 @@ type AutotaskPollContext = {
 
 type PollLockResult = { acquired: boolean };
 type SyncRetryDisposition = 'retry_pending' | 'dlq';
+type AutotaskPollingTicket = Record<string, unknown> & {
+  id?: number | string;
+  ticketNumber?: number | string;
+  title?: unknown;
+  description?: unknown;
+  status?: unknown;
+  assignedResourceID?: unknown;
+  queueID?: unknown;
+  companyID?: unknown;
+  contactID?: unknown;
+  priority?: unknown;
+  issueType?: unknown;
+  subIssueType?: unknown;
+  serviceLevelAgreementID?: unknown;
+  createDate?: string;
+  createDateTime?: string;
+};
 type SyncRetryEntry = {
   event: WorkflowEventEnvelope;
   attempts: number;
@@ -174,14 +191,15 @@ export class AutotaskPollingService {
         if (!tickets || tickets.length === 0) return;
 
         console.log(`[AutotaskPolling] Found ${tickets.length} recently created tickets.`);
-        for (const ticket of tickets) {
-          const ticketIdStr = String((ticket as any)?.ticketNumber || (ticket as any)?.id || '').trim();
+        for (const rawTicket of tickets) {
+          const ticket = rawTicket as AutotaskPollingTicket;
+          const ticketIdStr = String(ticket.ticketNumber || ticket.id || '').trim();
           if (!ticketIdStr) continue;
-          await this.ingestWorkflowSyncEvent(ticket as unknown as Record<string, unknown>, context.tenantId);
+          await this.ingestWorkflowSyncEvent(ticket, context.tenantId);
           try {
-            await this.triageRunFn(String((ticket as any)?.id ?? ticketIdStr));
+            await this.triageRunFn(String(ticket.id ?? ticketIdStr));
           } catch (err) {
-            console.error(`[AutotaskPolling] Error orchestrating ticket ${(ticket as any)?.id}:`, err);
+            console.error(`[AutotaskPolling] Error orchestrating ticket ${String(ticket.id ?? ticketIdStr)}:`, err);
           }
         }
       });
@@ -276,7 +294,7 @@ export class AutotaskPollingService {
         ...(retryable && attempts < this.syncRetryMaxAttempts
           ? { nextRetryAt: this.nowFn() + this.retryBackoffMsFn(attempts) }
           : {}),
-        lastError: String((error as any)?.message || error || 'unknown sync error'),
+        lastError: error instanceof Error ? error.message : String(error || 'unknown sync error'),
         errorCode: classified.code,
       };
       if (operation.disposition === 'retry_pending') {

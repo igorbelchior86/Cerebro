@@ -8,6 +8,9 @@ jest.mock('../../db/index.js', () => ({
 }));
 
 const queryOneMock = queryOne as jest.MockedFunction<typeof queryOne>;
+type AutotaskFetcherInternals = { getCredentials(context: { tenantId?: string }): Promise<unknown> };
+type ITGlueFetcherInternals = { getCredentials(context: { tenantId?: string }): Promise<unknown> };
+type NinjaOneFetcherInternals = { getCredentials(context: { tenantId?: string }): Promise<unknown> };
 
 describe('read-model fetchers credential lookup', () => {
   beforeEach(() => {
@@ -19,7 +22,7 @@ describe('read-model fetchers credential lookup', () => {
       credentials: { apiIntegrationCode: 'code', username: 'user', secret: 'secret' },
     } as never);
 
-    const fetcher = new AutotaskFetcher() as any;
+    const fetcher = new AutotaskFetcher() as unknown as AutotaskFetcherInternals;
     const creds = await fetcher.getCredentials({ tenantId: 'tenant-1' });
 
     expect(creds).toEqual({ apiIntegrationCode: 'code', username: 'user', secret: 'secret' });
@@ -34,7 +37,7 @@ describe('read-model fetchers credential lookup', () => {
       credentials: { apiKey: 'k', region: 'us' },
     } as never);
 
-    const fetcher = new ITGlueFetcher() as any;
+    const fetcher = new ITGlueFetcher() as unknown as ITGlueFetcherInternals;
     const creds = await fetcher.getCredentials({ tenantId: 'tenant-1' });
 
     expect(creds).toEqual({ apiKey: 'k', region: 'us' });
@@ -48,7 +51,7 @@ describe('read-model fetchers credential lookup', () => {
       credentials: { clientId: 'id', clientSecret: 'secret', region: 'us' },
     } as never);
 
-    const fetcher = new NinjaOneFetcher() as any;
+    const fetcher = new NinjaOneFetcher() as unknown as NinjaOneFetcherInternals;
     const creds = await fetcher.getCredentials({ tenantId: 'tenant-1' });
 
     expect(creds).toEqual({ clientId: 'id', clientSecret: 'secret', region: 'us' });
@@ -58,9 +61,9 @@ describe('read-model fetchers credential lookup', () => {
   });
 
   it('returns null and avoids query when tenantId is missing', async () => {
-    const autotaskFetcher = new AutotaskFetcher() as any;
-    const itglueFetcher = new ITGlueFetcher() as any;
-    const ninjaFetcher = new NinjaOneFetcher() as any;
+    const autotaskFetcher = new AutotaskFetcher() as unknown as AutotaskFetcherInternals;
+    const itglueFetcher = new ITGlueFetcher() as unknown as ITGlueFetcherInternals;
+    const ninjaFetcher = new NinjaOneFetcher() as unknown as NinjaOneFetcherInternals;
 
     await expect(autotaskFetcher.getCredentials({ tenantId: '' })).resolves.toBeNull();
     await expect(itglueFetcher.getCredentials({})).resolves.toBeNull();
@@ -71,8 +74,7 @@ describe('read-model fetchers credential lookup', () => {
   it('returns null when DB lookup throws', async () => {
     queryOneMock.mockRejectedValueOnce(new Error('db failed'));
 
-    const fetcher = new AutotaskFetcher() as any;
+    const fetcher = new AutotaskFetcher() as unknown as AutotaskFetcherInternals;
     await expect(fetcher.getCredentials({ tenantId: 'tenant-1' })).resolves.toBeNull();
   });
 });
-

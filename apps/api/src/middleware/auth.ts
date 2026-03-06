@@ -4,6 +4,7 @@
 
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import type { SignOptions } from 'jsonwebtoken';
 
 import { tenantContext } from '../lib/tenantContext.js';
 import { mapAuthRoleToP0Role } from '../platform/rbac.js';
@@ -17,8 +18,8 @@ export interface AuthPayload {
   exp: number;
 }
 
-// Extend Express Request with `auth` property
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       auth?: AuthPayload;
@@ -26,9 +27,19 @@ declare global {
   }
 }
 
+function extractCookieSession(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || !('pb_session' in value)) return null;
+  const session = value.pb_session;
+  return typeof session === 'string' && session.trim() ? session : null;
+}
+
+function isErrorWithName(value: unknown): value is { name: string } {
+  return Boolean(value) && typeof value === 'object' && typeof (value as { name?: unknown }).name === 'string';
+}
+
 function extractToken(req: Request): string | null {
   // 1. httpOnly cookie (preferred)
-  const cookie = (req as any).cookies?.pb_session as string | undefined;
+  const cookie = extractCookieSession((req as Request & { cookies?: unknown }).cookies);
   if (cookie) return cookie;
 
   // 2. Bearer token fallback (for API clients / curl testing)
@@ -73,8 +84,8 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     }
 
     next();
-  } catch (err: any) {
-    if (err.name === 'TokenExpiredError') {
+  } catch (err: unknown) {
+    if (isErrorWithName(err) && err.name === 'TokenExpiredError') {
       res.status(401).json({ error: 'Session expired' });
     } else {
       res.status(401).json({ error: 'Invalid session' });
@@ -104,7 +115,7 @@ export function signJwt(
 ): string {
   const secret = process.env.JWT_SECRET;
   if (!secret) throw new Error('JWT_SECRET not configured');
-  return jwt.sign(payload, secret, { expiresIn } as any);
+  return jwt.sign(payload, secret, { expiresIn } as SignOptions);
 }
 
 /**

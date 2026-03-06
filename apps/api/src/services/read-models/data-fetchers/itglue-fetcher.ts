@@ -4,6 +4,11 @@ import type { DataSourceFetcher, DataSourceContext, FetchResult } from './types.
 import { resolveITGlueOrg, resolveITGlueOrgFamilyScopes } from './itglue-helpers.js';
 import { operationalLogger } from '../../../lib/operational-logger.js';
 
+type ITGlueCredentials = {
+    apiKey: string;
+    region?: 'us' | 'eu';
+};
+
 export class ITGlueFetcher implements DataSourceFetcher {
     name = 'itglue';
 
@@ -111,12 +116,12 @@ export class ITGlueFetcher implements DataSourceFetcher {
         return result;
     }
 
-    private async getCredentials(context: DataSourceContext): Promise<any | null> {
+    private async getCredentials(context: DataSourceContext): Promise<ITGlueCredentials | null> {
         const tenantId = String(context.tenantId || '').trim();
         if (!tenantId) return null;
 
         try {
-            const row = await queryOne<{ credentials: any }>(`
+            const row = await queryOne<{ credentials: ITGlueCredentials }>(`
                 SELECT credentials
                 FROM integration_credentials
                 WHERE tenant_id = $1 AND service = 'itglue'

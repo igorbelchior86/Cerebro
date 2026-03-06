@@ -109,7 +109,7 @@ app.use('/manager-ops', requireAuth, managerOpsRoutes);
 app.use('/ticket-intake', requireAuth, ticketIntakeRoutes);
 
 // ─── Error Handling ──────────────────────────────────────────
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   operationalLogger.error('api.unhandled_error', err, {
     module: 'api.bootstrap',
     route_path: req.path,

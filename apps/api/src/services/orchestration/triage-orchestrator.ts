@@ -1,11 +1,51 @@
 import { v4 as uuidv4 } from 'uuid';
 import { execute, query, transaction } from '../../db/index.js';
+import type { PoolClient } from 'pg';
 import { tenantContext } from '../../lib/tenantContext.js';
 import { PrepareContextService, persistEvidencePack } from '../context/prepare-context.js';
 import { DiagnoseService } from '../ai/diagnose.js';
 import { ValidatePolicyService } from '../domain/validate-policy.js';
 import { PlaybookWriterService } from '../ai/playbook-writer.js';
 import { operationalLogger } from '../../lib/operational-logger.js';
+
+type TriageSessionStatus = 'pending' | 'processing' | 'approved' | 'needs_more_info' | 'blocked' | 'failed';
+type JsonRecord = Record<string, unknown>;
+
+function asJsonRecord(value: unknown): JsonRecord {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as JsonRecord)
+        : {};
+}
+
+function readModelName(output: unknown): string {
+    const meta = asJsonRecord(asJsonRecord(output).meta);
+    const model = String(meta.model || '').trim();
+    return model || 'groq';
+}
+
+function readErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    return String(error || '');
+}
+
+function readErrorName(error: unknown): string {
+    if (error instanceof Error) return error.name;
+    return String(asJsonRecord(error).name || '');
+}
+
+function toTriageSessionStatus(status: unknown): TriageSessionStatus {
+    switch (String(status || '').trim()) {
+        case 'pending':
+        case 'processing':
+        case 'approved':
+        case 'needs_more_info':
+        case 'blocked':
+        case 'failed':
+            return String(status) as TriageSessionStatus;
+        default:
+            return 'failed';
+    }
+}
 
 function readPositiveMs(raw: string | undefined, fallback: number): number {
     const parsed = Number(raw);
@@ -106,14 +146,14 @@ export class TriageOrchestrator {
 
                     try {
                         await this.runPipeline(s.ticket_id, undefined, 'autotask', s.tenant_id || undefined);
-                    } catch (err: any) {
-                        const message = String(err?.message || err || '').toLowerCase();
+                    } catch (err) {
+                        const message = readErrorMessage(err).toLowerCase();
                         operationalLogger.error('orchestration.triage.retry_sweep_ticket_failed', err, {
                             module: 'orchestration.triage-orchestrator',
                             signal: 'integration_failure',
                             degraded_mode: true,
                         }, { ticket_id: s.ticket_id });
-                        if (this.isTransientProviderError(message) || err?.name === 'LLMQuotaExceededError') {
+                        if (this.isTransientProviderError(message) || readErrorName(err) === 'LLMQuotaExceededError') {
                             quotaHit = true;
                         }
                     }
@@ -251,7 +291,7 @@ export class TriageOrchestrator {
                         uuidv4(),
                         sid,
                         'diagnose',
-                        (diagnosis as any)?.meta?.model || 'groq',
+                        readModelName(diagnosis),
                         JSON.stringify(diagnosis),
                     ]
                 );
@@ -306,7 +346,7 @@ export class TriageOrchestrator {
                         session_id: sid,
                         validation_status: validation.status,
                     }, { ticket_id: ticketId });
-                    await this.updateSessionStatus(sid, validation.status as any, { clearRetry: true, lastError: null });
+                    await this.updateSessionStatus(sid, toTriageSessionStatus(validation.status), { clearRetry: true, lastError: null });
                     return;
                 }
 
@@ -345,7 +385,7 @@ export class TriageOrchestrator {
                         uuidv4(),
                         sid,
                         'playbook',
-                        (playbook as any)?.meta?.model || 'groq',
+                        readModelName(playbook),
                         JSON.stringify(playbook),
                     ]
                 );
@@ -355,15 +395,15 @@ export class TriageOrchestrator {
                     module: 'orchestration.triage-orchestrator',
                     session_id: sid,
                 }, { ticket_id: ticketId });
-            } catch (error: any) {
+            } catch (error) {
                 operationalLogger.error('orchestration.triage.pipeline_failed', error, {
                     module: 'orchestration.triage-orchestrator',
                     session_id: sid,
                     signal: 'integration_failure',
                     degraded_mode: true,
                 }, { ticket_id: ticketId });
-                const message = String(error?.message || error || '');
-                if (this.isTransientProviderError(message) || error.name === 'LLMQuotaExceededError') {
+                const message = readErrorMessage(error);
+                if (this.isTransientProviderError(message) || readErrorName(error) === 'LLMQuotaExceededError') {
                     await this.markPendingForRetry(sid, message);
                     operationalLogger.warn('orchestration.triage.marked_pending_for_retry', {
                         module: 'orchestration.triage-orchestrator',
@@ -401,8 +441,8 @@ export class TriageOrchestrator {
     }
 
     private async markPendingForRetry(sessionId: string, errorMessage: string) {
-        await transaction(async (client: any) => {
-            const current = await (client as any).query(
+        await transaction(async (client: PoolClient) => {
+            const current = await client.query<{ retry_count: number | null }>(
                 `SELECT retry_count FROM triage_sessions WHERE id = $1 FOR UPDATE`,
                 [sessionId]
             );
@@ -428,24 +468,24 @@ export class TriageOrchestrator {
         type TenantRow = { id: string };
         type PlaybookRow = { id: string };
 
-        return transaction(async (client: any) => {
+        return transaction(async (client: PoolClient) => {
             await client.query(
                 `SELECT pg_advisory_xact_lock($1, hashtext($2))`,
                 [this.advisoryLockNamespace, ticketId]
             );
 
             const existingResult = tenantId
-                ? await (client as any).query(
+                ? await client.query<SessionRow>(
                     `SELECT id, status, updated_at
                      FROM triage_sessions
                      WHERE ticket_id = $1
                        AND tenant_id = $2
                      ORDER BY created_at DESC
-                     LIMIT 1
+                    LIMIT 1
                      FOR UPDATE`,
                     [ticketId, tenantId]
                 )
-                : await (client as any).query(
+                : await client.query<SessionRow>(
                     `SELECT id, status, updated_at
                      FROM triage_sessions
                      WHERE ticket_id = $1
@@ -478,7 +518,7 @@ export class TriageOrchestrator {
                 }
 
                 if (existingSession.status === 'approved') {
-                    const playbookResult = await (client as any).query(
+                    const playbookResult = await client.query<PlaybookRow>(
                         `SELECT id FROM playbooks WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1`,
                         [sessionId]
                     );
@@ -512,7 +552,7 @@ export class TriageOrchestrator {
             const sessionId = uuidv4();
             let resolvedTenantId = String(tenantId || '').trim() || null;
             if (!resolvedTenantId) {
-                const defaultTenantResult = await (client as any).query(
+                const defaultTenantResult = await client.query<TenantRow>(
                     `SELECT id FROM tenants ORDER BY created_at ASC LIMIT 1`
                 );
                 const defaultTenant = defaultTenantResult.rows[0];
@@ -580,7 +620,7 @@ export class TriageOrchestrator {
 
     private async updateSessionStatus(
         sessionId: string,
-        status: 'pending' | 'processing' | 'approved' | 'needs_more_info' | 'blocked' | 'failed',
+        status: TriageSessionStatus,
         options?: { clearRetry?: boolean; lastError?: string | null }
     ) {
         const updates: string[] = ['status = $1', 'updated_at = NOW()'];

@@ -24,38 +24,38 @@ async function invokeWorkflowRoute(
   url: string,
   options?: { correlationId?: string }
 ) {
-  const correlationId = options?.correlationId || `trace-${Date.now()}`;
-  const headers = new Map<string, string>([['x-correlation-id', correlationId]]);
-  const req: any = {
-    method,
-    url,
-    originalUrl: `/workflow${url}`,
+    const correlationId = options?.correlationId || `trace-${Date.now()}`;
+    const headers = new Map<string, string>([['x-correlation-id', correlationId]]);
+    const req = {
+      method,
+      url,
+      originalUrl: `/workflow${url}`,
     headers: Object.fromEntries(headers),
     body: {},
     auth: { tid: 'tenant-1', sub: 'user-1', role: 'admin' },
-    header(name: string) {
-      return headers.get(name.toLowerCase());
-    },
-  };
+      header(name: string) {
+        return headers.get(name.toLowerCase());
+      },
+    };
 
-  return new Promise<{ status: number; body: Record<string, unknown> }>((resolve, reject) => {
-    const res: any = {
-      statusCode: 200,
-      status(code: number) {
-        this.statusCode = code;
+    return new Promise<{ status: number; body: Record<string, unknown> }>((resolve, reject) => {
+      const res = {
+        statusCode: 200,
+        status(code: number) {
+          this.statusCode = code;
         return this;
       },
       json(payload: Record<string, unknown>) {
         resolve({ status: this.statusCode, body: payload });
         return this;
-      },
-      setHeader() {},
-    };
+        },
+        setHeader() {},
+      };
 
-    (workflowRouter as any).handle(req, res, (error: unknown) => {
-      if (error) {
-        reject(error);
-      } else {
+      workflowRouter(req as never, res as never, (error: unknown) => {
+        if (error) {
+          reject(error);
+        } else {
         resolve({ status: res.statusCode, body: {} });
       }
     });

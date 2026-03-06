@@ -24,6 +24,30 @@ const INTERNAL_LEAK_PATTERNS: RegExp[] = [
   /\b(?:llm|model)\s+api response\b/i,
 ];
 
+type JsonRecord = Record<string, unknown>;
+type DiagnosisHypothesis = NonNullable<DiagnosisOutput['top_hypotheses']>[number];
+type HypothesisGroundingStatus = 'grounded' | 'partial' | 'weak' | 'unsupported';
+type EnrichedHypothesis = DiagnosisHypothesis & {
+  grounding_status: HypothesisGroundingStatus;
+  support_score: number;
+  relevance_score: number;
+  calibrated_confidence: number;
+  llm_confidence: number;
+  playbook_anchor_eligible: boolean;
+};
+
+function asJsonRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : {};
+}
+
+function readHypothesisGroundingStatus(value: unknown): HypothesisGroundingStatus {
+  return value === 'grounded' || value === 'partial' || value === 'weak'
+    ? value
+    : 'unsupported';
+}
+
 export class PlaybookWriterService {
   /**
    * Generate a playbook from diagnosis and validation
@@ -133,18 +157,9 @@ Regenerate the full playbook and include explicit Markdown sections for Context,
     validation: ValidationOutput,
     pack: EvidencePack
   ): string {
-    const enrichedHypotheses = (diagnosis.top_hypotheses || []).slice(0, 3).map((h) => {
-      const anyH = h as any;
-      return {
-        ...h,
-        grounding_status: String(anyH.grounding_status || 'unknown'),
-        support_score: Number(anyH.support_score ?? NaN),
-        relevance_score: Number(anyH.relevance_score ?? NaN),
-        calibrated_confidence: Number(anyH.calibrated_confidence ?? h.confidence ?? 0),
-        llm_confidence: Number(anyH.llm_confidence ?? h.confidence ?? 0),
-        playbook_anchor_eligible: Boolean(anyH.playbook_anchor_eligible ?? true),
-      };
-    });
+    const enrichedHypotheses = (diagnosis.top_hypotheses || [])
+      .slice(0, 3)
+      .map((hypothesis) => this.enrichHypothesis(hypothesis));
     const actionableHypotheses = enrichedHypotheses.filter((h) => h.playbook_anchor_eligible);
     const topHypothesis = actionableHypotheses[0] || enrichedHypotheses[0];
     const digest = pack.evidence_digest;
@@ -158,7 +173,7 @@ Regenerate the full playbook and include explicit Markdown sections for Context,
 **Issue Summary:** ${diagnosis.summary}
 
 **Root Cause Hypothesis (Primary):**
-${topHypothesis ? `- ${topHypothesis.hypothesis} (Confidence: ${(topHypothesis.confidence * 100).toFixed(0)}%)${(topHypothesis as any).playbook_anchor_eligible ? '' : ' [Investigative only]'}` : '- Multiple hypotheses identified'}
+${topHypothesis ? `- ${topHypothesis.hypothesis} (Confidence: ${(topHypothesis.confidence * 100).toFixed(0)}%)${topHypothesis.playbook_anchor_eligible ? '' : ' [Investigative only]'}` : '- Multiple hypotheses identified'}
 
 **Supporting Evidence:**
 ${diagnosis.top_hypotheses.map((h) => h.evidence.map((e) => `- ${e}`).join('\n')).join('\n')}
@@ -312,9 +327,7 @@ Start with the title and continue with the sections above.`;
       .slice(0, 3)
       .map((h, idx) => ({ h, tag: `h${idx + 1}` }))
       .filter(({ h }) => {
-        const anyH = h as any;
-        const anchor = anyH.playbook_anchor_eligible;
-        return Number(h?.confidence || 0) >= 0.6 && (anchor === undefined || Boolean(anchor));
+        return Number(h?.confidence || 0) >= 0.6 && this.isPlaybookAnchorEligible(h);
       })
       .map(({ tag }) => tag);
     if (required.length === 0) return true;
@@ -337,6 +350,24 @@ Start with the title and continue with the sections above.`;
     const lines = markdown.split('\n');
     const cleaned = lines.filter((line) => !INTERNAL_LEAK_PATTERNS.some((pattern) => pattern.test(line)));
     return cleaned.join('\n').trim();
+  }
+
+  private enrichHypothesis(hypothesis: DiagnosisHypothesis): EnrichedHypothesis {
+    const extras = asJsonRecord(hypothesis);
+    return {
+      ...hypothesis,
+      grounding_status: readHypothesisGroundingStatus(extras.grounding_status),
+      support_score: Number(extras.support_score ?? NaN),
+      relevance_score: Number(extras.relevance_score ?? NaN),
+      calibrated_confidence: Number(extras.calibrated_confidence ?? hypothesis.confidence ?? 0),
+      llm_confidence: Number(extras.llm_confidence ?? hypothesis.confidence ?? 0),
+      playbook_anchor_eligible: this.isPlaybookAnchorEligible(hypothesis),
+    };
+  }
+
+  private isPlaybookAnchorEligible(hypothesis: DiagnosisHypothesis): boolean {
+    const anchor = asJsonRecord(hypothesis).playbook_anchor_eligible;
+    return anchor === undefined ? true : Boolean(anchor);
   }
 
   /**
@@ -378,7 +409,7 @@ export async function generatePlaybook(
 /**
  * Retrieve playbook from cache
  */
-export async function getPlaybook(sessionId: string): Promise<PlaybookOutput | null> {
+export async function getPlaybook(_sessionId: string): Promise<PlaybookOutput | null> {
   // TODO: Implement cache retrieval from database
   return Promise.resolve(null);
 }
@@ -387,8 +418,8 @@ export async function getPlaybook(sessionId: string): Promise<PlaybookOutput | n
  * Save playbook to database
  */
 export async function savePlaybook(
-  sessionId: string,
-  playbook: PlaybookOutput
+  _sessionId: string,
+  _playbook: PlaybookOutput
 ): Promise<void> {
   // TODO: Implement persistence to database
   return Promise.resolve();

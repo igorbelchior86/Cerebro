@@ -14,12 +14,17 @@ export interface CacheStats {
   hitRate: number;
 }
 
+type CacheEntry = {
+  value: unknown;
+  expiresAt: number;
+};
+
 /**
  * In-memory cache implementation (for development/testing)
  * Replace with Redis client in production
  */
 export class CacheService {
-  private cache = new Map<string, { value: any; expiresAt: number }>();
+  private cache = new Map<string, CacheEntry>();
   private stats = { hits: 0, misses: 0 };
   private prefix: string;
 
@@ -30,7 +35,7 @@ export class CacheService {
   /**
    * Get value from cache
    */
-  async get<T = any>(key: string): Promise<T | null> {
+  async get<T = unknown>(key: string): Promise<T | null> {
     const fullKey = this.prefix + key;
     const entry = this.cache.get(fullKey);
 
@@ -53,7 +58,7 @@ export class CacheService {
   /**
    * Set value in cache with optional TTL
    */
-  async set(key: string, value: any, ttl: number = 3600): Promise<void> {
+  async set(key: string, value: unknown, ttl: number = 3600): Promise<void> {
     const fullKey = this.prefix + key;
     const expiresAt = Date.now() + ttl * 1000;
     this.cache.set(fullKey, { value, expiresAt });
@@ -108,21 +113,22 @@ export const cacheable = (
   cacheService: CacheService,
   options: CacheOptions = {}
 ) => {
-  return function <T extends any[], R>(
-    target: any,
+  return function <TArgs extends unknown[], TResult>(
+    _target: object,
     propertyKey: string,
-    descriptor: PropertyDescriptor
+    descriptor: TypedPropertyDescriptor<(...args: TArgs) => TResult | Promise<TResult>>
   ) {
     const originalMethod = descriptor.value;
+    if (!originalMethod) return descriptor;
     const { ttl = 3600, prefix = propertyKey } = options;
 
-    descriptor.value = async function (...args: T) {
+    descriptor.value = async function (...args: TArgs): Promise<TResult> {
       const cacheKey = `${prefix}:${JSON.stringify(args)}`;
 
       // Try to get from cache
-      const cached = await cacheService.get(cacheKey);
+      const cached = await cacheService.get<TResult>(cacheKey);
       if (cached !== null) {
-        return cached as R;
+        return cached;
       }
 
       // Call original method

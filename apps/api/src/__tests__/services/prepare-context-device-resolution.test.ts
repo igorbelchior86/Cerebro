@@ -1,8 +1,50 @@
 import { PrepareContextService } from '../../services/context/prepare-context.js';
 
+type PrepareContextServiceInternals = {
+  resolveDeviceDeterministically(input: Record<string, unknown>): Promise<{
+    device: { id?: string | number } | null;
+    strongMatch: boolean;
+    score: number;
+    loggedInUser: string;
+    reason: string;
+  }>;
+  buildTicketNarrative(ticket: Record<string, unknown>): string;
+  normalizeTicketDeterministically(title: string, narrative: string): { descriptionClean: string };
+  resolveEntityScope(input: Record<string, unknown>): {
+    actor_candidates?: Array<{ score_breakdown?: { company_normalized?: number } }>;
+  };
+  enforceOrgBoundary(input: Record<string, unknown>): {
+    accepted: boolean;
+    rejected?: { reason?: string };
+  };
+  inferPhoneProvider(input: Record<string, unknown>): string | null;
+  buildTicketEnrichmentSection(input: Record<string, unknown>): {
+    requester_name: { value: string };
+    requester_email: { value: string };
+    affected_user_name: { value: string; status: string };
+    affected_user_email: { value: string; status: string };
+  };
+  buildNetworkEnrichmentSection(input: Record<string, unknown>): {
+    location_context: { value: string };
+    public_ip: { value: string };
+    vpn_state: { value: string };
+    phone_provider: { value: string };
+    phone_provider_name: { value: string };
+  };
+  buildIterativeEnrichmentProfile(input: Record<string, unknown>): {
+    schema_version: string;
+    sections: { ticket: { ticket_id: { value: string } } };
+    rounds: Array<{ round: number }>;
+  };
+};
+
+function createService() {
+  return new PrepareContextService() as unknown as PrepareContextServiceInternals;
+}
+
 describe('PrepareContextService device resolution guard', () => {
   it('does not select a device when top correlation score is zero', async () => {
-    const service = new PrepareContextService() as any;
+    const service = createService();
 
     const result = await service.resolveDeviceDeterministically({
       devices: [
@@ -30,7 +72,7 @@ describe('PrepareContextService device resolution guard', () => {
   });
 
   it('builds ticket narrative using raw body and updates', () => {
-    const service = new PrepareContextService() as any;
+    const service = createService();
     const narrative = service.buildTicketNarrative({
       title: 'phone line help',
       description: 'No dial tone',
@@ -45,7 +87,7 @@ describe('PrepareContextService device resolution guard', () => {
   });
 
   it('deterministic normalization strips signature and caution boilerplate', () => {
-    const service = new PrepareContextService() as any;
+    const service = createService();
     const normalized = service.normalizeTicketDeterministically(
       'Laptop Capabilities',
       `Firstname: Alex Lastname: Zigler Message: Need multi-monitor confirmation.
@@ -60,7 +102,7 @@ describe('PrepareContextService device resolution guard', () => {
   });
 
   it('prioritizes last logged-in user match over weak config-only hostname correlation', async () => {
-    const service = new PrepareContextService() as any;
+    const service = createService();
 
     const result = await service.resolveDeviceDeterministically({
       devices: [
@@ -98,7 +140,7 @@ describe('PrepareContextService device resolution guard', () => {
   });
 
   it('does not grant company score without contact company evidence', () => {
-    const service = new PrepareContextService() as any;
+    const service = createService();
     const result = service.resolveEntityScope({
       ticketText: 'Firstname: Chelsea Lastname: Calles',
       requesterName: 'Chelsea Calles',
@@ -119,11 +161,11 @@ describe('PrepareContextService device resolution guard', () => {
       sourceWorkspace: 'tenant:tenant-1',
     });
 
-    expect(result.actor_candidates?.[0]?.score_breakdown.company_normalized || 0).toBe(0);
+    expect(result.actor_candidates?.[0]?.score_breakdown?.company_normalized || 0).toBe(0);
   });
 
   it('rejects org-scoped evidence when target org is unresolved', () => {
-    const service = new PrepareContextService() as any;
+    const service = createService();
     const decision = service.enforceOrgBoundary({
       itemId: 'doc:123',
       itemOrgId: 'org-foreign',
@@ -142,7 +184,7 @@ describe('PrepareContextService device resolution guard', () => {
   });
 
   it('infers phone provider deterministically from ticket context', () => {
-    const service = new PrepareContextService() as any;
+    const service = createService();
     const provider = service.inferPhoneProvider({
       ticketText: 'Phone line help. User reports GoTo Connect extension not registering.',
       docs: [],
@@ -155,7 +197,7 @@ describe('PrepareContextService device resolution guard', () => {
   });
 
   it('copies requester into affected user fields when actor is unresolved', () => {
-    const service = new PrepareContextService() as any;
+    const service = createService();
     const section = service.buildTicketEnrichmentSection({
       ticket: {
         ticketNumber: 'T20260221.0001',
@@ -187,7 +229,7 @@ describe('PrepareContextService device resolution guard', () => {
   });
 
   it('prefers round-0 canonical requester/affected identities when provided', () => {
-    const service = new PrepareContextService() as any;
+    const service = createService();
     const section = service.buildTicketEnrichmentSection({
       ticket: {
         ticketNumber: 'T20260221.0003',
@@ -223,7 +265,7 @@ describe('PrepareContextService device resolution guard', () => {
   });
 
   it('builds network enrichment with vpn and phone-provider inference', () => {
-    const service = new PrepareContextService() as any;
+    const service = createService();
     const section = service.buildNetworkEnrichmentSection({
       ticketNarrative: 'User working remote over VPN',
       device: { ipAddress: '8.8.8.8' },
@@ -250,7 +292,7 @@ describe('PrepareContextService device resolution guard', () => {
   });
 
   it('builds iterative enrichment profile with round summaries', () => {
-    const service = new PrepareContextService() as any;
+    const service = createService();
     const profile = service.buildIterativeEnrichmentProfile({
       ticket: {
         ticketNumber: 'T20260221.0002',
@@ -307,7 +349,7 @@ describe('PrepareContextService device resolution guard', () => {
 
     expect(profile.schema_version).toBe('1.0.0');
     expect(profile.sections.ticket.ticket_id.value).toBe('T20260221.0002');
-    expect(profile.rounds.some((round: any) => round.round === 1)).toBe(true);
-    expect(profile.rounds.some((round: any) => round.round === 4)).toBe(true);
+    expect(profile.rounds.some((round) => round.round === 1)).toBe(true);
+    expect(profile.rounds.some((round) => round.round === 4)).toBe(true);
   });
 });

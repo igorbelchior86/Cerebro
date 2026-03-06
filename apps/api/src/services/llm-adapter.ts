@@ -422,7 +422,7 @@ class GeminiRateLimiter {
     const MAX_WAIT_MS = 30_000;
     const start = Date.now();
 
-    while (true) {
+    for (;;) {
       const now = Date.now();
       this.prune(now);
 

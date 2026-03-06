@@ -6,6 +6,45 @@ import { DiagnoseService } from './diagnose.js';
 import { ValidatePolicyService } from './validate-policy.js';
 import { PlaybookWriterService } from './playbook-writer.js';
 
+type TriageSessionStatus = 'pending' | 'processing' | 'approved' | 'needs_more_info' | 'blocked' | 'failed';
+type JsonRecord = Record<string, unknown>;
+
+function asJsonRecord(value: unknown): JsonRecord {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as JsonRecord)
+        : {};
+}
+
+function readModelName(output: unknown): string {
+    const meta = asJsonRecord(asJsonRecord(output).meta);
+    const model = String(meta.model || '').trim();
+    return model || 'groq';
+}
+
+function readErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    return String(error || '');
+}
+
+function readErrorName(error: unknown): string {
+    if (error instanceof Error) return error.name;
+    return String(asJsonRecord(error).name || '');
+}
+
+function toTriageSessionStatus(status: unknown): TriageSessionStatus {
+    switch (String(status || '').trim()) {
+        case 'pending':
+        case 'processing':
+        case 'approved':
+        case 'needs_more_info':
+        case 'blocked':
+        case 'failed':
+            return String(status) as TriageSessionStatus;
+        default:
+            return 'failed';
+    }
+}
+
 export class TriageOrchestrator {
     private prepareService: PrepareContextService;
     private diagnoseService: DiagnoseService;
@@ -77,10 +116,10 @@ export class TriageOrchestrator {
 
                     try {
                         await this.runPipeline(s.ticket_id, undefined, 'autotask');
-                    } catch (err: any) {
-                        const message = String(err?.message || err || '').toLowerCase();
+                    } catch (err) {
+                        const message = readErrorMessage(err).toLowerCase();
                         console.error(`[Orchestrator] Error processing ${s.ticket_id}:`, message);
-                        if (this.isTransientProviderError(message) || err?.name === 'LLMQuotaExceededError') {
+                        if (this.isTransientProviderError(message) || readErrorName(err) === 'LLMQuotaExceededError') {
                             quotaHit = true;
                         }
                     }
@@ -137,7 +176,7 @@ export class TriageOrchestrator {
                         uuidv4(),
                         sid,
                         'diagnose',
-                        (diagnosis as any)?.meta?.model || 'groq',
+                        readModelName(diagnosis),
                         JSON.stringify(diagnosis),
                     ]
                 );
@@ -185,7 +224,7 @@ export class TriageOrchestrator {
 
                 if (!validation.safe_to_generate_playbook) {
                     console.warn(`[Orchestrator] [${sid}] Pipeline stopped at validation. Status: ${validation.status}`);
-                    await this.updateSessionStatus(sid, validation.status as any, { clearRetry: true, lastError: null });
+                    await this.updateSessionStatus(sid, toTriageSessionStatus(validation.status), { clearRetry: true, lastError: null });
                     return;
                 }
 
@@ -216,17 +255,17 @@ export class TriageOrchestrator {
                         uuidv4(),
                         sid,
                         'playbook',
-                        (playbook as any)?.meta?.model || 'groq',
+                        readModelName(playbook),
                         JSON.stringify(playbook),
                     ]
                 );
 
                 await this.updateSessionStatus(sid, 'approved', { clearRetry: true, lastError: null });
                 console.log(`[Orchestrator] [${sid}] Pipeline completed successfully. Playbook ready.`);
-            } catch (error: any) {
+            } catch (error) {
                 console.error(`[Orchestrator] [${sid}] Pipeline failed:`, error);
-                const message = String(error?.message || error || '');
-                if (this.isTransientProviderError(message) || error.name === 'LLMQuotaExceededError') {
+                const message = readErrorMessage(error);
+                if (this.isTransientProviderError(message) || readErrorName(error) === 'LLMQuotaExceededError') {
                     await this.markPendingForRetry(sid, message);
                     console.warn(`[Orchestrator] [${sid}] Marked as pending for retry (quota/transient error): ${message}`);
                 } else {
@@ -402,7 +441,7 @@ export class TriageOrchestrator {
 
     private async updateSessionStatus(
         sessionId: string,
-        status: 'pending' | 'processing' | 'approved' | 'needs_more_info' | 'blocked' | 'failed',
+        status: TriageSessionStatus,
         options?: { clearRetry?: boolean; lastError?: string | null }
     ) {
         const updates: string[] = ['status = $1', 'updated_at = NOW()'];

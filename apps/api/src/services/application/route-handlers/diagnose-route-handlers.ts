@@ -9,9 +9,9 @@ import type {
   EvidencePack,
 } from '@cerebro/types';
 import { diagnoseEvidencePack } from '../../ai/diagnose.js';
-import { validateDiagnosis, isSafeToGenerate } from '../../domain/validate-policy.js';
+import { validateDiagnosis } from '../../domain/validate-policy.js';
 import { getEvidencePack } from '../../context/prepare-context.js';
-import { query, queryOne, execute } from '../../../db/index.js';
+import { queryOne, execute } from '../../../db/index.js';
 import { operationalLogger } from '../../../lib/operational-logger.js';
 
 const router: Router = Router();

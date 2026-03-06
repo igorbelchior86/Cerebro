@@ -67,7 +67,18 @@ async function loadProviderByTenant(
 
 router.get('/providers', requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    const rows = await query<any>(
+    const rows = await query<{
+      provider_key: string;
+      enabled: boolean;
+      sp_entity_id: string;
+      acs_url: string;
+      idp_entity_id: string;
+      idp_sso_url: string;
+      idp_certificates: unknown;
+      nameid_format: string | null;
+      attribute_mapping: Record<string, unknown> | null;
+      updated_at: string;
+    }>(
       `SELECT provider_key, enabled, sp_entity_id, acs_url, idp_entity_id, idp_sso_url,
               idp_certificates, nameid_format, attribute_mapping, updated_at
        FROM tenant_saml_providers
@@ -334,7 +345,8 @@ router.post('/:provider/acs', async (req: Request, res: Response) => {
 
       const redirectTo = `${process.env.APP_URL || 'http://localhost:3000'}/en/triage/home`;
       return res.redirect(302, redirectTo);
-    } catch (err: any) {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'unknown';
       await writeAudit({
         action: 'identity.saml.authn.failure',
         userId: 'anonymous',
@@ -343,7 +355,7 @@ router.post('/:provider/acs', async (req: Request, res: Response) => {
         detail: {
           provider_key: providerKey,
           saml_request_id: relay.samlRequestId,
-          error: err?.message || 'unknown',
+          error: message,
         },
       });
       operationalLogger.error('routes.auth.saml.acs.failed', err, {
@@ -378,4 +390,3 @@ router.post('/:provider/logout', requireAuth, async (req: Request, res: Response
 });
 
 export default router;
-

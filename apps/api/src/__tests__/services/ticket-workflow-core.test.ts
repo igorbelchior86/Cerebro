@@ -19,7 +19,7 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
   function createService(
     gateway: TicketWorkflowGateway,
     maxAttempts = 3,
-    options?: { realtimePublisher?: (payload: any) => void }
+    options?: { realtimePublisher?: (payload: unknown) => void }
   ) {
     const repo = new InMemoryTicketWorkflowRepository();
     const service = new TicketWorkflowCoreService(repo, gateway, {
@@ -68,7 +68,7 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     const cmd = createCommand({ idempotencyKey: 'idem-dupe' });
 
     const first = await service.submitCommand(cmd);
-    const second = await service.submitCommand({ ...cmd, command_id: 'different' as any });
+    const second = await service.submitCommand({ ...cmd, command_id: 'different' });
 
     expect(second.command.command_id).toBe(first.command.command_id);
     expect(second.command.idempotency_key).toBe('idem-dupe');
@@ -190,7 +190,7 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     };
     const { repo, service } = createService(gateway);
 
-    await repo.upsertInboxTicket({
+    const completedInboxTicket: Parameters<typeof repo.upsertInboxTicket>[0] = {
       tenant_id: tenantId,
       ticket_id: 'T20260305.1001',
       ticket_number: 'T20260305.1001',
@@ -198,8 +198,9 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
       comments: [],
       source_of_truth: 'Autotask',
       updated_at: '2026-03-05T21:00:00.000Z',
-    } as any);
-    await repo.upsertInboxTicket({
+    };
+    await repo.upsertInboxTicket(completedInboxTicket);
+    const activeInboxTicket: Parameters<typeof repo.upsertInboxTicket>[0] = {
       tenant_id: tenantId,
       ticket_id: 'T20260305.1002',
       ticket_number: 'T20260305.1002',
@@ -211,7 +212,8 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
         },
       },
       updated_at: '2026-03-05T21:01:00.000Z',
-    } as any);
+    };
+    await repo.upsertInboxTicket(activeInboxTicket);
 
     const inbox = await service.listInbox(tenantId);
 
@@ -384,10 +386,15 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     await service.processAutotaskSyncEvent(event);
 
     expect(realtimePublisher).toHaveBeenCalled();
-    const calls = realtimePublisher.mock.calls.map((entry) => entry[0]);
-    expect(calls.some((payload: any) => payload.change_kind === 'assigned' && payload.ticket_id === '5001')).toBe(true);
-    expect(calls.some((payload: any) => payload.change_kind === 'process_result' && payload.process_result?.outcome === 'completed')).toBe(true);
-    expect(calls.some((payload: any) => payload.change_kind === 'comment' && payload.sync_event_id === 'evt-rt-1')).toBe(true);
+    const calls = realtimePublisher.mock.calls.map((entry) => entry[0] as {
+      change_kind?: string;
+      ticket_id?: string;
+      sync_event_id?: string;
+      process_result?: { outcome?: string };
+    });
+    expect(calls.some((payload) => payload.change_kind === 'assigned' && payload.ticket_id === '5001')).toBe(true);
+    expect(calls.some((payload) => payload.change_kind === 'process_result' && payload.process_result?.outcome === 'completed')).toBe(true);
+    expect(calls.some((payload) => payload.change_kind === 'comment' && payload.sync_event_id === 'evt-rt-1')).toBe(true);
   });
 
   it('handles webhook/poll sync duplicates and out-of-order events safely', async () => {

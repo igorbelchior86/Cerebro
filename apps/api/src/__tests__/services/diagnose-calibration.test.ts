@@ -1,5 +1,9 @@
-import type { EvidencePack } from '@cerebro/types';
+import type { DiagnosisOutput, EvidencePack } from '@cerebro/types';
 import { DiagnoseService } from '../../services/ai/diagnose.js';
+
+type DiagnoseServiceInternals = {
+  parseResponse(responseText: string, pack: EvidencePack): DiagnosisOutput;
+};
 
 function buildPackForEmailChange(): EvidencePack {
   return {
@@ -44,7 +48,7 @@ function buildPackForEmailChange(): EvidencePack {
 
 describe('DiagnoseService hypothesis calibration', () => {
   it('downgrades cross-domain firewall overreach on email change tickets', () => {
-    const service = new DiagnoseService() as any;
+    const service = new DiagnoseService() as unknown as DiagnoseServiceInternals;
     const pack = buildPackForEmailChange();
 
     const response = JSON.stringify({
@@ -73,7 +77,10 @@ describe('DiagnoseService hypothesis calibration', () => {
     });
 
     const diagnosis = service.parseResponse(response, pack);
-    const [top, second] = diagnosis.top_hypotheses as any[];
+    const [top, second] = diagnosis.top_hypotheses;
+    if (!top || !second) {
+      throw new Error('expected calibrated hypotheses');
+    }
 
     expect(top.hypothesis.toLowerCase()).toContain('email address needs updating');
     expect(top.grounding_status === 'grounded' || top.grounding_status === 'partial').toBe(true);

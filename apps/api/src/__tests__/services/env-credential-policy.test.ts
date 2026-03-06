@@ -14,7 +14,7 @@ describe('env credential policy', () => {
   });
 
   it('allows env credentials only for platform master email', async () => {
-    queryOneMock.mockResolvedValue({ email: 'admin@cerebro.local' } as any);
+    queryOneMock.mockResolvedValue({ email: 'admin@cerebro.local' } as never);
 
     await expect(canUseEnvCredentialsForUser('user-1')).resolves.toBe(true);
     expect(queryOneMock).toHaveBeenCalledWith(
@@ -24,14 +24,14 @@ describe('env credential policy', () => {
   });
 
   it('denies env credentials for non-master users or missing actor', async () => {
-    queryOneMock.mockResolvedValue({ email: 'tech@customer.com' } as any);
+    queryOneMock.mockResolvedValue({ email: 'tech@customer.com' } as never);
     await expect(canUseEnvCredentialsForUser('user-2')).resolves.toBe(false);
     await expect(canUseEnvCredentialsForUser('')).resolves.toBe(false);
   });
 
   it('supports PLATFORM_MASTER_EMAIL override', async () => {
     process.env.PLATFORM_MASTER_EMAIL = 'root@cerebro.local';
-    queryOneMock.mockResolvedValue({ email: 'root@cerebro.local' } as any);
+    queryOneMock.mockResolvedValue({ email: 'root@cerebro.local' } as never);
 
     await expect(canUseEnvCredentialsForUser('user-3')).resolves.toBe(true);
     expect(isPlatformMasterEmail('root@cerebro.local')).toBe(true);

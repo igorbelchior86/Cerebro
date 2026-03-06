@@ -1,9 +1,13 @@
 import type { EvidencePack } from '@cerebro/types';
 import { DiagnoseService } from '../../services/ai/diagnose.js';
 
+type DiagnoseServiceParser = {
+  parseResponse(responseText: string, pack: EvidencePack): unknown;
+};
+
 describe('DiagnoseService fail-fast behavior', () => {
   it('throws when response cannot be parsed as diagnosis JSON', () => {
-    const service = new DiagnoseService() as any;
+    const service = new DiagnoseService() as unknown as DiagnoseServiceParser;
     const pack: EvidencePack = {
       session_id: 's1',
       ticket: {

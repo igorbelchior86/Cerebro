@@ -1,4 +1,5 @@
 import { WorkflowRealtimeHub, toSseChunk, HEARTBEAT_INTERVAL_MS } from '../../services/orchestration/workflow-realtime.js';
+import type { Response } from 'express';
 
 type FakeResponse = {
   write: jest.Mock<void, [string]>;
@@ -35,9 +36,9 @@ describe('WorkflowRealtimeHub', () => {
     const tenantA1 = fakeResponse();
     const tenantA2 = fakeResponse();
     const tenantB = fakeResponse();
-    hub.subscribe('tenant-a', tenantA1 as any);
-    hub.subscribe('tenant-a', tenantA2 as any);
-    hub.subscribe('tenant-b', tenantB as any);
+    hub.subscribe('tenant-a', tenantA1 as unknown as Response);
+    hub.subscribe('tenant-a', tenantA2 as unknown as Response);
+    hub.subscribe('tenant-b', tenantB as unknown as Response);
 
     const sent = hub.publishTicketChange({
       tenant_id: 'tenant-a',
@@ -63,8 +64,8 @@ describe('WorkflowRealtimeHub', () => {
     broken.write.mockImplementation(() => {
       throw new Error('socket closed');
     });
-    hub.subscribe('tenant-a', healthy as any);
-    hub.subscribe('tenant-a', broken as any);
+    hub.subscribe('tenant-a', healthy as unknown as Response);
+    hub.subscribe('tenant-a', broken as unknown as Response);
 
     jest.advanceTimersByTime(HEARTBEAT_INTERVAL_MS + 5);
 

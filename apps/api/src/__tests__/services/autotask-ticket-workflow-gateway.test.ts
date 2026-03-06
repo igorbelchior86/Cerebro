@@ -1,5 +1,14 @@
 import { AutotaskTicketWorkflowGateway } from '../../services/orchestration/autotask-ticket-workflow-gateway';
+import type { AutotaskClient } from '../../clients/autotask.js';
 import type { WorkflowCommandEnvelope } from '../../services/orchestration/ticket-workflow-core';
+
+function asAutotaskClient(client: Record<string, unknown>): AutotaskClient {
+  return client as unknown as AutotaskClient;
+}
+
+function buildGateway(mockClient: Record<string, unknown>) {
+  return new AutotaskTicketWorkflowGateway(async () => asAutotaskClient(mockClient));
+}
 
 function buildCommand(overrides: Partial<WorkflowCommandEnvelope> = {}): WorkflowCommandEnvelope {
   return {
@@ -27,9 +36,9 @@ describe('AutotaskTicketWorkflowGateway', () => {
     const mockClient = {
       createTicket: jest.fn().mockResolvedValue({ id: 1200, ticketNumber: 'T20260227.1200', title: 'Printer down' }),
       getResource: jest.fn().mockResolvedValue({ id: 42, defaultServiceDeskRoleID: 9 }),
-    } as any;
+    };
 
-    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    const gateway = buildGateway(mockClient);
     const result = await gateway.executeCommand(buildCommand({
       command_type: 'create',
       payload: {
@@ -56,9 +65,9 @@ describe('AutotaskTicketWorkflowGateway', () => {
       getResource: jest.fn().mockResolvedValue({ id: 77, defaultServiceDeskRoleID: 12 }),
       updateTicket: jest.fn().mockResolvedValue({}),
       getTicket: jest.fn().mockResolvedValue({ id: 333, ticketNumber: 'T20260226.0033', status: 1 }),
-    } as any;
+    };
 
-    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    const gateway = buildGateway(mockClient);
     await gateway.executeCommand(buildCommand({
       command_type: 'assign',
       payload: { ticket_id: 'T20260226.0033', assignee_resource_id: 77 },
@@ -78,9 +87,9 @@ describe('AutotaskTicketWorkflowGateway', () => {
       updateTicket: jest.fn().mockResolvedValue({}),
       createTicketNote: jest.fn().mockResolvedValue({}),
       getTicket: jest.fn().mockResolvedValue({ id: 333, ticketNumber: 'T20260226.0033', status: 5 }),
-    } as any;
+    };
 
-    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    const gateway = buildGateway(mockClient);
     await gateway.executeCommand(buildCommand());
 
     expect(mockClient.updateTicket).toHaveBeenCalledWith(333, expect.objectContaining({ status: 5 }));
@@ -93,9 +102,9 @@ describe('AutotaskTicketWorkflowGateway', () => {
       updateTicket: jest.fn().mockResolvedValue({}),
       createTicketNote: jest.fn().mockResolvedValue({}),
       getTicket: jest.fn().mockResolvedValue({ id: 777, ticketNumber: 'T20260226.0099', status: 1 }),
-    } as any;
+    };
 
-    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    const gateway = buildGateway(mockClient);
     await gateway.executeCommand(buildCommand({
       command_type: 'create_comment_note',
       payload: {
@@ -116,9 +125,9 @@ describe('AutotaskTicketWorkflowGateway', () => {
       getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 778, ticketNumber: 'T20260226.0101' }),
       createTicketNote: jest.fn().mockResolvedValue({}),
       getTicket: jest.fn().mockResolvedValue({ id: 778, ticketNumber: 'T20260226.0101', status: 1 }),
-    } as any;
+    };
 
-    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    const gateway = buildGateway(mockClient);
     await gateway.executeCommand(buildCommand({
       command_type: 'create_comment_note',
       payload: {
@@ -141,9 +150,9 @@ describe('AutotaskTicketWorkflowGateway', () => {
       getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 888, ticketNumber: 'T20260226.0100' }),
       createTicketNote: jest.fn().mockResolvedValue({}),
       getTicket: jest.fn().mockResolvedValue({ id: 888, ticketNumber: 'T20260226.0100', status: 1 }),
-    } as any;
+    };
 
-    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    const gateway = buildGateway(mockClient);
     await expect(gateway.executeCommand(buildCommand({
       command_type: 'comment_note',
       payload: { ticket_id: 'T20260226.0100' },
@@ -156,9 +165,9 @@ describe('AutotaskTicketWorkflowGateway', () => {
       updateTicket: jest.fn().mockResolvedValue({}),
       createTicketNote: jest.fn().mockResolvedValue({}),
       getTicket: jest.fn().mockResolvedValue({ id: 999, ticketNumber: 'T20260226.0111', status: 1 }),
-    } as any;
+    };
 
-    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    const gateway = buildGateway(mockClient);
     await expect(gateway.executeCommand(buildCommand({
       command_type: 'ticket_delete',
       payload: {
@@ -172,9 +181,9 @@ describe('AutotaskTicketWorkflowGateway', () => {
     const mockClient = {
       getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 333, ticketNumber: 'T20260226.0033' }),
       createTimeEntry: jest.fn().mockResolvedValue({ id: 2222 }),
-    } as any;
+    };
 
-    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    const gateway = buildGateway(mockClient);
     const result = await gateway.executeCommand(buildCommand({
       command_type: 'time_entry',
       payload: {
@@ -195,9 +204,9 @@ describe('AutotaskTicketWorkflowGateway', () => {
     const mockClient = {
       getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 334, ticketNumber: 'T20260226.0034' }),
       createTimeEntry: jest.fn().mockResolvedValue({ id: 2223 }),
-    } as any;
+    };
 
-    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    const gateway = buildGateway(mockClient);
     await gateway.executeCommand(buildCommand({
       command_type: 'time_entry',
       payload: {
@@ -226,9 +235,9 @@ describe('AutotaskTicketWorkflowGateway', () => {
         hoursToBill: 0.25,
         createDate: '2026-03-04T19:20:00.000Z',
       }),
-    } as any;
+    };
 
-    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    const gateway = buildGateway(mockClient);
     const result = await gateway.executeCommand(buildCommand({
       command_type: 'time_entry',
       payload: {
@@ -261,9 +270,9 @@ describe('AutotaskTicketWorkflowGateway', () => {
       getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 333, ticketNumber: 'T20260226.0033' }),
       updateTicketPriority: jest.fn().mockResolvedValue({}),
       getTicket: jest.fn().mockResolvedValue({ id: 333, ticketNumber: 'T20260226.0033', status: 5 }),
-    } as any;
+    };
 
-    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    const gateway = buildGateway(mockClient);
     await gateway.executeCommand(buildCommand({
       command_type: 'update_priority',
       payload: { ticket_id: 'T20260226.0033', priority: 3 },
@@ -276,9 +285,9 @@ describe('AutotaskTicketWorkflowGateway', () => {
     const mockClient = {
       getTicketByTicketNumber: jest.fn().mockResolvedValue({ id: 444, ticketNumber: 'T20260226.0444' }),
       deleteTicket: jest.fn().mockResolvedValue({}),
-    } as any;
+    };
 
-    const gateway = new AutotaskTicketWorkflowGateway(async () => mockClient);
+    const gateway = buildGateway(mockClient);
     await gateway.executeCommand(buildCommand({
       command_type: 'ticket_delete',
       payload: { ticket_id: 'T20260226.0444', destructive_approval_token: 'allow-1' },

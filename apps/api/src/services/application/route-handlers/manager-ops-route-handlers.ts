@@ -22,6 +22,8 @@ router.use(requireAdmin);
 const aiAssistService = new P0AiTriageAssistService({ store: p0TrustStore });
 const readOnlyEnrichmentService = new P0ReadOnlyEnrichmentService({ store: p0TrustStore });
 const managerOpsVisibilityService = new P0ManagerOpsVisibilityService();
+type EnrichmentContextProviders = Parameters<P0ReadOnlyEnrichmentService['buildContextEnvelope']>[0]['providers'];
+type ReadOnlySource = Parameters<P0ReadOnlyEnrichmentService['rejectMutation']>[0]['source'];
 
 router.get('/p0/ai-decisions', (req, res) => {
   const tenantId = req.auth?.tid;
@@ -128,7 +130,7 @@ router.post('/p0/enrichment/context', async (req, res, next) => {
     const envelope = await readOnlyEnrichmentService.buildContextEnvelope({
       tenantId,
       ticketId: ticket_id,
-      providers: providers as any,
+      providers: providers as EnrichmentContextProviders,
       correlation: correlation || {},
       actor: { type: 'user', ...(req.auth?.sub ? { id: req.auth.sub } : {}) },
     });
@@ -154,7 +156,7 @@ router.post('/p0/enrichment/mutate/:source', async (req, res, next) => {
       return;
     }
     await readOnlyEnrichmentService.rejectMutation({
-      source: req.params.source as any,
+      source: req.params.source as ReadOnlySource,
       tenantId,
       ticketId: String(req.body?.ticket_id || ''),
       correlation: (req.body?.correlation || {}) as TrustCorrelationRefs,

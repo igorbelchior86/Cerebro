@@ -31,13 +31,20 @@ describe('PUT /integrations/credentials/:service', () => {
         username: 'old-user@company.com',
         secret: 'real-secret',
       },
-    } as any);
-    const querySpy = jest.spyOn(db, 'query').mockResolvedValue([] as any);
+    } as never);
+    const querySpy = jest.spyOn(db, 'query').mockResolvedValue([] as never);
 
     const app = express();
     app.use(express.json());
     app.use((req, _res, next) => {
-      (req as any).auth = { tid: 'tenant-1' };
+      req.auth = {
+        sub: 'user-1',
+        tid: 'tenant-1',
+        role: 'admin',
+        scope: 'full',
+        iat: 0,
+        exp: 0,
+      };
       next();
     });
     app.use('/integrations', router);

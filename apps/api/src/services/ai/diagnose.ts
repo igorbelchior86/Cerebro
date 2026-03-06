@@ -11,6 +11,7 @@ import { getDefaultLLMProvider } from './llm-adapter.js';
 import { shouldBlockDiagnosisOutput } from '../domain/evidence-guardrails.js';
 import { operationalLogger } from '../../lib/operational-logger.js';
 
+type JsonRecord = Record<string, unknown>;
 type HypothesisGroundingStatus = 'grounded' | 'partial' | 'weak' | 'unsupported';
 type EnrichedHypothesis = Hypothesis & {
   llm_confidence?: number;
@@ -21,6 +22,16 @@ type EnrichedHypothesis = Hypothesis & {
   confidence_explanation?: string[];
   playbook_anchor_eligible?: boolean;
 };
+
+function asJsonRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : {};
+}
+
+function asJsonRecordArray(value: unknown): JsonRecord[] {
+  return Array.isArray(value) ? value.map((item) => asJsonRecord(item)) : [];
+}
 
 export class DiagnoseService {
   /**
@@ -208,26 +219,27 @@ Rules:
         cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);
       }
 
-      const parsed = JSON.parse(cleanJson);
+      const parsed = JSON.parse(cleanJson) as unknown;
+      const parsedRecord = asJsonRecord(parsed);
       const algorithmicBaseline = this.calculateAlgorithmicBaseline(pack);
 
-      const parsedHypotheses: EnrichedHypothesis[] = (parsed.top_hypotheses || []).map(
-        (h: any, idx: number) => {
-          const llmConfidence = Math.min(1, Math.max(0, Number(h.confidence || 0)));
+      const parsedHypotheses: EnrichedHypothesis[] = asJsonRecordArray(parsedRecord.top_hypotheses).map(
+        (hypothesisRecord, idx: number) => {
+          const llmConfidence = Math.min(1, Math.max(0, Number(hypothesisRecord.confidence || 0)));
           // Keep a backward-compatible baseline confidence before deterministic calibration.
           const baselineBlendedConfidence = Number(
             (0.6 * llmConfidence + 0.4 * algorithmicBaseline).toFixed(3)
           );
 
           return {
-            rank: h.rank || idx + 1,
-            hypothesis: h.hypothesis || 'Unknown hypothesis',
+            rank: Number(hypothesisRecord.rank) || idx + 1,
+            hypothesis: String(hypothesisRecord.hypothesis || 'Unknown hypothesis'),
             confidence: baselineBlendedConfidence,
             llm_confidence: llmConfidence,
-            evidence: Array.isArray(h.evidence) ? h.evidence : [],
-            tests: Array.isArray(h.tests) ? h.tests : [],
-            next_questions: Array.isArray(h.next_questions)
-              ? h.next_questions
+            evidence: Array.isArray(hypothesisRecord.evidence) ? hypothesisRecord.evidence.map(String) : [],
+            tests: Array.isArray(hypothesisRecord.tests) ? hypothesisRecord.tests.map(String) : [],
+            next_questions: Array.isArray(hypothesisRecord.next_questions)
+              ? hypothesisRecord.next_questions.map(String)
               : [],
           };
         }
@@ -240,20 +252,20 @@ Rules:
       );
 
       const parsedDiagnosis: DiagnosisOutput = {
-        summary: String(parsed.summary || 'Diagnosis complete.'),
+        summary: String(parsedRecord.summary || 'Diagnosis complete.'),
         top_hypotheses: calibratedHypotheses as Hypothesis[],
-        missing_data: Array.isArray(parsed.missing_data)
-          ? parsed.missing_data
+        missing_data: Array.isArray(parsedRecord.missing_data)
+          ? parsedRecord.missing_data
           : [],
-        recommended_actions: (parsed.recommended_actions || []).map(
-          (a: any) => ({
-            action: a.action || 'Unknown action',
-            risk: (['low', 'medium', 'high'].includes(a.risk)
-              ? a.risk
+        recommended_actions: asJsonRecordArray(parsedRecord.recommended_actions).map(
+          (actionRecord) => ({
+            action: String(actionRecord.action || 'Unknown action'),
+            risk: (['low', 'medium', 'high'].includes(String(actionRecord.risk))
+              ? String(actionRecord.risk)
               : 'medium') as 'low' | 'medium' | 'high',
           })
         ),
-        do_not_do: Array.isArray(parsed.do_not_do) ? parsed.do_not_do : [],
+        do_not_do: Array.isArray(parsedRecord.do_not_do) ? parsedRecord.do_not_do : [],
       };
 
       if (shouldBlockDiagnosisOutput(parsedDiagnosis, pack)) {
@@ -324,13 +336,13 @@ Rules:
     const ticketDomains = this.detectDomains(
       `${pack.ticket.title || ''} ${pack.ticket.description || ''} ${(pack.evidence_digest?.tech_context_detected || []).join(' ')}`
     );
-    const confirmedFacts = (pack.evidence_digest?.facts_confirmed || []) as Array<any>;
-    const conflictedFacts = (pack.evidence_digest?.facts_conflicted || []) as Array<any>;
-    const missingCritical = (pack.evidence_digest?.missing_critical || []) as Array<any>;
+    const confirmedFacts = asJsonRecordArray(pack.evidence_digest?.facts_confirmed);
+    const conflictedFacts = asJsonRecordArray(pack.evidence_digest?.facts_conflicted);
+    const missingCritical = asJsonRecordArray(pack.evidence_digest?.missing_critical);
     const confirmedIds = new Set(confirmedFacts.map((f) => String(f?.id || '').trim()).filter(Boolean));
     const conflictedIds = new Set(conflictedFacts.map((f) => String(f?.id || '').trim()).filter(Boolean));
-    const candidateActionText = (pack.evidence_digest?.candidate_actions || [])
-      .map((a: any) => String(a?.action || '').toLowerCase())
+    const candidateActionText = asJsonRecordArray(pack.evidence_digest?.candidate_actions)
+      .map((actionRecord) => String(actionRecord.action || '').toLowerCase())
       .filter(Boolean);
 
     const processed = hypotheses.map((hyp, idx) =>
@@ -340,7 +352,6 @@ Rules:
         ticketDomains,
         confirmedIds,
         conflictedIds,
-        confirmedFacts,
         conflictedFacts,
         missingCritical,
         candidateActionText,
@@ -364,13 +375,12 @@ Rules:
     ticketDomains: Set<string>;
     confirmedIds: Set<string>;
     conflictedIds: Set<string>;
-    confirmedFacts: Array<any>;
-    conflictedFacts: Array<any>;
-    missingCritical: Array<any>;
+    conflictedFacts: JsonRecord[];
+    missingCritical: JsonRecord[];
     candidateActionText: string[];
     algorithmicBaseline: number;
   }): EnrichedHypothesis {
-    const { hyp, idx, ticketDomains, confirmedIds, conflictedIds, confirmedFacts, conflictedFacts, missingCritical, candidateActionText, algorithmicBaseline } = input;
+    const { hyp, idx, ticketDomains, confirmedIds, conflictedIds, conflictedFacts, missingCritical, candidateActionText, algorithmicBaseline } = input;
     const llmConfidence = Math.min(1, Math.max(0, Number(hyp.llm_confidence ?? hyp.confidence ?? 0)));
     const evidenceRefs = (hyp.evidence || []).map((e) => String(e || '').trim()).filter(Boolean);
     const tests = (hyp.tests || []).map((t) => String(t || '').trim()).filter(Boolean);
@@ -455,7 +465,7 @@ Rules:
     return 'unsupported';
   }
 
-  private computeConflictThemePenalty(hypothesisLower: string, conflictedFacts: Array<any>): number {
+  private computeConflictThemePenalty(hypothesisLower: string, conflictedFacts: JsonRecord[]): number {
     if (!conflictedFacts.length) return 0;
     const conflictText = conflictedFacts.map((f) => String(f?.fact || '').toLowerCase()).join(' ');
     const identityKeywords = /(user|requester|logged-in|logged in|account|profile|authentication|auth)/;
@@ -465,7 +475,7 @@ Rules:
     return 0;
   }
 
-  private computeMissingCriticalPenalty(hypothesisLower: string, missingCritical: Array<any>): number {
+  private computeMissingCriticalPenalty(hypothesisLower: string, missingCritical: JsonRecord[]): number {
     if (!missingCritical.length) return 0;
     let penalty = 0;
     for (const item of missingCritical.slice(0, 6)) {
@@ -562,7 +572,7 @@ export async function diagnoseEvidencePack(
 /**
  * Retrieve diagnosis from cache
  */
-export function getDiagnosisFromSession(sessionId: string): Promise<DiagnosisOutput | null> {
+export function getDiagnosisFromSession(_sessionId: string): Promise<DiagnosisOutput | null> {
   // TODO: Implement cache retrieval from Redis or database
   return Promise.resolve(null);
 }
@@ -571,8 +581,8 @@ export function getDiagnosisFromSession(sessionId: string): Promise<DiagnosisOut
  * Cache diagnosis result
  */
 export function cacheDiagnosis(
-  sessionId: string,
-  diagnosis: DiagnosisOutput
+  _sessionId: string,
+  _diagnosis: DiagnosisOutput
 ): Promise<void> {
   // TODO: Implement cache storage in Redis or database
   return Promise.resolve();

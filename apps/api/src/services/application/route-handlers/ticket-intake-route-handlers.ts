@@ -18,6 +18,14 @@ interface AutotaskCreds {
     zoneUrl?: string;
 }
 
+type JsonRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): JsonRecord {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as JsonRecord)
+        : {};
+}
+
 type SidebarQueueCacheEntry = {
     queueId: number | null;
     queueName: string;
@@ -128,7 +136,7 @@ function writeSidebarQueueCache(ticketId: string, queueId: number | null, queueN
 }
 
 async function hydrateAutotaskQueueMetadataForSidebar(
-    items: Array<Record<string, any>>,
+    items: Array<JsonRecord>,
     tenantId?: string,
     actorUserId?: string | null
 ): Promise<void> {
@@ -149,7 +157,7 @@ async function hydrateAutotaskQueueMetadataForSidebar(
     if (candidates.length === 0) return;
 
     // Apply warm cache hits first (cheap path).
-    const remaining: Array<Record<string, any>> = [];
+    const remaining: Array<JsonRecord> = [];
     for (const item of candidates) {
         const ticketId = String(item.ticket_id || item.id || '').trim();
         const cached = readSidebarQueueCache(ticketId);
@@ -183,7 +191,7 @@ async function hydrateAutotaskQueueMetadataForSidebar(
         await Promise.all(chunk.map(async (item) => {
             const ticketId = String(item.ticket_id || item.id || '').trim();
             try {
-                let ticket: any;
+                let ticket: unknown;
                 if (/^\d+$/.test(ticketId)) {
                     try {
                         ticket = await client.getTicket(Number(ticketId));
@@ -195,7 +203,8 @@ async function hydrateAutotaskQueueMetadataForSidebar(
                 } else {
                     ticket = await client.getTicketByTicketNumber(ticketId);
                 }
-                const queueId = Number((ticket as any)?.queueID);
+                const ticketRecord = asRecord(ticket);
+                const queueId = Number(ticketRecord.queueID);
                 if (!Number.isFinite(queueId)) {
                     writeSidebarQueueCache(ticketId, null, '');
                     return;
@@ -251,19 +260,19 @@ export async function ingestSupportMailboxOnce(mailbox?: string): Promise<{ proc
 
             try {
                 await graphClient.markEmailAsRead(mailboxAddress, messageId);
-            } catch (markErr: any) {
+            } catch (markErr) {
                 operationalLogger.warn('routes.ticket_intake.ingest.mark_read_failed', {
                     module: 'routes.ticket-intake',
                     mailbox_address: mailboxAddress,
                     message_id: messageId,
-                    reason: String(markErr?.message || 'unknown'),
+                    reason: String(asRecord(markErr).message || 'unknown'),
                 }, {
                     ticket_id: parsed.id,
                 });
             }
 
             processedCount++;
-        } catch (err: any) {
+        } catch (err) {
             operationalLogger.error('routes.ticket_intake.ingest.email_processing_failed', err, {
                 module: 'routes.ticket-intake',
                 email_id: String(email.id || ''),
@@ -306,7 +315,7 @@ export async function backfillPendingEmailTickets(limit = 20): Promise<{ process
         try {
             await triageOrchestrator.runPipeline(row.id, undefined, 'email');
             processed++;
-        } catch (err: any) {
+        } catch (err) {
             operationalLogger.error('routes.ticket_intake.backfill.ticket_failed', err, {
                 module: 'routes.ticket-intake',
                 ticket_id: row.id,
@@ -328,12 +337,12 @@ router.post('/ingest', async (req: Request, res: Response) => {
     try {
         const result = await ingestSupportMailboxOnce();
         return res.json({ message: 'Ingestion completed', processed: result.processed });
-    } catch (error: any) {
+    } catch (error) {
         operationalLogger.error('routes.ticket_intake.ingest_route.failed', error, {
             module: 'routes.ticket-intake',
             route: 'POST /ticket-intake/ingest',
         }, correlationFromRequest(req));
-        return res.status(500).json({ error: error.message || 'Internal Server Error' });
+        return res.status(500).json({ error: String(asRecord(error).message || 'Internal Server Error') });
     }
 });
 
@@ -436,15 +445,15 @@ router.get('/list', async (req: Request, res: Response) => {
              LIMIT 200`
         );
 
-        const normalizeStatus = (status: string) => {
+        const normalizeStatus = (status: unknown) => {
             const normalized = String(status || '').toLowerCase();
             if (normalized === 'approved' || normalized === 'completed') return 'completed';
             if (normalized === 'failed') return 'failed';
             if (normalized === 'processing') return 'processing';
             return 'pending';
         };
-        const normalizeText = (value?: string, fallback = '') =>
-            (value || '')
+        const normalizeText = (value: unknown, fallback = '') =>
+            String(value || '')
                 .replace(/<script[\s\S]*?<\/script>/gi, ' ')
                 .replace(/<style[\s\S]*?<\/style>/gi, ' ')
                 .replace(/<[^>]+>/g, ' ')
@@ -456,15 +465,15 @@ router.get('/list', async (req: Request, res: Response) => {
                 .replace(/&#39;/gi, "'")
                 .replace(/\s+/g, ' ')
                 .trim() || fallback;
-        const cleanTitle = (title?: string, description?: string) => {
+        const cleanTitle = (title?: unknown, description?: unknown) => {
             const t = normalizeText(title, '');
             if (!t) return 'Untitled Ticket';
             const cut = t.replace(/\s+Description\s*:\s*.*$/i, '').trim();
             if (cut) return cut;
             return normalizeText(description, 'Untitled Ticket');
         };
-        const extractRequester = (requester?: string, rawBody?: string) => {
-            const raw = rawBody || '';
+        const extractRequester = (requester?: unknown, rawBody?: unknown) => {
+            const raw = String(rawBody || '');
             const requestFrom = raw.match(/request\s+from\s+([A-Za-z][A-Za-z\s.'-]{1,80})\s*:/i);
             const salutation = raw.match(/^\s*([A-Za-z][A-Za-z\s.'-]{1,80})\s*,\s*(?:<br\s*\/?>|\n|\r)/i);
             const requestedFor = normalizeText(requestFrom?.[1] || salutation?.[1], '');
@@ -474,15 +483,15 @@ router.get('/list', async (req: Request, res: Response) => {
             const m = raw.match(/Created by:\s*([^\n<]+)/i) || raw.match(/Created on\s+[^\n<]*?\s+by\s+([^\n<]+)/i);
             return normalizeText(m?.[1], 'Unknown requester');
         };
-        const extractCompany = (company?: string, rawBody?: string) => {
+        const extractCompany = (company?: unknown, rawBody?: unknown) => {
             const c = normalizeText(company, '');
             if (c) return c;
-            const raw = rawBody || '';
+            const raw = String(rawBody || '');
             const m = raw.match(/has been created for\s+(.+?)\.\s*we will attend/i);
             return normalizeText(m?.[1], 'Unknown org');
         };
-        const extractSite = (rawBody?: string, company?: string) => {
-            const raw = rawBody || '';
+        const extractSite = (rawBody?: unknown, company?: unknown) => {
+            const raw = String(rawBody || '');
             const explicit =
                 raw.match(/(?:site|office|location)\s*[:-]\s*([^\n<]+)/i) ||
                 raw.match(/at\s+[^,\n.]{2,80},\s*([A-Za-z0-9][^.\n<]{1,80})/i);
@@ -500,7 +509,7 @@ router.get('/list', async (req: Request, res: Response) => {
         };
         const countMatches = (text: string, needles: string[]) =>
             needles.reduce((count, needle) => count + (text.includes(needle) ? 1 : 0), 0);
-        const classifySuppression = (input: { title?: string; description?: string; rawBody?: string }) => {
+        const classifySuppression = (input: { title?: unknown; description?: unknown; rawBody?: unknown }) => {
             const text = normalizeText(
                 [input.title || '', input.description || '', input.rawBody || ''].join('\n'),
                 ''
@@ -564,13 +573,13 @@ router.get('/list', async (req: Request, res: Response) => {
             return null;
         };
 
-        const isMeaningful = (value?: string, ...blocked: string[]) => {
+        const isMeaningful = (value?: unknown, ...blocked: string[]) => {
             const normalized = normalizeText(value, '').toLowerCase();
             if (!normalized) return false;
             if (blocked.some((label) => normalized === label.toLowerCase())) return false;
             return normalized !== 'unknown';
         };
-        const isSpecificAffectedUser = (value?: string) => {
+        const isSpecificAffectedUser = (value?: unknown) => {
             const normalized = normalizeText(value, '').toLowerCase();
             if (!normalized || normalized === 'unknown') return false;
             if (/name not provided/.test(normalized)) return false;
@@ -579,24 +588,29 @@ router.get('/list', async (req: Request, res: Response) => {
             if (/^new hire\b/.test(normalized)) return false;
             return true;
         };
-        const selectUiUserFromSsot = (ssot: any, fallbackRequester: string) => {
-            const affected = normalizeText(ssot?.affected_user_name, '');
+        const selectUiUserFromSsot = (ssot: JsonRecord, fallbackRequester: string) => {
+            const ssotAutotask = asRecord(ssot.autotask_authoritative);
+            const affected = normalizeText(String(ssot.affected_user_name || ''), '');
             const requester = normalizeText(
-                ssot?.autotask_authoritative?.contact_name || ssot?.requester_name,
+                String(ssotAutotask.contact_name || ssot.requester_name || ''),
                 ''
             );
             if (isSpecificAffectedUser(affected)) return affected;
             if (isMeaningful(requester, 'Unknown requester', 'requester', 'user')) return requester;
             return fallbackRequester;
         };
-        const mapped = (pipelineRows as any[])
+        const mapped = (pipelineRows as JsonRecord[])
             .map((row) => {
-                const pack = row.evidence_payload || {};
-                const ssot = row.ssot_payload || {};
-                const packTicket = pack.ticket || {};
-                const packOrg = pack.org || {};
-                const packUser = pack.user || {};
-                const normalizedTicketSection = pack?.iterative_enrichment?.sections?.ticket || {};
+                const pack = asRecord(row.evidence_payload);
+                const ssot = asRecord(row.ssot_payload);
+                const ssotAutotask = asRecord(ssot.autotask_authoritative);
+                const packTicket = asRecord(pack.ticket);
+                const packOrg = asRecord(pack.org);
+                const packUser = asRecord(pack.user);
+                const normalizedTicketSection = asRecord(asRecord(asRecord(pack.iterative_enrichment).sections).ticket);
+                const normalizedAffectedUserField = asRecord(normalizedTicketSection.affected_user_name);
+                const normalizedRequesterField = asRecord(normalizedTicketSection.requester_name);
+                const normalizedSiteField = asRecord(normalizedTicketSection.site);
 
                 const processedTitle = cleanTitle(row.title, row.description);
                 const packTitle = cleanTitle(packTicket.title, packTicket.description);
@@ -609,7 +623,7 @@ router.get('/list', async (req: Request, res: Response) => {
 
                 const processedCompany = extractCompany(row.company, row.raw_body);
                 const packCompany = normalizeText(packOrg.name, '');
-                const ssotCompany = normalizeText(ssot?.autotask_authoritative?.company_name || ssot.company, '');
+                const ssotCompany = normalizeText(String(ssotAutotask.company_name || ssot.company || ''), '');
                 const company = isMeaningful(ssotCompany, 'Unknown org', 'organization')
                     ? ssotCompany
                     : (isMeaningful(processedCompany, 'Unknown org', 'organization')
@@ -620,8 +634,7 @@ router.get('/list', async (req: Request, res: Response) => {
                 const packRequester = normalizeText(packUser.name, '');
                 const ssotRequester = selectUiUserFromSsot(ssot, '');
                 const canonicalRequester = normalizeText(
-                    normalizedTicketSection?.affected_user_name?.value ||
-                    normalizedTicketSection?.requester_name?.value,
+                    String(normalizedAffectedUserField.value || normalizedRequesterField.value || ''),
                     ''
                 );
                 const requester = isMeaningful(ssotRequester, 'Unknown requester', 'requester', 'user')
@@ -633,7 +646,7 @@ router.get('/list', async (req: Request, res: Response) => {
                             : (isMeaningful(packRequester, 'Unknown requester', 'requester', 'user') ? packRequester : 'Unknown requester')));
 
                 const canonicalSite = normalizeText(
-                    normalizedTicketSection?.site?.value || packTicket.site,
+                    String(normalizedSiteField.value || packTicket.site || ''),
                     ''
                 );
                 const site = isMeaningful(canonicalSite, 'Unknown site', 'site')
@@ -647,20 +660,20 @@ router.get('/list', async (req: Request, res: Response) => {
                 const manuallySuppressed = Boolean(row.manual_suppressed);
                 const effectiveSuppressed = manuallySuppressed || Boolean(suppression?.suppressed);
                 const queueNameCandidate = normalizeText(
-                    ssot?.autotask_authoritative?.queue_name || packTicket.queue || '',
+                    String(ssotAutotask.queue_name || packTicket.queue || ''),
                     ''
                 );
                 const queueName = isMeaningful(queueNameCandidate, 'Unknown', 'queue', 'Ticket Intake')
                     ? queueNameCandidate
                     : '';
-                const queueIdRaw = ssot?.autotask_authoritative?.queue_id;
+                const queueIdRaw = ssotAutotask.queue_id;
                 const queueId = Number(queueIdRaw);
-                const assignedResourceIdRaw = ssot?.autotask_authoritative?.assigned_resource_id;
+                const assignedResourceIdRaw = ssotAutotask.assigned_resource_id;
                 const assignedResourceId = Number(assignedResourceIdRaw);
-                const assignedResourceName = normalizeText(ssot?.autotask_authoritative?.assigned_resource_name, '');
-                const assignedResourceEmail = normalizeText(ssot?.autotask_authoritative?.assigned_resource_email, '').toLowerCase();
+                const assignedResourceName = normalizeText(String(ssotAutotask.assigned_resource_name || ''), '');
+                const assignedResourceEmail = normalizeText(String(ssotAutotask.assigned_resource_email || ''), '').toLowerCase();
                 const rawTicketId = String(row.ticket_id || '').trim();
-                const ssotTicketNumber = normalizeText(ssot?.autotask_authoritative?.ticket_number, '');
+                const ssotTicketNumber = normalizeText(String(ssotAutotask.ticket_number || ''), '');
                 const packTicketNumber = normalizeText(packTicket.ticketNumber, '');
                 const canonicalTicketNumber = isMeaningful(ssotTicketNumber)
                     ? ssotTicketNumber
@@ -684,7 +697,7 @@ router.get('/list', async (req: Request, res: Response) => {
                     ...(Number.isFinite(assignedResourceId) ? { assigned_resource_id: assignedResourceId } : {}),
                     ...(assignedResourceName ? { assigned_resource_name: assignedResourceName } : {}),
                     ...(assignedResourceEmail ? { assigned_resource_email: assignedResourceEmail } : {}),
-                    created_at: ssot.created_at || row.ticket_created_at || row.first_session_created_at || row.session_created_at,
+                    created_at: String(ssot.created_at || row.ticket_created_at || row.first_session_created_at || row.session_created_at || ''),
                     manual_suppressed: manuallySuppressed,
                     suppressed: effectiveSuppressed,
                     suppression_reason: manuallySuppressed ? 'manual_override' : (suppression?.reason_code ?? null),
@@ -712,24 +725,24 @@ router.get('/list', async (req: Request, res: Response) => {
 
         try {
             await hydrateAutotaskQueueMetadataForSidebar(
-                mapped as Array<Record<string, any>>,
+                mapped as Array<JsonRecord>,
                 tenantId,
                 req.auth?.sub
             );
-        } catch (hydrationError: any) {
+        } catch (hydrationError) {
             operationalLogger.warn('routes.ticket_intake.list.sidebar_hydration_failed', {
                 module: 'routes.ticket-intake',
-                reason: String(hydrationError?.message || hydrationError || 'unknown'),
+                reason: String(asRecord(hydrationError).message || hydrationError || 'unknown'),
             }, correlationFromRequest(req));
         }
 
         res.json({ success: true, data: mapped });
-    } catch (error: any) {
+    } catch (error) {
         operationalLogger.error('routes.ticket_intake.list.failed', error, {
             module: 'routes.ticket-intake',
             route: 'GET /ticket-intake/list',
         }, correlationFromRequest(req));
-        res.status(500).json({ error: error.message || 'Internal Server Error' });
+        res.status(500).json({ error: String(asRecord(error).message || 'Internal Server Error') });
     }
 });
 
@@ -805,12 +818,12 @@ router.patch('/tickets/:ticketId/manual-suppression', async (req: Request, res: 
             suppression_reason: suppressed ? 'manual_override' : null,
             suppression_reason_label: suppressed ? 'Manual suppression' : null,
         });
-    } catch (error: any) {
+    } catch (error) {
         operationalLogger.error('routes.ticket_intake.manual_suppression_patch.failed', error, {
             module: 'routes.ticket-intake',
             route: 'PATCH /ticket-intake/tickets/:ticketId/manual-suppression',
         }, correlationFromRequest(req, String(req.params.ticketId || '').trim()));
-        return res.status(500).json({ error: error.message || 'Internal Server Error' });
+        return res.status(500).json({ error: String(asRecord(error).message || 'Internal Server Error') });
     }
 });
 

@@ -1,4 +1,3 @@
-import { getDefaultLLMProvider } from './llm-adapter.js';
 import { operationalLogger } from '../../lib/operational-logger.js';
 
 export interface SearchResult {
@@ -6,6 +5,27 @@ export interface SearchResult {
     url: string;
     snippet: string;
     source: string;
+}
+
+type TavilySearchResult = {
+    title?: string;
+    url?: string;
+    content?: string;
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readTavilyResults(value: unknown): TavilySearchResult[] {
+    if (!isPlainObject(value)) return [];
+    const results = value.results;
+    if (!Array.isArray(results)) return [];
+    return results.filter(isPlainObject).map((result) => ({
+        title: typeof result.title === 'string' ? result.title : '',
+        url: typeof result.url === 'string' ? result.url : '',
+        content: typeof result.content === 'string' ? result.content : '',
+    }));
 }
 
 export class WebSearchService {
@@ -43,12 +63,12 @@ export class WebSearchService {
             });
 
             if (!response.ok) throw new Error(`Tavily error: ${response.status}`);
-            const data = await response.json() as any;
+            const data: unknown = await response.json();
 
-            return (data.results || []).map((r: any) => ({
-                title: r.title,
-                url: r.url,
-                snippet: r.content,
+            return readTavilyResults(data).map((result) => ({
+                title: result.title || '',
+                url: result.url || '',
+                snippet: result.content || '',
                 source: 'tavily',
             }));
         } catch (error) {

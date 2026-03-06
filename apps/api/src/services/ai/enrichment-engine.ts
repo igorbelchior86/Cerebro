@@ -1,27 +1,38 @@
-import type { EvidencePack, Signal, Doc, SecurityAgentSummary } from '@cerebro/types';
+import type { Signal, SecurityAgentSummary } from '@cerebro/types';
+
+type JsonRecord = Record<string, unknown>;
+
+function asJsonRecord(value: unknown): JsonRecord {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as JsonRecord)
+        : {};
+}
 
 export class EnrichmentEngine {
 
     inferDeviceType(input: {
         ticketNarrative: string;
-        device: any | null;
-        deviceDetails: any | null;
+        device: unknown;
+        deviceDetails: unknown;
     }): 'desktop' | 'laptop' | 'mobile' | 'unknown' {
-        const nodeClass = String(input.device?.nodeClass || input.deviceDetails?.nodeClass || '').toLowerCase();
-        const chassis = String(input.deviceDetails?.system?.chassisType || '').toLowerCase();
+        const device = asJsonRecord(input.device);
+        const deviceDetails = asJsonRecord(input.deviceDetails);
+        const system = asJsonRecord(deviceDetails.system);
+        const nodeClass = String(device.nodeClass || deviceDetails.nodeClass || '').toLowerCase();
+        const chassis = String(system.chassisType || '').toLowerCase();
         if (/(laptop|notebook)/.test(chassis)) return 'laptop';
         if (/(windows_workstation|linux_workstation|mac)/.test(nodeClass)) return 'desktop';
         if (/(android|apple_ios|apple_ipados)/.test(nodeClass)) return 'mobile';
 
         const source = [
             input.ticketNarrative,
-            String(input.device?.osName || ''),
-            String(input.device?.nodeClass || ''),
-            String(input.device?.model || ''),
-            String(input.deviceDetails?.system?.chassisType || ''),
-            String(input.deviceDetails?.system?.model || ''),
-            String(input.deviceDetails?.model || ''),
-            String(input.deviceDetails?.systemModel || ''),
+            String(device.osName || ''),
+            String(device.nodeClass || ''),
+            String(device.model || ''),
+            String(system.chassisType || ''),
+            String(system.model || ''),
+            String(deviceDetails.model || ''),
+            String(deviceDetails.systemModel || ''),
         ].join(' ').toLowerCase();
 
         if (/(iphone|android|ipad|mobile|cell)/i.test(source)) return 'mobile';
@@ -31,7 +42,7 @@ export class EnrichmentEngine {
         return 'unknown';
     }
 
-    inferSecurityAgent(checks: Signal[], deviceDetails: any): SecurityAgentSummary {
+    inferSecurityAgent(checks: Signal[], deviceDetails: unknown): SecurityAgentSummary {
         const sourceText = [
             ...checks.map((check) => check.summary || ''),
             JSON.stringify(deviceDetails || {}),
@@ -94,16 +105,18 @@ export class EnrichmentEngine {
         return true;
     }
 
-    resolvePublicIp(device: any, deviceDetails: any): string {
+    resolvePublicIp(device: unknown, deviceDetails: unknown): string {
+        const deviceRecord = asJsonRecord(device);
+        const detailsRecord = asJsonRecord(deviceDetails);
         const candidates = [
-            String(device?.ipAddress || ''),
-            String(device?.publicIP || ''),
-            String(deviceDetails?.publicIp || ''),
-            String(deviceDetails?.publicIP || ''),
-            String(deviceDetails?.public_ip || ''),
-            String(deviceDetails?.wanIp || ''),
-            String(deviceDetails?.wan_ip || ''),
-            ...(Array.isArray(deviceDetails?.ipAddresses) ? deviceDetails.ipAddresses.map((ip: unknown) => String(ip || '')) : []),
+            String(deviceRecord.ipAddress || ''),
+            String(deviceRecord.publicIP || ''),
+            String(detailsRecord.publicIp || ''),
+            String(detailsRecord.publicIP || ''),
+            String(detailsRecord.public_ip || ''),
+            String(detailsRecord.wanIp || ''),
+            String(detailsRecord.wan_ip || ''),
+            ...(Array.isArray(detailsRecord.ipAddresses) ? detailsRecord.ipAddresses.map((ip) => String(ip || '')) : []),
         ].map((value) => value.trim()).filter(Boolean);
 
         const publicIp = candidates.find((value) => this.isPublicIPv4(value));

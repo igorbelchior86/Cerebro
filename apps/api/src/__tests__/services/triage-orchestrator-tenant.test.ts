@@ -33,6 +33,11 @@ import { transaction } from '../../db/index.js';
 import { TriageOrchestrator } from '../../services/orchestration/triage-orchestrator.js';
 
 const transactionMock = transaction as jest.MockedFunction<typeof transaction>;
+type TriageOrchestratorInternals = {
+  processPendingSessions(): Promise<void>;
+  claimOrCreateSession(ticketId: string, source?: string, tenantId?: string): Promise<string>;
+};
+type TransactionClient = Parameters<Parameters<typeof transaction>[0]>[0];
 
 describe('TriageOrchestrator tenant-scoped claims', () => {
   beforeEach(() => {
@@ -40,11 +45,12 @@ describe('TriageOrchestrator tenant-scoped claims', () => {
   });
 
   it('unrefs the retry listener interval so background sweeps do not pin the process', async () => {
-    const intervalHandle = { unref: jest.fn() } as any;
-    const setIntervalSpy = jest.spyOn(global, 'setInterval').mockImplementation((() => intervalHandle) as any);
+    const intervalHandle = { unref: jest.fn() } as unknown as NodeJS.Timeout;
+    const setIntervalSpy = jest.spyOn(global, 'setInterval').mockImplementation(() => intervalHandle);
 
     const orchestrator = new TriageOrchestrator();
-    const processPendingSpy = jest.spyOn(orchestrator as any, 'processPendingSessions').mockResolvedValue(undefined);
+    const internalOrchestrator = orchestrator as unknown as TriageOrchestratorInternals;
+    const processPendingSpy = jest.spyOn(internalOrchestrator, 'processPendingSessions').mockImplementation(async () => undefined);
 
     orchestrator.startRetryListener();
     await Promise.resolve();
@@ -56,41 +62,41 @@ describe('TriageOrchestrator tenant-scoped claims', () => {
   });
 
   it('creates poller sessions inside the provided tenant instead of defaulting to the oldest tenant', async () => {
-    const client = {
-      query: jest.fn()
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [] }),
-    };
-    transactionMock.mockImplementation(async (callback: any) => callback(client as any));
+    const queryMock = jest.fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+    const client = { query: queryMock } as unknown as TransactionClient;
+    transactionMock.mockImplementation(async (callback) => callback(client));
 
     const orchestrator = new TriageOrchestrator();
-    const sessionId = await (orchestrator as any).claimOrCreateSession('132939', undefined, 'tenant-9439');
+    const internalOrchestrator = orchestrator as unknown as TriageOrchestratorInternals;
+    const sessionId = await internalOrchestrator.claimOrCreateSession('132939', undefined, 'tenant-9439');
 
     expect(sessionId).toBeTruthy();
-    expect(String(client.query.mock.calls[1]?.[0] || '')).toContain('AND tenant_id = $2');
-    expect(client.query.mock.calls[1]?.[1]).toEqual(['132939', 'tenant-9439']);
-    expect(client.query).toHaveBeenCalledTimes(3);
-    expect(String(client.query.mock.calls[2]?.[0] || '')).toContain('INSERT INTO triage_sessions');
-    expect(client.query.mock.calls[2]?.[1]?.[5]).toBe('tenant-9439');
+    expect(String(queryMock.mock.calls[1]?.[0] || '')).toContain('AND tenant_id = $2');
+    expect(queryMock.mock.calls[1]?.[1]).toEqual(['132939', 'tenant-9439']);
+    expect(queryMock).toHaveBeenCalledTimes(3);
+    expect(String(queryMock.mock.calls[2]?.[0] || '')).toContain('INSERT INTO triage_sessions');
+    expect(queryMock.mock.calls[2]?.[1]?.[5]).toBe('tenant-9439');
   });
 
   it('keeps legacy default-tenant fallback only when no tenant context is provided', async () => {
-    const client = {
-      query: jest.fn()
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: [{ id: 'default-tenant' }] })
-        .mockResolvedValueOnce({ rows: [] }),
-    };
-    transactionMock.mockImplementation(async (callback: any) => callback(client as any));
+    const queryMock = jest.fn()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ id: 'default-tenant' }] })
+      .mockResolvedValueOnce({ rows: [] });
+    const client = { query: queryMock } as unknown as TransactionClient;
+    transactionMock.mockImplementation(async (callback) => callback(client));
 
     const orchestrator = new TriageOrchestrator();
-    const sessionId = await (orchestrator as any).claimOrCreateSession('legacy-ticket');
+    const internalOrchestrator = orchestrator as unknown as TriageOrchestratorInternals;
+    const sessionId = await internalOrchestrator.claimOrCreateSession('legacy-ticket');
 
     expect(sessionId).toBeTruthy();
-    expect(String(client.query.mock.calls[1]?.[0] || '')).not.toContain('AND tenant_id = $2');
-    expect(String(client.query.mock.calls[2]?.[0] || '')).toContain('SELECT id FROM tenants');
-    expect(client.query.mock.calls[3]?.[1]?.[5]).toBe('default-tenant');
+    expect(String(queryMock.mock.calls[1]?.[0] || '')).not.toContain('AND tenant_id = $2');
+    expect(String(queryMock.mock.calls[2]?.[0] || '')).toContain('SELECT id FROM tenants');
+    expect(queryMock.mock.calls[3]?.[1]?.[5]).toBe('default-tenant');
   });
 });

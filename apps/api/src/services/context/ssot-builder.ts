@@ -6,7 +6,6 @@
 import { normalizeName, extractFirstEmail, shouldPreferCompanyCandidateOverIntake } from './prepare-context-helpers.js';
 import type {
   IterativeEnrichmentSections,
-  EnrichmentField,
 } from './prepare-context.types.js';
 import type { TicketSSOT, TicketLike } from './prepare-context.types.js';
 
@@ -182,4 +181,3 @@ export function applyIntakeAntiRegressionToSSOT(
 
   return out;
 }
-

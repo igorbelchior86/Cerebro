@@ -4,8 +4,15 @@ import { queryOne } from './db/index.js';
 
 config({ path: './.env' });
 
+type AutotaskCreds = {
+    apiIntegrationCode: string;
+    username: string;
+    secret: string;
+    zoneUrl?: string;
+};
+
 async function main() {
-    const row = await queryOne<{ credentials: any }>(
+    const row = await queryOne<{ credentials: AutotaskCreds }>(
         `SELECT credentials FROM integration_credentials WHERE service = 'autotask' LIMIT 1`,
         []
     );
@@ -18,7 +25,7 @@ async function main() {
         apiIntegrationCode: row.credentials.apiIntegrationCode,
         username: row.credentials.username,
         secret: row.credentials.secret,
-        zoneUrl: row.credentials.zoneUrl,
+        ...(row.credentials.zoneUrl ? { zoneUrl: row.credentials.zoneUrl } : {}),
     });
 
     const tickets = await client.searchTickets(JSON.stringify({ op: 'eq', field: 'status', value: 1 }), 2);

@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { EvidencePack } from '@cerebro/types';
-import { query, queryOne, execute, transaction } from '../../db/index.js';
+import { queryOne, execute, transaction } from '../../db/index.js';
 import { operationalLogger } from '../../lib/operational-logger.js';
 import type {
     TicketSSOT,

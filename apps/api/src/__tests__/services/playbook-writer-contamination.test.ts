@@ -1,8 +1,13 @@
 import { PlaybookWriterService } from '../../services/ai/playbook-writer.js';
 
+type PlaybookWriterInternals = {
+  hasInternalLeakage(markdown: string): boolean;
+  sanitizePlaybook(markdown: string): string;
+};
+
 describe('PlaybookWriter contamination guard', () => {
   it('detects internal-engine leakage terms', () => {
-    const service = new PlaybookWriterService() as any;
+    const service = new PlaybookWriterService() as unknown as PlaybookWriterInternals;
     const leaked = `
 # Network Playbook
 1. Check LLM JSON Response
@@ -12,7 +17,7 @@ describe('PlaybookWriter contamination guard', () => {
   });
 
   it('sanitizes internal-engine leakage lines', () => {
-    const service = new PlaybookWriterService() as any;
+    const service = new PlaybookWriterService() as unknown as PlaybookWriterInternals;
     const leaked = `
 # Network Playbook
 1. Verify Device Configuration
@@ -26,7 +31,7 @@ describe('PlaybookWriter contamination guard', () => {
   });
 
   it('does not block legitimate troubleshooting terms like API response or debug logs', () => {
-    const service = new PlaybookWriterService() as any;
+    const service = new PlaybookWriterService() as unknown as PlaybookWriterInternals;
     const legitimate = `
 # Network Playbook
 1. [H1] Check API response from Job Runner service endpoint for timeout or 5xx errors
@@ -37,7 +42,7 @@ describe('PlaybookWriter contamination guard', () => {
   });
 
   it('still blocks explicit model-meta leakage phrasing', () => {
-    const service = new PlaybookWriterService() as any;
+    const service = new PlaybookWriterService() as unknown as PlaybookWriterInternals;
     const leaked = `
 # Network Playbook
 1. Debug the prompt used for playbook generation

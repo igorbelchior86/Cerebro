@@ -166,7 +166,7 @@ export class P0AiTriageAssistService {
       ...((diagnosis.do_not_do || []).length ? diagnosis.do_not_do : ['- none']).map((x) => x.startsWith('-') ? x : `- ${x}`),
       '',
       `## Provenance`,
-      ...decision.provenance_refs.map((p: any) => `- ${p.source} @ ${p.fetched_at}${p.adapter_version ? ` (adapter=${p.adapter_version})` : ''}`),
+      ...decision.provenance_refs.map((p) => `- ${p.source} @ ${p.fetched_at}${p.adapter_version ? ` (adapter=${p.adapter_version})` : ''}`),
     ].join('\n');
 
     const handoffMd = [
@@ -183,7 +183,7 @@ export class P0AiTriageAssistService {
       ...(validation?.required_questions || []).slice(0, 5).map((q) => `- ${q}`),
       '',
       `## Evidence references`,
-      ...decision.signals_used.slice(0, 10).map((s: any) => `- ${s.source}:${s.ref}`),
+      ...decision.signals_used.slice(0, 10).map((s) => `- ${s.source}:${s.ref}`),
     ].join('\n');
 
     return { summary_md: summaryMd, handoff_md: handoffMd };

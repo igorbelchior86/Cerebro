@@ -6,6 +6,9 @@ import {
   requestContextMiddleware,
 } from '../../platform/index.js';
 
+type MiddlewareRequest = Parameters<typeof requestContextMiddleware>[0];
+type MiddlewareResponse = Parameters<typeof requestContextMiddleware>[1];
+
 describe('CP0 observability + correlation middleware', () => {
   it('propagates request/trace ids and emits correlated log/metrics', async () => {
     const metrics = new InMemoryMetricsSink();
@@ -18,12 +21,13 @@ describe('CP0 observability + correlation middleware', () => {
         'x-trace-id': 'trace-abc',
         'x-ticket-id': 'ticket-9',
       },
-    } as any;
+    } as unknown as MiddlewareRequest;
     const headerBag = new Map<string, string>();
-    const res = new EventEmitter() as any;
+    const res = new EventEmitter() as unknown as MiddlewareResponse & EventEmitter;
     res.statusCode = 200;
     res.setHeader = (name: string, value: string) => {
       headerBag.set(name.toLowerCase(), value);
+      return res;
     };
 
     const observability = createObservabilityMiddleware({
@@ -46,8 +50,8 @@ describe('CP0 observability + correlation middleware', () => {
 
     expect(headerBag.get('x-request-id')).toBe('req-123');
     expect(headerBag.get('x-trace-id')).toBe('trace-abc');
-    expect(req.correlation.requestId).toBe('req-123');
-    expect(req.correlation.traceId).toBe('trace-abc');
+    expect(req.correlation?.requestId).toBe('req-123');
+    expect(req.correlation?.traceId).toBe('trace-abc');
 
     expect(metrics.counters.some((m) => m.name === 'http.request.started')).toBe(true);
     expect(metrics.counters.some((m) => m.name === 'http.request.completed')).toBe(true);

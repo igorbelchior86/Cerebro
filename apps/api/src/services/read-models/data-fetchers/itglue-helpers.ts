@@ -1,5 +1,11 @@
 import type { ITGlueClient } from '../../../clients/itglue.js';
 
+type JsonRecord = Record<string, unknown>;
+type ITGlueOrgLike = JsonRecord & {
+    id?: string | number;
+    attributes?: JsonRecord | null;
+};
+
 export function itgAttr(attrs: Record<string, unknown> | null | undefined, key: string): unknown {
     if (!attrs) return undefined;
     if (key in attrs) return attrs[key];
@@ -13,14 +19,20 @@ export function itgAttr(attrs: Record<string, unknown> | null | undefined, key: 
     return undefined;
 }
 
-export function parseITGlueOrgParentId(org: any): string | null {
+function asITGlueOrgRecord(value: unknown): ITGlueOrgLike {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as ITGlueOrgLike)
+        : {};
+}
+
+export function parseITGlueOrgParentId(org: ITGlueOrgLike): string | null {
     const attrs = org?.attributes || {};
     const value = itgAttr(attrs, 'parent_id');
     const text = String(value ?? '').trim();
     return text ? text : null;
 }
 
-export function parseITGlueOrgAncestorIds(org: any): string[] {
+export function parseITGlueOrgAncestorIds(org: ITGlueOrgLike): string[] {
     const attrs = org?.attributes || {};
     const raw = itgAttr(attrs, 'ancestor_ids');
     if (Array.isArray(raw)) {
@@ -131,17 +143,17 @@ export async function resolveITGlueOrg(
     companyName: string,
     hintText?: string
 ): Promise<{ id: string; name: string } | null> {
-    const orgs = await itglueClient.getOrganizations(1000);
+    const orgs = (await itglueClient.getOrganizations(1000)).map((org) => asITGlueOrgRecord(org));
     const rankedByName = orgs
-        .map((o: any) => ({
-            org: o,
-            score: scoreOrgNameMatch(companyName, String(itgAttr(o?.attributes || {}, 'name') || ''), String(itgAttr(o?.attributes || {}, 'short_name') || '')),
+        .map((org) => ({
+            org,
+            score: scoreOrgNameMatch(companyName, String(itgAttr(org.attributes || {}, 'name') || ''), String(itgAttr(org.attributes || {}, 'short_name') || '')),
         }))
         .filter((r: { score: number }) => r.score >= 0.8)
         .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
     const byName = rankedByName[0]?.org;
     if (byName) {
-        return { id: String(byName.id), name: String(itgAttr(byName?.attributes || {}, 'name') || companyName) };
+        return { id: String(byName.id), name: String(itgAttr(byName.attributes || {}, 'name') || companyName) };
     }
 
     const ignoreDomainSuffixes = [
@@ -152,8 +164,8 @@ export async function resolveITGlueOrg(
     if (domains.length === 0) return null;
 
     const rankedByDomain = orgs
-        .map((o: any) => {
-            const primaryDomain = String(itgAttr(o?.attributes || {}, 'primary_domain') || '').toLowerCase();
+        .map((org) => {
+            const primaryDomain = String(itgAttr(org.attributes || {}, 'primary_domain') || '').toLowerCase();
             const domainScore =
                 primaryDomain && domains.some((d) => d === primaryDomain)
                     ? 1
@@ -162,16 +174,16 @@ export async function resolveITGlueOrg(
                         : 0;
             const nameScore = scoreOrgNameMatch(
                 companyName,
-                String(itgAttr(o?.attributes || {}, 'name') || ''),
-                String(itgAttr(o?.attributes || {}, 'short_name') || '')
+                String(itgAttr(org.attributes || {}, 'name') || ''),
+                String(itgAttr(org.attributes || {}, 'short_name') || '')
             );
-            return { org: o, score: domainScore > 0 ? domainScore * 0.75 + nameScore * 0.25 : 0 };
+            return { org, score: domainScore > 0 ? domainScore * 0.75 + nameScore * 0.25 : 0 };
         })
         .filter((r: { score: number }) => r.score >= 0.75)
         .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
 
     const byDomain = rankedByDomain[0]?.org;
-    return byDomain ? { id: String(byDomain.id), name: String(itgAttr(byDomain?.attributes || {}, 'name') || companyName) } : null;
+    return byDomain ? { id: String(byDomain.id), name: String(itgAttr(byDomain.attributes || {}, 'name') || companyName) } : null;
 }
 
 export async function resolveITGlueOrgFamilyScopes(
@@ -179,17 +191,21 @@ export async function resolveITGlueOrgFamilyScopes(
     matchedOrg: { id: string; name: string },
     companyName?: string
 ): Promise<Array<{ id: string; name: string; reason: string }>> {
-    const orgs = await itglueClient.getOrganizations(1000);
-    const byId = new Map<string, any>(orgs.map((org: any): [string, any] => [String(org?.id || '').trim(), org]).filter(([id]: [string, any]) => Boolean(id)));
+    const orgs = (await itglueClient.getOrganizations(1000)).map((org) => asITGlueOrgRecord(org));
+    const byId = new Map<string, ITGlueOrgLike>(
+        orgs
+            .map((org): [string, ITGlueOrgLike] => [String(org.id || '').trim(), org])
+            .filter(([id]) => Boolean(id))
+    );
     const matched = byId.get(String(matchedOrg.id)) || null;
     if (!matched) return [{ id: matchedOrg.id, name: matchedOrg.name, reason: 'matched' }];
 
     const matchedId = String(matchedOrg.id);
     const matchedAncestors = new Set(parseITGlueOrgAncestorIds(matched));
     const matchedParentId = parseITGlueOrgParentId(matched);
-    const familyCandidates: Array<{ org: any; score: number; reason: string; priority: number }> = [];
+    const familyCandidates: Array<{ org: ITGlueOrgLike; score: number; reason: string; priority: number }> = [];
 
-    const push = (org: any, reason: string, priority: number) => {
+    const push = (org: ITGlueOrgLike, reason: string, priority: number) => {
         const id = String(org?.id || '').trim();
         if (!id) return;
         const attrs = org?.attributes || {};

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
-import { SectionLabel, ShimmerBlock, cleanTitle } from './primitives';
+import { SectionLabel, ShimmerBlock, cleanTitle, StickyHeader } from './primitives';
 import type { ChecklistItem } from './types';
 
 interface PlaybookChecklistProps {
@@ -14,7 +14,7 @@ export function PlaybookChecklist({ items: chk }: PlaybookChecklistProps) {
 
     return (
         <div style={{ marginBottom: '22px' }}>
-            <SectionLabel>Checklist</SectionLabel>
+            <StickyHeader>Checklist</StickyHeader>
             {chk.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {chk.map((item, i) => {

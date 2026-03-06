@@ -199,3 +199,29 @@ export function cleanTitle(text: string): string {
         .replace(/^([\s*_]*)(?:\[H\d+\]|\[rank\s*\d+\]|\(\d+\))\s*/gi, '$1')
         .trim();
 }
+
+export function StickyHeader({ children }: { children: React.ReactNode }) {
+    return (
+        <div style={{
+            position: 'sticky',
+            top: '0px',
+            zIndex: 30,
+            background: 'var(--bg-bento-shell)',
+            backdropFilter: 'blur(24px)',
+            WebkitBackdropFilter: 'blur(24px)',
+            fontFamily: 'var(--font-jetbrains-mono, monospace)',
+            fontSize: '11px',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            color: 'var(--text-secondary)',
+            margin: '0 -14px 10px -14px',
+            padding: '8px 14px',
+            borderBottom: '1px solid var(--border)',
+            borderBottomLeftRadius: '10px',
+            borderBottomRightRadius: '10px',
+        }}>
+            {children}
+        </div>
+    );
+}

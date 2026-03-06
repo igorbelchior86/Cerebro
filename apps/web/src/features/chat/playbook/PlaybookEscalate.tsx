@@ -1,6 +1,6 @@
 'use client';
 
-import { SectionLabel } from './primitives';
+import { SectionLabel, StickyHeader } from './primitives';
 import type { EscalateRow } from './types';
 
 interface PlaybookEscalateProps {
@@ -12,7 +12,7 @@ export function PlaybookEscalate({ rows }: PlaybookEscalateProps) {
 
     return (
         <div style={{ marginBottom: '22px' }}>
-            <SectionLabel>Escalate when</SectionLabel>
+            <StickyHeader>Escalate when</StickyHeader>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {rows.map((r, i) => (
                     <div

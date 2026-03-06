@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { SectionLabel, CategoryIcon, ShimmerBlock, confColor, confidenceTone, hypothesisCategory, formatEvidenceChipLabel } from './primitives';
+import { SectionLabel, CategoryIcon, ShimmerBlock, confColor, confidenceTone, hypothesisCategory, formatEvidenceChipLabel, StickyHeader } from './primitives';
 import type { Hypothesis } from './types';
 
 interface PlaybookHypothesesProps {
@@ -13,7 +13,7 @@ export function PlaybookHypotheses({ hypotheses: hyps }: PlaybookHypothesesProps
 
     return (
         <div style={{ marginBottom: '22px' }}>
-            <SectionLabel>Hypotheses</SectionLabel>
+            <StickyHeader>Hypotheses</StickyHeader>
             {hyps.length > 0 ? (
                 hyps.map((h) => {
                     const c = confColor(h.confidence);

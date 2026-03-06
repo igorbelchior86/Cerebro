@@ -135,7 +135,12 @@ export function PlaybookContext({ items, onEditContextItem }: PlaybookContextPro
                             ))}
 
                             {optionalTicketMetadataItems.length > 0 ? (
-                                <div style={{ gridColumn: '1 / -1', position: 'relative' }}>
+                                <div style={{
+                                    gridColumn: '1 / -1',
+                                    position: 'relative',
+                                    marginTop: isTicketMetadataOpen ? '4px' : '-8px',
+                                    transition: 'margin 0.4s cubic-bezier(0.23, 1, 0.32, 1)'
+                                }}>
                                     <div style={{
                                         display: 'grid',
                                         gridTemplateRows: isTicketMetadataOpen ? '1fr' : '0fr',
@@ -163,9 +168,9 @@ export function PlaybookContext({ items, onEditContextItem }: PlaybookContextPro
                                         style={{
                                             gridColumn: '1 / -1',
                                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                            margin: isTicketMetadataOpen ? '12px -12px -12px' : '4px -12px -12px',
+                                            margin: isTicketMetadataOpen ? '4px -12px -12px' : '0 -12px -12px',
                                             padding: '8px 0',
-                                            borderTop: isTicketMetadataOpen ? '1px solid var(--bento-outline)' : 'none',
+                                            borderTop: 'none',
                                             background: 'rgba(255, 255, 255, 0.01)',
                                             borderRadius: '0 0 16px 16px',
                                             cursor: 'pointer',

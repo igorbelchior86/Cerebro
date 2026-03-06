@@ -43,8 +43,13 @@ export default function PlaybookPanel({
                 background: 'var(--glow-playbook)', pointerEvents: 'none', zIndex: 0,
             }} />
 
-            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 14px 12px 14px', position: 'relative', zIndex: 1 }}>
+            {/* Context Section (Fixed at Top) */}
+            <div style={{ padding: '0 14px', position: 'relative', zIndex: 20 }}>
                 <PlaybookContext items={ctx} {...(onEditContextItem ? { onEditContextItem } : {})} />
+            </div>
+
+            {/* Scrollable Content Below Context */}
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 14px 12px 14px', position: 'relative', zIndex: 1 }}>
                 <PlaybookHypotheses hypotheses={hyps} />
                 <PlaybookChecklist items={chk} />
                 <PlaybookEscalate rows={esc} />

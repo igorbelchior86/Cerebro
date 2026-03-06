@@ -4,9 +4,11 @@ import { useMemo } from 'react';
 import SettingsModal from '@/components/SettingsModal';
 import UserProfileDropdown from '@/components/UserProfileDropdown';
 import ProfileModal from '@/components/ProfileModal';
+import ThemeToggle from '@/components/ThemeToggle';
 import { useSidebarState } from './useSidebarState';
 import { SidebarHeader } from './SidebarHeader';
 import { SidebarStats, SidebarFilterBar } from './SidebarControls';
+import { SidebarSearchModal } from './SidebarSearchModal';
 import { SidebarTicketCard } from './SidebarTicketCard';
 import { StatusEditorModal } from './StatusEditorModal';
 import type { ActiveTicket, ChatSidebarProps } from './types';
@@ -55,8 +57,9 @@ export default function ChatSidebar(props: ChatSidebarProps) {
         selectedPersonalQueue, setSelectedPersonalQueue,
         selectedGlobalQueue, setSelectedGlobalQueue,
         hideSuppressed,
-        theme, toggleTheme,
         clock,
+        theme, toggleTheme,
+        isSearchOpen, setIsSearchOpen,
         statusEditorTarget,
         statusEditorQuery, setStatusEditorQuery,
         statusEditorLoading, statusEditorSaving, statusEditorError,
@@ -127,29 +130,36 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                 <div style={{ position: 'absolute', top: '-100px', left: '-80px', width: '320px', height: '320px', borderRadius: '50%', background: 'var(--glow-sidebar)', pointerEvents: 'none', zIndex: 0 }} />
 
                 <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, minHeight: 0, padding: 0 }}>
-                    {/* 1. Header (Logo + Search + Clock + Theme) */}
-                    <SidebarHeader
-                        clock={clock}
-                        theme={theme}
-                        searchQuery={searchQuery}
-                        onSearchChange={setSearchQuery}
-                        onToggleTheme={toggleTheme}
-                    />
-
-                    {/* 2. Stats + Scope Switcher */}
-                    <SidebarStats
-                        processing={processing}
-                        scope={scope}
-                        onCreateTicket={() => {
-                            const returnTicketId = visibleTickets[0]?.id;
-                            onCreateTicket?.(returnTicketId ? { returnTicketId } : undefined);
-                        }}
-                        onSetScope={setScope}
-                        labelPersonal={t('scopePersonal')}
-                        labelGlobal={t('scopeGlobal')}
-                        labelNewTicket={t('newTicket')}
-                        labelActive={t('statActive')}
-                    />
+                    {/* 1. Control Hub (Unified Header & Stats) */}
+                    <div style={{
+                        margin: '0 0px',
+                        borderRadius: '24px',
+                        border: '1px solid var(--bento-outline)',
+                        background: 'var(--bg-bento-panel)',
+                        boxShadow: 'var(--shadow-card)',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        flexShrink: 0
+                    }}>
+                        <SidebarHeader
+                            searchQuery={searchQuery}
+                            onSearchClick={() => setIsSearchOpen(true)}
+                        />
+                        <SidebarStats
+                            processing={processing}
+                            scope={scope}
+                            onCreateTicket={() => {
+                                const returnTicketId = visibleTickets[0]?.id;
+                                onCreateTicket?.(returnTicketId ? { returnTicketId } : undefined);
+                            }}
+                            onSetScope={setScope}
+                            labelPersonal={t('scopePersonal')}
+                            labelGlobal={t('scopeGlobal')}
+                            labelNewTicket={t('newTicket')}
+                            labelActive={t('statActive')}
+                        />
+                    </div>
 
                     {/* 3. Ticket List Card */}
                     <div style={{ borderRadius: '24px', border: '1px solid var(--bento-outline)', background: 'var(--bg-bento-panel)', boxShadow: 'var(--shadow-card)', overflow: 'hidden', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -176,6 +186,8 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                             labelGlobalStatusFilterTitle={t('globalStatusFilterTitle')}
                             labelGlobalStatusFilterReset={t('globalStatusFilterReset')}
                             labelGlobalStatusFilterNoStatus={t('globalStatusFilterNoStatus')}
+                            labelActive={t('statActive')}
+                            count={processing}
                         />
 
                         {/* Ticket list */}
@@ -204,16 +216,16 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                                                 backdropFilter: 'blur(24px)', // Powerful blur to solidly hide text scrolling behind
                                                 WebkitBackdropFilter: 'blur(24px)',
                                                 color: 'var(--text-secondary)',
-                                                fontSize: '11px',
-                                                fontWeight: 600,
-                                                letterSpacing: '0.06em',
+                                                fontSize: '10.5px',
+                                                fontWeight: 800,
+                                                letterSpacing: '0.08em',
                                                 textTransform: 'uppercase',
-                                                padding: '6px 14px',
-                                                margin: groupIndex === 0 ? '0 -10px 8px -10px' : '8px -10px 8px -10px',
-                                                borderBottom: '1px solid var(--border)',
-                                                borderTop: groupIndex !== 0 ? '1px solid var(--border-subtle)' : 'none',
-                                                borderBottomLeftRadius: '10px',
-                                                borderBottomRightRadius: '10px',
+                                                padding: '8px 14px',
+                                                margin: groupIndex === 0 ? '0 -10px 4px -10px' : '4px -10px 4px -10px',
+                                                borderBottom: '1px solid var(--bento-outline)',
+                                                borderTop: groupIndex !== 0 ? '1px solid var(--bento-outline)' : 'none',
+                                                borderBottomLeftRadius: '0px',
+                                                borderBottomRightRadius: '0px',
                                             }}
                                         >
                                             {group.label}
@@ -246,8 +258,7 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                             })()}
                         </div>
 
-                        {/* Footer */}
-                        <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', position: 'relative', zIndex: 1, minHeight: '60px' }}>
+                        <div style={{ padding: '8px 14px', borderTop: '1px solid var(--bento-outline)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', position: 'relative', zIndex: 1, minHeight: '54px' }}>
                             <UserProfileDropdown
                                 userName={userName}
                                 userRole={jobTitle}
@@ -256,10 +267,43 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                                 onOpenSettings={() => setSettingsOpen(true)}
                                 onEditProfile={() => setProfileOpen(true)}
                             />
+
+                            {/* Minimalist Footer Utilities (Vertical Stack) */}
+                            <div style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '8px 10px',
+                                borderRadius: '14px',
+                                background: 'rgba(255,255,255,0.01)',
+                                border: '1px solid var(--bento-outline)',
+                                minWidth: '54px'
+                            }}>
+                                <div style={{
+                                    height: '20px',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px',
+                                    color: 'var(--text-muted)', letterSpacing: '0.04em',
+                                    fontWeight: 600
+                                }}>
+                                    {clock}
+                                </div>
+                                <div style={{ width: '12px', height: '1px', background: 'var(--bento-outline)' }} />
+                                <ThemeToggle theme={theme} onToggle={toggleTheme} size="sm" />
+                            </div>
                         </div>
                     </div>
                 </div>
             </aside>
+
+            {/* Sidebar Search Modal */}
+            <SidebarSearchModal
+                open={isSearchOpen}
+                onClose={() => setIsSearchOpen(false)}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+            />
 
             {/* Status Editor Modal */}
             {statusEditorTarget && (

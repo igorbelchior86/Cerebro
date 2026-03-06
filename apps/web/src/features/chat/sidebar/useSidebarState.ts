@@ -50,6 +50,8 @@ export interface SidebarState {
     theme: 'dark' | 'light';
     setTheme: (v: 'dark' | 'light') => void;
     clock: string;
+    isSearchOpen: boolean;
+    setIsSearchOpen: (v: boolean) => void;
     toggleTheme: () => void;
 
     // Autotask queues and status catalog
@@ -101,6 +103,7 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
     const [hideSuppressed, setHideSuppressed] = useState(true);
     const [theme, setTheme] = useState<'dark' | 'light'>('dark');
     const [clock, setClock] = useState('');
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [statusCatalog, setStatusCatalog] = useState<AutotaskPicklistOption[]>([]);
     const [statusEditorTarget, setStatusEditorTarget] = useState<ActiveTicket | null>(null);
     const [statusEditorQuery, setStatusEditorQuery] = useState('');
@@ -710,6 +713,8 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         theme,
         setTheme,
         clock,
+        isSearchOpen,
+        setIsSearchOpen,
         toggleTheme,
         globalQueuesCatalog,
         statusCatalog,

@@ -1,6 +1,6 @@
 'use client';
 
-import { type FormEvent, type KeyboardEvent, type ChangeEvent, type ReactNode, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, type ChangeEvent, type ReactNode, useRef, useState, useEffect } from 'react';
 import type { CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 
@@ -56,6 +56,9 @@ export default function ChatInput({
   const [input, setInput] = useState('');
   const [focused, setFocused] = useState(false);
   const [attachments, setAttachments] = useState<ChatInputAttachmentDraft[]>([]);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const INPUT_LINE_HEIGHT_PX = 18;
@@ -141,6 +144,28 @@ export default function ChatInput({
       return prev.filter((a) => a.id !== id);
     });
   };
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        isEmojiPickerOpen &&
+        emojiPickerRef.current &&
+        !emojiPickerRef.current.contains(event.target as Node) &&
+        emojiButtonRef.current &&
+        !emojiButtonRef.current.contains(event.target as Node)
+      ) {
+        setIsEmojiPickerOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isEmojiPickerOpen]);
+
+  const EMOJI_CATEGORIES = [
+    { label: 'Smileys', emojis: ['😀', '😃', '😄', '😁', '😅', '😂', '🤣', '😊', '😇', '🙂', '😉', '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝', '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳', '😏'] },
+    { label: 'Gestures', emojis: ['👍', '👎', '👌', '🤌', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '🖕', '👇', '☝️', '👍', '👊', '🤜', '🤛', '👏', '🙌', '👐', '🤲', '🤝', '🙏'] },
+    { label: 'Tech', emojis: ['🖥️', '💻', '⌨️', '🖱️', '🖨️', '💾', '💿', '📀', '💽', '📼', '📷', '📹', '🎥', '📞', '☎️', '📟', '📠', '📺', '📻', '🎙️', '🎚️', '🎛️', '⏲️', '🕰️', '⌛', '⏳', '🌡️', '💡', '🔦', '🏮'] }
+  ];
 
   const toolbarButtonStyle: CSSProperties = {
     width: '28px',
@@ -412,24 +437,102 @@ export default function ChatInput({
               <path d="M11.8 5.1 7 9.9a2 2 0 0 1-2.8-2.8L9 2.3a3 3 0 1 1 4.2 4.2L7.6 12a4 4 0 1 1-5.7-5.6l5.2-5.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
-          <button
-            type="button"
-            disabled={disabled || isLoading}
-            style={toolbarButtonStyle}
-            title="Emoji"
-            aria-label="Insert emoji"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => executeCommand('insertText', '🙂')}
-            onMouseEnter={handleToolbarMouseEnter}
-            onMouseLeave={handleToolbarMouseLeave}
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.4" />
-              <circle cx="5.8" cy="6.5" r="0.7" fill="currentColor" />
-              <circle cx="10.2" cy="6.5" r="0.7" fill="currentColor" />
-              <path d="M5.2 9.6c.6.9 1.6 1.4 2.8 1.4 1.2 0 2.2-.5 2.8-1.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-            </svg>
-          </button>
+          <div style={{ position: 'relative', display: 'inline-flex' }}>
+            <button
+              ref={emojiButtonRef}
+              type="button"
+              disabled={disabled || isLoading}
+              style={{
+                ...toolbarButtonStyle,
+                color: isEmojiPickerOpen ? 'var(--accent)' : 'var(--text-muted)',
+                background: isEmojiPickerOpen ? 'var(--bg-card-hover)' : 'var(--bg-panel)',
+                borderColor: isEmojiPickerOpen ? 'var(--border-accent)' : 'var(--bento-outline)',
+              }}
+              title="Emoji"
+              aria-label="Insert emoji"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setIsEmojiPickerOpen(!isEmojiPickerOpen)}
+              onMouseEnter={handleToolbarMouseEnter}
+              onMouseLeave={handleToolbarMouseLeave}
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="8" cy="8" r="6.2" stroke="currentColor" strokeWidth="1.4" />
+                <circle cx="5.8" cy="6.5" r="0.7" fill="currentColor" />
+                <circle cx="10.2" cy="6.5" r="0.7" fill="currentColor" />
+                <path d="M5.2 9.6c.6.9 1.6 1.4 2.8 1.4 1.2 0 2.2-.5 2.8-1.4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
+            </button>
+
+            {isEmojiPickerOpen && (
+              <div
+                ref={emojiPickerRef}
+                style={{
+                  position: 'absolute',
+                  bottom: 'calc(100% + 12px)',
+                  left: '-10px',
+                  zIndex: 1000,
+                  width: '240px',
+                  maxHeight: '320px',
+                  background: 'var(--bg-elevated)',
+                  backdropFilter: 'blur(16px)',
+                  WebkitBackdropFilter: 'blur(16px)',
+                  border: '1px solid var(--border-strong)',
+                  borderRadius: '16px',
+                  boxShadow: '0 20px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.05) inset',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  animation: 'animate-in fade-in zoom-in-95 duration-200 ease-out',
+                }}
+              >
+                <div style={{ padding: '12px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {EMOJI_CATEGORIES.map((cat) => (
+                    <div key={cat.label}>
+                      <div style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700, marginBottom: '8px', letterSpacing: '0.05em' }}>
+                        {cat.label}
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '4px' }}>
+                        {cat.emojis.map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => {
+                              executeCommand('insertText', emoji);
+                              setIsEmojiPickerOpen(false);
+                            }}
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '18px',
+                              background: 'transparent',
+                              border: 'none',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s cubic-bezier(0.23, 1, 0.32, 1)',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = 'var(--bg-card-hover)';
+                              e.currentTarget.style.transform = 'scale(1.2)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = 'transparent';
+                              e.currentTarget.style.transform = 'scale(1)';
+                            }}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ position: 'absolute', bottom: '-6px', left: '20px', width: '12px', height: '12px', background: 'var(--bg-elevated)', borderLeft: '1px solid var(--border-strong)', borderBottom: '1px solid var(--border-strong)', transform: 'rotate(-45deg)', zIndex: -1 }} />
+              </div>
+            )}
+          </div>
           <div style={{ width: '1px', height: '18px', background: 'var(--bento-outline)' }} aria-hidden="true" />
           <button
             type="button"

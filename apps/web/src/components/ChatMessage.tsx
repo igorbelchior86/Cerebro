@@ -403,25 +403,27 @@ function RichCleanTicketText({
 const assistantBubbleStyle: CSSProperties = {
   width: 'fit-content',
   maxWidth: '92%',
-  borderRadius: '20px 20px 20px 4px',
+  borderRadius: '16px 16px 16px 4px',
   background: 'var(--bg-card)',
-  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04)',
-  padding: '12px 16px',
+  boxShadow: '0 8px 32px rgba(0,0,0,0.06)',
+  padding: '10px 14px',
   position: 'relative',
-  border: 'none',
+  border: '1px solid var(--bento-outline)',
+  fontSize: '12px',
+  lineHeight: 1.5,
 };
 
 const userBubbleStyle: CSSProperties = {
   width: 'fit-content',
   maxWidth: '85%',
   margin: 0,
-  borderRadius: '20px 20px 4px 20px',
-  padding: '12px 16px',
-  fontSize: '13px',
-  lineHeight: 1.55,
+  borderRadius: '16px 16px 4px 16px',
+  padding: '10px 14px',
+  fontSize: '12px',
+  lineHeight: 1.5,
   color: '#FFFFFF',
-  background: 'linear-gradient(135deg, var(--accent), #516e61)',
-  boxShadow: '0 2px 6px rgba(0, 122, 255, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.1)',
+  background: 'linear-gradient(135deg, var(--accent), #5a7b6a)',
+  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12), inset 0 1px 1px rgba(255, 255, 255, 0.1)',
   border: 'none',
 };
 
@@ -446,58 +448,58 @@ type BubbleTone = {
 const BUBBLE_TONES: Record<BubbleCategory, BubbleTone> = {
   system_status: {
     bubbleBg: 'transparent',
-    bubbleBorder: 'var(--border)',
+    bubbleBorder: 'var(--bento-outline)',
     bubbleAccent: 'var(--text-muted)',
-    badgeBg: 'var(--bg-badge)',
-    badgeBorder: 'var(--border)',
+    badgeBg: 'rgba(255,255,255,0.02)',
+    badgeBorder: 'var(--bento-outline)',
     badgeText: 'var(--text-muted)',
   },
   ai: {
     bubbleBg: 'transparent',
     bubbleBorder: 'var(--border-accent)',
     bubbleAccent: 'var(--accent)',
-    badgeBg: 'var(--accent-muted)',
-    badgeBorder: 'var(--border-accent)',
+    badgeBg: 'rgba(111,143,126,0.05)',
+    badgeBorder: 'rgba(111,143,126,0.15)',
     badgeText: 'var(--accent)',
   },
   note: {
-    bubbleBg: 'rgba(211,166,61,0.03)',
-    bubbleBorder: 'rgba(211,166,61,0.15)',
+    bubbleBg: 'rgba(211,166,61,0.02)',
+    bubbleBorder: 'rgba(211,166,61,0.12)',
     bubbleAccent: 'var(--yellow)',
-    badgeBg: 'rgba(211,166,61,0.10)',
-    badgeBorder: 'rgba(211,166,61,0.20)',
+    badgeBg: 'rgba(211,166,61,0.08)',
+    badgeBorder: 'rgba(211,166,61,0.15)',
     badgeText: 'var(--yellow)',
   },
   tech_to_ai: {
     bubbleBg: 'transparent',
-    bubbleBorder: 'var(--border)',
+    bubbleBorder: 'var(--bento-outline)',
     bubbleAccent: 'var(--text-muted)',
-    badgeBg: 'var(--bg-badge)',
-    badgeBorder: 'var(--border)',
+    badgeBg: 'rgba(255,255,255,0.02)',
+    badgeBorder: 'var(--bento-outline)',
     badgeText: 'var(--text-muted)',
   },
   tech_to_user: {
     bubbleBg: 'transparent',
-    bubbleBorder: 'var(--border)',
+    bubbleBorder: 'var(--bento-outline)',
     bubbleAccent: 'var(--text-muted)',
-    badgeBg: 'var(--bg-badge)',
-    badgeBorder: 'var(--border)',
+    badgeBg: 'rgba(255,255,255,0.02)',
+    badgeBorder: 'var(--bento-outline)',
     badgeText: 'var(--text-muted)',
   },
   ai_exchange: {
     bubbleBg: 'transparent',
     bubbleBorder: 'var(--green-border)',
     bubbleAccent: 'var(--green)',
-    badgeBg: 'var(--green-muted)',
+    badgeBg: 'rgba(16,185,129,0.04)',
     badgeBorder: 'var(--green-border)',
     badgeText: 'var(--green)',
   },
   ai_validation: {
-    bubbleBg: 'rgba(16,185,129,0.03)',
-    bubbleBorder: 'var(--green-border)',
+    bubbleBg: 'rgba(16,185,129,0.02)',
+    bubbleBorder: 'rgba(16,185,129,0.12)',
     bubbleAccent: 'var(--green)',
-    badgeBg: 'var(--green-muted)',
-    badgeBorder: 'var(--green-border)',
+    badgeBg: 'rgba(16,185,129,0.08)',
+    badgeBorder: 'rgba(16,185,129,0.15)',
     badgeText: 'var(--green)',
   },
 };
@@ -525,11 +527,12 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
   const tone = BUBBLE_TONES[category];
   const channelBadge = channel === 'external_psa_user' ? 'PSA/User' : 'AI';
   const channelBadgeStyle: CSSProperties = {
-    fontSize: '9px',
-    fontWeight: 700,
-    borderRadius: '999px',
-    padding: '1px 7px',
-    letterSpacing: '0.03em',
+    fontSize: '8px',
+    fontWeight: 800,
+    borderRadius: '4px',
+    padding: '1px 5px',
+    letterSpacing: '0.05em',
+    textTransform: 'uppercase',
     border: `1px solid ${tone.badgeBorder}`,
     background: tone.badgeBg,
     color: tone.badgeText,
@@ -601,18 +604,18 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
             <p style={userBubbleByChannel}>
               {message.content}
             </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginTop: '4px', flexDirection: 'row-reverse', marginRight: '6px' }}>
-              <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)' }}>You</span>
-              <span style={{ ...channelBadgeStyle, fontSize: '9px' }}>{channelBadge}</span>
-              {message.timestamp && <span suppressHydrationWarning style={{ fontFamily: 'var(--font-jetbrains-mono, monospace)', fontSize: '9px', color: 'var(--text-faint)' }}>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', flexDirection: 'row-reverse', marginRight: '4px' }}>
+              <span style={{ fontSize: '9px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>You</span>
+              <span style={channelBadgeStyle}>{channelBadge}</span>
+              {message.timestamp && <span suppressHydrationWarning style={{ fontSize: '9px', color: 'var(--text-faint)', fontWeight: 500 }}>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
             </div>
             {message.delivery ? (
               <div style={{ marginTop: '5px', fontSize: '10px', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                  <span style={{ ...deliveryStatusToneMap[message.delivery.status], borderRadius: '999px', padding: '1px 7px', fontSize: '9px', fontWeight: 700 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ ...deliveryStatusToneMap[message.delivery.status], borderRadius: '4px', padding: '1px 5px', fontSize: '8px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     {deliveryStatusLabelMap[message.delivery.status]}
                   </span>
-                  <span>PSA delivery</span>
+                  <span style={{ fontSize: '9px', fontWeight: 500, color: 'var(--text-faint)' }}>PSA delivery</span>
                 </div>
                 {message.delivery.error ? (
                   <span style={{ color: '#b91c1c', maxWidth: '360px', textAlign: 'right' }}>{message.delivery.error}</span>
@@ -723,13 +726,13 @@ export default function ChatMessage({ message, index, children, onRetryExternalM
         : normalizeCleanTicketTextForDisplay(message.ticketTextVariant!.original)
     : message.content;
   const stepsList = message.steps && message.steps.length > 0 ? (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '8px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '8px', paddingLeft: '4px' }}>
       {message.steps.map((step, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11.5px', color: 'var(--text-muted)' }}>
-          <span style={{ width: '14px', height: '14px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', flexShrink: 0, background: step.status === 'done' ? 'var(--green-muted)' : step.status === 'running' ? 'var(--accent-muted)' : 'var(--bg-badge)', border: `1px solid ${step.status === 'done' ? 'var(--green-border)' : step.status === 'running' ? 'var(--border-accent)' : 'var(--border)'}`, color: step.status === 'done' ? 'var(--green)' : 'transparent' }} className={step.status === 'running' ? 'animate-throbber' : undefined}>
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '10.5px', color: 'var(--text-muted)' }}>
+          <span style={{ width: '12px', height: '12px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7px', flexShrink: 0, background: step.status === 'done' ? 'var(--green-muted)' : step.status === 'running' ? 'var(--accent-muted)' : 'var(--bg-badge)', border: `1px solid ${step.status === 'done' ? 'var(--green-border)' : step.status === 'running' ? 'var(--border-accent)' : 'var(--border)'}`, color: step.status === 'done' ? 'var(--green)' : 'transparent' }} className={step.status === 'running' ? 'animate-throbber' : undefined}>
             {step.status === 'done' ? '✓' : ''}
           </span>
-          <span>{step.label}</span>
+          <span style={{ fontWeight: 500 }}>{step.label}</span>
         </div>
       ))}
     </div>

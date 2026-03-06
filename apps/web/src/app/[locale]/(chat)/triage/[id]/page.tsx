@@ -3080,74 +3080,113 @@ export default function SessionDetail({
                   'Escalate to L3',
                 ]}
                 footerRightContent={(
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                    <div
-                      style={{
-                        borderRadius: '9px',
-                        border: '1px solid var(--bento-outline)',
-                        background: 'var(--bg-panel)',
-                        padding: '4px 8px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                      }}
-                    >
-                      <span style={{ fontSize: '10px', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700 }}>Timer</span>
-                      <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-jetbrains-mono, monospace)' }}>
+                  <div style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    background: 'var(--bg-panel)',
+                    border: '1px solid var(--bento-outline)',
+                    borderRadius: '10px',
+                    padding: '2px',
+                    gap: '0',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.06)',
+                    overflow: 'hidden'
+                  }}>
+                    {/* Timer Region */}
+                    <div style={{
+                      padding: '4px 10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      borderRight: '1px solid var(--bento-outline)'
+                    }}>
+                      <span style={{ fontSize: '9px', textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-muted)', fontWeight: 700 }}>Timer</span>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'var(--font-jetbrains-mono, monospace)', minWidth: '45px' }}>
                         {stopwatchDisplay}
                       </span>
                     </div>
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+
+                    {/* Actions Region */}
+                    <div style={{ display: 'flex', alignItems: 'center', padding: '0 4px', gap: '4px' }}>
                       <button
                         type="button"
                         onClick={stopwatchRunning ? handleStopwatchPause : handleStopwatchStart}
                         style={{
-                          borderRadius: '8px',
-                          border: `1px solid ${stopwatchRunning ? 'rgba(245,158,11,0.35)' : 'rgba(16,185,129,0.35)'}`,
-                          background: stopwatchRunning ? 'rgba(245,158,11,0.10)' : 'rgba(16,185,129,0.10)',
-                          color: stopwatchRunning ? '#92400e' : '#047857',
-                          padding: '4px 8px',
+                          borderRadius: '6px',
+                          border: 'none',
+                          background: stopwatchRunning ? 'rgba(234,179,8,0.1)' : 'rgba(16,185,129,0.1)',
+                          color: stopwatchRunning ? '#B45309' : '#047857',
+                          padding: '4px 10px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
                           fontSize: '11px',
                           fontWeight: 700,
                           cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = stopwatchRunning ? 'rgba(234,179,8,0.15)' : 'rgba(16,185,129,0.15)';
+                          e.currentTarget.style.transform = 'translateY(-1px)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = stopwatchRunning ? 'rgba(234,179,8,0.1)' : 'rgba(16,185,129,0.1)';
+                          e.currentTarget.style.transform = 'translateY(0)';
                         }}
                       >
-                        {stopwatchRunning ? 'Pause' : 'Start'}
+                        <div style={{ position: 'relative', width: '12px', height: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <svg
+                            width="12" height="12" viewBox="0 0 24 24" fill="currentColor"
+                            style={{
+                              position: 'absolute',
+                              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                              opacity: stopwatchRunning ? 1 : 0,
+                              transform: stopwatchRunning ? 'scale(1) rotate(0deg)' : 'scale(0.5) rotate(-90deg)'
+                            }}
+                          >
+                            <rect x="6" y="4" width="4" height="16" rx="1" />
+                            <rect x="14" y="4" width="4" height="16" rx="1" />
+                          </svg>
+                          <svg
+                            width="14" height="14" viewBox="0 0 24 24" fill="currentColor"
+                            style={{
+                              position: 'absolute',
+                              transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                              opacity: !stopwatchRunning ? 1 : 0,
+                              transform: !stopwatchRunning ? 'scale(1) rotate(0deg)' : 'scale(0.5) rotate(90deg)',
+                              marginLeft: '2px'
+                            }}
+                          >
+                            <path d="M5 3l14 9-14 9V3z" />
+                          </svg>
+                        </div>
+                        {stopwatchRunning ? 'Pause' : 'Play'}
                       </button>
+
                       <button
                         type="button"
                         onClick={handleStopwatchReset}
                         style={{
-                          borderRadius: '8px',
-                          border: '1px solid var(--bento-outline)',
-                          background: 'var(--bg-panel)',
+                          borderRadius: '6px',
+                          border: 'none',
+                          background: 'transparent',
                           color: 'var(--text-muted)',
                           padding: '4px 8px',
                           fontSize: '11px',
-                          fontWeight: 700,
+                          fontWeight: 600,
                           cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'var(--bg-card-hover)';
+                          e.currentTarget.style.color = 'var(--text-primary)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'transparent';
+                          e.currentTarget.style.color = 'var(--text-muted)';
                         }}
                       >
                         Reset
                       </button>
-                    </div>
-                    <div
-                      title={stopwatchSyncLabel}
-                      style={{
-                        borderRadius: '8px',
-                        border: `1px solid ${stopwatchSyncTone.border}`,
-                        background: stopwatchSyncTone.background,
-                        color: stopwatchSyncTone.color,
-                        padding: '4px 8px',
-                        fontSize: '10px',
-                        fontWeight: 700,
-                        maxWidth: '240px',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {stopwatchSyncLabel}
                     </div>
                   </div>
                 )}

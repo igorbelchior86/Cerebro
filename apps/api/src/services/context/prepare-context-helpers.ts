@@ -9,11 +9,68 @@ import type {
   Doc,
   Signal,
   ITGlueWanCandidate,
-  ITGlueInfraCandidate
+  ITGlueInfraCandidate,
+  SecurityAgentSummary
 } from './prepare-context.types.js';
 import type { NinjaOneClient } from '../../clients/ninjaone.js';
 import type { ITGlueClient } from '../../clients/itglue.js';
 import { callLLM } from '../ai/llm-adapter.js';
+
+type JsonRecord = Record<string, unknown>;
+type EnrichmentSectionRecord = Record<string, EnrichmentField<unknown>>;
+type ITGlueRecord = {
+  id?: string | number;
+  attributes?: JsonRecord | null;
+  [key: string]: unknown;
+};
+type NinjaDeviceLike = {
+  id?: string | number;
+  hostname?: string;
+  systemName?: string;
+  osName?: string;
+  osVersion?: string;
+  lastActivityTime?: string;
+  lastContact?: string;
+  ipAddress?: string;
+  properties?: JsonRecord;
+  [key: string]: unknown;
+};
+type NinjaDeviceDetailsLike = {
+  osName?: string;
+  osVersion?: string;
+  lastContact?: string;
+  lastUpdate?: string;
+  properties?: JsonRecord;
+  os?: {
+    name?: string;
+    buildNumber?: string | number;
+    releaseId?: string | number;
+  };
+  [key: string]: unknown;
+};
+type DeviceTypeValue = IterativeEnrichmentSections['endpoint']['device_type']['value'];
+type LocationContextValue = IterativeEnrichmentSections['network']['location_context']['value'];
+type VpnStateValue = IterativeEnrichmentSections['network']['vpn_state']['value'];
+type EnrichmentEngineLike = {
+  inferDeviceType(input: {
+    ticketNarrative: string;
+    device: NinjaDeviceLike | null;
+    deviceDetails: NinjaDeviceDetailsLike | null;
+  }): DeviceTypeValue;
+  normalizeTimeValue(value: string): string;
+  inferSecurityAgent(signals: Signal[], deviceDetails: NinjaDeviceDetailsLike | null): SecurityAgentSummary;
+  inferLocationContext(ticketNarrative: string): LocationContextValue;
+  resolvePublicIp(device: NinjaDeviceLike | null, deviceDetails: NinjaDeviceDetailsLike | null): string;
+  inferVpnState(signals: Signal[], ticketNarrative: string): VpnStateValue;
+};
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function asJsonRecord(value: unknown): JsonRecord {
+  return isJsonRecord(value) ? value : {};
+}
 
 export function itgAttr(attrs: Record<string, unknown> | null | undefined, key: string): unknown {
   if (!attrs) return undefined;
@@ -60,20 +117,20 @@ export function buildIterativeEnrichmentProfile(input: {
   inferredCompany: string;
   requesterName: string;
   entityResolution: EntityResolution;
-  device: any | null;
-  deviceDetails: any | null;
+  device: NinjaDeviceLike | null;
+  deviceDetails: NinjaDeviceDetailsLike | null;
   loggedInUser: string;
   loggedInAt: string;
   inferredPhoneProvider: string | null;
   sourceFindings: SourceFinding[];
-  itglueConfigs: any[];
-  itgluePasswords: any[];
-  itglueAssets: any[];
+  itglueConfigs: ITGlueRecord[];
+  itgluePasswords: ITGlueRecord[];
+  itglueAssets: ITGlueRecord[];
   itglueEnriched?: ItglueEnrichedPayload | null;
   docs: Doc[];
   ninjaChecks: Signal[];
   missingData: Array<{ field: string; why: string }>;
-  enrichmentEngine: any;
+  enrichmentEngine: EnrichmentEngineLike;
 }): IterativeEnrichmentProfile {
   const ticketSection = buildTicketEnrichmentSection({
     ticket: input.ticket,
@@ -315,12 +372,12 @@ export function buildIdentityEnrichmentSection(
 
 export function buildEndpointEnrichmentSection(input: {
   ticketNarrative: string;
-  device: any | null;
-  deviceDetails: any | null;
+  device: NinjaDeviceLike | null;
+  deviceDetails: NinjaDeviceDetailsLike | null;
   loggedInUser: string;
   loggedInAt: string;
   ninjaChecks: Signal[];
-  enrichmentEngine: any;
+  enrichmentEngine: EnrichmentEngineLike;
 }): IterativeEnrichmentSections['endpoint'] {
   const deviceName = String(
     input.device?.hostname || input.device?.systemName || input.device?.id || ''
@@ -421,16 +478,16 @@ export function buildEndpointEnrichmentSection(input: {
 
 export function buildNetworkEnrichmentSection(input: {
   ticketNarrative: string;
-  device: any | null;
-  deviceDetails: any | null;
+  device: NinjaDeviceLike | null;
+  deviceDetails: NinjaDeviceDetailsLike | null;
   docs: Doc[];
-  itglueConfigs: any[];
-  itgluePasswords: any[];
-  itglueAssets: any[];
+  itglueConfigs: ITGlueRecord[];
+  itgluePasswords: ITGlueRecord[];
+  itglueAssets: ITGlueRecord[];
   itglueEnriched: ItglueEnrichedPayload | null;
   ninjaChecks: Signal[];
   inferredPhoneProvider: string | null;
-  enrichmentEngine: any;
+  enrichmentEngine: EnrichmentEngineLike;
 }): IterativeEnrichmentSections['network'] {
   const wanCandidate = extractITGlueWanCandidate({
     ticketNarrative: input.ticketNarrative,
@@ -507,9 +564,9 @@ export function buildNetworkEnrichmentSection(input: {
 }
 
 export function buildInfraEnrichmentSection(input: {
-  itglueConfigs: any[];
-  itgluePasswords: any[];
-  itglueAssets: any[];
+  itglueConfigs: ITGlueRecord[];
+  itgluePasswords: ITGlueRecord[];
+  itglueAssets: ITGlueRecord[];
   itglueEnriched: ItglueEnrichedPayload | null;
   docs: Doc[];
 }): IterativeEnrichmentSections['infra'] {
@@ -571,7 +628,7 @@ export function buildInfraEnrichmentSection(input: {
 export function inferIspName(input: {
   ticketNarrative: string;
   docs: Doc[];
-  itglueConfigs: any[];
+  itglueConfigs: ITGlueRecord[];
 }): string {
   const sourceText = [
     input.ticketNarrative,
@@ -596,14 +653,14 @@ export function inferIspName(input: {
 
 export function extractITGlueWanCandidate(input: {
   ticketNarrative: string;
-  itglueAssets: any[];
-  itglueConfigs: any[];
+  itglueAssets: ITGlueRecord[];
+  itglueConfigs: ITGlueRecord[];
   docs: Doc[];
 }): ITGlueWanCandidate | null {
   const candidates: ITGlueWanCandidate[] = [];
 
-  const scanRecord = (record: any, sourceSystem: ITGlueWanCandidate['source_system'], sourceRef: string) => {
-    const attrs = record?.attributes || record || {};
+  const scanRecord = (record: ITGlueRecord, sourceSystem: ITGlueWanCandidate['source_system'], sourceRef: string) => {
+    const attrs = asJsonRecord(record.attributes ?? record);
     const pairs = collectTextPairs(attrs);
     const allText = pairs.map((p) => `${p.key}:${p.value}`).join(' | ');
     if (!/\b(internet|wan|isp|provider|carrier|broadband|fiber|cable|upload speed|download speed|link type)\b/i.test(allText)) {
@@ -688,9 +745,9 @@ export function extractITGlueWanCandidate(input: {
 }
 
 export function extractITGlueInfraCandidates(input: {
-  itgluePasswords: any[];
-  itglueConfigs: any[];
-  itglueAssets: any[];
+  itgluePasswords: ITGlueRecord[];
+  itglueConfigs: ITGlueRecord[];
+  itglueAssets: ITGlueRecord[];
   docs: Doc[];
 }): {
   firewall: {
@@ -827,7 +884,7 @@ export function extractITGlueInfraCandidates(input: {
 
 export function extractInfraMakeModel(
   kind: 'firewall' | 'wifi' | 'switch',
-  configs: any[],
+  configs: ITGlueRecord[],
   docs: Doc[]
 ): {
   value: string;
@@ -844,7 +901,7 @@ export function extractInfraMakeModel(
   };
 
   for (const config of configs || []) {
-    const attrs = config?.attributes || {};
+    const attrs = asJsonRecord(config.attributes);
     const text = JSON.stringify(attrs);
     if (!configMatchers[kind].test(text)) continue;
     const vendor = String(
@@ -956,21 +1013,21 @@ export function getEnrichmentFieldByPath(
 ): EnrichmentField<unknown> | null {
   const [section, key] = path.split('.');
   if (!section || !key) return null;
-  const sec = (sections as any)[section];
+  const sec = (sections as unknown as Record<string, EnrichmentSectionRecord | undefined>)[section];
   if (!sec || typeof sec !== 'object') return null;
-  return (sec as any)[key] || null;
+  return sec[key] || null;
 }
 
 export function setEnrichmentFieldByPath(
   sections: IterativeEnrichmentSections,
   path: string,
-  field: EnrichmentField<any>
+  field: EnrichmentField<unknown>
 ): void {
   const [section, key] = path.split('.');
   if (!section || !key) return;
-  const sec = (sections as any)[section];
+  const sec = (sections as unknown as Record<string, EnrichmentSectionRecord | undefined>)[section];
   if (!sec || typeof sec !== 'object') return;
-  (sec as any)[key] = field;
+  sec[key] = field;
 }
 
 export function flattenEnrichmentFields(
@@ -1767,15 +1824,15 @@ export function extractJsonObject(raw: string): Record<string, unknown> {
 export function inferPhoneProvider(input: {
   ticketText: string;
   docs: Doc[];
-  itglueConfigs: any[];
-  itgluePasswords: any[];
+  itglueConfigs: ITGlueRecord[];
+  itgluePasswords: ITGlueRecord[];
   signals: Signal[];
 }): string | null {
   const sourceText = [
     input.ticketText,
     ...input.docs.map((d) => `${d.title} ${d.snippet}`),
-    ...input.itglueConfigs.map((c: any) => JSON.stringify(c?.attributes || {})),
-    ...input.itgluePasswords.map((p: any) => JSON.stringify(p?.attributes || {})),
+    ...input.itglueConfigs.map((config) => JSON.stringify(asJsonRecord(config.attributes))),
+    ...input.itgluePasswords.map((password) => JSON.stringify(asJsonRecord(password.attributes))),
     ...input.signals.map((s) => `${s.source} ${s.type} ${s.summary}`),
   ]
     .filter(Boolean)
@@ -1805,15 +1862,15 @@ export function buildRequesterTokens(value: string): string[] {
     .slice(0, 4);
 }
 
-export function extractLoggedInUser(deviceDetails: any): string | null {
-  if (!deviceDetails || typeof deviceDetails !== 'object') return null;
+export function extractLoggedInUser(deviceDetails: unknown): string | null {
+  if (!isJsonRecord(deviceDetails)) return null;
   const directKeys = ['loggedInUser', 'currentUser', 'lastLoggedInUser', 'consoleUser', 'username', 'userName'];
   for (const key of directKeys) {
     const value = deviceDetails[key];
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
-  const props = deviceDetails.properties;
-  if (props && typeof props === 'object') {
+  const props = asJsonRecord(deviceDetails.properties);
+  if (Object.keys(props).length > 0) {
     for (const [key, value] of Object.entries(props)) {
       if (!/user|login|logon|account/i.test(String(key))) continue;
       if (typeof value === 'string' && value.trim()) return value.trim();
@@ -1834,7 +1891,7 @@ export async function resolveLastLoggedInContext(
 
   const report = await ninjaoneClient.listLastLoggedOnUsers({ pageSize: 1000 }).catch(() => null);
   const rows = Array.isArray(report?.results) ? report.results : [];
-  const match = rows.find((row: any) => String(row.deviceId) === String(deviceId));
+  const match = rows.find((row) => String(row.deviceId) === String(deviceId));
   const reportUser = String(match?.userName || '').trim();
   const reportTime = normalizeTimeValue(String(match?.logonTime || ''));
   if (reportUser) return { userName: reportUser, logonTime: reportTime };
@@ -1842,7 +1899,7 @@ export async function resolveLastLoggedInContext(
   return { userName: '', logonTime: '' };
 }
 
-export function resolveDeviceOsLabel(device: any, details: any): string {
+export function resolveDeviceOsLabel(device: NinjaDeviceLike | null, details: NinjaDeviceDetailsLike | null): string {
   const name = String(device?.osName || details?.osName || details?.os?.name || '').trim();
   const version = String(
     device?.osVersion ||
@@ -2043,12 +2100,12 @@ export async function resolveNinjaOrg(
 ): Promise<{ id: number; name: string } | null> {
   const orgs = await ninjaoneClient.listOrganizations();
   const ranked = orgs
-    .map((o: any) => ({
-      org: o,
-      score: scoreOrgNameMatch(companyName, String(o?.name || '')),
+    .map((org) => ({
+      org,
+      score: scoreOrgNameMatch(companyName, String(org.name || '')),
     }))
-    .filter((r: { score: number }) => r.score >= 0.8)
-    .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
+    .filter((rankedOrg) => rankedOrg.score >= 0.8)
+    .sort((left, right) => right.score - left.score);
   const found = ranked[0]?.org || null;
   return found ? { id: Number(found.id), name: String(found.name) } : null;
 }
@@ -2060,19 +2117,19 @@ export async function resolveITGlueOrg(
 ): Promise<{ id: string; name: string } | null> {
   const orgs = await itglueClient.getOrganizations(1000);
   const rankedByName = orgs
-    .map((o: any) => ({
-      org: o,
+    .map((org) => ({
+      org,
       score: scoreOrgNameMatch(
         companyName,
-        String(itgAttr(o?.attributes || {}, 'name') || ''),
-        String(itgAttr(o?.attributes || {}, 'short_name') || '')
+        String(itgAttr(org.attributes, 'name') || ''),
+        String(itgAttr(org.attributes, 'short_name') || '')
       ),
     }))
-    .filter((r: { score: number }) => r.score >= 0.8)
-    .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
+    .filter((rankedOrg) => rankedOrg.score >= 0.8)
+    .sort((left, right) => right.score - left.score);
   const byName = rankedByName[0]?.org;
   if (byName) {
-    return { id: String(byName.id), name: String(itgAttr(byName?.attributes || {}, 'name') || companyName) };
+    return { id: String(byName.id), name: String(itgAttr(byName.attributes, 'name') || companyName) };
   }
 
   const ignoreDomainSuffixes = [
@@ -2091,8 +2148,8 @@ export async function resolveITGlueOrg(
   if (domains.length === 0) return null;
 
   const rankedByDomain = orgs
-    .map((o: any) => {
-      const primaryDomain = String(itgAttr(o?.attributes || {}, 'primary_domain') || '').toLowerCase();
+    .map((org) => {
+      const primaryDomain = String(itgAttr(org.attributes, 'primary_domain') || '').toLowerCase();
       const domainScore =
         primaryDomain && domains.some((d) => d === primaryDomain)
           ? 1
@@ -2101,16 +2158,16 @@ export async function resolveITGlueOrg(
             : 0;
       const nameScore = scoreOrgNameMatch(
         companyName,
-        String(itgAttr(o?.attributes || {}, 'name') || ''),
-        String(itgAttr(o?.attributes || {}, 'short_name') || '')
+        String(itgAttr(org.attributes, 'name') || ''),
+        String(itgAttr(org.attributes, 'short_name') || '')
       );
-      return { org: o, score: domainScore > 0 ? domainScore * 0.75 + nameScore * 0.25 : 0 };
+      return { org, score: domainScore > 0 ? domainScore * 0.75 + nameScore * 0.25 : 0 };
     })
-    .filter((r: { score: number }) => r.score >= 0.75)
-    .sort((a: { score: number }, b: { score: number }) => b.score - a.score);
+    .filter((rankedOrg) => rankedOrg.score >= 0.75)
+    .sort((left, right) => right.score - left.score);
 
   const byDomain = rankedByDomain[0]?.org;
-  return byDomain ? { id: String(byDomain.id), name: String(itgAttr(byDomain?.attributes || {}, 'name') || companyName) } : null;
+  return byDomain ? { id: String(byDomain.id), name: String(itgAttr(byDomain.attributes, 'name') || companyName) } : null;
 
 }
 

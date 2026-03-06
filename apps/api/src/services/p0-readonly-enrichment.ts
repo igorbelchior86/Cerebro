@@ -5,8 +5,10 @@ import type {
   P0ReadonlyIntegrationSource,
   TicketContextEnvelopeP0,
 } from '@cerebro/types';
-import type { InMemoryP0TrustStore } from './p0-trust-store.js';
-import type { TrustActorRef, TrustAuditRecord, TrustCorrelationRefs } from './p0-trust-contracts.js';
+import type { InMemoryP0TrustStore } from './domain/p0-trust-store.js';
+import type { TrustActorRef, TrustAuditRecord, TrustCorrelationRefs } from './domain/p0-trust-contracts.js';
+
+type JsonRecord = Record<string, unknown>;
 
 type ProviderPayload = {
   raw?: unknown;
@@ -166,7 +168,7 @@ export class P0ReadOnlyEnrichmentService {
       fetched_at: fetchedAt,
       adapter_version: adapterVersion || 'p0-v1',
     };
-    const data = (raw && typeof raw === 'object') ? (raw as Record<string, unknown>) : {};
+    const data = this.asRecord(raw);
 
     if (source === 'itglue') {
       const orgName = String(data.org_name || data.organization_name || 'Unknown org');
@@ -188,15 +190,15 @@ export class P0ReadOnlyEnrichmentService {
             assets_count: assets.length,
             docs_count: docs.length,
           },
-          provenance: { source: 'itglue', ...provenanceBase, record_ids: docs.slice(0, 10).map((d) => String((d as any)?.id || '')) },
+          provenance: { source: 'itglue', ...provenanceBase, record_ids: docs.slice(0, 10).map((doc) => String(doc.id || '')) },
         },
         evidence: docs.slice(0, 10).map((doc, idx) => ({
-          id: `itglue-doc-${idx}-${String((doc as any)?.id || uuidv4())}`,
+          id: `itglue-doc-${idx}-${String(doc.id || uuidv4())}`,
           source: 'IT Glue',
           type: 'document',
-          summary: String((doc as any)?.attributes?.name || (doc as any)?.name || 'IT Glue document'),
+          summary: String(this.asRecord(doc.attributes).name || doc.name || 'IT Glue document'),
           observed_at: fetchedAt,
-          provenance: { source: 'itglue', ...provenanceBase, record_ids: [String((doc as any)?.id || '')] },
+          provenance: { source: 'itglue', ...provenanceBase, record_ids: [String(doc.id || '')] },
         })),
       };
     }
@@ -222,15 +224,15 @@ export class P0ReadOnlyEnrichmentService {
           provenance: { source: 'ninjaone', ...provenanceBase },
         },
         evidence: alerts.slice(0, 10).map((alert, idx) => {
-          const severity = this.normalizeSeverity((alert as any)?.severity);
+          const severity = this.normalizeSeverity(alert.severity);
           return {
-            id: `ninja-alert-${idx}-${String((alert as any)?.id || uuidv4())}`,
+            id: `ninja-alert-${idx}-${String(alert.id || uuidv4())}`,
             source: 'Ninja' as const,
             type: 'alert',
-            summary: String((alert as any)?.message || (alert as any)?.subject || 'Ninja alert'),
+            summary: String(alert.message || alert.subject || 'Ninja alert'),
             ...(severity ? { severity } : {}),
-            observed_at: this.asIso((alert as any)?.createdAt || (alert as any)?.timestamp) || fetchedAt,
-            provenance: { source: 'ninjaone', ...provenanceBase, record_ids: [String((alert as any)?.id || '')] },
+            observed_at: this.asIso(alert.createdAt || alert.timestamp) || fetchedAt,
+            provenance: { source: 'ninjaone', ...provenanceBase, record_ids: [String(alert.id || '')] },
           };
         }),
       };
@@ -253,15 +255,15 @@ export class P0ReadOnlyEnrichmentService {
           provenance: { source: 'sentinelone', ...provenanceBase },
         },
         evidence: alerts.slice(0, 20).map((alert, idx) => {
-          const severity = this.normalizeSeverity((alert as any)?.severity);
+          const severity = this.normalizeSeverity(alert.severity);
           return {
-            id: `s1-${idx}-${String((alert as any)?.id || (alert as any)?.threatId || uuidv4())}`,
+            id: `s1-${idx}-${String(alert.id || alert.threatId || uuidv4())}`,
             source: 'SentinelOne' as const,
-            type: String((alert as any)?.type || 'security_alert'),
-            summary: String((alert as any)?.description || (alert as any)?.name || 'SentinelOne alert'),
+            type: String(alert.type || 'security_alert'),
+            summary: String(alert.description || alert.name || 'SentinelOne alert'),
             ...(severity ? { severity } : {}),
-            observed_at: this.asIso((alert as any)?.createdAt || (alert as any)?.detectedAt) || fetchedAt,
-            provenance: { source: 'sentinelone', ...provenanceBase, record_ids: [String((alert as any)?.id || '')] },
+            observed_at: this.asIso(alert.createdAt || alert.detectedAt) || fetchedAt,
+            provenance: { source: 'sentinelone', ...provenanceBase, record_ids: [String(alert.id || '')] },
           };
         }),
       };
@@ -283,15 +285,15 @@ export class P0ReadOnlyEnrichmentService {
         provenance: { source: 'check_point', ...provenanceBase },
       },
       evidence: incidents.slice(0, 20).map((incident, idx) => {
-        const severity = this.normalizeSeverity((incident as any)?.severity);
+        const severity = this.normalizeSeverity(incident.severity);
         return {
-          id: `cp-${idx}-${String((incident as any)?.id || uuidv4())}`,
+          id: `cp-${idx}-${String(incident.id || uuidv4())}`,
           source: 'Check Point' as const,
-          type: String((incident as any)?.type || 'security_event'),
-          summary: String((incident as any)?.summary || (incident as any)?.description || 'Check Point event'),
+          type: String(incident.type || 'security_event'),
+          summary: String(incident.summary || incident.description || 'Check Point event'),
           ...(severity ? { severity } : {}),
-          observed_at: this.asIso((incident as any)?.timestamp || (incident as any)?.created_at) || fetchedAt,
-          provenance: { source: 'check_point', ...provenanceBase, record_ids: [String((incident as any)?.id || '')] },
+          observed_at: this.asIso(incident.timestamp || incident.created_at) || fetchedAt,
+          provenance: { source: 'check_point', ...provenanceBase, record_ids: [String(incident.id || '')] },
         };
       }),
     };
@@ -344,8 +346,14 @@ export class P0ReadOnlyEnrichmentService {
     };
   }
 
-  private asArray(value: unknown): unknown[] {
-    return Array.isArray(value) ? value : [];
+  private asArray(value: unknown): JsonRecord[] {
+    return Array.isArray(value) ? value.map((item) => this.asRecord(item)) : [];
+  }
+
+  private asRecord(value: unknown): JsonRecord {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as JsonRecord)
+      : {};
   }
 
   private asIso(value: unknown): string | null {

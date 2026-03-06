@@ -7,37 +7,57 @@ import type {
     FusionInference,
     FusionFieldResolution,
     FusionAdjudicationOutput,
-    EnrichmentField
+    EnrichmentField,
+    ItglueEnrichedPayload,
+    NinjaEnrichedPayload,
 } from '../context/prepare-context.types.js';
 import { operationalLogger } from '../../lib/operational-logger.js';
 
+type JsonRecord = Record<string, unknown>;
+
+type BuildFieldInput = {
+    value: unknown;
+    status: EnrichmentField<unknown>['status'];
+    confidence: number;
+    sourceSystem: string;
+    sourceRef?: string;
+    round: number;
+    observedAt?: string;
+};
+
+type FusionRunInput = {
+    sections: IterativeEnrichmentSections;
+    ticket: TicketLike;
+    ticketNarrative: string;
+    normalizedTicket: JsonRecord | null;
+    itglueContacts: JsonRecord[];
+    itglueConfigs: JsonRecord[];
+    itgluePasswords: JsonRecord[];
+    itglueAssets: JsonRecord[];
+    itglueEnriched: ItglueEnrichedPayload | null;
+    ninjaSoftwareInventory: JsonRecord[];
+    ninjaEnriched: NinjaEnrichedPayload | null;
+    device: JsonRecord | null;
+    deviceDetails: JsonRecord | null;
+    loggedInUser: string;
+    loggedInAt: string;
+};
+
+function asJsonRecord(value: unknown): JsonRecord {
+    return value && typeof value === 'object' ? (value as JsonRecord) : {};
+}
+
 export interface FusionEngineDeps {
     normalizeName: (name: string) => string;
-    itgAttr: (attrs: any, key: string) => any;
-    buildField: (input: any) => any;
+    itgAttr: (attrs: JsonRecord, key: string) => unknown;
+    buildField: (input: BuildFieldInput) => EnrichmentField<unknown>;
     isPublicIPv4: (ip: string) => boolean;
 }
 
 export class FusionEngine {
     constructor(private deps: FusionEngineDeps) { }
 
-    async runCrossSourceFusion(input: {
-        sections: IterativeEnrichmentSections;
-        ticket: TicketLike;
-        ticketNarrative: string;
-        normalizedTicket: any | null;
-        itglueContacts: any[];
-        itglueConfigs: any[];
-        itgluePasswords: any[];
-        itglueAssets: any[];
-        itglueEnriched: any | null;
-        ninjaSoftwareInventory: any[];
-        ninjaEnriched: any | null;
-        device: any | null;
-        deviceDetails: any | null;
-        loggedInUser: string;
-        loggedInAt: string;
-    }, supportedPaths: Set<string>): Promise<{
+    async runCrossSourceFusion(input: FusionRunInput, supportedPaths: Set<string>): Promise<{
         sections: IterativeEnrichmentSections;
         audit: Record<string, unknown>;
         appliedResolutionCount: number;
@@ -61,7 +81,6 @@ export class FusionEngine {
             inferences,
         });
 
-        const appliedResolutionCount = 0;
         let usedLlm = false;
         let resolutions: FusionFieldResolution[] = [];
 
@@ -106,7 +125,7 @@ export class FusionEngine {
         };
     }
 
-    private buildFusionFieldCandidates(input: any, supportedPaths: Set<string>): FusionFieldCandidate[] {
+    private buildFusionFieldCandidates(input: FusionRunInput, supportedPaths: Set<string>): FusionFieldCandidate[] {
         const candidates: FusionFieldCandidate[] = [];
         const push = (c: FusionFieldCandidate) => {
             if (supportedPaths.has(c.path) && c.value && !this.isFusionUnknownValue(c.value)) {
@@ -120,14 +139,14 @@ export class FusionEngine {
 
         // IT Glue Enriched
         if (input.itglueEnriched?.fields) {
-            for (const [key, f] of Object.entries(input.itglueEnriched.fields) as any) {
+            for (const [key, f] of Object.entries(input.itglueEnriched.fields)) {
                 push({ path: key, source: `itglue.${f.source_system}`, value: f.value, status: 'inferred', confidence: f.confidence, evidence_refs: f.evidence_refs });
             }
         }
 
         // Ninja Enriched
         if (input.ninjaEnriched?.fields) {
-            for (const [key, f] of Object.entries(input.ninjaEnriched.fields) as any) {
+            for (const [key, f] of Object.entries(input.ninjaEnriched.fields)) {
                 push({ path: key, source: `ninja.${f.source_system}`, value: f.value, status: 'inferred', confidence: f.confidence, evidence_refs: f.evidence_refs });
             }
         }
@@ -147,7 +166,7 @@ export class FusionEngine {
         return candidates;
     }
 
-    private buildFusionLinksAndInferences(input: any): { links: FusionLink[]; inferences: FusionInference[] } {
+    private buildFusionLinksAndInferences(input: FusionRunInput): { links: FusionLink[]; inferences: FusionInference[] } {
         const links: FusionLink[] = [];
         const inferences: FusionInference[] = [];
 
@@ -158,9 +177,9 @@ export class FusionEngine {
         const actorAliases = this.generateNameAliases(actorName);
 
         if (loggedUser && input.itglueContacts.length > 0) {
-            let best: { contact: any; score: number; refs: string[]; note: string } | null = null;
+            let best: { contact: JsonRecord; score: number; refs: string[]; note: string } | null = null;
             for (const contact of input.itglueContacts.slice(0, 200)) {
-                const attrs = contact?.attributes || contact || {};
+                const attrs = asJsonRecord(contact.attributes || contact);
                 const contactName = this.deps.normalizeName(String(
                     this.deps.itgAttr(attrs, 'name') ||
                     [this.deps.itgAttr(attrs, 'first_name'), this.deps.itgAttr(attrs, 'last_name')].filter(Boolean).join(' ')
@@ -267,43 +286,49 @@ export class FusionEngine {
 ... (full prompt same as in prepare-context.ts) ...`;
     }
 
-    private sanitizeFusionAdjudicationOutput(parsed: any, supportedPaths: Set<string>): FusionAdjudicationOutput {
-        const resolutions: FusionFieldResolution[] = Array.isArray(parsed?.resolutions)
-            ? parsed.resolutions
-                .map((r: any): FusionFieldResolution | null => {
-                    const path = String(r?.path || '').trim();
+    private sanitizeFusionAdjudicationOutput(parsed: unknown, supportedPaths: Set<string>): FusionAdjudicationOutput {
+        const parsedRecord = asJsonRecord(parsed);
+        const resolutions: FusionFieldResolution[] = Array.isArray(parsedRecord.resolutions)
+            ? parsedRecord.resolutions
+                .map((rawResolution): FusionFieldResolution | null => {
+                    const resolution = asJsonRecord(rawResolution);
+                    const path = String(resolution.path || '').trim();
                     if (!supportedPaths.has(path)) return null;
-                    const status = ['confirmed', 'inferred', 'unknown', 'conflict'].includes(String(r?.status))
-                        ? String(r.status) as FusionFieldResolution['status']
+                    const status = ['confirmed', 'inferred', 'unknown', 'conflict'].includes(String(resolution.status))
+                        ? String(resolution.status) as FusionFieldResolution['status']
                         : 'unknown';
-                    const resolutionMode = ['direct', 'assembled', 'inferred', 'fallback', 'unknown'].includes(String(r?.resolution_mode))
-                        ? String(r.resolution_mode) as FusionFieldResolution['resolution_mode']
+                    const resolutionMode = ['direct', 'assembled', 'inferred', 'fallback', 'unknown'].includes(String(resolution.resolution_mode))
+                        ? String(resolution.resolution_mode) as FusionFieldResolution['resolution_mode']
                         : 'unknown';
-                    const confidence = Number.isFinite(Number(r?.confidence)) ? Math.max(0, Math.min(1, Number(r.confidence))) : 0;
-                    const evidenceRefs = Array.isArray(r?.evidence_refs) ? r.evidence_refs.map(String).filter(Boolean).slice(0, 20) : [];
-                    const inferenceRefs = Array.isArray(r?.inference_refs) ? r.inference_refs.map(String).filter(Boolean).slice(0, 20) : undefined;
+                    const confidence = Number.isFinite(Number(resolution.confidence)) ? Math.max(0, Math.min(1, Number(resolution.confidence))) : 0;
+                    const evidenceRefs = Array.isArray(resolution.evidence_refs) ? resolution.evidence_refs.map(String).filter(Boolean).slice(0, 20) : [];
+                    const inferenceRefs = Array.isArray(resolution.inference_refs) ? resolution.inference_refs.map(String).filter(Boolean).slice(0, 20) : undefined;
                     return {
                         path,
-                        value: r?.value,
+                        value: resolution.value,
                         status,
                         confidence,
                         resolution_mode: resolutionMode,
                         evidence_refs: evidenceRefs,
                         ...(inferenceRefs && inferenceRefs.length ? { inference_refs: inferenceRefs } : {}),
-                        ...(r?.note ? { note: String(r.note).slice(0, 300) } : {}),
+                        ...(resolution.note ? { note: String(resolution.note).slice(0, 300) } : {}),
                     };
                 })
                 .filter(Boolean) as FusionFieldResolution[]
             : [];
         return {
             resolutions,
-            links: Array.isArray(parsed?.links) ? parsed.links as FusionLink[] : [],
-            inferences: Array.isArray(parsed?.inferences) ? parsed.inferences as FusionInference[] : [],
-            conflicts: Array.isArray(parsed?.conflicts) ? parsed.conflicts.map((c: any) => ({
-                field: String(c?.field || ''),
-                note: String(c?.note || ''),
-                evidence_refs: Array.isArray(c?.evidence_refs) ? c.evidence_refs.map(String) : undefined,
-            })) : [],
+            links: Array.isArray(parsedRecord.links) ? parsedRecord.links as FusionLink[] : [],
+            inferences: Array.isArray(parsedRecord.inferences) ? parsedRecord.inferences as FusionInference[] : [],
+            conflicts: Array.isArray(parsedRecord.conflicts) ? parsedRecord.conflicts.map((rawConflict) => {
+                const conflict = asJsonRecord(rawConflict);
+                const evidenceRefs = Array.isArray(conflict.evidence_refs) ? conflict.evidence_refs.map(String) : undefined;
+                return {
+                    field: String(conflict.field || ''),
+                    note: String(conflict.note || ''),
+                    ...(evidenceRefs ? { evidence_refs: evidenceRefs } : {}),
+                };
+            }) : [],
         };
     }
 
@@ -356,15 +381,15 @@ export class FusionEngine {
 
         const out: FusionFieldResolution[] = [];
         for (const resolution of input.resolutions || []) {
-            const refs = Array.isArray(resolution.evidence_refs) ? resolution.evidence_refs.map((r: any) => String(r || '').trim()).filter(Boolean) : [];
-            const infRefs = Array.isArray(resolution.inference_refs) ? resolution.inference_refs.map((r: any) => String(r || '').trim()).filter(Boolean) : [];
-            if (refs.some((ref: any) => !allowedEvidenceRefs.has(ref))) continue;
-            if (infRefs.some((id: any) => !allowedInferenceIds.has(id))) continue;
+            const refs = Array.isArray(resolution.evidence_refs) ? resolution.evidence_refs.map((ref) => String(ref || '').trim()).filter(Boolean) : [];
+            const infRefs = Array.isArray(resolution.inference_refs) ? resolution.inference_refs.map((ref) => String(ref || '').trim()).filter(Boolean) : [];
+            if (refs.some((ref) => !allowedEvidenceRefs.has(ref))) continue;
+            if (infRefs.some((id) => !allowedInferenceIds.has(id))) continue;
 
             if (guardedIdentityPaths.has(resolution.path)) {
                 const normalizedValue = normalizeCandidateValue(resolution.value);
                 const candidateSet = candidateValuesByPath.get(resolution.path) || new Set<string>();
-                const hasDeterministicInference = infRefs.length > 0 && infRefs.every((id: any) => allowedInferenceIds.has(id));
+                const hasDeterministicInference = infRefs.length > 0 && infRefs.every((id) => allowedInferenceIds.has(id));
                 const isUnknownLike = this.isFusionUnknownValue(this.normalizeFusionResolutionValue(resolution.path, resolution.value));
                 if (!isUnknownLike && !candidateSet.has(normalizedValue) && !hasDeterministicInference) continue;
             }
@@ -386,20 +411,19 @@ export class FusionEngine {
         return this.deps.normalizeName(String(value || '')).toLowerCase();
     }
 
-    private buildDeterministicFusionFallbackResolutions(input: any, links: FusionLink[]): FusionFieldResolution[] {
+    private buildDeterministicFusionFallbackResolutions(input: FusionRunInput, links: FusionLink[]): FusionFieldResolution[] {
         const out: FusionFieldResolution[] = [];
         const identityLink = links
             .filter((l) => l.kind === 'identity_alias')
             .sort((a, b) => b.confidence - a.confidence)[0];
         if (!identityLink || identityLink.confidence < 0.8) return out;
         const contactId = identityLink.from_entity.replace('itglue_contact:', '');
-        const contact = input.itglueContacts.find((c: any) => String(c?.id || '') === contactId);
-        const attrs = contact?.attributes || {};
+        const contact = input.itglueContacts.find((candidate) => String(candidate.id || '') === contactId);
+        const attrs = asJsonRecord(contact?.attributes);
         const name = this.deps.normalizeName(String(
             this.deps.itgAttr(attrs, 'name') ||
             [this.deps.itgAttr(attrs, 'first_name'), this.deps.itgAttr(attrs, 'last_name')].filter(Boolean).join(' ')
         ));
-        const email = String(this.deps.itgAttr(attrs, 'primary_email') || '').trim().toLowerCase();
         if (name) {
             out.push({
                 path: 'ticket.affected_user_name',
@@ -441,11 +465,11 @@ export class FusionEngine {
 
             const sourceRef = [...(resolution.evidence_refs || []), ...((resolution.inference_refs || []).slice(0, 3))].join(' | ');
             const updated = this.deps.buildField({
-                value: normalized as any,
-                status: nextStatus as any,
+                value: normalized,
+                status: nextStatus,
                 confidence: nextConfidence,
                 sourceSystem: resolution.resolution_mode === 'assembled' || resolution.resolution_mode === 'inferred' ? 'fusion_graph_llm' : 'fusion_direct_llm',
-                sourceRef: sourceRef || undefined,
+                ...(sourceRef ? { sourceRef } : {}),
                 round: 7,
             });
             this.setEnrichmentFieldByPath(next, resolution.path, updated);
@@ -458,14 +482,16 @@ export class FusionEngine {
     private getEnrichmentFieldByPath(sections: IterativeEnrichmentSections, path: string): EnrichmentField<unknown> | null {
         const [section, key] = path.split('.');
         if (!section || !key) return null;
-        const sec = (sections as any)[section];
+        const sectionMap = sections as unknown as Record<string, Record<string, EnrichmentField<unknown>> | undefined>;
+        const sec = sectionMap[section];
         return sec?.[key] || null;
     }
 
-    private setEnrichmentFieldByPath(sections: IterativeEnrichmentSections, path: string, field: EnrichmentField<any>): void {
+    private setEnrichmentFieldByPath(sections: IterativeEnrichmentSections, path: string, field: EnrichmentField<unknown>): void {
         const [section, key] = path.split('.');
         if (!section || !key) return;
-        const sec = (sections as any)[section];
+        const sectionMap = sections as unknown as Record<string, Record<string, EnrichmentField<unknown>> | undefined>;
+        const sec = sectionMap[section];
         if (sec) sec[key] = field;
     }
 

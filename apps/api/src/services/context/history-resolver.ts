@@ -29,7 +29,32 @@ import type {
   TicketLike,
   Signal,
   EnrichmentField,
+  SecurityAgentSummary,
 } from './prepare-context.types.js';
+
+type JsonRecord = Record<string, unknown>;
+type NormalizedTicketLike = {
+  descriptionClean?: string;
+  descriptionUi?: string;
+  symptoms?: string[];
+  technologyFacets?: string[];
+  deviceHints?: string[];
+};
+type HistoryEnrichmentEngineLike = {
+  inferVpnState?: (signals: Signal[], ticketNarrative: string) => 'connected' | 'disconnected' | 'unknown';
+  resolvePublicIp?: (device: unknown | null, deviceDetails: unknown | null) => string;
+};
+type EndpointSectionInput = Parameters<typeof buildEndpointEnrichmentSection>[0];
+
+function asJsonRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : {};
+}
+
+function asJsonRecordArray(value: unknown): JsonRecord[] {
+  return Array.isArray(value) ? value.map((item) => asJsonRecord(item)) : [];
+}
 
 export async function findRelatedCases(ticketTitle: string, orgId?: string, companyName?: string): Promise<RelatedCase[]> {
   return findRelatedCasesByTerms([ticketTitle], orgId, companyName);
@@ -38,7 +63,7 @@ export async function findRelatedCases(ticketTitle: string, orgId?: string, comp
 export function buildBroadHistorySearchPlan(input: {
   ticket: TicketLike;
   ticketNarrative: string;
-  normalizedTicket: any | null;
+  normalizedTicket: NormalizedTicketLike | null;
   sections: IterativeEnrichmentSections;
   docs: Doc[];
   fusionAudit?: Record<string, unknown>;
@@ -121,9 +146,10 @@ export function buildBroadHistorySearchPlan(input: {
     addTokenized(doc.title, 0.45, 'itglue_doc_title');
   }
 
-  const fusionLinks = Array.isArray((input.fusionAudit as any)?.links) ? (input.fusionAudit as any).links : [];
-  const fusionInferences = Array.isArray((input.fusionAudit as any)?.inferences) ? (input.fusionAudit as any).inferences : [];
-  const fusionResolutions = Array.isArray((input.fusionAudit as any)?.resolutions) ? (input.fusionAudit as any).resolutions : [];
+  const fusionAudit = asJsonRecord(input.fusionAudit);
+  const fusionLinks = asJsonRecordArray(fusionAudit.links);
+  const fusionInferences = asJsonRecordArray(fusionAudit.inferences);
+  const fusionResolutions = asJsonRecordArray(fusionAudit.resolutions);
   for (const link of fusionLinks.slice(0, 20)) {
     addPhrase(link?.note, 0.6, 'fusion_link_note');
     addTokenized(link?.from_entity, 0.55, 'fusion_link_entity');
@@ -168,7 +194,7 @@ export function buildFinalRefinementPlan(input: {
       targets.add(record.path);
     }
   }
-  const conflicts = Array.isArray((input.fusionAudit as any)?.conflicts) ? (input.fusionAudit as any).conflicts : [];
+  const conflicts = asJsonRecordArray(asJsonRecord(input.fusionAudit).conflicts);
   for (const c of conflicts.slice(0, 10)) {
     if (c?.field) targets.add(String(c.field));
     for (const token of String(c?.note || '').toLowerCase().split(/[^a-z0-9._-]+/)) {
@@ -198,7 +224,7 @@ export function buildFinalRefinementPlan(input: {
 export function shouldRunFinalNinjaRefinement(input: {
   sections: IterativeEnrichmentSections;
   finalRefinementPlanTargets: string[];
-  currentDevice: any | null;
+  currentDevice: unknown | null;
 }): boolean {
   if (!input.currentDevice) return true;
   if (input.finalRefinementPlanTargets.some((target) => /(device|endpoint|vpn|public_ip|user_signed_in)/.test(target))) {
@@ -392,17 +418,17 @@ export function applyFinalRefinementToEnrichment(input: {
   sections: IterativeEnrichmentSections;
   ticketNarrative: string;
   docs: Doc[];
-  itglueConfigs: any[];
-  itgluePasswords: any[];
+  itglueConfigs: JsonRecord[];
+  itgluePasswords: JsonRecord[];
   signals: Signal[];
-  device: any | null;
-  deviceDetails: any | null;
+  device: unknown | null;
+  deviceDetails: unknown | null;
   loggedInUser: string;
   loggedInAt: string;
-  enrichmentEngine?: any;
+  enrichmentEngine?: HistoryEnrichmentEngineLike;
 }): string[] {
   const updatedPaths: string[] = [];
-  const patchIfBetter = (path: string, nextField: EnrichmentField<any>) => {
+  const patchIfBetter = (path: string, nextField: EnrichmentField<unknown>) => {
     const current = getEnrichmentFieldByPath(input.sections, path);
     if (!current) return;
     const nextUnknown = nextField.status === 'unknown' || Number(nextField.confidence || 0) <= 0;
@@ -483,14 +509,22 @@ export function applyFinalRefinementToEnrichment(input: {
   }
 
   if (input.device || input.deviceDetails) {
+    const endpointFallbackEngine = {
+      inferDeviceType: (): 'unknown' => 'unknown',
+      normalizeTimeValue: (value: string) => String(value || ''),
+      inferSecurityAgent: (): SecurityAgentSummary => ({ state: 'unknown', name: 'unknown' }),
+      inferLocationContext: (): 'unknown' => 'unknown',
+      resolvePublicIp: (): string => '',
+      inferVpnState: (): 'unknown' => 'unknown',
+    };
     const endpointSection = buildEndpointEnrichmentSection({
       ticketNarrative: input.ticketNarrative,
-      device: input.device,
-      deviceDetails: input.deviceDetails,
+      device: input.device as EndpointSectionInput['device'],
+      deviceDetails: input.deviceDetails as EndpointSectionInput['deviceDetails'],
       loggedInUser: input.loggedInUser,
       loggedInAt: input.loggedInAt,
       ninjaChecks: input.signals.filter((s) => s.source === 'ninja'),
-      enrichmentEngine: {} as any,
+      enrichmentEngine: endpointFallbackEngine,
     });
     patchIfBetter('endpoint.device_name', { ...endpointSection.device_name, round: 9 });
     patchIfBetter('endpoint.device_type', { ...endpointSection.device_type, round: 9 });
@@ -638,7 +672,7 @@ export function applyHistoryConfidenceCalibration(input: {
 
     const newConfidence = Number(Math.max(0, Math.min(1, prevConfidence + delta)).toFixed(3));
     const adjustedField = buildField({
-      value: record.field.value as any,
+      value: record.field.value,
       status: record.field.status,
       confidence: newConfidence,
       sourceSystem: String(record.field.source_system || 'history_calibrated'),

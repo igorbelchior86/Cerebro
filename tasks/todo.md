@@ -1,3 +1,59 @@
+# Task: API lint warning reduction round 3
+**Status**: completed
+**Started**: 2026-03-06T16:35:00-05:00
+
+## Plan
+- [x] Step 1: Reconfirmar a baseline atual e escolher o próximo lote pesado de baixo risco.
+- [x] Step 2: Limpar hotspots grandes na camada de contexto e nos serviços P0 read-only.
+- [x] Step 3: Revalidar lint/typecheck/testes focados e registrar a nova baseline.
+
+## Progress Notes
+- Skills usados conforme contrato:
+  - `workflow-orchestrator`
+  - Sequential Thinking MCP
+  - Context7 MCP (TypeScript narrowing com `unknown`/type guards)
+- Baseline reaberta desta rodada:
+  - `apps/api` iniciou em `808` warnings
+  - hotspots escolhidos por baixo risco funcional e alto retorno:
+    - `src/services/orchestration/fusion-engine.ts`
+    - `src/services/context/prepare-context-helpers.ts`
+    - `src/services/p0-readonly-enrichment.ts`
+    - `src/services/context/history-resolver.ts`
+- Fix 1:
+  - `apps/api/src/services/orchestration/fusion-engine.ts`
+  - troca de `any` por `JsonRecord`, payloads tipados, inputs explícitos e narrowing em resolução de conflitos/adjudicação
+  - resultado: arquivo ficou sem warnings
+- Fix 2:
+  - `apps/api/src/services/context/prepare-context-helpers.ts`
+  - criação de tipos locais para registros IT Glue/Ninja, engine de enriquecimento e acesso seguro por path
+  - resultado: arquivo caiu de `42` warnings para `0`
+- Fix 3:
+  - `apps/api/src/services/p0-readonly-enrichment.ts`
+  - troca de leituras `as any` por `JsonRecord`, normalização segura de payloads e alinhamento do store para o caminho `domain/*`
+  - `apps/api/src/services/ai/p0-readonly-enrichment.ts` virou re-export fino para eliminar duplicação de implementação
+  - resultado: os dois arquivos ficaram sem warnings
+- Fix 4:
+  - `apps/api/src/services/context/history-resolver.ts`
+  - remoção de `any` em `fusionAudit`, refinamento final e calibração histórica; adição de helpers seguros para arrays/objetos JSON
+  - resultado: arquivo ficou sem warnings
+- Medição final:
+  - `apps/api` caiu de `808` para `654` warnings
+  - redução líquida desta rodada: `154` warnings
+
+## Review
+- Verification:
+- `pnpm exec eslint 'src/services/orchestration/fusion-engine.ts' -f unix` ✅
+- `pnpm exec eslint 'src/services/context/prepare-context-helpers.ts' -f unix` ✅
+- `pnpm exec eslint 'src/services/p0-readonly-enrichment.ts' 'src/services/ai/p0-readonly-enrichment.ts' -f unix` ✅
+- `pnpm exec eslint 'src/services/context/history-resolver.ts' -f unix` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/api test -- src/__tests__/services/prepare-context.test.ts src/__tests__/services/prepare-context-device-resolution.test.ts src/__tests__/services/p0-readonly-enrichment.test.ts` ✅
+- `pnpm --filter @cerebro/api lint` ✅ (`0` errors / `654` warnings)
+- Documentation:
+- `wiki/changelog/2026-03-06-lint-warning-reduction-round-3-context-and-p0-cleanup.md`
+
+---
+
 # Task: API lint warning reduction round 2
 **Status**: completed
 **Started**: 2026-03-06T15:05:00-05:00

@@ -1,3 +1,65 @@
+# Task: Workflow inbox pipeline status must reflect generated analysis
+**Status**: completed
+**Started**: 2026-03-06T19:05:00-05:00
+
+## PRD
+- Problem:
+  - Muitos cards aparecem como `done` mesmo quando, ao abrir, não existe `context`, `hypotheses` e `checklist`.
+  - Muitos cards também ficam presos em `Processing` / `Waiting`, sugerindo que o inbox de workflow não está refletindo corretamente o resultado real da análise.
+- Goal:
+  - Fazer a sidebar refletir o estado real da análise gerada, sem confundir status operacional do ticket com status do pipeline.
+- Functional requirements:
+  - A sidebar não pode marcar `done` com base apenas no status textual do ticket.
+  - Quando a análise gera contexto, hipóteses e checklist, o workflow inbox precisa receber essa projeção.
+  - Sessões bloqueadas ou concluídas precisam deixar o inbox consistente com os artefatos persistidos.
+- Acceptance criteria:
+  - Tickets sem análise completa não aparecem como `done` só porque o ticket está `resolved/complete`.
+  - Tickets com análise já persistida deixam de ficar presos em `Processing` / `Waiting` por falta de projeção no inbox.
+  - O inbox e a tela de triage passam a compartilhar a mesma noção de “análise pronta”.
+
+## Plan
+- [x] Step 1: Confirmar se o bug era só visual ou se havia divergência real entre workflow inbox e triage artifacts.
+- [x] Step 2: Sincronizar evidência/hipóteses/checklist da triage session de volta para o workflow inbox.
+- [x] Step 3: Fazer a sidebar priorizar `pipeline_status` / `block_consistency` em vez do status textual do ticket.
+- [x] Step 4: Revalidar API/Web e documentar o hotfix.
+
+## Progress Notes
+- Skills usados conforme contrato:
+  - `debug-production`
+  - Sequential Thinking MCP
+  - Context7 MCP (atomic projection/update guidance)
+- Diagnóstico:
+  - A sidebar convertia `resolved/closed/done` do ticket em `completed`, mesmo quando os artefatos da análise ainda não existiam.
+  - O workflow inbox calculava `pipeline_status` a partir de `domain_snapshots`, mas a triage persistia pack/diagnosis/validation/playbook em tabelas separadas sem projetar isso de volta para o inbox.
+  - Isso criava dois sintomas ao mesmo tempo:
+    - falso positivo de `done`
+    - cards presos em `Processing` / `Waiting` apesar de a análise já existir
+- Implementação:
+  - adicionado `syncAnalysisProjection()` em `TicketWorkflowCoreService` para projetar evidência, hipóteses e checklist da triage session no workflow inbox
+  - `playbook/full-flow` agora sincroniza o inbox quando encontra artefatos já prontos e também após cada fase do background (`pack`, `diagnosis`, `validation`, `playbook`)
+  - `triageOrchestrator` também projeta o progresso/conclusão da análise no workflow inbox, cobrindo o caminho background fora da rota HTTP
+  - a sidebar agora deriva o badge principal primeiro de `pipeline_status` / `block_consistency`, usando o status textual do ticket apenas como fallback
+  - hotfix complementar após evidência visual em produção: o bloco `hypothesis_checklist_state` deixou de aceitar “hipótese sem checklist” como estado pronto
+  - hotfix complementar após evidência visual em produção: parser da UI passou a aceitar checklist numerado, bullet e checkbox markdown dentro da seção correta
+  - hotfix complementar após evidência visual em produção: a projeção backend passou a reconhecer checklist apenas dentro da seção `Checklist` / `Resolution Steps`, para impedir `Done` falso com listas de outras seções
+  - hotfix complementar após segunda evidência visual em produção: o merge local da sidebar deixou de reaproveitar `prev.status` quando o payload novo já traz `pipeline_status` / `block_consistency`
+  - causa raiz adicional confirmada: a própria tela preservava `DONE` do card anterior/antigo durante o merge de cache, mesmo com o header já em `Processing pipeline`
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- ticket-workflow-core.test.ts` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/api lint` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/web lint` ✅
+- `pnpm --filter @cerebro/web build` ✅
+- Observação:
+  - o `build` do web continuou mostrando apenas o warning já existente do plugin Next no ESLint, sem bloquear a entrega
+- Documentation:
+- `wiki/features/2026-03-06-workflow-inbox-analysis-projection.md`
+
+---
+
 # Task: Sidebar authority and ticket-scoped stopwatch
 **Status**: completed
 **Started**: 2026-03-06T12:15:00-05:00

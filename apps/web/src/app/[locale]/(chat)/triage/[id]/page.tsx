@@ -1036,6 +1036,12 @@ export default function SessionDetail({
       const prevHasStatusDetail =
         isKnownTicketText(String(prev.ticket_status_label || prev.ticket_status_value || '')) &&
         isLifecycleStatusLabel(prevStatusLabel);
+      const nextHasWorkflowState = Boolean(
+        nextRow.pipeline_status ||
+        nextRow.core_state ||
+        nextRow.network_env_body_state ||
+        nextRow.hypothesis_checklist_state
+      );
 
       return {
         ...nextRow,
@@ -1056,7 +1062,7 @@ export default function SessionDetail({
         ...(!nextHasStatusDetail && prevHasStatusDetail && prev.ticket_status_value !== undefined
           ? { ticket_status_value: prev.ticket_status_value }
           : {}),
-        ...(!nextHasStatusDetail && prevHasStatusDetail
+        ...(!nextHasWorkflowState && !nextHasStatusDetail && prevHasStatusDetail
           ? { status: prev.status }
           : {}),
         ...((nextRow.priority || prev.priority) ? { priority: nextRow.priority || prev.priority } : {}),
@@ -1177,12 +1183,12 @@ export default function SessionDetail({
 
     for (const rawLine of lines) {
       const line = rawLine.replace(/\r/g, '');
-      const itemMatch = line.match(/^\s*(\d+)\.\s+(.*)$/);
+      const itemMatch = line.match(/^\s*(?:\d+\.\s+|[-*]\s+(?:\[[ xX]\]\s+)?)(.*)$/);
       if (itemMatch) {
         flush();
         current = {
           id: `c${items.length + 1}`,
-          text: (itemMatch[2] || '').trim(),
+          text: (itemMatch[1] || '').trim(),
           detailLines: [],
         };
         continue;

@@ -532,6 +532,38 @@ router.get('/full-flow', async (req, res) => {
     );
     const ticketId = sessionRow?.ticket_id || rawId;
     const sessionTenantId = String(sessionRow?.tenant_id || req.auth?.tid || '').trim() || null;
+    const requestTraceId = String(req.header('x-correlation-id') || req.header('x-trace-id') || '').trim() || undefined;
+
+    const syncWorkflowProjection = async (input: {
+      pack?: EvidencePack | null;
+      diagnosis?: DiagnosisOutput | null;
+      validation?: ValidationOutput | null;
+      playbook?: PlaybookOutput | null;
+    }) => {
+      if (!sessionTenantId) return;
+      try {
+        await workflowService.syncAnalysisProjection({
+          tenantId: sessionTenantId,
+          ticketRef: ticketId,
+          sessionId,
+          pack: input.pack,
+          diagnosis: input.diagnosis,
+          validation: input.validation,
+          playbook: input.playbook,
+          traceId: requestTraceId,
+        });
+      } catch (error) {
+        operationalLogger.warn('routes.ai.playbook.full_flow.workflow_projection_sync_failed', {
+          module: 'routes.ai.playbook',
+          session_id: sessionId,
+          error_message: String(asRecord(error).message ?? error ?? 'unknown'),
+        }, {
+          ...(sessionTenantId ? { tenant_id: sessionTenantId } : {}),
+          ticket_id: ticketId,
+          ...(requestTraceId ? { trace_id: requestTraceId } : {}),
+        });
+      }
+    };
 
     if (forceRefresh && sessionRow?.id) {
       operationalLogger.info('routes.ai.playbook.full_flow.force_refresh_requested', {
@@ -866,9 +898,13 @@ router.get('/full-flow', async (req, res) => {
        LIMIT 1`,
       [sessionId]
     );
-    const playbook = playbookRow
+    const playbook: PlaybookOutput | null = playbookRow
       ? { content_md: playbookRow.content_md, ...(playbookRow.content_json || {}) }
-      : (playbookResult ? playbookResult.payload : null);
+      : ((playbookResult?.payload as PlaybookOutput | null) || null);
+
+    if (pack || diagnosis || validation || playbook) {
+      await syncWorkflowProjection({ pack, diagnosis, validation, playbook });
+    }
 
     // ─── Trigger Background Processing ────────────────────────────
     /**
@@ -890,6 +926,7 @@ router.get('/full-flow', async (req, res) => {
           const contextService = new PrepareContextService();
           currentPack = await contextService.prepare({ sessionId, ticketId: rawId });
           await persistEvidencePack(sessionId, currentPack);
+          await syncWorkflowProjection({ pack: currentPack, diagnosis: currentDiagnosis, validation: currentValidation, playbook });
         }
 
         // 2. Diagnosis
@@ -910,6 +947,7 @@ router.get('/full-flow', async (req, res) => {
                created_at = NOW()`,
             [sessionId, 'diagnose', currentDiagnosis.meta?.model || 'groq', JSON.stringify(currentDiagnosis)]
           );
+          await syncWorkflowProjection({ pack: currentPack, diagnosis: currentDiagnosis, validation: currentValidation, playbook });
         }
 
         const shouldRevalidate =
@@ -959,6 +997,7 @@ router.get('/full-flow', async (req, res) => {
               currentValidation.safe_to_generate_playbook
             ]
           );
+          await syncWorkflowProjection({ pack: currentPack, diagnosis: currentDiagnosis, validation: currentValidation, playbook });
         }
 
         if (currentValidation && !currentValidation.safe_to_generate_playbook) {
@@ -977,6 +1016,7 @@ router.get('/full-flow', async (req, res) => {
             session_id: sessionId,
             validation_status: currentValidation.status,
           }, { ticket_id: ticketId });
+          await syncWorkflowProjection({ pack: currentPack, diagnosis: currentDiagnosis, validation: currentValidation, playbook });
           return;
         }
 
@@ -1022,6 +1062,12 @@ router.get('/full-flow', async (req, res) => {
              WHERE id = $2`,
             ['approved', sessionId]
           );
+          await syncWorkflowProjection({
+            pack: currentPack,
+            diagnosis: currentDiagnosis,
+            validation: currentValidation,
+            playbook: generatedPlaybook,
+          });
         }
 
         operationalLogger.info('routes.ai.playbook.full_flow.background_completed', {

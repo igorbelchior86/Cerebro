@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import type { EvidencePack, ValidationOutput } from '@cerebro/types';
 import {
   InMemoryTicketWorkflowRepository,
   TicketWorkflowCoreService,
@@ -1429,5 +1430,219 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     const dlqSnapshot = await service.getTicketSnapshot(tenantId, 'PIPE-9001');
     expect(dlqSnapshot?.pipeline_status).toBe('dlq');
     expect(dlqSnapshot?.dlq_id).toBe(command.command_id);
+  });
+
+  it('projects triage analysis artifacts back into the workflow inbox pipeline state', async () => {
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn(),
+    };
+    const { service } = createService(gateway);
+
+    await service.processAutotaskSyncEvent({
+      event_id: 'evt-analysis-1',
+      tenant_id: tenantId,
+      event_type: 'ticket.updated',
+      source: 'Autotask',
+      entity_type: 'ticket',
+      entity_id: 'T20260306.2001',
+      payload: {
+        ticket_number: 'T20260306.2001',
+        title: 'VPN drops every 15 minutes',
+        description: 'User loses VPN every 15 minutes from home office',
+        company_name: 'Acme',
+        requester: 'Jordan',
+        status_label: 'In Progress',
+      },
+      occurred_at: '2026-03-06T12:00:00.000Z',
+      correlation: {
+        trace_id: 'trace-analysis-1',
+        ticket_id: 'T20260306.2001',
+      },
+      provenance: {
+        source: 'autotask_poller',
+      },
+    });
+
+    const projectedPack: EvidencePack = {
+      session_id: 'session-analysis-1',
+      ticket: {
+        id: 'T20260306.2001',
+        title: 'VPN drops every 15 minutes',
+        description: 'User loses VPN every 15 minutes from home office',
+        priority: 'High',
+        queue: 'Service Desk',
+        category: 'Connectivity',
+        created_at: '2026-03-06T11:55:00.000Z',
+      },
+      org: {
+        id: 'org-1',
+        name: 'Acme',
+      },
+      signals: [],
+      related_cases: [],
+      external_status: [],
+      docs: [],
+      evidence_rules: {
+        require_evidence_for_claims: true,
+        no_destructive_steps_without_gating: true,
+      },
+      prepared_at: '2026-03-06T12:01:00.000Z',
+    };
+    const projectedValidation: ValidationOutput = {
+      status: 'approved',
+      violations: [],
+      required_fixes: [],
+      required_questions: ['Confirm hotspot test result'],
+      safe_to_generate_playbook: true,
+    };
+
+    await service.syncAnalysisProjection({
+      tenantId,
+      ticketRef: 'T20260306.2001',
+      sessionId: 'session-analysis-1',
+      pack: projectedPack,
+      diagnosis: {
+        summary: 'Likely unstable split-tunnel route on home firewall.',
+        top_hypotheses: [
+          {
+            rank: 1,
+            hypothesis: 'Home firewall intermittently drops VPN keepalives',
+            confidence: 0.82,
+            evidence: ['Drops occur only offsite', 'Reconnect works immediately'],
+            tests: ['Check keepalive counters'],
+            next_questions: ['Does it happen on mobile hotspot?'],
+          },
+        ],
+        missing_data: [],
+        recommended_actions: [],
+        do_not_do: [],
+      },
+      validation: projectedValidation,
+      playbook: {
+        content_md: [
+          '# VPN Stabilization',
+          '## Checklist',
+          '- [H1] Confirm hotspot comparison',
+          '- [H1] Review firewall idle timeout',
+        ].join('\n'),
+      },
+      traceId: 'trace-analysis-1',
+    });
+
+    const inbox = await service.listInbox(tenantId);
+    const projected = inbox.find((row) => row.ticket_id === 'T20260306.2001');
+    expect(projected?.pipeline_status).toBe('ready');
+    expect(projected?.block_consistency).toEqual({
+      core_state: 'ready',
+      network_env_body_state: 'ready',
+      hypothesis_checklist_state: 'ready',
+    });
+
+    const snapshot = await service.getTicketSnapshot(tenantId, 'T20260306.2001');
+    const metadata = ((snapshot?.snapshot as Record<string, unknown> | undefined)?.domain_snapshots as Record<string, unknown> | undefined)?.['correlates.ticket_metadata'] as Record<string, unknown> | undefined;
+    expect(Array.isArray(metadata?.hypotheses)).toBe(true);
+    expect(Array.isArray(metadata?.checklist)).toBe(true);
+  });
+
+  it('does not mark workflow inbox ready when playbook markdown has bullets but no checklist section', async () => {
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn(),
+    };
+    const { service } = createService(gateway);
+
+    await service.processAutotaskSyncEvent({
+      event_id: 'evt-analysis-2',
+      tenant_id: tenantId,
+      event_type: 'ticket.updated',
+      source: 'Autotask',
+      entity_type: 'ticket',
+      entity_id: 'T20260306.2002',
+      payload: {
+        ticket_number: 'T20260306.2002',
+        title: 'Browser login loop',
+        description: 'User authenticates repeatedly and gets redirected',
+        company_name: 'Acme',
+        requester: 'Taylor',
+        status_label: 'In Progress',
+      },
+      occurred_at: '2026-03-06T12:05:00.000Z',
+      correlation: {
+        trace_id: 'trace-analysis-2',
+        ticket_id: 'T20260306.2002',
+      },
+      provenance: {
+        source: 'autotask_poller',
+      },
+    });
+
+    await service.syncAnalysisProjection({
+      tenantId,
+      ticketRef: 'T20260306.2002',
+      sessionId: 'session-analysis-2',
+      pack: {
+        session_id: 'session-analysis-2',
+        ticket: {
+          id: 'T20260306.2002',
+          title: 'Browser login loop',
+          description: 'User authenticates repeatedly and gets redirected',
+          priority: 'High',
+          queue: 'Service Desk',
+          category: 'Identity',
+          created_at: '2026-03-06T12:04:00.000Z',
+        },
+        org: { id: 'org-1', name: 'Acme' },
+        signals: [],
+        related_cases: [],
+        external_status: [],
+        docs: [],
+        evidence_rules: {
+          require_evidence_for_claims: true,
+          no_destructive_steps_without_gating: true,
+        },
+        prepared_at: '2026-03-06T12:06:00.000Z',
+      },
+      diagnosis: {
+        summary: 'Possible stale browser session token.',
+        top_hypotheses: [
+          {
+            rank: 1,
+            hypothesis: 'Stale browser session token causes redirect loop',
+            confidence: 0.77,
+            evidence: ['Loop occurs after successful auth'],
+            tests: ['Clear browser token cache'],
+          },
+        ],
+        missing_data: [],
+        recommended_actions: [],
+        do_not_do: [],
+      },
+      validation: {
+        status: 'approved',
+        violations: [],
+        required_fixes: [],
+        required_questions: [],
+        safe_to_generate_playbook: true,
+      },
+      playbook: {
+        content_md: [
+          '# Login Loop',
+          '## Context',
+          '- User authenticates successfully',
+          '- Redirect loop starts after callback',
+          '## Hypotheses',
+          '- Token cache is stale',
+        ].join('\n'),
+      },
+      traceId: 'trace-analysis-2',
+    });
+
+    const inbox = await service.listInbox(tenantId);
+    const projected = inbox.find((row) => row.ticket_id === 'T20260306.2002');
+    expect(projected?.pipeline_status).toBe('processing');
+    expect(projected?.block_consistency).toEqual({
+      core_state: 'ready',
+      network_env_body_state: 'ready',
+      hypothesis_checklist_state: 'resolving',
+    });
   });
 });

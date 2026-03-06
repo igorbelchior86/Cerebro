@@ -7,8 +7,12 @@ import { operationalLogger } from '../../lib/operational-logger.js';
 import type {
   BlockConsistencyStateV1,
   CanonicalTicketSnapshotV1,
+  DiagnosisOutput,
+  EvidencePack,
+  PlaybookOutput,
   ConnectorCommandStateV1,
   PipelineStatusV1,
+  ValidationOutput,
 } from '@cerebro/types';
 
 export type WorkflowTargetIntegration =
@@ -331,6 +335,70 @@ function extractCommentBodyForProjection(payload: Record<string, unknown>): stri
   ).trim();
 }
 
+function readAnalysisHypotheses(diagnosis?: DiagnosisOutput | null): Array<Record<string, unknown>> {
+  if (!diagnosis?.top_hypotheses?.length) return [];
+  return diagnosis.top_hypotheses.map((hypothesis, index) => ({
+    rank: Number(hypothesis.rank || index + 1),
+    hypothesis: String(hypothesis.hypothesis || '').trim(),
+    confidence: Number(hypothesis.confidence || 0),
+    evidence: Array.isArray(hypothesis.evidence) ? hypothesis.evidence.map(String) : [],
+    tests: Array.isArray(hypothesis.tests) ? hypothesis.tests.map(String) : [],
+    next_questions: Array.isArray(hypothesis.next_questions) ? hypothesis.next_questions.map(String) : [],
+  })).filter((entry) => String(entry.hypothesis || '').trim().length > 0);
+}
+
+function readChecklistLinesFromMarkdown(markdown: string): string[] {
+  const lines = String(markdown || '').split('\n');
+  const checklistHeadings = ['checklist', 'resolution steps'];
+  let start = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    const heading = lines[i]?.match(/^\s*##+\s+(.+?)\s*$/)?.[1];
+    const normalizedHeading = String(heading || '').trim().toLowerCase();
+    if (checklistHeadings.some((alias) => normalizedHeading.includes(alias))) {
+      start = i + 1;
+      break;
+    }
+  }
+  if (start < 0) return [];
+
+  const sectionLines: string[] = [];
+  for (let i = start; i < lines.length; i += 1) {
+    const line = lines[i] || '';
+    if (/^\s*##+\s+/.test(line)) break;
+    sectionLines.push(line);
+  }
+
+  return sectionLines
+    .map((line) => line.trim())
+    .filter((line) =>
+      /^\d+\.\s+/.test(line)
+      || /^[-*]\s+/.test(line)
+      || /^[-*]\s+\[[ xX]\]\s+/.test(line)
+    )
+    .map((line) =>
+      line
+        .replace(/^\d+\.\s+/, '')
+        .replace(/^[-*]\s+\[[ xX]\]\s+/, '')
+        .replace(/^[-*]\s+/, '')
+        .trim()
+    )
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+function readAnalysisChecklist(validation?: ValidationOutput | null, playbook?: PlaybookOutput | null): string[] {
+  const fromPlaybook = readChecklistLinesFromMarkdown(String(playbook?.content_md || ''));
+  if (fromPlaybook.length > 0) return fromPlaybook;
+
+  const fallback = [
+    ...(validation?.required_fixes || []),
+    ...(validation?.required_questions || []),
+  ]
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean);
+  return fallback.slice(0, 12);
+}
+
 function extractTicketBodyForProjection(payload: Record<string, unknown>): string {
   return String(
     payload.ticket_body_html ??
@@ -588,14 +656,15 @@ function deriveBlockConsistency(row: InboxTicketState, nowMs: number): BlockCons
     || Number(snapshotMeta.network_env_confidence ?? 0) >= 0.6;
   const hasBlockBReady = Boolean(ticketBody) && hasNetworkOrEnvSignals;
 
-  const hasHypothesisPayload =
-    Array.isArray(snapshotMeta.hypotheses) ||
-    Array.isArray(snapshotMeta.checklist) ||
+  const hasHypothesesPayload =
+    (Array.isArray(snapshotMeta.hypotheses) && snapshotMeta.hypotheses.length > 0) ||
     String(snapshotMeta.hypothesis || '').trim().length > 0;
+  const hasChecklistPayload =
+    Array.isArray(snapshotMeta.checklist) && snapshotMeta.checklist.length > 0;
   const core_state = resolveBlockState(hasCoreReady, baselineMs, nowMs);
   const network_env_body_state = resolveBlockState(hasBlockBReady, baselineMs, nowMs);
   const hypothesis_checklist_state = resolveBlockState(
-    hasBlockBReady && hasHypothesisPayload,
+    hasBlockBReady && hasHypothesesPayload && hasChecklistPayload,
     baselineMs,
     nowMs
   );
@@ -2447,6 +2516,82 @@ export class TicketWorkflowCoreService {
   async listInbox(tenantId: string): Promise<InboxTicketState[]> {
     const rows = await this.repo.listInboxTickets(tenantId);
     return this.buildInboxListView(rows);
+  }
+
+  async syncAnalysisProjection(input: {
+    tenantId: string;
+    ticketRef: string;
+    sessionId: string;
+    pack?: EvidencePack | null | undefined;
+    diagnosis?: DiagnosisOutput | null | undefined;
+    validation?: ValidationOutput | null | undefined;
+    playbook?: PlaybookOutput | null | undefined;
+    traceId?: string | undefined;
+  }): Promise<void> {
+    const tenantId = String(input.tenantId || '').trim();
+    const ticketRef = String(input.ticketRef || '').trim();
+    if (!tenantId || !ticketRef) return;
+
+    const existing = await this.resolveTicketView(tenantId, ticketRef);
+    if (!existing) return;
+
+    const now = nowIso();
+    const ticketSnapshot = asJsonRecord(existing.domain_snapshots?.tickets);
+    const metadataSnapshot = asJsonRecord(existing.domain_snapshots?.['correlates.ticket_metadata']);
+    const packBody =
+      String(input.pack?.ticket?.description || '').trim()
+      || String(ticketSnapshot.ticket_body || '').trim()
+      || String(existing.description || '').trim();
+    const packCreatedAt = String(input.pack?.ticket?.created_at || '').trim();
+    const hypotheses = readAnalysisHypotheses(input.diagnosis);
+    const checklist = readAnalysisChecklist(input.validation, input.playbook);
+    const hasPack = Boolean(input.pack);
+    const next: InboxTicketState = {
+      ...existing,
+      ...(!existing.created_at && packCreatedAt ? { created_at: packCreatedAt } : {}),
+      ...(packBody ? { description: packBody } : {}),
+      last_background_processed_at: now,
+      updated_at: now,
+      ...(String(input.traceId || existing.trace_id || '').trim()
+        ? { trace_id: String(input.traceId || existing.trace_id).trim() }
+        : {}),
+      domain_snapshots: {
+        ...(existing.domain_snapshots || {}),
+        tickets: {
+          ...ticketSnapshot,
+          ...(!ticketSnapshot.created_at && packCreatedAt ? { created_at: packCreatedAt } : {}),
+          ...(packBody ? { ticket_body: packBody } : {}),
+        },
+        'correlates.ticket_metadata': {
+          ...metadataSnapshot,
+          analysis_session_id: input.sessionId,
+          analysis_projected_at: now,
+          ...(!metadataSnapshot.created_at && packCreatedAt ? { created_at: packCreatedAt } : {}),
+          ...(hasPack ? { network_env_confidence: 1 } : {}),
+          ...(hypotheses.length > 0 ? { hypotheses } : {}),
+          ...(checklist.length > 0 ? { checklist } : {}),
+          ...(input.diagnosis?.summary ? { hypothesis: input.diagnosis.summary } : {}),
+          ...(input.validation?.status ? { validation_status: input.validation.status } : {}),
+          ...(typeof input.validation?.safe_to_generate_playbook === 'boolean'
+            ? { safe_to_generate_playbook: input.validation.safe_to_generate_playbook }
+            : {}),
+          ...(input.playbook?.content_md ? { playbook_available: true } : {}),
+        },
+      },
+    };
+
+    await this.repo.upsertInboxTicket(this.deriveTicketOperationalState(next));
+    this.publishRealtime({
+      tenant_id: tenantId,
+      ticket_id: existing.ticket_id,
+      trace_id: String(input.traceId || existing.trace_id || `analysis-sync-${Date.now()}`),
+      occurred_at: now,
+      change_kind: 'sync',
+      ...(next.status ? { status: next.status } : {}),
+      ...(next.assigned_to ? { assigned_to: next.assigned_to } : {}),
+      ...(Number.isFinite(Number(next.queue_id)) ? { queue_id: Number(next.queue_id) } : {}),
+      ...(next.queue_name ? { queue_name: next.queue_name } : {}),
+    });
   }
 
   async runInboxHydrationSweep(

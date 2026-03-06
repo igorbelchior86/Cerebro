@@ -1,12 +1,14 @@
 import { v4 as uuidv4 } from 'uuid';
 import { execute, query, transaction } from '../../db/index.js';
 import type { PoolClient } from 'pg';
+import type { DiagnosisOutput, EvidencePack, PlaybookOutput, ValidationOutput } from '@cerebro/types';
 import { tenantContext } from '../../lib/tenantContext.js';
 import { PrepareContextService, persistEvidencePack } from '../context/prepare-context.js';
 import { DiagnoseService } from '../ai/diagnose.js';
 import { ValidatePolicyService } from '../domain/validate-policy.js';
 import { PlaybookWriterService } from '../ai/playbook-writer.js';
 import { operationalLogger } from '../../lib/operational-logger.js';
+import { workflowService } from './workflow-runtime.js';
 
 type TriageSessionStatus = 'pending' | 'processing' | 'approved' | 'needs_more_info' | 'blocked' | 'failed';
 type JsonRecord = Record<string, unknown>;
@@ -248,7 +250,25 @@ export class TriageOrchestrator {
             }
             const claimed = await this.claimOrCreateSession(ticketId, orgId, tenantId);
             if (!claimed) return;
-            const sid = claimed;
+                const sid = claimed;
+                const syncWorkflowProjection = async (input: {
+                    pack?: EvidencePack | null;
+                    diagnosis?: DiagnosisOutput | null;
+                    validation?: ValidationOutput | null;
+                    playbook?: PlaybookOutput | null;
+                }) => {
+                    const resolvedTenantId = String(tenantId || '').trim();
+                    if (!resolvedTenantId) return;
+                    await workflowService.syncAnalysisProjection({
+                        tenantId: resolvedTenantId,
+                        ticketRef: ticketId,
+                        sessionId: sid,
+                        pack: input.pack,
+                        diagnosis: input.diagnosis,
+                        validation: input.validation,
+                        playbook: input.playbook,
+                    });
+                };
 
             try {
                 // PHASE 1: Prepare Context
@@ -267,6 +287,7 @@ export class TriageOrchestrator {
                     sid
                 );
                 await persistEvidencePack(sid, pack);
+                await syncWorkflowProjection({ pack });
 
                 // PHASE 2: Diagnose
                 operationalLogger.info('orchestration.triage.phase_diagnose_started', {
@@ -295,6 +316,7 @@ export class TriageOrchestrator {
                         JSON.stringify(diagnosis),
                     ]
                 );
+                await syncWorkflowProjection({ pack, diagnosis });
 
                 // PHASE 3: Validate
                 operationalLogger.info('orchestration.triage.phase_validate_started', {
@@ -339,6 +361,7 @@ export class TriageOrchestrator {
                         validation.safe_to_generate_playbook,
                     ]
                 );
+                await syncWorkflowProjection({ pack, diagnosis, validation });
 
                 if (!validation.safe_to_generate_playbook) {
                     operationalLogger.warn('orchestration.triage.validation_blocked', {
@@ -347,6 +370,7 @@ export class TriageOrchestrator {
                         validation_status: validation.status,
                     }, { ticket_id: ticketId });
                     await this.updateSessionStatus(sid, toTriageSessionStatus(validation.status), { clearRetry: true, lastError: null });
+                    await syncWorkflowProjection({ pack, diagnosis, validation });
                     return;
                 }
 
@@ -391,6 +415,7 @@ export class TriageOrchestrator {
                 );
 
                 await this.updateSessionStatus(sid, 'approved', { clearRetry: true, lastError: null });
+                await syncWorkflowProjection({ pack, diagnosis, validation, playbook });
                 operationalLogger.info('orchestration.triage.pipeline_completed', {
                     module: 'orchestration.triage-orchestrator',
                     session_id: sid,

@@ -1,3 +1,21 @@
+## Lesson: 2026-03-06 (cache merge must never preserve a stale workflow badge over fresh workflow state)
+**Mistake**: No merge da sidebar, mantive `prev.status` quando o payload novo vinha com pouca informação textual de status, mesmo já trazendo `pipeline_status` / `block_consistency`.
+**Root cause**: O merge tratava “faltou label textual” como se faltasse estado inteiro do ticket e ressuscitava o badge antigo do card.
+**Rule**: Se o payload novo já trouxe estado de workflow, nunca herdar o badge operacional anterior do cache local; só herdar campos decorativos como título, org ou requester.
+**Pattern**: Se a sidebar mostra `Done` enquanto o header da própria tela mostra `Processing pipeline`, revisar imediatamente merges locais que copiam `status` do snapshot anterior.
+
+## Lesson: 2026-03-06 (a pipeline 'ready' badge must require the same checklist shape the UI can actually render)
+**Mistake**: Aceitei “hipótese presente” ou listas soltas no markdown como sinal suficiente para fechar o bloco de checklist.
+**Root cause**: Backend e frontend usavam parsers diferentes para checklist; o backend promovia o ticket para `ready`, mas a UI não encontrava uma seção renderizável de checklist.
+**Rule**: Critério de `ready/done` para checklist deve usar a mesma semântica do renderer: checklist dentro da seção correta e com itens realmente extraíveis.
+**Pattern**: Se o badge muda para `Done` mas o painel lateral continua sem checklist, procurar divergência entre a heurística de completude do backend e o parser visual do frontend.
+
+## Lesson: 2026-03-06 (ticket status and analysis status must never share the same sidebar badge logic)
+**Mistake**: Deixei a sidebar promover `resolved/closed/done` do ticket para `DONE` visual, mesmo quando a análise ainda não tinha produzido `context`, `hypotheses` e `checklist`.
+**Root cause**: Misturei duas fontes de verdade diferentes: estado operacional do ticket no PSA e completude do pipeline de análise no Cerebro.
+**Rule**: Badge principal da sidebar deve representar o pipeline de análise quando `pipeline_status`/`block_consistency` existirem; status textual do ticket só pode ser fallback secundário.
+**Pattern**: Se abrir um card `done` e faltarem blocos centrais obrigatórios, revisar imediatamente qualquer mapeamento que derive “concluído” do status do ticket em vez dos artefatos da análise.
+
 ## Lesson: 2026-03-06 (timer handoff must not reuse stale resolved ids from the previous selection)
 **Mistake**: Mantive `data.session.ticket_id` na resolução do timer durante a troca de ticket, mesmo quando esse valor ainda pertencia ao ticket anterior.
 **Root cause**: A lógica de aliases do stopwatch aceitava um identificador resolvido, porém stale, e isso contaminava a hidratação do timer do ticket recém-selecionado.

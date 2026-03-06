@@ -1,6 +1,20 @@
 import type { ActiveTicket } from '@/components/ChatSidebar';
 import { listWorkflowInbox, type WorkflowInboxTicket } from '@/lib/p0-ui-client';
 
+function mapPipelineStatusToSidebarStatus(row: WorkflowInboxTicket): ActiveTicket['status'] | null {
+  const pipeline = row.pipeline_status;
+  if (pipeline === 'ready') return 'completed';
+  if (pipeline === 'dlq' || pipeline === 'degraded') return 'failed';
+  if (pipeline === 'processing') return 'processing';
+  if (pipeline === 'retry_scheduled' || pipeline === 'queued') return 'pending';
+
+  const blocks = row.block_consistency ? Object.values(row.block_consistency) : [];
+  if (blocks.length === 3 && blocks.every((entry) => entry === 'ready')) return 'completed';
+  if (blocks.some((entry) => entry === 'degraded')) return 'failed';
+  if (blocks.some((entry) => entry === 'ready' || entry === 'resolving')) return 'processing';
+  return null;
+}
+
 function mapWorkflowStatusToSidebarStatus(status?: string): ActiveTicket['status'] {
   const normalized = String(status || '').toLowerCase();
   if (/fail|error|dlq/.test(normalized)) return 'failed';
@@ -129,12 +143,13 @@ function workflowToSidebarTicket(row: WorkflowInboxTicket): ActiveTicket {
   const coreState = row.block_consistency?.core_state;
   const networkEnvBodyState = row.block_consistency?.network_env_body_state;
   const hypothesisChecklistState = row.block_consistency?.hypothesis_checklist_state;
+  const pipelineDrivenStatus = mapPipelineStatusToSidebarStatus(row);
 
   return {
     id: row.ticket_id,
     ticket_id: displayTicketNumber || row.ticket_id,
     ticket_number: displayTicketNumber || row.ticket_id,
-    status: mapWorkflowStatusToSidebarStatus(statusValue),
+    status: pipelineDrivenStatus ?? mapWorkflowStatusToSidebarStatus(statusValue),
     ...(statusValue ? { ticket_status_value: statusValue } : {}),
     ...((() => {
       return statusLabel ? { ticket_status_label: statusLabel } : {};

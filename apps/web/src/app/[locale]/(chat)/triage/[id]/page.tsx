@@ -182,6 +182,43 @@ interface PersistedStopwatchState {
   sync?: StopwatchSyncFeedback;
 }
 
+function findSidebarTicketMatch(tickets: ActiveTicket[], ticketRef: string): ActiveTicket | undefined {
+  const normalized = String(ticketRef || '').trim();
+  if (!normalized) return undefined;
+  return tickets.find(
+    (ticket) =>
+      ticket.id === normalized ||
+      ticket.ticket_id === normalized ||
+      ticket.ticket_number === normalized
+  );
+}
+
+function buildStopwatchStorageKeys(...ticketRefs: Array<string | undefined | null>): string[] {
+  const seen = new Set<string>();
+  const keys: string[] = [];
+  for (const ticketRef of ticketRefs) {
+    const normalized = String(ticketRef || '').trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    keys.push(`cerebro:time-entry-stopwatch:${normalized}`);
+  }
+  return keys;
+}
+
+function computePersistedStopwatchElapsedMs(
+  state: { elapsedMs: number; running: boolean; startedAtMs?: number | undefined },
+  now: number
+): number {
+  const elapsedMs = Number.isFinite(Number(state.elapsedMs)) && Number(state.elapsedMs) >= 0
+    ? Number(state.elapsedMs)
+    : 0;
+  if (!state.running) return elapsedMs;
+  const startedAtMs = Number.isFinite(Number(state.startedAtMs)) && Number(state.startedAtMs) > 0
+    ? Number(state.startedAtMs)
+    : now;
+  return Math.max(0, elapsedMs + Math.max(0, now - startedAtMs));
+}
+
 type EditableContextKey =
   | 'Org'
   | 'Contact'
@@ -410,7 +447,50 @@ export default function SessionDetail({
   const [isHeaderMenuOpen, setIsHeaderMenuOpen] = useState(false);
   const headerMenuRef = useRef<HTMLDivElement>(null);
   const stopwatchHydratedRef = useRef(false);
-  const timerTicketId = String(data?.session?.ticket_id || selectedTicketId || '').trim();
+  const stopwatchStateRef = useRef<PersistedStopwatchState>({
+    elapsedMs: 0,
+    running: true,
+  });
+  const activeStopwatchStorageKeysRef = useRef<string[]>([]);
+  const selectedSidebarTicket = findSidebarTicketMatch(sidebarTickets, selectedTicketId);
+  const snapshotTicketId = ticketSnapshotRef.current[selectedTicketId]?.ticketId;
+  const timerTicketId = String(
+    selectedSidebarTicket?.ticket_id ||
+    snapshotTicketId ||
+    data?.session?.ticket_id ||
+    selectedTicketId ||
+    ''
+  ).trim();
+  const persistStopwatchSnapshot = (
+    storageKeys: string[],
+    state: PersistedStopwatchState,
+    now: number,
+    runningOverride?: boolean
+  ) => {
+    if (typeof window === 'undefined' || storageKeys.length === 0) return;
+    const running = runningOverride ?? state.running;
+    const payload: PersistedStopwatchState = {
+      elapsedMs: Math.max(0, Math.round(computePersistedStopwatchElapsedMs(state, now))),
+      running,
+      ...(state.sync ? { sync: state.sync } : {}),
+    };
+    if (running) {
+      payload.startedAtMs = now;
+    }
+    const serialized = JSON.stringify(payload);
+    for (const storageKey of storageKeys) {
+      window.localStorage.setItem(storageKey, serialized);
+    }
+  };
+
+  useEffect(() => {
+    stopwatchStateRef.current = {
+      elapsedMs: stopwatchElapsedMs,
+      running: stopwatchRunning,
+      startedAtMs: stopwatchStartedAtMs,
+      sync: stopwatchSync,
+    };
+  }, [stopwatchElapsedMs, stopwatchRunning, stopwatchStartedAtMs, stopwatchSync]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -428,26 +508,42 @@ export default function SessionDetail({
     if (typeof window === 'undefined') return;
     stopwatchHydratedRef.current = false;
     const now = Date.now();
-    const storageKey = stopwatchStorageKey(timerTicketId);
-    const raw = window.localStorage.getItem(storageKey);
+    const storageKeys = buildStopwatchStorageKeys(
+      timerTicketId,
+      selectedTicketId,
+      data?.session?.ticket_id,
+      selectedSidebarTicket?.ticket_id
+    );
+    const previousStorageKeys = activeStopwatchStorageKeysRef.current;
+    if (previousStorageKeys.length > 0) {
+      persistStopwatchSnapshot(previousStorageKeys, stopwatchStateRef.current, now, false);
+    }
+    activeStopwatchStorageKeysRef.current = storageKeys;
+    const raw = storageKeys
+      .map((storageKey) => window.localStorage.getItem(storageKey))
+      .find((value) => Boolean(value));
     if (!raw) {
       setStopwatchElapsedMs(0);
       setStopwatchRunning(true);
       setStopwatchStartedAtMs(now);
       setStopwatchSync({ state: 'idle' });
       setStopwatchNowMs(now);
+      persistStopwatchSnapshot(storageKeys, {
+        elapsedMs: 0,
+        running: true,
+        startedAtMs: now,
+        sync: { state: 'idle' },
+      }, now, true);
       stopwatchHydratedRef.current = true;
       return;
     }
     try {
       const parsed = JSON.parse(raw) as PersistedStopwatchState;
-      const restoredElapsedMs = Number.isFinite(Number(parsed?.elapsedMs)) && Number(parsed.elapsedMs) >= 0
-        ? Number(parsed.elapsedMs)
-        : 0;
-      const restoredRunning = Boolean(parsed?.running);
-      const restoredStartedAtMs = Number.isFinite(Number(parsed?.startedAtMs)) && Number(parsed.startedAtMs) > 0
-        ? Number(parsed.startedAtMs)
-        : now;
+      const restoredElapsedMs = computePersistedStopwatchElapsedMs({
+        elapsedMs: parsed?.elapsedMs ?? 0,
+        running: Boolean(parsed?.running),
+        startedAtMs: parsed?.startedAtMs,
+      }, now);
       const restoredSync = parsed?.sync && typeof parsed.sync === 'object'
         ? {
           state: (['idle', 'pending', 'synced', 'error'].includes(String(parsed.sync.state))
@@ -463,32 +559,49 @@ export default function SessionDetail({
         : ({ state: 'idle' } satisfies StopwatchSyncFeedback);
 
       setStopwatchElapsedMs(restoredElapsedMs);
-      setStopwatchRunning(restoredRunning);
-      setStopwatchStartedAtMs(restoredStartedAtMs);
+      setStopwatchRunning(true);
+      setStopwatchStartedAtMs(now);
       setStopwatchSync(restoredSync);
       setStopwatchNowMs(now);
+      persistStopwatchSnapshot(storageKeys, {
+        elapsedMs: restoredElapsedMs,
+        running: true,
+        startedAtMs: now,
+        sync: restoredSync,
+      }, now, true);
     } catch {
       setStopwatchElapsedMs(0);
       setStopwatchRunning(true);
       setStopwatchStartedAtMs(now);
       setStopwatchSync({ state: 'idle' });
       setStopwatchNowMs(now);
+      persistStopwatchSnapshot(storageKeys, {
+        elapsedMs: 0,
+        running: true,
+        startedAtMs: now,
+        sync: { state: 'idle' },
+      }, now, true);
     }
     stopwatchHydratedRef.current = true;
-  }, [timerTicketId]);
+    return () => {
+      persistStopwatchSnapshot(activeStopwatchStorageKeysRef.current, stopwatchStateRef.current, Date.now(), false);
+    };
+  }, [timerTicketId, selectedTicketId, data?.session?.ticket_id, selectedSidebarTicket?.ticket_id]);
 
   useEffect(() => {
     if (!stopwatchHydratedRef.current || typeof window === 'undefined') return;
-    const storageKey = stopwatchStorageKey(timerTicketId);
-    const payload: PersistedStopwatchState = {
-      elapsedMs: Math.max(0, Math.round(stopwatchElapsedMs)),
-      running: stopwatchRunning,
-      ...(stopwatchRunning ? { startedAtMs: stopwatchStartedAtMs } : {}),
-      sync: stopwatchSync,
-    };
-    window.localStorage.setItem(storageKey, JSON.stringify(payload));
+    const storageKeys = buildStopwatchStorageKeys(
+      timerTicketId,
+      selectedTicketId,
+      data?.session?.ticket_id,
+      selectedSidebarTicket?.ticket_id
+    );
+    persistStopwatchSnapshot(storageKeys, stopwatchStateRef.current, Date.now());
   }, [
     timerTicketId,
+    selectedTicketId,
+    data?.session?.ticket_id,
+    selectedSidebarTicket?.ticket_id,
     stopwatchElapsedMs,
     stopwatchRunning,
     stopwatchStartedAtMs,
@@ -673,7 +786,6 @@ export default function SessionDetail({
   };
 
   const channelStorageKey = (ticketId: string) => `cerebro:chat-target-channel:${ticketId}`;
-  const stopwatchStorageKey = (ticketId: string) => `cerebro:time-entry-stopwatch:${ticketId}`;
 
   const readNonNegativeNumber = (...values: unknown[]): number | undefined => {
     for (const value of values) {
@@ -1585,8 +1697,17 @@ export default function SessionDetail({
   useEffect(() => {
     setLoading(true);
     setError('');
+    setData(null);
     setPlaybookReady(false);
     setPlaybookStatus('loading');
+    setContextOverrides({});
+    setActiveContextEditor(null);
+    setContextEditorQuery('');
+    setContextEditorError('');
+    setContextEditorOptions([]);
+    setResolvedOrgIdFallback(null);
+    setWorkflowActionError('');
+    setWorkflowActionFeedback(null);
     timelineSignatureRef.current = '';
     setMessages([
       {
@@ -1942,8 +2063,10 @@ export default function SessionDetail({
   };
 
   const displayTickets = sidebarTickets;
-  const canonicalTicketId = data?.session.ticket_id || selectedTicketId;
-  const selectedTicket = displayTickets.find((t) => t.id === canonicalTicketId || t.ticket_id === canonicalTicketId);
+  const selectedTicket = selectedSidebarTicket
+    ?? findSidebarTicketMatch(displayTickets, data?.session?.ticket_id || '')
+    ?? findSidebarTicketMatch(displayTickets, timerTicketId);
+  const canonicalTicketId = selectedTicket?.ticket_id || data?.session?.ticket_id || timerTicketId || selectedTicketId;
   const pickCanonicalUiText = (...values: unknown[]): string => {
     for (const value of values) {
       const normalized = normalizePlainText(String(value ?? ''), '');
@@ -1986,8 +2109,8 @@ export default function SessionDetail({
     }
     : undefined;
 
-  const ticketTitle = cleanTitle(data?.ssot?.title || data?.ticket?.title || selectedTicketView?.title) || 'Untitled ticket';
-  const ticketNumber = data?.session.ticket_id || selectedTicketView?.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`;
+  const ticketTitle = cleanTitle(selectedTicketView?.title || data?.ssot?.title || data?.ticket?.title) || 'Untitled ticket';
+  const ticketNumber = selectedTicketView?.ticket_id || data?.session.ticket_id || `Ticket-${selectedTicketId.substring(0, 8)}`;
   const ticketLabel = `${ticketNumber} — ${ticketTitle}`;
   const primaryTech = contextOverrides.tech?.name || data?.ticket?.assigned_resource_name || selectedTicketView?.assigned_resource_name || 'Unassigned';
   const secondaryTech = contextOverrides.secondary_tech?.name || data?.ticket?.secondary_resource_name?.trim() || 'Unassigned';
@@ -2635,7 +2758,7 @@ export default function SessionDetail({
     ''
   );
   const parsedPlaybookEscalation = parseEscalationFromPlaybook(data?.playbook?.content_md || undefined);
-  const playbookPanelData = data
+  const playbookPanelData = (data || selectedTicketView)
     ? {
       ticketId: ticketNumber,
       context: [
@@ -2692,7 +2815,7 @@ export default function SessionDetail({
         { key: 'WiFi', val: data?.ssot?.wifi_make_model || 'Unknown' },
         { key: 'Additional Devices', val: data?.ssot?.alternate_device || 'Unknown' },
       ].map(item => ({ ...item, val: item.val?.toLowerCase() === 'unknown' || item.val?.toLowerCase() === 'unknown org' ? '-' : item.val })),
-      hypotheses: Array.isArray(data.diagnosis?.top_hypotheses)
+      hypotheses: Array.isArray(data?.diagnosis?.top_hypotheses)
         ? data.diagnosis.top_hypotheses.slice(0, 3).map((h: Record<string, unknown>, i: number) => ({
           rank: Number(h?.rank) || i + 1,
           hypothesis: String(h?.hypothesis || 'Hypothesis'),
@@ -2765,11 +2888,7 @@ export default function SessionDetail({
               isLoading={isLoadingTickets}
               onCreateTicket={() => setIsDraftMode(true)}
               onSelectTicket={(id) => {
-                if (id === selectedTicketId) return;
-                setSelectedTicketId(id);
-                const currentPath = pathname ?? window.location.pathname;
-                const nextPath = currentPath.replace(/\/triage\/[^/]+$/, `/triage/${id}`);
-                window.history.replaceState(null, '', `${nextPath}${window.location.search}`);
+                switchTicketInPlace(id);
               }}
             />
           }

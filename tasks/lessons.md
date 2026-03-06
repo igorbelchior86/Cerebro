@@ -1,3 +1,9 @@
+## Lesson: 2026-03-06 (when the user states a behavioral rule, complete the transition semantics end-to-end)
+**Mistake**: Implementei a troca de contexto do ticket e a persistência do timer, mas deixei de completar a semântica explícita de entrada/saída: auto-start ao entrar no ticket e auto-pause ao sair.
+**Root cause**: Foquei na fonte de verdade do identificador do timer e na hidratação da UI, mas não fechei o ciclo de vida comportamental completo do requisito.
+**Rule**: Quando o usuário descreve um fluxo com gatilhos de entrada e saída, implementar os dois lados da transição explicitamente e validar o handoff entre estados.
+**Pattern**: Se existe um requisito do tipo “entrei faz X / saí faz Y”, tratar como contrato de ciclo de vida completo, não como detalhe implícito.
+
 ## Lesson: 2026-03-06 (pool-level BEGIN/COMMIT is not a real transaction boundary)
 **Mistake**: Tratar `query('BEGIN') -> query(...) -> query('COMMIT')` em código que usa `pg Pool` como se isso garantisse atomicidade.
 **Root cause**: `pool.query` pode usar conexões diferentes entre as chamadas, então parte do bloco pode escapar da transação ou confirmar separadamente sob concorrência.

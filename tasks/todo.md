@@ -1,3 +1,59 @@
+# Task: Sidebar authority and ticket-scoped stopwatch
+**Status**: completed
+**Started**: 2026-03-06T12:15:00-05:00
+
+## PRD
+- Problem:
+  - Ao trocar o ticket na coluna esquerda, o centro, a coluna direita e o timer podem continuar mostrando contexto do ticket anterior até a hidratação remota terminar.
+- Goal:
+  - Fazer da sidebar esquerda a autoridade imediata do ticket ativo no workspace tri-pane.
+- User stories:
+  - Como técnico, ao clicar em outro ticket na sidebar, quero ver o workspace inteiro mudar imediatamente para esse ticket.
+  - Como técnico, quero que o timer seja sempre do ticket selecionado e continue salvo em background quando eu saio dele.
+- Functional requirements:
+  - Seleção na sidebar troca imediatamente o ticket ativo do centro e da direita.
+  - O timer hidrata e persiste por ticket selecionado, sem depender de resposta tardia da API para trocar de chave.
+  - Estado contextual local do ticket anterior não pode “vazar” para o novo ticket.
+- Acceptance criteria:
+  - Troca de ticket atualiza header, contexto e playbook panel sem esperar o poll remoto concluir.
+  - Timer do ticket anterior fica salvo; timer do novo ticket inicia/hidrata ao entrar nele.
+  - Não há regressão de navegação in-place nem do refresh por polling.
+- Risks:
+  - Divergência entre identificador de rota e `ticket_id` canônico pode quebrar persistência do timer se a troca de chave não tiver fallback.
+
+## Plan
+- [x] Step 1: Identificar a fonte local imediata do ticket selecionado e separar do payload remoto atrasado.
+- [x] Step 2: Ajustar a hidratação/persistência do timer para usar aliases do ticket selecionado e do ticket canônico.
+- [x] Step 3: Revalidar `apps/web` e documentar a mudança na wiki.
+
+## Progress Notes
+- Skills usados conforme contrato:
+  - `ship-feature`
+  - Sequential Thinking MCP
+  - Context7 MCP (React effects/timer cleanup)
+- Diagnóstico inicial:
+  - `selectedTicketId` já muda localmente sem remount.
+  - O timer em `triage/[id]` ainda usa `data.session.ticket_id`, que pode ficar atrasado após troca de ticket.
+  - A coluna direita depende de `data`, então o ticket anterior pode permanecer visível até a próxima resposta do full-flow.
+- Implementação:
+  - `triage/[id]` agora resolve o ticket ativo primeiro pela seleção da sidebar.
+  - troca de ticket limpa `data`, overrides/context editor e feedback local do ticket anterior para impedir vazamento visual/funcional.
+  - o timer passou a hidratar e persistir por aliases do ticket selecionado/canônico, preservando o estado do ticket anterior em background.
+  - correção complementar: ao entrar em um ticket, o timer desse ticket sempre auto-inicia; ao sair, o ticket anterior é consolidado e salvo como pausado em background.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/web typecheck` ✅
+- `pnpm --filter @cerebro/web lint` ✅
+- `pnpm --filter @cerebro/web build` ✅
+- `pnpm --filter @cerebro/web typecheck` ✅ (reexecutado após build para regenerar `.next/types`)
+- Observação:
+  - o `build` concluiu com o warning já existente do plugin Next no ESLint (`The Next.js plugin was not detected in your ESLint configuration`), sem bloquear a entrega desta feature
+- Documentation:
+- `wiki/features/2026-03-06-sidebar-ticket-authority-and-stopwatch-handoff.md`
+
+---
+
 # Task: API lint warning reduction round 4
 **Status**: completed
 **Started**: 2026-03-06T17:20:00-05:00

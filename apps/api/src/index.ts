@@ -2,7 +2,8 @@
 // Main API Server
 // ─────────────────────────────────────────────────────────────
 
-import express, { Express } from 'express';
+import type { Express } from 'express';
+import express from 'express';
 import cookieParser from 'cookie-parser';
 import { config } from 'dotenv';
 import { fileURLToPath } from 'url';

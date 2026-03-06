@@ -27,7 +27,9 @@ const pool = new Pool({
   idleTimeoutMillis: process.env.DB_IDLE_TIMEOUT ? parseInt(process.env.DB_IDLE_TIMEOUT) : 30000,
   connectionTimeoutMillis: process.env.DB_CONNECTION_TIMEOUT ? parseInt(process.env.DB_CONNECTION_TIMEOUT) : 2000,
   statement_timeout: process.env.DB_STATEMENT_TIMEOUT ? parseInt(process.env.DB_STATEMENT_TIMEOUT) : 30000,
-  application_name: 'cerebro-api'
+  application_name: 'cerebro-api',
+  // Let Jest exit once only idle Postgres clients remain.
+  allowExitOnIdle: process.env.NODE_ENV === 'test',
 });
 
 pool.on('error', (err) => {

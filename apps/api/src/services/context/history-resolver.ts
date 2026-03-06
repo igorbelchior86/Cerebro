@@ -3,17 +3,15 @@
 // Related case discovery, search-term planning, LLM-based
 // history calibration, and final-refinement planning.
 // ─────────────────────────────────────────────────────────────
-import { query, queryOne } from '../../db/index.js';
+import { query } from '../../db/index.js';
 import { operationalLogger } from '../../lib/operational-logger.js';
+import type { RelatedCase } from '@cerebro/types';
 import {
   extractInfraMakeModel,
   inferIspName,
   inferPhoneProvider
 } from './ticket-normalizer.js';
-import { callLLM } from '../ai/llm-adapter.js';
 import {
-  extractJsonObject,
-  buildTicketNarrative,
   flattenEnrichmentFields,
   generateNameAliases,
   extractEmails,
@@ -32,9 +30,6 @@ import type {
   Signal,
   EnrichmentField,
 } from './prepare-context.types.js';
-
-// RelatedCase type (matches DB query shape)
-export type RelatedCase = any;
 
 export async function findRelatedCases(ticketTitle: string, orgId?: string, companyName?: string): Promise<RelatedCase[]> {
   return findRelatedCasesByTerms([ticketTitle], orgId, companyName);
@@ -578,7 +573,7 @@ export function applyHistoryConfidenceCalibration(input: {
       }
     }
 
-    let contradictionCaseIds: string[] = [];
+    const contradictionCaseIds: string[] = [];
     if (record.path === 'network.isp_name') {
       const currentIsp = inferIspName({ ticketNarrative: currentValue, docs: [], itglueConfigs: [] });
       if (currentIsp) {

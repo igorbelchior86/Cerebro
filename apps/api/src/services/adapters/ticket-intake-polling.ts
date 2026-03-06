@@ -58,6 +58,7 @@ export class TicketIntakePollingService {
                 },
             ));
         }, this.pollIntervalMs);
+        this.intervalId.unref?.();
     }
 
     stop() {

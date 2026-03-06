@@ -64,6 +64,28 @@ type CanonicalPicklistLabelMaps = {
   queueById: Map<number, string>;
 };
 
+type JsonRecord = Record<string, unknown>;
+
+type AutotaskPollingOptionalClient = AutotaskClient & {
+  getTicketStatusOptions?: () => Promise<unknown[]>;
+  getTicketPriorityOptions?: () => Promise<unknown[]>;
+  getTicketIssueTypeOptions?: () => Promise<unknown[]>;
+  getTicketSubIssueTypeOptions?: () => Promise<unknown[]>;
+  getTicketServiceLevelAgreementOptions?: () => Promise<unknown[]>;
+  getTicketQueues?: () => Promise<unknown[]>;
+  getCompany?: (id: number) => Promise<unknown>;
+  getContact?: (id: number) => Promise<unknown>;
+};
+
+function asJsonRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' ? (value as JsonRecord) : {};
+}
+
+function messageFromError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error || '');
+}
+
 function looksLikeNumericId(value: string): boolean {
   return /^[0-9]+$/.test(value.trim());
 }
@@ -91,14 +113,14 @@ function isTerminalStatusLabel(value: unknown): boolean {
 }
 
 function resolveTicketReference(ticket: Record<string, unknown>): string {
-  return String((ticket as any)?.ticketNumber || (ticket as any)?.id || '').trim();
+  return String(ticket.ticketNumber || ticket.id || '').trim();
 }
 
 function getTicketRecencyMs(ticket: Record<string, unknown>): number {
   const raw = String(
-    (ticket as any)?.lastActivityDate ||
-    (ticket as any)?.createDateTime ||
-    (ticket as any)?.createDate ||
+    ticket.lastActivityDate ||
+    ticket.createDateTime ||
+    ticket.createDate ||
     ''
   ).trim();
   const timestamp = Date.parse(raw);
@@ -108,9 +130,9 @@ function getTicketRecencyMs(ticket: Record<string, unknown>): number {
 
 function getTicketCreationMs(ticket: Record<string, unknown>): number {
   const raw = String(
-    (ticket as any)?.createDateTime ||
-    (ticket as any)?.createDate ||
-    (ticket as any)?.lastActivityDate ||
+    ticket.createDateTime ||
+    ticket.createDate ||
+    ticket.lastActivityDate ||
     ''
   ).trim();
   const timestamp = Date.parse(raw);
@@ -149,8 +171,8 @@ function inboxRowHasCanonicalIdentity(row?: InboxTicketState | null): boolean {
 
 function buildActiveSetKeys(ticket: Record<string, unknown>): string[] {
   const keys = new Set<string>();
-  const ticketNumber = String((ticket as any)?.ticketNumber || '').trim();
-  const numericId = String((ticket as any)?.id || '').trim();
+  const ticketNumber = String(ticket.ticketNumber || '').trim();
+  const numericId = String(ticket.id || '').trim();
   const resolvedRef = resolveTicketReference(ticket);
   if (ticketNumber) keys.add(`num:${ticketNumber}`);
   if (numericId) keys.add(`ext:${numericId}`);
@@ -450,6 +472,7 @@ export class AutotaskPollingService {
         },
       ));
     }, this.pollIntervalMs);
+    this.intervalId.unref?.();
   }
 
   stop() {
@@ -529,7 +552,7 @@ export class AutotaskPollingService {
           .sort((a, b) => sortTicketsByRecencyDesc(a as unknown as Record<string, unknown>, b as unknown as Record<string, unknown>));
         if (this.parityActiveOnly && queueScope) {
           tickets = tickets.filter((ticket) => {
-            const queueId = Number((ticket as any)?.queueID);
+            const queueId = Number(asJsonRecord(ticket).queueID);
             return !Number.isFinite(queueId) || !queueScope.excludedQueueIds.has(queueId);
           });
         }
@@ -546,17 +569,18 @@ export class AutotaskPollingService {
         });
         const triageTargets: string[] = [];
         for (const ticket of tickets) {
-          const ticketIdStr = String((ticket as any)?.ticketNumber || (ticket as any)?.id || '').trim();
+          const ticketRecord = asJsonRecord(ticket);
+          const ticketIdStr = String(ticketRecord.ticketNumber || ticketRecord.id || '').trim();
           if (!ticketIdStr) continue;
           recentlyIngested.add(ticketIdStr);
           await this.ingestWorkflowSyncEvent(
-            ticket as unknown as Record<string, unknown>,
+            ticketRecord,
             context.tenantId,
             'autotask_poller',
             identityLookup,
             picklistLabels,
           );
-          triageTargets.push(String((ticket as any)?.id ?? ticketIdStr));
+          triageTargets.push(String(ticketRecord.id ?? ticketIdStr));
         }
 
         if (this.parityQueueSnapshotEnabled) {
@@ -724,7 +748,7 @@ export class AutotaskPollingService {
     const right = await this.fetchTicketsByCreateDateWindow(context, midIso, endIso, maxRecords, depth + 1);
     const dedup = new Map<string, Record<string, unknown>>();
     for (const row of [...left, ...right]) {
-      const key = String((row as any).ticketNumber || (row as any).id || '').trim();
+      const key = String(row.ticketNumber || row.id || '').trim();
       if (!key) continue;
       dedup.set(key, row);
     }
@@ -998,7 +1022,7 @@ export class AutotaskPollingService {
           );
           operationalLogger.info('adapters.autotask_polling.parity_active_set_ticket_reconciled', {
             module: 'adapters.autotask-polling',
-            remote_status: String((remoteTicket as any).statusLabel || (remoteTicket as any).status || '').trim() || undefined,
+            remote_status: String(remoteTicket.statusLabel || remoteTicket.status || '').trim() || undefined,
             remote_terminal: !this.isNonCompleteTicket(remoteTicket, terminalStatusIds),
           }, {
             tenant_id: tenantId,
@@ -1030,13 +1054,15 @@ export class AutotaskPollingService {
 
   private async resolveTerminalStatusIds(context: AutotaskPollContext): Promise<Set<number>> {
     const out = new Set<number>();
-    const getStatusOptionsFn = (context.client as any)?.getTicketStatusOptions;
+    const client = context.client as AutotaskPollingOptionalClient;
+    const getStatusOptionsFn = client.getTicketStatusOptions;
     if (typeof getStatusOptionsFn !== 'function') return out;
     try {
       const options = await getStatusOptionsFn.call(context.client);
       for (const option of Array.isArray(options) ? options : []) {
-        const id = Number((option as any)?.id);
-        const label = String((option as any)?.label || '').trim();
+        const optionRecord = asJsonRecord(option);
+        const id = Number(optionRecord.id);
+        const label = String(optionRecord.label || '').trim();
         if (!Number.isFinite(id)) continue;
         if (isTerminalStatusLabel(label)) out.add(id);
       }
@@ -1057,15 +1083,16 @@ export class AutotaskPollingService {
     const buildMap = (options: unknown[]): Map<number, string> => {
       const map = new Map<number, string>();
       for (const option of Array.isArray(options) ? options : []) {
-        const id = Number((option as any)?.id);
-        const label = String((option as any)?.label || '').trim();
+        const optionRecord = asJsonRecord(option);
+        const id = Number(optionRecord.id);
+        const label = String(optionRecord.label || '').trim();
         if (Number.isFinite(id) && label) map.set(id, label);
       }
       return map;
     };
 
     try {
-      const client = context.client as any;
+      const client = context.client as AutotaskPollingOptionalClient;
       const [statusOpts, priorityOpts, issueTypeOpts, subIssueTypeOpts, slaOpts, queueOpts] = await Promise.all([
         typeof client.getTicketStatusOptions === 'function' ? client.getTicketStatusOptions().catch(() => []) : [],
         typeof client.getTicketPriorityOptions === 'function' ? client.getTicketPriorityOptions().catch(() => []) : [],
@@ -1089,11 +1116,11 @@ export class AutotaskPollingService {
   }
 
   private isNonCompleteTicket(ticket: Record<string, unknown>, terminalStatusIds: Set<number>): boolean {
-    const statusValue = (ticket as any)?.status;
+    const statusValue = ticket.status;
     const numericStatus = Number(statusValue);
     if (Number.isFinite(numericStatus) && terminalStatusIds.has(numericStatus)) return false;
     if (isTerminalStatusLabel(statusValue)) return false;
-    const statusLabel = (ticket as any)?.statusLabel || (ticket as any)?.status_name || (ticket as any)?.ticketStatus;
+    const statusLabel = ticket.statusLabel || ticket.status_name || ticket.ticketStatus;
     if (isTerminalStatusLabel(statusLabel)) return false;
     return true;
   }
@@ -1122,10 +1149,10 @@ export class AutotaskPollingService {
       });
 
     for (const raw of prioritizedTickets) {
-      const companyName = String((raw as any)?.companyName || (raw as any)?.company || '').trim();
-      const requesterName = String((raw as any)?.contactName || (raw as any)?.requesterName || '').trim();
-      const companyId = Number((raw as any)?.companyID);
-      const contactId = Number((raw as any)?.contactID);
+      const companyName = String(raw.companyName || raw.company || '').trim();
+      const requesterName = String(raw.contactName || raw.requesterName || '').trim();
+      const companyId = Number(raw.companyID);
+      const contactId = Number(raw.contactID);
       if (!companyName && Number.isFinite(companyId) && companyId > 0) companyIds.add(companyId);
       if (!requesterName && Number.isFinite(contactId) && contactId > 0) contactIds.add(contactId);
     }
@@ -1149,7 +1176,8 @@ export class AutotaskPollingService {
       }
     };
 
-    const getCompanyFn = (context.client as any)?.getCompany;
+    const client = context.client as AutotaskPollingOptionalClient;
+    const getCompanyFn = client.getCompany;
     if (typeof getCompanyFn === 'function') {
       await runWithConcurrencyLimit(prioritizedCompanyIds, this.identityLookupConcurrency, async (id) => {
         const remainingBudget = deadline - this.nowFn();
@@ -1161,7 +1189,8 @@ export class AutotaskPollingService {
         if (timeoutMs <= 0) return;
         try {
           const row = await withTimeout(getCompanyFn.call(context.client, id), timeoutMs);
-          const name = String((row as any)?.companyName || (row as any)?.name || '').trim();
+          const rowRecord = asJsonRecord(row);
+          const name = String(rowRecord.companyName || rowRecord.name || '').trim();
           if (name) companyNameById.set(id, name);
         } catch {
           // Best effort only.
@@ -1169,7 +1198,7 @@ export class AutotaskPollingService {
       });
     }
 
-    const getContactFn = (context.client as any)?.getContact;
+    const getContactFn = client.getContact;
     if (typeof getContactFn === 'function') {
       await runWithConcurrencyLimit(prioritizedContactIds, this.identityLookupConcurrency, async (id) => {
         const remainingBudget = deadline - this.nowFn();
@@ -1181,11 +1210,12 @@ export class AutotaskPollingService {
         if (timeoutMs <= 0) return;
         try {
           const row = await withTimeout(getContactFn.call(context.client, id), timeoutMs);
-          const firstName = String((row as any)?.firstName || '').trim();
-          const lastName = String((row as any)?.lastName || '').trim();
+          const rowRecord = asJsonRecord(row);
+          const firstName = String(rowRecord.firstName || '').trim();
+          const lastName = String(rowRecord.lastName || '').trim();
           const fullName = `${firstName} ${lastName}`.trim();
-          const name = fullName || String((row as any)?.name || (row as any)?.contactName || '').trim();
-          const email = String((row as any)?.emailAddress || (row as any)?.email || '').trim();
+          const name = fullName || String(rowRecord.name || rowRecord.contactName || '').trim();
+          const email = String(rowRecord.emailAddress || rowRecord.email || '').trim();
           if (name) requesterNameByContactId.set(id, name);
           if (email) contactEmailByContactId.set(id, email);
         } catch {
@@ -1275,7 +1305,7 @@ export class AutotaskPollingService {
           module: 'adapters.autotask-polling',
           tenant_id: tenantId,
           ticket_id: ticketId,
-          remote_status: String((remoteTicket as any).statusLabel || (remoteTicket as any).status || '').trim() || undefined,
+          remote_status: String(remoteTicket.statusLabel || remoteTicket.status || '').trim() || undefined,
         }, {
           tenant_id: tenantId,
           ticket_id: ticketId,
@@ -1338,6 +1368,7 @@ export class AutotaskPollingService {
       return;
     }
 
+    const ticketRecord = asJsonRecord(ticket);
     const rawId = String(ticket.id ?? '').trim();
     const ticketRef = String(ticket.ticketNumber || rawId).trim();
     if (!ticketRef) return;
@@ -1347,31 +1378,35 @@ export class AutotaskPollingService {
       ticket.createDate ||
       new Date().toISOString()
     );
-    const companyId = Number((ticket as any).companyID);
-    const contactId = Number((ticket as any).contactID);
+    const companyId = Number(ticketRecord.companyID);
+    const contactId = Number(ticketRecord.contactID);
     const companyName = String(
-      (ticket as any).companyName ||
-      (ticket as any).company ||
+      ticketRecord.companyName ||
+      ticketRecord.company ||
       (Number.isFinite(companyId) ? identityLookup?.companyNameById.get(companyId) : '') ||
       ''
     ).trim();
     const requesterName = String(
-      (ticket as any).contactName ||
-      (ticket as any).requesterName ||
+      ticketRecord.contactName ||
+      ticketRecord.requesterName ||
       (Number.isFinite(contactId) ? identityLookup?.requesterNameByContactId.get(contactId) : '') ||
       ''
     ).trim();
     const contactEmail = String(
-      (ticket as any).contactEmail ||
-      (ticket as any).requesterEmail ||
+      ticketRecord.contactEmail ||
+      ticketRecord.requesterEmail ||
       (Number.isFinite(contactId) ? identityLookup?.contactEmailByContactId.get(contactId) : '') ||
       ''
     ).trim();
+    const priorityId = ticketRecord.priority;
+    const issueTypeId = ticketRecord.issueType;
+    const subIssueTypeId = ticketRecord.subIssueType;
+    const serviceLevelAgreementId = ticketRecord.serviceLevelAgreementID;
     const payload = {
       external_id: rawId || ticketRef,
       ticket_number: String(ticket.ticketNumber || '').trim() || undefined,
-      created_at: String((ticket as any).createDateTime || ticket.createDate || '').trim() || undefined,
-      createDateTime: String((ticket as any).createDateTime || '').trim() || undefined,
+      created_at: String(ticketRecord.createDateTime || ticket.createDate || '').trim() || undefined,
+      createDateTime: String(ticketRecord.createDateTime || '').trim() || undefined,
       createDate: String(ticket.createDate || '').trim() || undefined,
       title: ticket.title,
       description: ticket.description,
@@ -1383,59 +1418,59 @@ export class AutotaskPollingService {
       contact_id: Number.isFinite(contactId) ? contactId : undefined,
       status: ticket.status,
       status_label: String(
-        (ticket as any).statusLabel ??
-        (ticket as any).status_label ??
-        (ticket as any).status_name ??
+        ticketRecord.statusLabel ??
+        ticketRecord.status_label ??
+        ticketRecord.status_name ??
         (Number.isFinite(Number(ticket.status)) ? picklistLabels?.statusById?.get(Number(ticket.status)) : '') ??
         ''
       ).trim() || undefined,
       assigned_to: ticket.assignedResourceID,
       queue_id: ticket.queueID,
       queue_name: String(
-        (ticket as any).queueName ??
-        (ticket as any).queue_name ??
+        ticketRecord.queueName ??
+        ticketRecord.queue_name ??
         (Number.isFinite(Number(ticket.queueID)) ? picklistLabels?.queueById?.get(Number(ticket.queueID)) : '') ??
         ''
       ).trim() || undefined,
       // Canonical Autotask picklist IDs/labels are resolved from picklist options fetched per-run.
-      priority: (ticket as any).priority !== undefined && (ticket as any).priority !== null
-        ? (ticket as any).priority
+      priority: priorityId !== undefined && priorityId !== null
+        ? priorityId
         : undefined,
       priority_label: String(
-        (ticket as any).priorityLabel ??
-        (ticket as any).priority_label ??
-        (ticket as any).priorityName ??
-        (Number.isFinite(Number((ticket as any).priority)) ? picklistLabels?.priorityById?.get(Number((ticket as any).priority)) : '') ??
+        ticketRecord.priorityLabel ??
+        ticketRecord.priority_label ??
+        ticketRecord.priorityName ??
+        (Number.isFinite(Number(priorityId)) ? picklistLabels?.priorityById?.get(Number(priorityId)) : '') ??
         ''
       ).trim() || undefined,
-      issue_type: (ticket as any).issueType !== undefined && (ticket as any).issueType !== null
-        ? (ticket as any).issueType
+      issue_type: issueTypeId !== undefined && issueTypeId !== null
+        ? issueTypeId
         : undefined,
       issue_type_label: String(
-        (ticket as any).issueTypeLabel ??
-        (ticket as any).issueType_label ??
-        (ticket as any).issueTypeName ??
-        (Number.isFinite(Number((ticket as any).issueType)) ? picklistLabels?.issueTypeById?.get(Number((ticket as any).issueType)) : '') ??
+        ticketRecord.issueTypeLabel ??
+        ticketRecord.issueType_label ??
+        ticketRecord.issueTypeName ??
+        (Number.isFinite(Number(issueTypeId)) ? picklistLabels?.issueTypeById?.get(Number(issueTypeId)) : '') ??
         ''
       ).trim() || undefined,
-      sub_issue_type: (ticket as any).subIssueType !== undefined && (ticket as any).subIssueType !== null
-        ? (ticket as any).subIssueType
+      sub_issue_type: subIssueTypeId !== undefined && subIssueTypeId !== null
+        ? subIssueTypeId
         : undefined,
       sub_issue_type_label: String(
-        (ticket as any).subIssueTypeLabel ??
-        (ticket as any).subIssueType_label ??
-        (ticket as any).subIssueTypeName ??
-        (Number.isFinite(Number((ticket as any).subIssueType)) ? picklistLabels?.subIssueTypeById?.get(Number((ticket as any).subIssueType)) : '') ??
+        ticketRecord.subIssueTypeLabel ??
+        ticketRecord.subIssueType_label ??
+        ticketRecord.subIssueTypeName ??
+        (Number.isFinite(Number(subIssueTypeId)) ? picklistLabels?.subIssueTypeById?.get(Number(subIssueTypeId)) : '') ??
         ''
       ).trim() || undefined,
-      sla_id: (ticket as any).serviceLevelAgreementID !== undefined && (ticket as any).serviceLevelAgreementID !== null
-        ? (ticket as any).serviceLevelAgreementID
+      sla_id: serviceLevelAgreementId !== undefined && serviceLevelAgreementId !== null
+        ? serviceLevelAgreementId
         : undefined,
       sla_label: String(
-        (ticket as any).serviceLevelAgreementLabel ??
-        (ticket as any).serviceLevelAgreement_label ??
-        (ticket as any).serviceLevelAgreementName ??
-        (Number.isFinite(Number((ticket as any).serviceLevelAgreementID)) ? picklistLabels?.slaById?.get(Number((ticket as any).serviceLevelAgreementID)) : '') ??
+        ticketRecord.serviceLevelAgreementLabel ??
+        ticketRecord.serviceLevelAgreement_label ??
+        ticketRecord.serviceLevelAgreementName ??
+        (Number.isFinite(Number(serviceLevelAgreementId)) ? picklistLabels?.slaById?.get(Number(serviceLevelAgreementId)) : '') ??
         ''
       ).trim() || undefined,
     };
@@ -1491,7 +1526,7 @@ export class AutotaskPollingService {
         ...(retryable && attempts < this.syncRetryMaxAttempts
           ? { nextRetryAt: this.nowFn() + this.retryBackoffMsFn(attempts) }
           : {}),
-        lastError: String((error as any)?.message || error || 'unknown sync error'),
+        lastError: messageFromError(error) || 'unknown sync error',
         errorCode: classified.code,
       };
       if (operation.disposition === 'retry_pending') {

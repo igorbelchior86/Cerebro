@@ -102,10 +102,17 @@ function mask(val?: string): string {
 // ─── Connectivity checks ───────────────────────────────────────
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timeoutHandle: NodeJS.Timeout | null = null;
   return Promise.race([
     p,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms)),
-  ]);
+    // Clear the losing timeout path so fast health checks do not leave pending timers behind.
+    new Promise<T>((_, reject) => {
+      timeoutHandle = setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms);
+      timeoutHandle.unref?.();
+    }),
+  ]).finally(() => {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+  });
 }
 
 async function checkAutotask(creds: AutotaskCreds | null): Promise<ServiceResult> {
@@ -355,5 +362,9 @@ router.get('/health', async (req, res) => {
     res.status(500).json({ error: (err as Error).message });
   }
 });
+
+export const __testables = {
+  withTimeout,
+};
 
 export default router;

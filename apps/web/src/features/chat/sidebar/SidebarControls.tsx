@@ -35,14 +35,14 @@ interface SidebarFilterBarProps {
 }
 
 export function SidebarStats({
-    processing,
+    processing: _processing,
     scope,
     onCreateTicket,
     onSetScope,
     labelPersonal,
     labelGlobal,
     labelNewTicket,
-    labelActive,
+    labelActive: _labelActive,
 }: SidebarStatsProps) {
     return (
         <div style={{ padding: '0 14px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -131,7 +131,7 @@ export function SidebarFilterBar({
     labelQueueSelectAria,
     labelGlobalStatusFilterAria,
     labelGlobalStatusFilterTitle,
-    labelGlobalStatusFilterReset,
+    labelGlobalStatusFilterReset: _labelGlobalStatusFilterReset,
     labelGlobalStatusFilterNoStatus,
     labelActive,
     count,

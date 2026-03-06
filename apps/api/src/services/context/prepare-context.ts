@@ -2,8 +2,6 @@
 // PrepareContext Service — Orquestra coleta de dados
 // ─────────────────────────────────────────────────────────────
 
-import { v4 as uuidv4 } from 'uuid';
-import crypto from 'crypto';
 import type {
   EvidencePack,
   Signal,
@@ -17,22 +15,16 @@ import type {
   CapabilityVerification,
   DigestAction,
   DigestFact,
-  EnrichmentField,
   IterativeEnrichmentProfile,
   IterativeEnrichmentSections,
-  SecurityAgentSummary,
 } from '@cerebro/types';
-import { AutotaskClient } from '../../clients/autotask.js';
-import { NinjaOneClient } from '../../clients/ninjaone.js';
-import { ITGlueClient } from '../../clients/itglue.js';
-import { shouldBlockDiagnosisOutput } from '../domain/evidence-guardrails.js';
-import { webSearch, type SearchResult } from '../ai/web-search.js';
-import { query, queryOne, execute } from '../../db/index.js';
+import type { NinjaOneClient } from '../../clients/ninjaone.js';
+import type { ITGlueClient } from '../../clients/itglue.js';
+import { webSearch } from '../ai/web-search.js';
 import { callLLM } from '../ai/llm-adapter.js';
 import { operationalLogger } from '../../lib/operational-logger.js';
 
 import { AutotaskFetcher } from '../read-models/data-fetchers/autotask-fetcher.js';
-import { NinjaOneFetcher } from '../read-models/data-fetchers/ninjaone-fetcher.js';
 import { ITGlueFetcher } from '../read-models/data-fetchers/itglue-fetcher.js';
 import { EvidenceBuilder } from '../domain/evidence-builder.js';
 import { EnrichmentEngine } from '../ai/enrichment-engine.js';
@@ -43,11 +35,7 @@ import {
   persistTicketSSOT,
   persistTicketContextAppendix,
   persistItglueOrgSnapshot,
-  upsertItglueOrgEnriched,
-  getItglueOrgEnriched,
   persistNinjaOrgSnapshot,
-  upsertNinjaOrgEnriched,
-  getNinjaOrgEnriched,
 } from './persistence.js';
 
 import {
@@ -58,7 +46,6 @@ import {
 import {
   hashSnapshot,
   hashSnapshotWithVersion,
-  pickEnrichedValue as pickEnrichedValueFromCache,
   buildItglueExtractionInput,
   buildNinjaExtractionInput,
   getOrRefreshItglueEnriched,
@@ -123,15 +110,9 @@ import {
   normalizeName,
   buildField,
   buildIterativeEnrichmentProfile,
-  getEnrichmentFieldByPath,
-  setEnrichmentFieldByPath,
   flattenEnrichmentFields,
   computeEnrichmentCoverage,
   buildEnrichmentRounds,
-  roundLabel,
-  isUnknown,
-  pickBetter,
-  pickHistoryKeyword,
   mapAutotaskPriority,
   selectPreferredCompanyName,
   extractEmailDomains,
@@ -141,66 +122,48 @@ import {
   buildTicketNarrative,
   normalizeTicketDeterministically,
   postProcessCanonicalTicketText,
-  postProcessDisplayMarkdownTicketText,
-  stripMarkdownForDisplayGuard,
-  normalizeDisplayTextForVerbatimGuard,
-  formatCanonicalTicketSignature,
-  postProcessUiTicketText,
-  guardTicketUiRoleAssignment,
   extractJsonObject,
   buildRequesterTokens,
-  normalizeOrgNameForMatch,
   scoreOrgNameMatch,
   fuzzyMatch,
-  generateNameAliases,
-  extractSoftwareHintsFromTicket,
-  extractLoggedInUser as extractLoggedInUserHelper,
-  extractITGlueInfraCandidates as extractITGlueInfraCandidatesHelper,
-  extractITGlueWanCandidate as extractITGlueWanCandidateHelper,
-  extractInfraMakeModel as extractInfraMakeModelHelper,
-  inferIspName as inferIspNameHelper,
-  normalizeSimpleToken,
-  resolveNinjaOrg as resolveNinjaOrgHelper,
-  isLikelyDomainDerivedCompanyLabel,
-  shouldPreferCompanyCandidateOverIntake,
   capitalize,
-  detectLikelySignatureStart,
-  signatureSignalCount,
-  formatSignatureBlock,
   pickEnrichedValue,
 } from './prepare-context-helpers.js';
 
-import {
+import type {
   PrepareContextInput,
   TicketLike,
   TicketSSOT,
-  TicketTextArtifact,
   TicketContextAppendix,
   ScopeMeta,
   ITGlueWanCandidate,
   ITGlueInfraCandidate,
   FacetContext,
   DeviceResolutionResult,
-  AutotaskCreds,
-  NinjaOneCreds,
-  ITGlueCreds,
-  ItglueEnrichedField,
   ItglueEnrichedPayload,
-  NinjaEnrichedField,
   NinjaEnrichedPayload,
   FusionLink,
   FusionInference,
   FusionFieldCandidate,
   FusionFieldResolution,
-  FusionAdjudicationOutput,
-  HistoryCalibrationResult
+  FusionAdjudicationOutput} from './prepare-context.types.js';
+import {
 } from './prepare-context.types.js';
 
 const ITGLUE_ROUND2_REQUEST_BUDGET = 120;
 const NINJA_EXTRACTOR_VERSION = 'v1-summary-2026-02-23';
 const ITGLUE_MAX_SCOPE_ORGS = 4;
-const ITGLUE_MAX_FLEXIBLE_ASSET_TYPES_PER_SCOPE = 24;
-const ITGLUE_MAX_DOCUMENT_EXPANSIONS = 12;
+type JsonRecord = Record<string, unknown>;
+
+function asJsonRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' ? (value as JsonRecord) : {};
+}
+
+function asJsonRecordArray(value: unknown): JsonRecord[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is JsonRecord => typeof item === 'object' && item !== null)
+    : [];
+}
 
 const FACET_TERMS = {
   symptom: {
@@ -251,8 +214,8 @@ export class PrepareContextService {
   constructor() {
     this.fusionEngine = new FusionEngine({
       normalizeName: (n: string) => normalizeName(n),
-      itgAttr: (a: any, k: string) => itgAttr(a, k),
-      buildField: (i: any) => buildField(i),
+      itgAttr: (a: JsonRecord, k: string) => itgAttr(a, k),
+      buildField: (input: Parameters<typeof buildField>[0]) => buildField(input),
       isPublicIPv4: (ip: string) => this.enrichmentEngine.isPublicIPv4(ip)
     });
   }
@@ -348,12 +311,12 @@ export class PrepareContextService {
         const ticketIdNum = Number(autotaskTicket.id);
         if (!Number.isNaN(ticketIdNum)) {
           const notes = await autotaskClient.getTicketNotes(ticketIdNum);
-          signals = notes.map((note: any, idx: number) => ({
+          signals = notes.map((note: JsonRecord, idx: number) => ({
             id: `autotask-note-${idx}`,
             source: 'autotask' as const,
-            timestamp: note.createDate,
+            timestamp: String(note.createDate || ''),
             type: 'ticket_note',
-            summary: note.noteText?.substring(0, 200) || '',
+            summary: String(note.noteText || '').substring(0, 200),
             raw_ref: note,
             tenant_id: tenantId,
             org_id: input.orgId || null,
@@ -395,12 +358,12 @@ export class PrepareContextService {
 
         // Coleta notas (signals)
         const notes = await autotaskClient.getTicketNotes(ticketIdNum);
-        signals = notes.map((note: any, idx: number) => ({
+        signals = notes.map((note: JsonRecord, idx: number) => ({
           id: `autotask-note-${idx}`,
           source: 'autotask' as const,
-          timestamp: note.createDate,
+          timestamp: String(note.createDate || ''),
           type: 'ticket_note',
-          summary: note.noteText?.substring(0, 200) || '',
+          summary: String(note.noteText || '').substring(0, 200),
           raw_ref: note,
           tenant_id: tenantId,
           org_id: input.orgId || null,
@@ -437,7 +400,8 @@ export class PrepareContextService {
         .filter(Boolean)
         .join(' ')
         .trim();
-    if ((String((ticket as any)?.company || '').trim() === '' || String((ticket as any)?.company || '').trim().toLowerCase() === 'unknown')
+    const rawTicket = ticket as JsonRecord;
+    if ((String(rawTicket.company || '').trim() === '' || String(rawTicket.company || '').trim().toLowerCase() === 'unknown')
       && Number.isFinite(autotaskCompanyId)) {
       try {
         const company = await autotaskClient.getCompany(autotaskCompanyId);
@@ -578,7 +542,7 @@ export class PrepareContextService {
       }
     }
     const originalTicketTitle = String(ticket.title || '').trim();
-    const originalTicketDescription = String((ticket as any)?.description || '').trim();
+    const originalTicketDescription = String(rawTicket.description || '').trim();
     const originalTicketNarrative = buildTicketNarrative(ticket);
     const autotaskAuthoritativeSeed = (() => {
       const raw = ticket as Record<string, unknown>;
@@ -593,8 +557,8 @@ export class PrepareContextService {
       const subIssueTypeId = Number(raw.subIssueType);
       const serviceLevelAgreementId = Number(raw.serviceLevelAgreementID);
       const ticketNumber = String(raw.ticketNumber || '').trim();
-      const companyName = String((ticket as any)?.company || '').trim();
-      const queueName = String((ticket as any)?.queueName || '').trim();
+      const companyName = String(rawTicket.company || '').trim();
+      const queueName = String(rawTicket.queueName || '').trim();
       const statusValue = String(raw.status ?? '').trim();
       const contactName = String(autotaskContactNameResolved || '').trim();
       const contactEmail = String(autotaskContactEmailResolved || '').trim().toLowerCase();
@@ -713,37 +677,37 @@ export class PrepareContextService {
     // round state
     let relatedCases: RelatedCase[] = [];
     let docs: Doc[] = [];
-    let device: any = null;
-    let deviceDetails: any | null = null;
+    let device: JsonRecord | null = null;
+    let deviceDetails: JsonRecord | null = null;
     let loggedInUser = '';
     let loggedInAt = '';
     let ninjaChecks: Signal[] = [];
     let ninjaContextSignals: Signal[] = [];
     let ninjaOrgMatch: { id: number; name: string } | null = null;
-    let ninjaOrgDevices: any[] = [];
-    let ninjaAlerts: any[] = [];
-    let ninjaSoftwareInventory: any[] = [];
+    let ninjaOrgDevices: JsonRecord[] = [];
+    let ninjaAlerts: JsonRecord[] = [];
+    let ninjaSoftwareInventory: JsonRecord[] = [];
     let ninjaOrgDetails: Record<string, unknown> | null = null;
-    let ninjaCollectionErrors: string[] = [];
+    const ninjaCollectionErrors: string[] = [];
     let ninjaEnriched: NinjaEnrichedPayload | null = null;
     let resolvedDeviceScore = 0;
     let itglueOrgMatch: { id: string; name: string } | null = null;
-    let itglueOrgDetails: Record<string, unknown> | null = null;
-    let itglueConfigs: any[] = [];
-    let itglueContacts: any[] = [];
-    let itgluePasswords: any[] = [];
-    let itglueAssets: any[] = [];
-    let itglueLocations: any[] = [];
-    let itglueDomains: any[] = [];
-    let itglueSslCertificates: any[] = [];
-    let itglueDocumentsRaw: any[] = [];
-    let itglueDocumentAttachmentsById: Record<string, any[]> = {};
-    let itglueDocumentRelatedItemsById: Record<string, any[]> = {};
-    let itglueCollectionErrors: string[] = [];
+    const itglueOrgDetails: Record<string, unknown> | null = null;
+    let itglueConfigs: JsonRecord[] = [];
+    let itglueContacts: JsonRecord[] = [];
+    let itgluePasswords: JsonRecord[] = [];
+    let itglueAssets: JsonRecord[] = [];
+    let itglueLocations: JsonRecord[] = [];
+    let itglueDomains: JsonRecord[] = [];
+    let itglueSslCertificates: JsonRecord[] = [];
+    let itglueDocumentsRaw: JsonRecord[] = [];
+    let itglueDocumentAttachmentsById: Record<string, JsonRecord[]> = {};
+    let itglueDocumentRelatedItemsById: Record<string, JsonRecord[]> = {};
+    const itglueCollectionErrors: string[] = [];
     let itglueScopeOrgs: Array<{ id: string; name: string; reason: string }> = [];
-    let itglueRequestBudgetRemaining = ITGLUE_ROUND2_REQUEST_BUDGET;
-    let itglueAssetTypesTotal = 0;
-    let itglueAssetTypesSelectedPerScope = 0;
+    const itglueRequestBudgetRemaining = ITGLUE_ROUND2_REQUEST_BUDGET;
+    const itglueAssetTypesTotal = 0;
+    const itglueAssetTypesSelectedPerScope = 0;
     let itglueEnriched: ItglueEnrichedPayload | null = null;
 
     // ROUND 1: AT/Intake -> IT Glue (Targeting Org/Contacts/Standards)
@@ -761,19 +725,29 @@ export class PrepareContextService {
         ...(input.organizationIds && { organizationIds: input.organizationIds }),
       });
 
-      const raw = itglueResult.raw || {};
-      itglueOrgMatch = raw.itglueOrgMatch as any || null;
-      itglueScopeOrgs = raw.itglueScopes as any[] || [];
-      itglueConfigs = raw.itglueConfigs as any[] || [];
-      itglueContacts = raw.itglueContacts as any[] || [];
-      itgluePasswords = raw.itgluePasswords as any[] || [];
-      itglueAssets = raw.itglueAssets as any[] || [];
-      itglueLocations = raw.itglueLocations as any[] || [];
-      itglueDomains = raw.itglueDomains as any[] || [];
-      itglueSslCertificates = raw.itglueSslCertificates as any[] || [];
-      itglueDocumentsRaw = raw.itglueDocumentsRaw as any[] || [];
+      const raw = asJsonRecord(itglueResult.raw);
+      const rawOrgMatch = asJsonRecord(raw.itglueOrgMatch);
+      itglueOrgMatch =
+        String(rawOrgMatch.id || '').trim() && String(rawOrgMatch.name || '').trim()
+          ? { id: String(rawOrgMatch.id), name: String(rawOrgMatch.name) }
+          : null;
+      itglueScopeOrgs = asJsonRecordArray(raw.itglueScopes)
+        .map((scope) => ({
+          id: String(scope.id || ''),
+          name: String(scope.name || ''),
+          reason: String(scope.reason || ''),
+        }))
+        .filter((scope) => scope.id && scope.name);
+      itglueConfigs = asJsonRecordArray(raw.itglueConfigs);
+      itglueContacts = asJsonRecordArray(raw.itglueContacts);
+      itgluePasswords = asJsonRecordArray(raw.itgluePasswords);
+      itglueAssets = asJsonRecordArray(raw.itglueAssets);
+      itglueLocations = asJsonRecordArray(raw.itglueLocations);
+      itglueDomains = asJsonRecordArray(raw.itglueDomains);
+      itglueSslCertificates = asJsonRecordArray(raw.itglueSslCertificates);
+      itglueDocumentsRaw = asJsonRecordArray(raw.itglueDocumentsRaw);
 
-      const runbooks = raw.itglueRunbooks as any[] || [];
+      const runbooks = asJsonRecordArray(raw.itglueRunbooks);
       const runbooksEndpointUnavailable = !runbooks.length;
 
       itglueDocumentAttachmentsById = {};
@@ -781,10 +755,10 @@ export class PrepareContextService {
 
 
       docs = runbooks.slice(0, 5).map((doc, idx) => ({
-        id: doc.id,
+        id: String(doc.id || `itglue-runbook-${idx}`),
         source: 'itglue' as const,
-        title: doc.name,
-        snippet: doc.body?.substring(0, 500) || '',
+        title: String(doc.name || `Runbook ${idx + 1}`),
+        snippet: String(doc.body || '').substring(0, 500),
         relevance: 0.5 - idx * 0.05,
         raw_ref: doc as unknown as Record<string, unknown>,
         tenant_id: tenantId,
@@ -801,11 +775,11 @@ export class PrepareContextService {
         );
         const flattened = boostedDocs.flat().slice(0, 4);
         docs = docs.concat(
-          flattened.map((doc: any, idx: number) => ({
+          flattened.map((doc, idx: number) => ({
             id: String(doc.id),
             source: 'itglue' as const,
             title: String(doc.name || `Context doc ${idx + 1}`),
-            snippet: String((doc as any).body || '').substring(0, 500),
+            snippet: String(doc.body || '').substring(0, 500),
             relevance: 0.45 - idx * 0.05,
             raw_ref: doc as unknown as Record<string, unknown>,
             tenant_id: tenantId,
@@ -816,8 +790,8 @@ export class PrepareContextService {
       }
 
       if (docs.length === 0 && itglueDocumentsRaw.length > 0) {
-        docs = itglueDocumentsRaw.slice(0, 8).map((doc: any, idx: number) => {
-          const attrs = doc?.attributes || {};
+        docs = itglueDocumentsRaw.slice(0, 8).map((doc: JsonRecord, idx: number) => {
+          const attrs = asJsonRecord(doc.attributes);
           const title = String(
             itgAttr(attrs, 'name') ||
             itgAttr(attrs, 'cached_resource_name') ||
@@ -2334,8 +2308,8 @@ export class PrepareContextService {
     sourceWorkspace: string;
   }): EntityResolution {
     const text = input.ticketText;
-    const firstNameLabel = text.match(/(?:first\s*name|firstname)\s*[:\-]\s*([a-zA-Z]+)\b/i)?.[1];
-    const lastNameLabel = text.match(/(?:last\s*name|lastname)\s*[:\-]\s*([a-zA-Z]+)\b/i)?.[1];
+    const firstNameLabel = text.match(/(?:first\s*name|firstname)\s*[:-]\s*([a-zA-Z]+)\b/i)?.[1];
+    const lastNameLabel = text.match(/(?:last\s*name|lastname)\s*[:-]\s*([a-zA-Z]+)\b/i)?.[1];
     const labeledFullName =
       firstNameLabel && lastNameLabel
         ? `${capitalize(firstNameLabel)} ${capitalize(lastNameLabel)}`
@@ -2349,8 +2323,8 @@ export class PrepareContextService {
     ];
     const locationMatches = [
       ...new Set(
-        (text.match(/(?:site|office|location)\s*[:\-]\s*([^\n,.]+)/gi) || []).map((v) =>
-          v.replace(/(?:site|office|location)\s*[:\-]\s*/i, '').trim()
+        (text.match(/(?:site|office|location)\s*[:-]\s*([^\n,.]+)/gi) || []).map((v) =>
+          v.replace(/(?:site|office|location)\s*[:-]\s*/i, '').trim()
         )
       ),
     ];
@@ -3293,17 +3267,13 @@ export class PrepareContextService {
       }),
     };
   }
-  // @ts-ignore
-
   private buildInfraEnrichmentSection(input: {
-    itglueConfigs: any[];
-    itgluePasswords: any[];
-    itglueAssets: any[];
+    itglueConfigs: JsonRecord[];
+    itgluePasswords: JsonRecord[];
+    itglueAssets: JsonRecord[];
     itglueEnriched: ItglueEnrichedPayload | null;
     docs: Doc[];
-    // @ts-ignore
   }): IterativeEnrichmentSections['infra'] {
-    // @ts-ignore
     const metadataCandidates = this.extractITGlueInfraCandidates({
       itgluePasswords: input.itgluePasswords,
       itglueConfigs: input.itglueConfigs,
@@ -3323,15 +3293,12 @@ export class PrepareContextService {
     });
     const firewall = firewallValue
       ? makeEnriched(firewallValue)
-      // @ts-ignore
       : metadataCandidates.firewall || this.extractInfraMakeModel('firewall', input.itglueConfigs, input.docs);
     const wifi = wifiValue
       ? makeEnriched(wifiValue)
-      // @ts-ignore
       : metadataCandidates.wifi || this.extractInfraMakeModel('wifi', input.itglueConfigs, input.docs);
     const sw = switchValue
       ? makeEnriched(switchValue)
-      // @ts-ignore
       : metadataCandidates.switch || this.extractInfraMakeModel('switch', input.itglueConfigs, input.docs);
 
     return {
@@ -3372,24 +3339,18 @@ export class PrepareContextService {
       stack.isp = isp;
     }
 
-    // @ts-ignore
     const firewall = this.parseMakeModel(String(sections.infra.firewall_make_model.value || ''));
     if (firewall) {
-      // @ts-ignore
       stack.firewall = firewall;
     }
 
-    // @ts-ignore
     const wifi = this.parseMakeModel(String(sections.infra.wifi_make_model.value || ''));
     if (wifi) {
-      // @ts-ignore
       stack.aps = [{ vendor: wifi.vendor, model: wifi.model }];
     }
 
-    // @ts-ignore
     const sw = this.parseMakeModel(String(sections.infra.switch_make_model.value || ''));
     if (sw) {
-      // @ts-ignore
       stack.switches = [{ vendor: sw.vendor, model: sw.model }];
     }
 
@@ -3837,50 +3798,56 @@ export class PrepareContextService {
 
 
 
-  private mapAutotaskPriority(...args: any[]): number {
-    return (mapAutotaskPriority as any)(...args);
+  private mapAutotaskPriority(
+    priority: Parameters<typeof mapAutotaskPriority>[0]
+  ): ReturnType<typeof mapAutotaskPriority> {
+    return mapAutotaskPriority(priority);
   }
 
   private resolveNinjaOrg(
-    ticketOrgId: string | number | undefined,
-    tenantId: string | null,
-    sourceWorkspace: string
-  ): Promise<any> {
-    // @ts-ignore
-    return (resolveNinjaOrg as any)(...arguments);
+    ...args: Parameters<typeof resolveNinjaOrg>
+  ): ReturnType<typeof resolveNinjaOrg> {
+    return resolveNinjaOrg(...args);
   }
 
-  private extractLoggedInUser(deviceDetails: any): string | null {
+  private extractLoggedInUser(deviceDetails: unknown): string | null {
     return extractLoggedInUser(deviceDetails);
   }
 
-  private extractITGlueWanCandidate(items: any[], type: 'isp' | 'public_ip'): ITGlueWanCandidate[] {
-    // @ts-ignore
-    return (extractITGlueWanCandidate as any)(...arguments);
+  private extractITGlueWanCandidate(
+    input: Parameters<typeof extractITGlueWanCandidate>[0]
+  ): ReturnType<typeof extractITGlueWanCandidate> {
+    return extractITGlueWanCandidate(input);
   }
 
-  private inferIspName(assets: any[], configs: any[], domains: any[]): ITGlueWanCandidate | null {
-    // @ts-ignore
-    return (inferIspName as any)(...arguments);
+  private inferIspName(
+    input: Parameters<typeof inferIspName>[0]
+  ): ReturnType<typeof inferIspName> {
+    return inferIspName(input);
   }
 
-  private extractITGlueInfraCandidates(items: any[], kind: 'firewall' | 'wifi' | 'switch'): ITGlueInfraCandidate[] {
-    // @ts-ignore
-    return (extractITGlueInfraCandidates as any)(...arguments);
+  private extractITGlueInfraCandidates(
+    input: Parameters<typeof extractITGlueInfraCandidates>[0]
+  ): ReturnType<typeof extractITGlueInfraCandidates> {
+    return extractITGlueInfraCandidates(input);
   }
 
-  private extractInfraMakeModel(candidates: ITGlueInfraCandidate[]): string | null {
-    // @ts-ignore
-    return extractInfraMakeModel(candidates);
+  private extractInfraMakeModel(
+    ...args: Parameters<typeof extractInfraMakeModel>
+  ): ReturnType<typeof extractInfraMakeModel> {
+    return extractInfraMakeModel(...args);
   }
 
-  private parseMakeModel(candidate: ITGlueInfraCandidate): { manufacturer: string; model: string } | null {
-    // @ts-ignore
-    return (parseMakeModel as any)(...arguments);
+  private parseMakeModel(
+    value: Parameters<typeof parseMakeModel>[0]
+  ): ReturnType<typeof parseMakeModel> {
+    return parseMakeModel(value);
   }
 
-  private rankITGlueDocsForTicket(...args: any[]): Doc[] {
-    return (rankITGlueDocsForTicket as any)(...args);
+  private rankITGlueDocsForTicket(
+    ...args: Parameters<typeof rankITGlueDocsForTicket>
+  ): ReturnType<typeof rankITGlueDocsForTicket> {
+    return rankITGlueDocsForTicket(...args);
   }
 
   private normalizeFusionResolutionValue(path: string, val: unknown): string {
@@ -3901,11 +3868,11 @@ export class PrepareContextService {
     return buildTicketNarrative(input);
   }
 
-  public normalizeTicketDeterministically(title: string, rawDescription: string): any {
+  public normalizeTicketDeterministically(title: string, rawDescription: string) {
     return normalizeTicketDeterministically(title, rawDescription);
   }
 
-  private async normalizeTicketForPipeline(ticketLike: any): Promise<any> {
+  private async normalizeTicketForPipeline(ticketLike: TicketLike) {
     return normalizeTicketForPipeline(ticketLike);
   }
 
@@ -3917,23 +3884,28 @@ export class PrepareContextService {
     return isDisplayMarkdownVerbatimEnough(raw, mark);
   }
 
-  private inferPhoneProvider(...args: any[]): any {
-    // @ts-ignore
-    return (inferPhoneProvider as any)(...args);
+  private inferPhoneProvider(
+    input: Parameters<typeof inferPhoneProvider>[0]
+  ): ReturnType<typeof inferPhoneProvider> {
+    return inferPhoneProvider(input);
   }
 
-  private resolveLastLoggedInContext(...args: any[]): any {
-    // @ts-ignore
-    return (resolveLastLoggedInContext as any)(...args);
+  private resolveLastLoggedInContext(
+    ...args: Parameters<typeof resolveLastLoggedInContext>
+  ): ReturnType<typeof resolveLastLoggedInContext> {
+    return resolveLastLoggedInContext(...args);
   }
 
-  private resolveDeviceOsLabel(...args: any[]): any {
-    return (resolveDeviceOsLabel as any)(...args);
+  private resolveDeviceOsLabel(
+    ...args: Parameters<typeof resolveDeviceOsLabel>
+  ): ReturnType<typeof resolveDeviceOsLabel> {
+    return resolveDeviceOsLabel(...args);
   }
 
-  private async buildNinjaContextSignals(input: any): Promise<Signal[]> {
-    // @ts-ignore
-    return (buildNinjaContextSignals as any)(...arguments);
+  private async buildNinjaContextSignals(
+    input: Parameters<typeof buildNinjaContextSignals>[0]
+  ): ReturnType<typeof buildNinjaContextSignals> {
+    return buildNinjaContextSignals(input);
   }
 
 }

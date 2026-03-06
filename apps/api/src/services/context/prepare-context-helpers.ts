@@ -1356,9 +1356,9 @@ export function normalizeTicketDeterministically(title: string, narrative: strin
 
   const requesterEmail = extractFirstEmail(cleaned) || '';
   const requesterName = normalizeName(
-    String(cleaned.match(/(?:first\s*name|firstname)\s*[:\-]\s*([a-zA-Z]+)\b/i)?.[1] || '') +
+    String(cleaned.match(/(?:first\s*name|firstname)\s*[:-]\s*([a-zA-Z]+)\b/i)?.[1] || '') +
     ' ' +
-    String(cleaned.match(/(?:last\s*name|lastname)\s*[:\-]\s*([a-zA-Z]+)\b/i)?.[1] || '')
+    String(cleaned.match(/(?:last\s*name|lastname)\s*[:-]\s*([a-zA-Z]+)\b/i)?.[1] || '')
   ).trim();
 
   return {
@@ -1690,7 +1690,7 @@ export function postProcessUiTicketText(value: string): string {
   if (!text) return '';
   return text
     .replace(/^new ticket detected:\s*/i, '')
-    .replace(/^ticket\s*#?\s*T\d{8}\.\d+\s*[:\-]\s*/i, '')
+    .replace(/^ticket\s*#?\s*T\d{8}\.\d+\s*[:-]\s*/i, '')
     .replace(/\s*(from|at)\s+[A-Z][\s\S]*$/i, '')
     .trim();
 }

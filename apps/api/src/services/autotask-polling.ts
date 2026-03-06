@@ -140,6 +140,7 @@ export class AutotaskPollingService {
     this.intervalId = setInterval(() => {
       this.runOnce().catch(console.error);
     }, this.pollIntervalMs);
+    this.intervalId.unref?.();
   }
 
   stop() {

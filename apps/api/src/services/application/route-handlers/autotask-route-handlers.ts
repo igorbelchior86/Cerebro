@@ -36,6 +36,34 @@ type TicketFieldKey = (typeof ticketFieldKeys)[number];
 const TICKET_FIELD_OPTIONS_CACHE_TTL_MS = 30_000;
 const ticketFieldOptionCache = new Map<TicketFieldKey, { expiresAt: number; data: unknown[] }>();
 
+async function mergeAutotaskContextIntoTicketSsot(
+  ticketId: string,
+  sessionId: string | null,
+  ssotPatch: Record<string, unknown>,
+): Promise<void> {
+  await query(
+    `INSERT INTO ticket_ssot (ticket_id, session_id, payload, created_at, updated_at)
+     VALUES ($1, $2, $3::jsonb, NOW(), NOW())
+     ON CONFLICT (ticket_id)
+     DO UPDATE SET
+       session_id = COALESCE(EXCLUDED.session_id, ticket_ssot.session_id),
+       payload =
+         COALESCE(ticket_ssot.payload, '{}'::jsonb)
+         || EXCLUDED.payload
+         || jsonb_build_object(
+              'autotask_authoritative',
+              COALESCE(ticket_ssot.payload->'autotask_authoritative', '{}'::jsonb)
+              || COALESCE(EXCLUDED.payload->'autotask_authoritative', '{}'::jsonb)
+            ),
+       updated_at = NOW()`,
+    [ticketId, sessionId, JSON.stringify(ssotPatch)],
+  );
+}
+
+export const __testables = {
+  mergeAutotaskContextIntoTicketSsot,
+};
+
 // Lazy client — only created when a request arrives; avoids startup crash if env vars are absent.
 function getClient() {
   const code = process.env.AUTOTASK_API_INTEGRATION_CODE;
@@ -1030,17 +1058,12 @@ router.patch('/ticket/:ticketId/context', async (req, res, next) => {
     const authoritativeServiceLevelAgreementLabel = resolvePicklistLabel(serviceLevelAgreementOptions, (ticket as any)?.serviceLevelAgreementID);
 
     const ticketKey = String((ticket as any)?.ticketNumber || ticketId).trim();
-    const existingSsot = await queryOne<{ payload: any }>(
-      `SELECT payload FROM ticket_ssot WHERE ticket_id = $1 ORDER BY updated_at DESC LIMIT 1`,
-      [ticketKey]
-    );
     const latestSession = await queryOne<{ id: string }>(
       `SELECT id FROM triage_sessions WHERE ticket_id = $1 ORDER BY created_at DESC LIMIT 1`,
       [ticketKey]
     );
 
-    const nextPayload = {
-      ...(existingSsot?.payload || {}),
+    const ssotPatch = {
       ...(company && String((company as any)?.companyName || '').trim()
         ? { company: String((company as any)?.companyName || '').trim() }
         : {}),
@@ -1048,7 +1071,6 @@ router.patch('/ticket/:ticketId/context', async (req, res, next) => {
         ? { requester_name: `${String((contact as any)?.firstName || '').trim()} ${String((contact as any)?.lastName || '').trim()}`.trim() }
         : {}),
       autotask_authoritative: {
-        ...((existingSsot?.payload?.autotask_authoritative || {}) as Record<string, unknown>),
         ticket_number: String((ticket as any)?.ticketNumber || ticketKey),
         ticket_id_numeric: Number.isFinite(Number((ticket as any)?.id)) ? Number((ticket as any)?.id) : null,
         company_id: Number.isFinite(authoritativeCompanyId) ? authoritativeCompanyId : null,
@@ -1067,16 +1089,7 @@ router.patch('/ticket/:ticketId/context', async (req, res, next) => {
       },
     };
 
-    await query(
-      `INSERT INTO ticket_ssot (ticket_id, session_id, payload, created_at, updated_at)
-       VALUES ($1, $2, $3::jsonb, NOW(), NOW())
-       ON CONFLICT (ticket_id)
-       DO UPDATE SET
-         session_id = EXCLUDED.session_id,
-         payload = EXCLUDED.payload,
-         updated_at = NOW()`,
-      [ticketKey, latestSession?.id ?? null, JSON.stringify(nextPayload)]
-    );
+    await mergeAutotaskContextIntoTicketSsot(ticketKey, latestSession?.id ?? null, ssotPatch);
 
     res.json({
       success: true,

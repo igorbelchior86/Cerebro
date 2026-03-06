@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { SectionLabel, CategoryIcon, ShimmerBlock, confColor, confidenceTone, hypothesisCategory, formatEvidenceChipLabel, StickyHeader } from './primitives';
+import { CategoryIcon, ShimmerBlock, confColor, confidenceTone, hypothesisCategory, formatEvidenceChipLabel, StickyHeader } from './primitives';
 import type { Hypothesis } from './types';
 
 interface PlaybookHypothesesProps {

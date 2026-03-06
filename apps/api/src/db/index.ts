@@ -13,6 +13,8 @@ config({ path: resolve(process.cwd(), '../../.env') });
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://playbook:playbook_dev@localhost:5432/cerebro',
+  // Let test runs exit cleanly once only idle Postgres clients remain.
+  allowExitOnIdle: process.env.NODE_ENV === 'test',
 });
 
 pool.on('error', (err) => {

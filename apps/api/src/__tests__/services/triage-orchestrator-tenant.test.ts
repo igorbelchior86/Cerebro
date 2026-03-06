@@ -39,6 +39,22 @@ describe('TriageOrchestrator tenant-scoped claims', () => {
     jest.clearAllMocks();
   });
 
+  it('unrefs the retry listener interval so background sweeps do not pin the process', async () => {
+    const intervalHandle = { unref: jest.fn() } as any;
+    const setIntervalSpy = jest.spyOn(global, 'setInterval').mockImplementation((() => intervalHandle) as any);
+
+    const orchestrator = new TriageOrchestrator();
+    const processPendingSpy = jest.spyOn(orchestrator as any, 'processPendingSessions').mockResolvedValue(undefined);
+
+    orchestrator.startRetryListener();
+    await Promise.resolve();
+
+    expect(processPendingSpy).toHaveBeenCalledTimes(1);
+    expect(intervalHandle.unref).toHaveBeenCalledTimes(1);
+
+    setIntervalSpy.mockRestore();
+  });
+
   it('creates poller sessions inside the provided tenant instead of defaulting to the oldest tenant', async () => {
     const client = {
       query: jest.fn()

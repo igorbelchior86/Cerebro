@@ -768,6 +768,43 @@ describe('TicketWorkflowCoreService (Agent B P0 workflow core)', () => {
     });
   });
 
+  it('clears hydration timeout timers after a successful remote fetch', async () => {
+    jest.useFakeTimers();
+    const gateway: TicketWorkflowGateway = {
+      executeCommand: jest.fn(),
+      fetchTicketSnapshot: jest.fn().mockResolvedValue({
+        company_name: 'Acme Co',
+        contact_name: 'Taylor Morgan',
+      }),
+    };
+
+    try {
+      const { service, repo } = createService(gateway);
+
+      await repo.upsertInboxTicket({
+        tenant_id: tenantId,
+        ticket_id: 'T20260303.0099',
+        ticket_number: 'T20260303.0099',
+        company: 'Unknown org',
+        requester: 'Unknown requester',
+        comments: [],
+        source_of_truth: 'Autotask',
+        updated_at: '2026-03-05T21:00:00.000Z',
+      });
+
+      await service.runInboxHydrationSweep(tenantId, {
+        batchSize: 1,
+        remoteBatchSize: 1,
+        strategy: 'oldest-first',
+      });
+
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+
   it('does not promote domain snapshots during listInbox read', async () => {
     const fetchTicketSnapshot = jest.fn().mockResolvedValue({
       company_name: 'Ferguson Supply & Box Company',

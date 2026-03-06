@@ -1,4 +1,4 @@
-import { AutotaskClient } from '../../clients/autotask.js';
+import type { AutotaskClient } from '../../clients/autotask.js';
 import type {
   TicketWorkflowGateway,
   WorkflowCommandEnvelope,

@@ -820,11 +820,7 @@ export default function HomePage() {
         idempotency_key: `ui-draft-create-${companyId}-${Date.now()}`,
         auto_process: true,
       });
-      const commandId = String(
-        (command as any)?.command_id ||
-        (command as any)?.command?.command_id ||
-        ''
-      ).trim();
+      const commandId = String(command.command_id || '').trim();
       if (!commandId) throw new Error('Workflow command id missing');
 
       let status = await getWorkflowCommandStatus(commandId);
@@ -844,7 +840,7 @@ export default function HomePage() {
 
       const normalizedStatus = String(status?.status || '').trim().toLowerCase();
       if (normalizedStatus === 'failed' || normalizedStatus === 'dlq' || normalizedStatus === 'rejected') {
-        const detail = String((status as any)?.last_error || '').trim();
+        const detail = String(status?.last_error || '').trim();
         throw new Error(detail || 'Ticket creation failed in Autotask.');
       }
       if (normalizedStatus !== 'completed') {
@@ -1000,10 +996,11 @@ export default function HomePage() {
         if (!ignore) {
           setContextEditorOptions(options);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!ignore) {
           setContextEditorOptions([]);
-          setContextEditorError(String(err?.message || 'Unable to load Autotask options'));
+          const message = err instanceof Error ? err.message : 'Unable to load Autotask options';
+          setContextEditorError(String(message || 'Unable to load Autotask options'));
         }
       } finally {
         if (!ignore) {

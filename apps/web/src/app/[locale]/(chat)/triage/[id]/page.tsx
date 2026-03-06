@@ -2157,25 +2157,6 @@ export default function SessionDetail({
     ? Math.max(0, stopwatchElapsedMs + (stopwatchNowMs - stopwatchStartedAtMs))
     : Math.max(0, stopwatchElapsedMs);
   const stopwatchDisplay = formatStopwatchDuration(activeStopwatchElapsedMs);
-  const stopwatchSyncTone = stopwatchSync.state === 'synced'
-    ? { border: 'rgba(16,185,129,0.35)', color: '#047857', background: 'rgba(16,185,129,0.10)' }
-    : stopwatchSync.state === 'error'
-      ? { border: 'rgba(248,113,113,0.35)', color: '#b91c1c', background: 'rgba(248,113,113,0.10)' }
-      : stopwatchSync.state === 'pending'
-        ? { border: 'rgba(245,158,11,0.35)', color: '#92400e', background: 'rgba(245,158,11,0.10)' }
-        : { border: 'var(--bento-outline)', color: 'var(--text-muted)', background: 'var(--bg-panel)' };
-  const stopwatchSyncLabel = stopwatchSync.state === 'synced'
-    ? `PSA synced${Number.isFinite(Number(stopwatchSync.workedMinutes))
-      ? ` · ${Math.round(Number(stopwatchSync.workedMinutes))}m`
-      : Number.isFinite(Number(stopwatchSync.workedHours))
-        ? ` · ${Number(stopwatchSync.workedHours).toFixed(2)}h`
-        : ''}`
-    : stopwatchSync.state === 'error'
-      ? (stopwatchSync.error || 'PSA sync failed')
-      : stopwatchSync.state === 'pending'
-        ? 'Awaiting PSA confirmation...'
-        : 'Ready';
-
   useEffect(() => {
     const commandId = String(workflowActionFeedback?.commandId || '').trim();
     if (!commandId) return;

@@ -10,8 +10,8 @@
 // Low-temperature by design: pure data plumbing, no LLM calls.
 // ─────────────────────────────────────────────────────────────
 
-import { ITGlueClient } from '../clients/itglue.js';
-import { NinjaOneClient } from '../clients/ninjaone.js';
+import type { ITGlueClient } from '../clients/itglue.js';
+import type { NinjaOneClient } from '../clients/ninjaone.js';
 import {
   buildOrgContextBlock,
   formatNinjaDeviceList,

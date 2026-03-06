@@ -1,23 +1,84 @@
 import { AutotaskPollingService } from '../../services/adapters/autotask-polling.js';
+import type { AutotaskClient } from '../../clients/autotask.js';
+import type { InboxTicketState } from '../../services/orchestration/ticket-workflow-core.js';
 import { workflowService } from '../../services/orchestration/workflow-runtime.js';
 
 describe('AutotaskPollingService P0 hardening', () => {
+  type PollingServiceInternals = {
+    runParityBackfill: () => Promise<void>;
+    authFailureCooldownUntil: number | null;
+    ingestWorkflowSyncEvent: (
+      ticket: Record<string, unknown>,
+      tenantId?: string,
+      source?: 'autotask_poller' | 'autotask_reconcile',
+      identityLookup?: unknown,
+      picklistLabels?: unknown,
+    ) => Promise<void>;
+    parityPurgeMaxChecksPerRun: number;
+  };
+
+  const asAutotaskClient = (value: Record<string, unknown>): AutotaskClient =>
+    value as unknown as AutotaskClient;
+
+  const asPollingInternals = (service: AutotaskPollingService): PollingServiceInternals =>
+    service as unknown as PollingServiceInternals;
+
+  const priorBacklogCatchupEnv = process.env.AUTOTASK_POLLER_BACKLOG_IDENTITY_CATCHUP_ENABLED;
+
+  beforeEach(() => {
+    process.env.AUTOTASK_POLLER_BACKLOG_IDENTITY_CATCHUP_ENABLED = 'false';
+  });
+
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+  });
+
+  afterAll(() => {
+    if (priorBacklogCatchupEnv === undefined) {
+      delete process.env.AUTOTASK_POLLER_BACKLOG_IDENTITY_CATCHUP_ENABLED;
+      return;
+    }
+    process.env.AUTOTASK_POLLER_BACKLOG_IDENTITY_CATCHUP_ENABLED = priorBacklogCatchupEnv;
+  });
+
+  it('unrefs the background poll interval so it does not pin the process', async () => {
+    const intervalHandle = { unref: jest.fn() } as unknown as ReturnType<typeof setInterval>;
+    const setIntervalSpy = jest.spyOn(global, 'setInterval').mockImplementation(() => intervalHandle);
+    const clearIntervalSpy = jest.spyOn(global, 'clearInterval').mockImplementation(() => undefined);
+
+    const service = new AutotaskPollingService();
+    const runOnceSpy = jest.spyOn(service, 'runOnce').mockResolvedValue(undefined);
+
+    service.start();
+    await Promise.resolve();
+
+    expect(runOnceSpy).toHaveBeenCalledTimes(1);
+    expect(intervalHandle.unref).toHaveBeenCalledTimes(1);
+
+    service.stop();
+    expect(clearIntervalSpy).toHaveBeenCalledWith(intervalHandle);
+
+    setIntervalSpy.mockRestore();
+    clearIntervalSpy.mockRestore();
+  });
+
   it('disables historical parity backfill when active-only mode is enabled', async () => {
     const service = new AutotaskPollingService({
       parityBackfillEnabled: true,
       parityActiveOnly: true,
       buildPollContext: async () => ({
         tenantId: 'tenant-1',
-        client: {
+        client: asAutotaskClient({
           searchTickets: jest.fn().mockResolvedValue([]),
-        } as any,
+        }),
       }),
       runWithLock: async (fn) => {
         await fn();
         return { acquired: true };
       },
     });
-    const backfillSpy = jest.spyOn(service as any, 'runParityBackfill').mockResolvedValue(undefined);
+    const backfillSpy = jest.spyOn(asPollingInternals(service), 'runParityBackfill').mockResolvedValue(undefined);
 
     await service.runOnce();
 
@@ -30,16 +91,16 @@ describe('AutotaskPollingService P0 hardening', () => {
       parityActiveOnly: false,
       buildPollContext: async () => ({
         tenantId: 'tenant-1',
-        client: {
+        client: asAutotaskClient({
           searchTickets: jest.fn().mockResolvedValue([]),
-        } as any,
+        }),
       }),
       runWithLock: async (fn) => {
         await fn();
         return { acquired: true };
       },
     });
-    const backfillSpy = jest.spyOn(service as any, 'runParityBackfill').mockResolvedValue(undefined);
+    const backfillSpy = jest.spyOn(asPollingInternals(service), 'runParityBackfill').mockResolvedValue(undefined);
 
     await service.runOnce();
 
@@ -52,7 +113,7 @@ describe('AutotaskPollingService P0 hardening', () => {
     const searchTickets = jest.fn(async (filter: string) => {
       const raw = JSON.parse(filter);
       const queueFilter = Array.isArray(raw?.filter)
-        ? raw.filter.find((entry: any) => String(entry?.field || '') === 'queueID')
+        ? raw.filter.find((entry: Record<string, unknown>) => String(entry?.field || '') === 'queueID')
         : null;
       if (queueFilter) {
         if (Number(queueFilter.value) === 10) {
@@ -76,13 +137,13 @@ describe('AutotaskPollingService P0 hardening', () => {
       parityActiveOnly: true,
       buildPollContext: async () => ({
         tenantId: 'tenant-1',
-        client: {
+        client: asAutotaskClient({
           getTicketQueues: jest.fn().mockResolvedValue([
             { id: 10, name: 'Complete' },
             { id: 20, name: 'Service Desk' },
           ]),
           searchTickets,
-        } as any,
+        }),
       }),
       workflowSync,
       triageRun,
@@ -107,7 +168,7 @@ describe('AutotaskPollingService P0 hardening', () => {
     const service = new AutotaskPollingService({
       buildPollContext: async () => ({
         tenantId: 'tenant-1',
-        client: {
+        client: asAutotaskClient({
           searchTickets: jest.fn().mockResolvedValue([
             {
               id: 123,
@@ -119,7 +180,7 @@ describe('AutotaskPollingService P0 hardening', () => {
               createDate: '2026-02-26T12:00:00.000Z',
             },
           ]),
-        } as any,
+        }),
       }),
       workflowSync,
       triageRun,
@@ -146,11 +207,11 @@ describe('AutotaskPollingService P0 hardening', () => {
     const triageRun = jest.fn().mockResolvedValue(undefined);
     const service = new AutotaskPollingService({
       buildPollContext: async () => ({
-        client: {
+        client: asAutotaskClient({
           searchTickets: jest.fn().mockResolvedValue([
             { id: 321, ticketNumber: 'T20260226.0321', createDate: '2026-02-26T12:00:00.000Z' },
           ]),
-        } as any,
+        }),
       }),
       workflowSync,
       triageRun,
@@ -183,9 +244,9 @@ describe('AutotaskPollingService P0 hardening', () => {
     const service = new AutotaskPollingService({
       buildPollContext: async () => ({
         tenantId: 'tenant-1',
-        client: {
+        client: asAutotaskClient({
           searchTickets,
-        } as any,
+        }),
       }),
       workflowSync,
       triageRun,
@@ -221,9 +282,9 @@ describe('AutotaskPollingService P0 hardening', () => {
     const service = new AutotaskPollingService({
       buildPollContext: async () => ({
         tenantId: 'tenant-1',
-        client: {
+        client: asAutotaskClient({
           searchTickets,
-        } as any,
+        }),
       }),
       workflowSync,
       triageRun,
@@ -252,9 +313,9 @@ describe('AutotaskPollingService P0 hardening', () => {
     const service = new AutotaskPollingService({
       buildPollContext: async () => ({
         tenantId: 'tenant-1',
-        client: {
+        client: asAutotaskClient({
           searchTickets,
-        } as any,
+        }),
       }),
       runWithLock: async (fn) => {
         await fn();
@@ -265,7 +326,7 @@ describe('AutotaskPollingService P0 hardening', () => {
 
     await service.runOnce();
     expect(searchTickets).toHaveBeenCalledTimes(1);
-    expect((service as any).authFailureCooldownUntil).toBeGreaterThan(now);
+    expect(asPollingInternals(service).authFailureCooldownUntil).toBeGreaterThan(now);
 
     now += 10_000;
     await service.runOnce();
@@ -278,7 +339,7 @@ describe('AutotaskPollingService P0 hardening', () => {
     const service = new AutotaskPollingService({
       buildPollContext: async () => ({
         tenantId: 'tenant-1',
-        client: {
+        client: asAutotaskClient({
           searchTickets: jest.fn().mockResolvedValue([
             {
               id: 456,
@@ -293,7 +354,7 @@ describe('AutotaskPollingService P0 hardening', () => {
           ]),
           getCompany: jest.fn().mockImplementation(() => new Promise(() => undefined)),
           getContact: jest.fn().mockImplementation(() => new Promise(() => undefined)),
-        } as any,
+        }),
       }),
       workflowSync,
       triageRun,
@@ -320,13 +381,13 @@ describe('AutotaskPollingService P0 hardening', () => {
   it('prioritizes identity lookup by ticket create time instead of last activity time', async () => {
     const workflowSync = jest.fn().mockResolvedValue(undefined);
     const triageRun = jest.fn().mockResolvedValue(undefined);
-    const service = new AutotaskPollingService({
-      buildPollContext: async () => ({
-        tenantId: 'tenant-1',
-        client: {
-          searchTickets: jest.fn().mockResolvedValue([
-            {
-              id: 801,
+      const service = new AutotaskPollingService({
+        buildPollContext: async () => ({
+          tenantId: 'tenant-1',
+          client: asAutotaskClient({
+            searchTickets: jest.fn().mockResolvedValue([
+              {
+                id: 801,
               ticketNumber: 'T20260305.0801',
               title: 'Older ticket with fresh activity',
               status: 'New',
@@ -349,13 +410,13 @@ describe('AutotaskPollingService P0 hardening', () => {
             },
           ]),
           getCompany: jest.fn().mockImplementation(async (id: number) => ({ companyName: `Company ${id}` })),
-          getContact: jest.fn().mockImplementation(async (id: number) => ({
-            firstName: 'Contact',
-            lastName: String(id),
-            emailAddress: `contact-${id}@example.com`,
-          })),
-        } as any,
-      }),
+            getContact: jest.fn().mockImplementation(async (id: number) => ({
+              firstName: 'Contact',
+              lastName: String(id),
+              emailAddress: `contact-${id}@example.com`,
+            })),
+          }),
+        }),
       workflowSync,
       triageRun,
       runWithLock: async (fn) => {
@@ -384,6 +445,7 @@ describe('AutotaskPollingService P0 hardening', () => {
   });
 
   it('propagates canonical org/requester when live-like Autotask lookup latency fits default timeout', async () => {
+    jest.useFakeTimers();
     const priorTimeout = process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_TIMEOUT_MS;
     const priorBudget = process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_BUDGET_MS;
     const priorMaxCompanies = process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_MAX_COMPANIES;
@@ -400,7 +462,7 @@ describe('AutotaskPollingService P0 hardening', () => {
       const service = new AutotaskPollingService({
         buildPollContext: async () => ({
           tenantId: 'tenant-1',
-          client: {
+          client: asAutotaskClient({
             searchTickets: jest.fn().mockResolvedValue([
               {
                 id: 789,
@@ -423,7 +485,7 @@ describe('AutotaskPollingService P0 hardening', () => {
                 emailAddress: 'david@refreshtech.com',
               }), 650))
             ),
-          } as any,
+          }),
         }),
         workflowSync,
         triageRun,
@@ -433,7 +495,10 @@ describe('AutotaskPollingService P0 hardening', () => {
         },
       });
 
-      await service.runOnce();
+      // Use fake timers here so the worker does not keep real latency timers alive after the test.
+      const runOncePromise = service.runOnce();
+      await jest.advanceTimersByTimeAsync(2_400);
+      await runOncePromise;
 
       expect(workflowSync).toHaveBeenCalledTimes(1);
       expect(workflowSync.mock.calls[0]?.[0]?.payload).toMatchObject({
@@ -456,6 +521,7 @@ describe('AutotaskPollingService P0 hardening', () => {
   });
 
   it('resolves later recent tickets when ten unique companies and ten unique contacts fit default lookup coverage', async () => {
+    jest.useFakeTimers();
     const priorTimeout = process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_TIMEOUT_MS;
     const priorBudget = process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_BUDGET_MS;
     const priorMaxCompanies = process.env.AUTOTASK_POLLER_IDENTITY_LOOKUP_MAX_COMPANIES;
@@ -490,7 +556,7 @@ describe('AutotaskPollingService P0 hardening', () => {
       const service = new AutotaskPollingService({
         buildPollContext: async () => ({
           tenantId: 'tenant-1',
-          client: {
+          client: asAutotaskClient({
             searchTickets: jest.fn().mockResolvedValue(recentTickets),
             getCompany: jest.fn().mockImplementation(
               async (id: number) => new Promise((resolve) => setTimeout(() => resolve({ companyName: `Company ${id}` }), 20))
@@ -502,7 +568,7 @@ describe('AutotaskPollingService P0 hardening', () => {
                 emailAddress: `contact-${id}@example.com`,
               }), 15))
             ),
-          } as any,
+          }),
         }),
         workflowSync,
         triageRun,
@@ -512,7 +578,9 @@ describe('AutotaskPollingService P0 hardening', () => {
         },
       });
 
-      await service.runOnce();
+      const runOncePromise = service.runOnce();
+      await jest.advanceTimersByTimeAsync(250);
+      await runOncePromise;
 
       const sixthTicketEvent = workflowSync.mock.calls.find((call) => call?.[0]?.entity_id === 'T20260305.1006')?.[0];
       const tenthTicketEvent = workflowSync.mock.calls.find((call) => call?.[0]?.entity_id === 'T20260305.1010')?.[0];
@@ -555,7 +623,7 @@ describe('AutotaskPollingService P0 hardening', () => {
       const raw = JSON.parse(filter);
       if (raw?.op === 'gt' && raw?.field === 'createDate') return [];
       if (!Array.isArray(raw?.filter)) return [];
-      const fields = raw.filter.map((entry: any) => String(entry?.field || ''));
+      const fields = raw.filter.map((entry: Record<string, unknown>) => String(entry?.field || ''));
       if (fields.includes('queueID') && fields.includes('createDate')) return [];
       if (!fields.includes('queueID')) return [];
       return [
@@ -592,7 +660,7 @@ describe('AutotaskPollingService P0 hardening', () => {
             requester_name: 'Hydrated User',
           },
         },
-      } as any,
+      } as unknown as InboxTicketState,
       {
         ticket_id: 'T20260303.0001',
         company: null,
@@ -600,19 +668,19 @@ describe('AutotaskPollingService P0 hardening', () => {
         domain_snapshots: {
           tickets: {},
         },
-      } as any,
+      } as unknown as InboxTicketState,
     ]);
 
     try {
       const service = new AutotaskPollingService({
         buildPollContext: async () => ({
           tenantId: 'tenant-1',
-          client: {
+          client: asAutotaskClient({
             getTicketQueues: jest.fn().mockResolvedValue([{ id: 7, name: 'Service Desk' }]),
             searchTickets,
             getCompany,
             getContact,
-          } as any,
+          }),
         }),
         workflowSync,
         triageRun,
@@ -672,8 +740,8 @@ describe('AutotaskPollingService P0 hardening', () => {
       createDate: '2026-03-03T18:00:00.000Z',
     };
 
-    await (service as any).ingestWorkflowSyncEvent(ticket, 'tenant-1', 'autotask_reconcile');
-    await (service as any).ingestWorkflowSyncEvent(ticket, 'tenant-1', 'autotask_reconcile', {
+    await asPollingInternals(service).ingestWorkflowSyncEvent(ticket, 'tenant-1', 'autotask_reconcile');
+    await asPollingInternals(service).ingestWorkflowSyncEvent(ticket, 'tenant-1', 'autotask_reconcile', {
       companyNameById: new Map([[902, 'Company 902']]),
       requesterNameByContactId: new Map([[1002, 'Contact 1002']]),
       contactEmailByContactId: new Map([[1002, 'contact-1002@example.com']]),
@@ -705,10 +773,10 @@ describe('AutotaskPollingService P0 hardening', () => {
     const triageRun = jest.fn().mockImplementation(async (ticketId: string) => {
       callOrder.push(`triage:${ticketId}`);
     });
-    const service = new AutotaskPollingService({
-      buildPollContext: async () => ({
-        tenantId: 'tenant-1',
-        client: {
+      const service = new AutotaskPollingService({
+        buildPollContext: async () => ({
+          tenantId: 'tenant-1',
+          client: asAutotaskClient({
           getTicketQueues: jest.fn().mockResolvedValue([{ id: 7, name: 'Service Desk' }]),
           searchTickets: jest.fn().mockImplementation(async (filter: string) => {
             const raw = JSON.parse(filter);
@@ -725,7 +793,7 @@ describe('AutotaskPollingService P0 hardening', () => {
               ];
             }
             if (!Array.isArray(raw?.filter)) return [];
-            const fields = raw.filter.map((entry: any) => String(entry?.field || ''));
+            const fields = raw.filter.map((entry: Record<string, unknown>) => String(entry?.field || ''));
             if (fields.includes('queueID') && fields.includes('createDate')) return [];
             if (!fields.includes('queueID')) return [];
             return [
@@ -747,8 +815,8 @@ describe('AutotaskPollingService P0 hardening', () => {
             lastName: '1002',
             emailAddress: 'contact-1002@example.com',
           }),
-        } as any,
-      }),
+          }),
+        }),
       workflowSync,
       triageRun,
       runWithLock: async (fn) => {
@@ -787,18 +855,18 @@ describe('AutotaskPollingService P0 hardening', () => {
         source_of_truth: 'Autotask',
         updated_at: '2026-03-05T12:00:00.000Z',
       },
-    ] as any);
+    ] as unknown as InboxTicketState[]);
 
     try {
       const service = new AutotaskPollingService({
         buildPollContext: async () => ({
           tenantId: 'tenant-1',
-          client: {
+          client: asAutotaskClient({
             getTicketQueues: jest.fn().mockResolvedValue([{ id: 7, name: 'Service Desk' }]),
             searchTickets: jest.fn(async (filter: string) => {
               const raw = JSON.parse(filter);
               if (!Array.isArray(raw?.filter)) return [];
-              const fields = raw.filter.map((entry: any) => String(entry?.field || ''));
+              const fields = raw.filter.map((entry: Record<string, unknown>) => String(entry?.field || ''));
               if (!fields.includes('queueID')) return [];
               if (fields.includes('createDate')) return [];
               return [
@@ -830,7 +898,7 @@ describe('AutotaskPollingService P0 hardening', () => {
               lastName: String(id),
               emailAddress: `contact-${id}@example.com`,
             })),
-          } as any,
+          }),
         }),
         workflowSync,
         runWithLock: async (fn) => {
@@ -869,13 +937,14 @@ describe('AutotaskPollingService P0 hardening', () => {
       hydratedCount: 8,
       remainingCount: 4,
       strategy: 'oldest-first',
-    } as any);
+    });
 
     try {
+      process.env.AUTOTASK_POLLER_BACKLOG_IDENTITY_CATCHUP_ENABLED = 'true';
       const service = new AutotaskPollingService({
         buildPollContext: async () => ({
           tenantId: 'tenant-1',
-          client: {
+          client: asAutotaskClient({
             searchTickets: jest.fn().mockResolvedValue([
               {
                 id: 9001,
@@ -886,7 +955,7 @@ describe('AutotaskPollingService P0 hardening', () => {
                 createDate: '2026-03-05T18:00:00.000Z',
               },
             ]),
-          } as any,
+          }),
         }),
         workflowSync,
         triageRun,
@@ -905,6 +974,7 @@ describe('AutotaskPollingService P0 hardening', () => {
         strategy: 'oldest-first',
       }));
     } finally {
+      process.env.AUTOTASK_POLLER_BACKLOG_IDENTITY_CATCHUP_ENABLED = 'false';
       catchupSpy.mockRestore();
     }
   });
@@ -914,7 +984,7 @@ describe('AutotaskPollingService P0 hardening', () => {
     const service = new AutotaskPollingService({
       buildPollContext: async () => ({
         tenantId: 'tenant-1',
-        client: {
+        client: asAutotaskClient({
           getTicketQueues: jest.fn().mockResolvedValue([{ id: 7, name: 'Service Desk' }]),
           getTicketStatusOptions: jest.fn().mockResolvedValue([
             { id: 1, label: 'New' },
@@ -922,7 +992,7 @@ describe('AutotaskPollingService P0 hardening', () => {
             { id: 6, label: 'Resolved' },
           ]),
           searchTickets,
-        } as any,
+        }),
       }),
       runWithLock: async (fn) => {
         await fn();
@@ -934,8 +1004,8 @@ describe('AutotaskPollingService P0 hardening', () => {
 
     const queueSearches = searchTickets.mock.calls
       .map((call) => JSON.parse(String(call?.[0] || '{}')))
-      .filter((raw) => Array.isArray(raw?.filter) && raw.filter.some((entry: any) => entry?.field === 'queueID'));
-    const backlogSearch = queueSearches.find((raw) => !raw.filter.some((entry: any) => entry?.field === 'createDate'));
+      .filter((raw) => Array.isArray(raw?.filter) && raw.filter.some((entry: Record<string, unknown>) => entry?.field === 'queueID'));
+    const backlogSearch = queueSearches.find((raw) => !raw.filter.some((entry: Record<string, unknown>) => entry?.field === 'createDate'));
 
     expect(backlogSearch?.filter).toEqual(expect.arrayContaining([
       expect.objectContaining({ field: 'queueID', op: 'eq', value: 7 }),
@@ -957,18 +1027,18 @@ describe('AutotaskPollingService P0 hardening', () => {
         comments: [],
         source_of_truth: 'Autotask',
         updated_at: '2026-03-05T21:00:00.000Z',
-      } as any,
+      } as unknown as InboxTicketState,
     ]);
 
     try {
       const service = new AutotaskPollingService({
         buildPollContext: async () => ({
           tenantId: 'tenant-1',
-          client: {
+          client: asAutotaskClient({
             getTicketStatusOptions: jest.fn().mockResolvedValue([{ id: 1, label: 'New' }, { id: 5, label: 'Complete' }]),
             searchTickets: jest.fn().mockResolvedValue([]),
             getTicket: jest.fn().mockResolvedValue({ id: 132932, ticketNumber: 'T20260305.0024', status: 5 }),
-          } as any,
+          }),
         }),
         runWithLock: async (fn) => {
           await fn();
@@ -1008,7 +1078,7 @@ describe('AutotaskPollingService P0 hardening', () => {
       comments: [],
       source_of_truth: 'Autotask',
       updated_at: `2026-03-05T21:${String(index).padStart(2, '0')}:00.000Z`,
-    })) as any[];
+    })) as unknown as InboxTicketState[];
     listInboxRows[40] = {
       tenant_id: 'tenant-1',
       ticket_id: 'T20260305.0037',
@@ -1019,19 +1089,19 @@ describe('AutotaskPollingService P0 hardening', () => {
       comments: [],
       source_of_truth: 'Autotask',
       updated_at: '2026-03-05T22:32:23.056Z',
-    } as any;
-    const listInboxSpy = jest.spyOn(workflowService, 'listInbox').mockResolvedValue(listInboxRows as any);
+    } as unknown as InboxTicketState;
+    const listInboxSpy = jest.spyOn(workflowService, 'listInbox').mockResolvedValue(listInboxRows);
 
     try {
       const service = new AutotaskPollingService({
         buildPollContext: async () => ({
           tenantId: 'tenant-1',
-          client: {
+          client: asAutotaskClient({
             getTicketQueues: jest.fn().mockResolvedValue([{ id: 7, name: 'Service Desk' }]),
             getTicketStatusOptions: jest.fn().mockResolvedValue([{ id: 1, label: 'New' }, { id: 5, label: 'Complete' }]),
             searchTickets: jest.fn().mockImplementation((raw: string) => {
               const parsed = JSON.parse(raw);
-              const hasQueueFilter = Array.isArray(parsed?.filter) && parsed.filter.some((entry: any) => entry?.field === 'queueID');
+              const hasQueueFilter = Array.isArray(parsed?.filter) && parsed.filter.some((entry: Record<string, unknown>) => entry?.field === 'queueID');
               if (!hasQueueFilter) {
                 return Promise.resolve([]);
               }
@@ -1051,7 +1121,7 @@ describe('AutotaskPollingService P0 hardening', () => {
               }
               return Promise.resolve({ id, ticketNumber: `T${id}`, status: 1 });
             }),
-          } as any,
+          }),
         }),
         runWithLock: async (fn) => {
           await fn();
@@ -1111,14 +1181,14 @@ describe('AutotaskPollingService P0 hardening', () => {
         source_of_truth: 'Autotask',
         updated_at: '2026-03-05T22:32:23.056Z',
       },
-    ] as any[];
-    const listInboxSpy = jest.spyOn(workflowService, 'listInbox').mockResolvedValue(listInboxRows as any);
+    ] as unknown as InboxTicketState[];
+    const listInboxSpy = jest.spyOn(workflowService, 'listInbox').mockResolvedValue(listInboxRows);
 
     try {
       const service = new AutotaskPollingService({
         buildPollContext: async () => ({
           tenantId: 'tenant-1',
-          client: {
+          client: asAutotaskClient({
             getTicketStatusOptions: jest.fn().mockResolvedValue([{ id: 1, label: 'New' }, { id: 5, label: 'Complete' }]),
             searchTickets: jest.fn().mockResolvedValue([]),
             getTicket: jest.fn().mockImplementation((id: number) => {
@@ -1127,14 +1197,14 @@ describe('AutotaskPollingService P0 hardening', () => {
               }
               return Promise.resolve({ id, ticketNumber: `T${id}`, status: 1 });
             }),
-          } as any,
+          }),
         }),
         runWithLock: async (fn) => {
           await fn();
           return { acquired: true };
         },
       });
-      (service as any).parityPurgeMaxChecksPerRun = 2;
+      asPollingInternals(service).parityPurgeMaxChecksPerRun = 2;
 
       await service.runOnce();
       expect(syncSpy).not.toHaveBeenCalledWith(expect.objectContaining({
@@ -1163,7 +1233,7 @@ describe('AutotaskPollingService P0 hardening', () => {
     const service = new AutotaskPollingService({
       buildPollContext: async () => ({
         tenantId: 'tenant-1',
-        client: {
+        client: asAutotaskClient({
           getTicketStatusOptions: jest.fn().mockResolvedValue([{ id: 1, label: 'New' }, { id: 5, label: 'Complete' }]),
           getTicketPriorityOptions: jest.fn().mockResolvedValue([{ id: 1, label: 'High' }, { id: 2, label: 'Medium' }]),
           getTicketIssueTypeOptions: jest.fn().mockResolvedValue([{ id: 10, label: 'Bug' }]),
@@ -1184,7 +1254,7 @@ describe('AutotaskPollingService P0 hardening', () => {
               createDate: '2026-03-05T13:00:00.000Z',
             },
           ]),
-        } as any,
+        }),
       }),
       workflowSync,
       triageRun,

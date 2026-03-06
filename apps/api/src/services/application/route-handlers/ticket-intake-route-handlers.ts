@@ -1,4 +1,5 @@
-import { Router, Request, Response } from 'express';
+import type { Request, Response } from 'express';
+import { Router } from 'express';
 import { AutotaskClient } from '../../../clients/autotask.js';
 import { queryOne } from '../../../db/index.js';
 import { graphClient } from '../../adapters/email/graph-client.js';
@@ -483,7 +484,7 @@ router.get('/list', async (req: Request, res: Response) => {
         const extractSite = (rawBody?: string, company?: string) => {
             const raw = rawBody || '';
             const explicit =
-                raw.match(/(?:site|office|location)\s*[:\-]\s*([^\n<]+)/i) ||
+                raw.match(/(?:site|office|location)\s*[:-]\s*([^\n<]+)/i) ||
                 raw.match(/at\s+[^,\n.]{2,80},\s*([A-Za-z0-9][^.\n<]{1,80})/i);
             const parsed = normalizeText(explicit?.[1], '');
             if (parsed && !/^unknown$/i.test(parsed)) return parsed;

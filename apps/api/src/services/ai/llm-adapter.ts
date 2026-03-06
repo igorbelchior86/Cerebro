@@ -37,7 +37,7 @@ export interface LLMProvider {
 }
 
 export interface RateLimiter {
-  acquire(estimatedTokens?: number, limits?: any): Promise<void>;
+  acquire(estimatedTokens?: number, limits?: { rpm: number; rpd: number; tpm: number }): Promise<void>;
   update?(headers: Headers): void;
   release?(): void;
 }
@@ -243,7 +243,6 @@ class GroqProvider implements LLMProvider {
     const maxTokens = options?.maxTokens ?? parseInt(process.env.LLM_MAX_TOKENS || '1200', 10);
     const temperature = options?.temperature ?? parseFloat(process.env.LLM_TEMPERATURE || '0.2');
 
-    const estimatedTokens = (JSON.stringify(messageList).length / 4) + maxTokens;
     return await this.withRetry(async () => {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -435,7 +434,7 @@ class GeminiRateLimiter implements RateLimiter {
     const MAX_WAIT_MS = 30_000;
     const start = Date.now();
 
-    while (true) {
+    for (;;) {
       const now = Date.now();
       this.prune(now);
 
@@ -502,11 +501,7 @@ class GeminiProvider implements LLMProvider {
       parts: [{ text: m.content }]
     }));
 
-    const rpm = parseInt(process.env.GEMINI_LIMIT_RPM || '15', 10);
-    const rpd = parseInt(process.env.GEMINI_LIMIT_RPD || '1500', 10);
-    const tpm = parseInt(process.env.GEMINI_LIMIT_TPM || '250000', 10);
     const retryMax = parseInt(process.env.GEMINI_RETRY_MAX || '2', 10);
-    const estimatedInputTokens = Math.max(500, Math.ceil(JSON.stringify(contents).length / 4));
 
     let response: Response | null = null;
     let lastError = '';

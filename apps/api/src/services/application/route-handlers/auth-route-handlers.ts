@@ -12,12 +12,12 @@
 // POST /auth/accept-invite    — deprecated alias
 // ─────────────────────────────────────────────────────────────
 
-import { Router, Request, Response, IRouter } from 'express';
+import { Router, type Request, type Response, type IRouter } from 'express';
 import bcrypt from 'bcryptjs';
 import { authenticator } from 'otplib';
 import QRCode from 'qrcode';
 import { v4 as uuidv4 } from 'uuid';
-import { query, queryOne } from '../../../db/index.js';
+import { query, queryOne, transaction } from '../../../db/index.js';
 import {
   signJwt,
   setSessionCookie,
@@ -30,6 +30,8 @@ import { operationalLogger } from '../../../lib/operational-logger.js';
 import { tenantContext } from '../../../lib/tenantContext.js';
 import { applyWorkspaceRuntimeSettings } from '../../read-models/runtime-settings.js';
 import { generateOpaqueToken, hashOpaqueToken, normalizeEmail } from '../../identity/security-utils.js';
+import { IdentityEmailConflictError, assertGlobalEmailAvailable, withIdentityEmailTransaction } from '../../identity/email-lock.js';
+import { withRetriedTenantSlug } from '../../identity/tenant-slug.js';
 import samlRouter from './auth-saml-route-handlers.js';
 import { sendInviteEmail, sendPasswordResetEmail } from '../../identity/mailer.js';
 
@@ -41,7 +43,7 @@ interface Tenant { id: string; name: string; slug: string; }
 interface User {
   id: string; tenant_id: string; email: string; password_hash: string;
   role: 'owner' | 'admin' | 'member'; totp_secret: string | null; totp_enabled: boolean;
-  name: string | null; avatar: string | null; preferences: any;
+  name: string | null; avatar: string | null; preferences: Record<string, unknown> | null;
 }
 interface Invite {
   id: string; tenant_id: string; email: string; token: string;
@@ -53,16 +55,6 @@ interface Invite {
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-}
-
-async function uniqueSlug(base: string): Promise<string> {
-  let slug = base;
-  let i = 1;
-  while (true) {
-    const existing = await queryOne<Tenant>('SELECT id FROM tenants WHERE slug = $1', [slug]);
-    if (!existing) return slug;
-    slug = `${base}-${i++}`;
-  }
 }
 
 function correlationFromRequest(req: Request) {
@@ -79,6 +71,20 @@ function tenantNameFromEmail(email: string): string {
   const label = domain.split('.')[0] || 'tenant';
   const clean = label.replace(/[^a-zA-Z0-9]/g, ' ').trim() || 'Tenant';
   return `${clean.charAt(0).toUpperCase()}${clean.slice(1)} MSP`;
+}
+
+async function mergeWorkspaceSettings(
+  tenantId: string,
+  newSettings: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  const updated = await queryOne<{ settings: Record<string, unknown> }>(
+    `UPDATE tenants
+     SET settings = COALESCE(settings, '{}'::jsonb) || $1::jsonb
+     WHERE id = $2
+     RETURNING settings`,
+    [JSON.stringify(newSettings), tenantId],
+  );
+  return updated?.settings || null;
 }
 
 async function writeIdentityAudit(input: {
@@ -140,29 +146,25 @@ router.post('/register-tenant', async (req: Request, res: Response) => {
         }
       }
 
-      const slug = await uniqueSlug(slugify(name));
       const password_hash = await bcrypt.hash(password, 12);
       const tenant_id = uuidv4();
       const user_id = uuidv4();
       const normalizedEmail = normalizeEmail(email);
 
-      // Single transaction
-      await query('BEGIN');
-      try {
-        await query(
-          'INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)',
-          [tenant_id, name, slug],
-        );
-        await query(
-          `INSERT INTO users (id, tenant_id, email, password_hash, role)
-           VALUES ($1, $2, $3, $4, 'owner')`,
-          [user_id, tenant_id, normalizedEmail, password_hash],
-        );
-        await query('COMMIT');
-      } catch (err) {
-        await query('ROLLBACK');
-        throw err;
-      }
+      const { slug } = await withRetriedTenantSlug(slugify(name), async (slug) =>
+        withIdentityEmailTransaction(normalizedEmail, async (client) => {
+          await assertGlobalEmailAvailable(client, normalizedEmail);
+          await client.query(
+            'INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)',
+            [tenant_id, name, slug],
+          );
+          await client.query(
+            `INSERT INTO users (id, tenant_id, email, password_hash, role)
+             VALUES ($1, $2, $3, $4, 'owner')`,
+            [user_id, tenant_id, normalizedEmail, password_hash],
+          );
+        })
+      );
 
       const token = signJwt({ sub: user_id, tid: tenant_id, role: 'owner', scope: 'full' });
       setSessionCookie(res, token);
@@ -184,8 +186,8 @@ router.post('/register-tenant', async (req: Request, res: Response) => {
         tenant: { id: tenant_id, name, slug },
         user: { id: user_id, email: normalizedEmail, role: 'owner' },
       });
-    } catch (err: any) {
-      if (err.code === '23505') {
+    } catch (err: unknown) {
+      if (err instanceof IdentityEmailConflictError) {
         return res.status(409).json({ error: 'Email already registered' });
       }
       operationalLogger.error('routes.auth.register_tenant.failed', err, {
@@ -363,27 +365,22 @@ router.post('/password/reset-confirm', async (req: Request, res: Response) => {
       }
 
       const passwordHash = await bcrypt.hash(password, 12);
-      await query('BEGIN');
-      try {
-        await query(
+      await transaction(async (client) => {
+        await client.query(
           'UPDATE users SET password_hash = $1 WHERE id = $2 AND tenant_id = $3',
           [passwordHash, user.id, user.tenant_id],
         );
-        const consume = await query<{ id: string }>(
+        const consume = await client.query<{ id: string }>(
           `UPDATE user_invites
            SET used_at = NOW(), used_count = used_count + 1
            WHERE id = $1 AND used_at IS NULL AND used_count < max_uses
            RETURNING id`,
           [resetInvite.id],
         );
-        if (consume.length === 0) {
+        if (consume.rows.length === 0) {
           throw new Error('Reset token already consumed');
         }
-        await query('COMMIT');
-      } catch (error) {
-        await query('ROLLBACK');
-        throw error;
-      }
+      });
 
       await writeIdentityAudit({
         req,
@@ -543,7 +540,7 @@ router.post('/mfa/disable', requireAuth, async (req: Request, res: Response) => 
 
 router.get('/me', requireAuth, async (req: Request, res: Response) => {
   try {
-    const user = await queryOne<User & { tenant_name: string; tenant_slug: string }>(
+    const user = await queryOne<User & { tenant_name: string; tenant_slug: string; created_at: string }>(
       `SELECT u.id, u.email, u.role, u.totp_enabled, u.created_at, u.name, u.avatar, u.preferences,
               t.id AS tenant_id, t.name AS tenant_name, t.slug AS tenant_slug
        FROM users u JOIN tenants t ON t.id = u.tenant_id
@@ -560,7 +557,7 @@ router.get('/me', requireAuth, async (req: Request, res: Response) => {
       preferences: user.preferences || {},
       role: user.role,
       mfaEnabled: user.totp_enabled,
-      createdAt: (user as any).created_at,
+      createdAt: user.created_at,
       tenant: { id: user.tenant_id, name: user.tenant_name, slug: user.tenant_slug },
     });
   } catch (err) {
@@ -651,37 +648,27 @@ router.post('/invite', requireAuth, requireAdmin, async (req: Request, res: Resp
       return res.status(400).json({ error: 'role must be admin or member' });
     }
 
-    // Global identity uniqueness
-    const existing = await queryOne<User>(
-      'SELECT id FROM users WHERE lower(trim(email)) = $1',
-      [normalizedEmail],
-    );
-    if (existing) return res.status(409).json({ error: 'Email already registered' });
-
     if (isMasterOnboarding) {
       const tenantName = tenantNameFromEmail(normalizedEmail);
-      const slug = await uniqueSlug(slugify(tenantName));
       const newTenantId = uuidv4();
       const onboardingRole = 'owner';
       const token = generateOpaqueToken();
       const tokenHash = hashOpaqueToken(token);
 
-      await query('BEGIN');
-      try {
-        await query(
-          'INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)',
-          [newTenantId, tenantName, slug],
-        );
-        await query(
-          `INSERT INTO user_invites (tenant_id, email, token, token_hash, role, created_by, invite_type, max_uses, used_count)
-           VALUES ($1, $2, $3, $4, $5, $6, 'activation', 1, 0)`,
-          [newTenantId, normalizedEmail, token, tokenHash, onboardingRole, invitedBy],
-        );
-        await query('COMMIT');
-      } catch (error) {
-        await query('ROLLBACK');
-        throw error;
-      }
+      const { slug } = await withRetriedTenantSlug(slugify(tenantName), async (slug) =>
+        withIdentityEmailTransaction(normalizedEmail, async (client) => {
+          await assertGlobalEmailAvailable(client, normalizedEmail);
+          await client.query(
+            'INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)',
+            [newTenantId, tenantName, slug],
+          );
+          await client.query(
+            `INSERT INTO user_invites (tenant_id, email, token, token_hash, role, created_by, invite_type, max_uses, used_count)
+             VALUES ($1, $2, $3, $4, $5, $6, 'activation', 1, 0)`,
+            [newTenantId, normalizedEmail, token, tokenHash, onboardingRole, invitedBy],
+          );
+        })
+      );
 
       const inviteUrl = `${process.env.APP_URL || 'http://localhost:3000'}/activate-account?token=${token}`;
       const mail = await sendInviteEmail({
@@ -718,11 +705,14 @@ router.post('/invite', requireAuth, requireAdmin, async (req: Request, res: Resp
 
     const token = generateOpaqueToken();
     const tokenHash = hashOpaqueToken(token);
-    await query(
-      `INSERT INTO user_invites (tenant_id, email, token, token_hash, role, created_by, invite_type, max_uses, used_count)
-       VALUES ($1, $2, $3, $4, $5, $6, 'add_member', 1, 0)`,
-      [tenantId, normalizedEmail, token, tokenHash, role, invitedBy],
-    );
+    await withIdentityEmailTransaction(normalizedEmail, async (client) => {
+      await assertGlobalEmailAvailable(client, normalizedEmail);
+      await client.query(
+        `INSERT INTO user_invites (tenant_id, email, token, token_hash, role, created_by, invite_type, max_uses, used_count)
+         VALUES ($1, $2, $3, $4, $5, $6, 'add_member', 1, 0)`,
+        [tenantId, normalizedEmail, token, tokenHash, role, invitedBy],
+      );
+    });
     const inviteUrl = `${process.env.APP_URL || 'http://localhost:3000'}/activate-account?token=${token}`;
     const tenant = await queryOne<Tenant>('SELECT id, name, slug FROM tenants WHERE id = $1', [tenantId]);
     const mail = await sendInviteEmail({
@@ -746,6 +736,9 @@ router.post('/invite', requireAuth, requireAdmin, async (req: Request, res: Resp
     });
     res.json({ message: 'Invite created', inviteUrl, token, smtpSent: mail.sent });
   } catch (err) {
+    if (err instanceof IdentityEmailConflictError) {
+      return res.status(409).json({ error: 'Email already registered' });
+    }
     operationalLogger.error('routes.auth.invite.failed', err, {
       module: 'routes.auth',
       route: 'POST /auth/invite',
@@ -782,28 +775,24 @@ async function activateAccountFromInvite(req: Request, res: Response): Promise<R
       const password_hash = await bcrypt.hash(password, 12);
       const userId = uuidv4();
 
-      await query('BEGIN');
-      try {
-        await query(
+      await withIdentityEmailTransaction(invite.email, async (client, normalizedEmail) => {
+        await assertGlobalEmailAvailable(client, normalizedEmail);
+        await client.query(
           `INSERT INTO users (id, tenant_id, email, password_hash, role)
            VALUES ($1, $2, $3, $4, $5)`,
-          [userId, invite.tenant_id, normalizeEmail(invite.email), password_hash, invite.role],
+          [userId, invite.tenant_id, normalizedEmail, password_hash, invite.role],
         );
-        const consume = await query<{ id: string }>(
+        const consume = await client.query<{ id: string }>(
           `UPDATE user_invites
            SET used_at = NOW(), used_count = used_count + 1
            WHERE id = $1 AND used_at IS NULL AND used_count < max_uses
            RETURNING id`,
           [invite.id],
         );
-        if (consume.length === 0) {
+        if (consume.rows.length === 0) {
           throw new Error('Invite token already consumed');
         }
-        await query('COMMIT');
-      } catch (err) {
-        await query('ROLLBACK');
-        throw err;
-      }
+      });
 
       const sessionToken = signJwt({
         sub: userId, tid: invite.tenant_id, role: invite.role, scope: 'full',
@@ -825,8 +814,8 @@ async function activateAccountFromInvite(req: Request, res: Response): Promise<R
         message: 'Account created',
         user: { id: userId, email: normalizeEmail(invite.email), role: invite.role },
       });
-    } catch (err: any) {
-      if (err.code === '23505') {
+    } catch (err: unknown) {
+      if (err instanceof IdentityEmailConflictError) {
         return res.status(409).json({ error: 'Email already registered' });
       }
       operationalLogger.error('routes.auth.activate_account.failed', err, {
@@ -874,7 +863,7 @@ router.get('/team', requireAuth, async (req: Request, res: Response) => {
 
 router.get('/workspace/settings', requireAuth, async (req: Request, res: Response) => {
   try {
-    const tenant = await queryOne<{ settings: Record<string, any> }>(
+    const tenant = await queryOne<{ settings: Record<string, unknown> }>(
       'SELECT settings FROM tenants WHERE id = $1',
       [req.auth!.tid],
     );
@@ -899,17 +888,9 @@ router.patch('/workspace/settings', requireAuth, requireAdmin, async (req: Reque
       return res.status(400).json({ error: 'Body must be a JSON object' });
     }
 
-    // Merge with existing settings (shallow merge)
-    const tenant = await queryOne<{ settings: Record<string, any> }>(
-      'SELECT settings FROM tenants WHERE id = $1',
-      [req.auth!.tid],
-    );
-    const merged = { ...(tenant?.settings || {}), ...newSettings };
-
-    await query(
-      'UPDATE tenants SET settings = $1 WHERE id = $2',
-      [JSON.stringify(merged), req.auth!.tid],
-    );
+    // Merge inside the UPDATE so concurrent admins do not clobber each other.
+    const merged = await mergeWorkspaceSettings(req.auth!.tid, newSettings);
+    if (!merged) return res.status(404).json({ error: 'Tenant not found' });
 
     // Apply to current API process immediately (no restart required).
     applyWorkspaceRuntimeSettings(merged);
@@ -926,5 +907,9 @@ router.patch('/workspace/settings', requireAuth, requireAdmin, async (req: Reque
 
 // ─── SAML Auth (tenant-scoped) ───────────────────────────────
 router.use('/saml', samlRouter);
+
+export const __testables = {
+  mergeWorkspaceSettings,
+};
 
 export default router;

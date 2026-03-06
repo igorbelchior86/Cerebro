@@ -64,6 +64,7 @@ export class TriageOrchestrator {
                 })
             );
         }, 2 * 60 * 1000);
+        this.retryIntervalId.unref?.();
     }
 
     private async processPendingSessions() {

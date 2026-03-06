@@ -1,14 +1,14 @@
 import { Router, type Request, type Response, type IRouter } from 'express';
-import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { query, queryOne } from '../../../db/index.js';
 import { tenantContext } from '../../../lib/tenantContext.js';
 import { generateOpaqueToken, hashOpaqueToken, normalizeEmail } from '../../identity/security-utils.js';
+import { IdentityEmailConflictError, assertGlobalEmailAvailable, withIdentityEmailTransaction } from '../../identity/email-lock.js';
+import { withRetriedTenantSlug } from '../../identity/tenant-slug.js';
 import { operationalLogger } from '../../../lib/operational-logger.js';
 import { sendInviteEmail } from '../../identity/mailer.js';
 
 type TenantRow = { id: string; name: string; slug: string };
-type UserRow = { id: string };
 
 const router: IRouter = Router();
 
@@ -24,16 +24,6 @@ function requirePlatformAdminToken(req: Request, res: Response): string | null {
 
 function slugify(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-}
-
-async function uniqueSlug(base: string): Promise<string> {
-  let slug = base;
-  let i = 1;
-  while (true) {
-    const existing = await queryOne<TenantRow>('SELECT id FROM tenants WHERE slug = $1', [slug]);
-    if (!existing) return slug;
-    slug = `${base}-${i++}`;
-  }
 }
 
 async function writeAudit(input: {
@@ -80,34 +70,23 @@ router.post('/tenants', async (req: Request, res: Response) => {
       }
 
       const ownerEmail = normalizeEmail(ownerEmailRaw);
-      const existingUser = await queryOne<UserRow>(
-        'SELECT id FROM users WHERE lower(trim(email)) = $1',
-        [ownerEmail],
-      );
-      if (existingUser) {
-        return res.status(409).json({ error: 'Email already registered' });
-      }
-
-      const slug = await uniqueSlug(slugify(tenantName));
       const tenantId = uuidv4();
       const inviteId = uuidv4();
       const inviteToken = generateOpaqueToken();
       const inviteTokenHash = hashOpaqueToken(inviteToken);
       const createdBy = `platform-token:${token.slice(0, 6)}`;
 
-      await query('BEGIN');
-      try {
-        await query('INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)', [tenantId, tenantName, slug]);
-        await query(
-          `INSERT INTO user_invites (id, tenant_id, email, token, token_hash, role, created_by, invite_type, max_uses, used_count, expires_at)
-           VALUES ($1, $2, $3, $4, $5, $6, NULL, 'activation', 1, 0, NOW() + INTERVAL '48 hours')`,
-          [inviteId, tenantId, ownerEmail, inviteToken, inviteTokenHash, ownerRole],
-        );
-        await query('COMMIT');
-      } catch (error) {
-        await query('ROLLBACK');
-        throw error;
-      }
+      const { slug } = await withRetriedTenantSlug(slugify(tenantName), async (slug) =>
+        withIdentityEmailTransaction(ownerEmail, async (client, normalizedEmail) => {
+          await assertGlobalEmailAvailable(client, normalizedEmail);
+          await client.query('INSERT INTO tenants (id, name, slug) VALUES ($1, $2, $3)', [tenantId, tenantName, slug]);
+          await client.query(
+            `INSERT INTO user_invites (id, tenant_id, email, token, token_hash, role, created_by, invite_type, max_uses, used_count, expires_at)
+             VALUES ($1, $2, $3, $4, $5, $6, NULL, 'activation', 1, 0, NOW() + INTERVAL '48 hours')`,
+            [inviteId, tenantId, normalizedEmail, inviteToken, inviteTokenHash, ownerRole],
+          );
+        })
+      );
 
       await writeAudit({
         action: 'identity.tenant.create',
@@ -143,6 +122,9 @@ router.post('/tenants', async (req: Request, res: Response) => {
         },
       });
     } catch (err) {
+      if (err instanceof IdentityEmailConflictError) {
+        return res.status(409).json({ error: 'Email already registered' });
+      }
       operationalLogger.error('routes.platform_admin.create_tenant.failed', err, {
         module: 'routes.platform-admin',
         route: 'POST /platform/admin/tenants',
@@ -172,19 +154,16 @@ router.post('/tenants/:tenantId/invites', async (req: Request, res: Response) =>
       if (!tenant) return res.status(404).json({ error: 'Tenant not found' });
 
       const email = normalizeEmail(emailRaw);
-      const existingUser = await queryOne<UserRow>(
-        'SELECT id FROM users WHERE lower(trim(email)) = $1',
-        [email],
-      );
-      if (existingUser) return res.status(409).json({ error: 'Email already registered' });
-
       const inviteToken = generateOpaqueToken();
       const inviteTokenHash = hashOpaqueToken(inviteToken);
-      await query(
-        `INSERT INTO user_invites (tenant_id, email, token, token_hash, role, created_by, invite_type, max_uses, used_count, expires_at)
-         VALUES ($1, $2, $3, $4, $5, NULL, 'add_member', 1, 0, NOW() + INTERVAL '48 hours')`,
-        [tenantId, email, inviteToken, inviteTokenHash, role],
-      );
+      await withIdentityEmailTransaction(email, async (client, normalizedEmail) => {
+        await assertGlobalEmailAvailable(client, normalizedEmail);
+        await client.query(
+          `INSERT INTO user_invites (tenant_id, email, token, token_hash, role, created_by, invite_type, max_uses, used_count, expires_at)
+           VALUES ($1, $2, $3, $4, $5, NULL, 'add_member', 1, 0, NOW() + INTERVAL '48 hours')`,
+          [tenantId, normalizedEmail, inviteToken, inviteTokenHash, role],
+        );
+      });
 
       await writeAudit({
         action: 'identity.invite.create',
@@ -220,6 +199,9 @@ router.post('/tenants/:tenantId/invites', async (req: Request, res: Response) =>
         },
       });
     } catch (err) {
+      if (err instanceof IdentityEmailConflictError) {
+        return res.status(409).json({ error: 'Email already registered' });
+      }
       operationalLogger.error('routes.platform_admin.create_invite.failed', err, {
         module: 'routes.platform-admin',
         route: 'POST /platform/admin/tenants/:tenantId/invites',

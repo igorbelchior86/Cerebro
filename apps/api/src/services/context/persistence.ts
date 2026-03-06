@@ -5,7 +5,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import type { EvidencePack } from '@cerebro/types';
-import { query, queryOne, execute } from '../../db/index.js';
+import { query, queryOne, execute, transaction } from '../../db/index.js';
 import { operationalLogger } from '../../lib/operational-logger.js';
 import type {
     TicketSSOT,
@@ -19,6 +19,57 @@ function persistenceCorrelation(ticketId?: string) {
     };
 }
 
+const EVIDENCE_PACK_LOCK_NAMESPACE = 41023;
+
+type TicketScopedArtifactKind =
+    | 'ticket_ssot'
+    | 'ticket_text_artifact'
+    | 'ticket_context_appendix';
+
+function buildLatestSessionGuardedUpsert(tableName: TicketScopedArtifactKind): string {
+    return `
+        WITH eligible_session AS (
+            SELECT s.id
+            FROM triage_sessions s
+            WHERE s.id = $2
+              AND s.ticket_id = $1
+              AND NOT (
+                LOWER(COALESCE(s.status, '')) = 'failed'
+                AND LOWER(COALESCE(s.last_error, '')) LIKE '%manual refresh restart%'
+              )
+              AND s.id = (
+                SELECT ts.id
+                FROM triage_sessions ts
+                WHERE ts.ticket_id = $1
+                ORDER BY ts.created_at DESC, ts.id DESC
+                LIMIT 1
+              )
+        )
+        INSERT INTO ${tableName} (ticket_id, session_id, payload, created_at, updated_at)
+        SELECT $1, $2, $3, NOW(), NOW()
+        FROM eligible_session
+        ON CONFLICT (ticket_id)
+        DO UPDATE SET
+            payload = EXCLUDED.payload,
+            session_id = EXCLUDED.session_id,
+            updated_at = NOW()
+        WHERE EXISTS (SELECT 1 FROM eligible_session)
+    `;
+}
+
+async function persistLatestTicketScopedArtifact(
+    tableName: TicketScopedArtifactKind,
+    ticketId: string,
+    sessionId: string,
+    payload: unknown
+): Promise<boolean> {
+    const affectedRows = await execute(
+        buildLatestSessionGuardedUpsert(tableName),
+        [ticketId, sessionId, JSON.stringify(payload)]
+    );
+    return affectedRows > 0;
+}
+
 // ─── EvidencePack ────────────────────────────────────────────
 
 /**
@@ -26,19 +77,31 @@ function persistenceCorrelation(ticketId?: string) {
  */
 export async function persistEvidencePack(sessionId: string, pack: EvidencePack): Promise<void> {
     try {
-        const existing = await queryOne(`SELECT id FROM evidence_packs WHERE session_id = $1`, [sessionId]);
+        const serializedPack = JSON.stringify(pack);
+        await transaction(async (client) => {
+            await client.query(
+                'SELECT pg_advisory_xact_lock($1, hashtext($2))',
+                [EVIDENCE_PACK_LOCK_NAMESPACE, sessionId]
+            );
 
-        if (existing) {
-            await execute(
-                `UPDATE evidence_packs SET payload = $1, created_at = NOW() WHERE session_id = $2`,
-                [JSON.stringify(pack), sessionId]
+            // Serialize writes per session so concurrent refreshes cannot double-insert.
+            const updated = await client.query(
+                `UPDATE evidence_packs
+                 SET payload = $1, created_at = NOW()
+                 WHERE session_id = $2`,
+                [serializedPack, sessionId]
             );
-        } else {
-            await execute(
-                `INSERT INTO evidence_packs (session_id, payload, created_at) VALUES ($1, $2, NOW())`,
-                [sessionId, JSON.stringify(pack)]
+
+            if ((updated.rowCount || 0) > 0) {
+                return;
+            }
+
+            await client.query(
+                `INSERT INTO evidence_packs (session_id, payload, created_at)
+                 VALUES ($1, $2, NOW())`,
+                [sessionId, serializedPack]
             );
-        }
+        });
         operationalLogger.info('context.persistence.evidence_pack_persisted', {
             module: 'services.context.persistence',
             session_id: sessionId,
@@ -82,8 +145,8 @@ export async function persistTicketSSOT(
     payload: TicketSSOT
 ): Promise<void> {
     try {
-        const canPersist = await canPersistTicketScopedArtifact(ticketId, sessionId, 'ticket_ssot');
-        if (!canPersist) {
+        const persisted = await persistLatestTicketScopedArtifact('ticket_ssot', ticketId, sessionId, payload);
+        if (!persisted) {
             operationalLogger.info('context.persistence.ssot_persist_skipped_superseded', {
                 module: 'services.context.persistence',
                 session_id: sessionId,
@@ -91,13 +154,6 @@ export async function persistTicketSSOT(
             }, persistenceCorrelation(ticketId));
             return;
         }
-        await execute(
-            `INSERT INTO ticket_ssot (ticket_id, session_id, payload, created_at, updated_at)
-       VALUES ($1, $2, $3, NOW(), NOW())
-       ON CONFLICT (ticket_id)
-       DO UPDATE SET payload = EXCLUDED.payload, session_id = EXCLUDED.session_id, updated_at = NOW()`,
-            [ticketId, sessionId, JSON.stringify(payload)]
-        );
         operationalLogger.info('context.persistence.ssot_persisted', {
             module: 'services.context.persistence',
             session_id: sessionId,
@@ -121,8 +177,8 @@ export async function persistTicketTextArtifact(
     payload: TicketTextArtifact
 ): Promise<void> {
     try {
-        const canPersist = await canPersistTicketScopedArtifact(ticketId, sessionId, 'ticket_text_artifact');
-        if (!canPersist) {
+        const persisted = await persistLatestTicketScopedArtifact('ticket_text_artifact', ticketId, sessionId, payload);
+        if (!persisted) {
             operationalLogger.info('context.persistence.ticket_text_artifact_persist_skipped_superseded', {
                 module: 'services.context.persistence',
                 session_id: sessionId,
@@ -130,13 +186,6 @@ export async function persistTicketTextArtifact(
             }, persistenceCorrelation(ticketId));
             return;
         }
-        await execute(
-            `INSERT INTO ticket_text_artifacts (ticket_id, session_id, payload, created_at, updated_at)
-       VALUES ($1, $2, $3, NOW(), NOW())
-       ON CONFLICT (ticket_id)
-       DO UPDATE SET payload = EXCLUDED.payload, session_id = EXCLUDED.session_id, updated_at = NOW()`,
-            [ticketId, sessionId, JSON.stringify(payload)]
-        );
         operationalLogger.info('context.persistence.ticket_text_artifact_persisted', {
             module: 'services.context.persistence',
             session_id: sessionId,
@@ -181,8 +230,8 @@ export async function persistTicketContextAppendix(
     payload: TicketContextAppendix
 ): Promise<void> {
     try {
-        const canPersist = await canPersistTicketScopedArtifact(ticketId, sessionId, 'ticket_context_appendix');
-        if (!canPersist) {
+        const persisted = await persistLatestTicketScopedArtifact('ticket_context_appendix', ticketId, sessionId, payload);
+        if (!persisted) {
             operationalLogger.info('context.persistence.ticket_context_appendix_persist_skipped_superseded', {
                 module: 'services.context.persistence',
                 session_id: sessionId,
@@ -190,13 +239,6 @@ export async function persistTicketContextAppendix(
             }, persistenceCorrelation(ticketId));
             return;
         }
-        await execute(
-            `INSERT INTO ticket_context_appendix (ticket_id, session_id, payload, created_at, updated_at)
-       VALUES ($1, $2, $3, NOW(), NOW())
-       ON CONFLICT (ticket_id)
-       DO UPDATE SET payload = EXCLUDED.payload, session_id = EXCLUDED.session_id, updated_at = NOW()`,
-            [ticketId, sessionId, JSON.stringify(payload)]
-        );
         operationalLogger.info('context.persistence.ticket_context_appendix_persisted', {
             module: 'services.context.persistence',
             session_id: sessionId,
@@ -230,65 +272,6 @@ export async function getTicketContextAppendix(
             ticket_id: ticketId,
         }, persistenceCorrelation(ticketId));
         return null;
-    }
-}
-
-// ─── Artifact Guard ───────────────────────────────────────────
-
-async function canPersistTicketScopedArtifact(
-    ticketId: string,
-    sessionId: string,
-    artifactKind: 'ticket_ssot' | 'ticket_text_artifact' | 'ticket_context_appendix'
-): Promise<boolean> {
-    try {
-        const session = await queryOne<{
-            id: string;
-            ticket_id: string;
-            status: string;
-            last_error: string | null;
-        }>(
-            `SELECT id, ticket_id, status, last_error
-       FROM triage_sessions
-       WHERE id = $1
-       LIMIT 1`,
-            [sessionId]
-        );
-        if (!session) return false;
-        if (String(session.ticket_id || '') !== String(ticketId || '')) return false;
-
-        const status = String(session.status || '').toLowerCase();
-        const lastError = String(session.last_error || '').toLowerCase();
-        if (status === 'failed' && lastError.includes('manual refresh restart')) {
-            return false;
-        }
-
-        const latest = await queryOne<{ id: string }>(
-            `SELECT id
-       FROM triage_sessions
-       WHERE ticket_id = $1
-       ORDER BY created_at DESC
-       LIMIT 1`,
-            [ticketId]
-        );
-        const isLatest = String(latest?.id || '') === String(sessionId || '');
-        if (!isLatest) {
-            operationalLogger.info('context.persistence.artifact_guard_rejected_superseded', {
-                module: 'services.context.persistence',
-                artifact_kind: artifactKind,
-                session_id: sessionId,
-                ticket_id: ticketId,
-            }, persistenceCorrelation(ticketId));
-            return false;
-        }
-        return true;
-    } catch (error) {
-        operationalLogger.error('context.persistence.artifact_guard_failed_allowing_fallback', error, {
-            module: 'services.context.persistence',
-            artifact_kind: artifactKind,
-            session_id: sessionId,
-            ticket_id: ticketId,
-        }, persistenceCorrelation(ticketId));
-        return true;
     }
 }
 

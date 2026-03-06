@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { CollapseToggleButton, SectionLabel } from './primitives';
+import { SectionLabel } from './primitives';
 import type { ContextItem } from './types';
 
 interface PlaybookContextProps {

@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { useTranslations } from 'next-intl';
+import { useEffect, useRef } from 'react';
 
 interface SidebarSearchModalProps {
     open: boolean;
@@ -11,7 +10,6 @@ interface SidebarSearchModalProps {
 }
 
 export function SidebarSearchModal({ open, onClose, searchQuery, onSearchChange }: SidebarSearchModalProps) {
-    const t = useTranslations('ChatSidebar');
     const inputRef = useRef<HTMLInputElement>(null);
     const modalRef = useRef<HTMLDivElement>(null);
 

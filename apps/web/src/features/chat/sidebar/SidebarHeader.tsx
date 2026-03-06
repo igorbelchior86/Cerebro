@@ -1,5 +1,4 @@
 import CerebroLogo from '@/components/CerebroLogo';
-import ThemeToggle from '@/components/ThemeToggle';
 
 interface SidebarHeaderProps {
     searchQuery: string;
@@ -63,4 +62,3 @@ export function SidebarHeader({ searchQuery, onSearchClick }: SidebarHeaderProps
         </div>
     );
 }
-

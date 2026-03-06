@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
-import { SectionLabel, ShimmerBlock, cleanTitle, StickyHeader } from './primitives';
+import { ShimmerBlock, cleanTitle, StickyHeader } from './primitives';
 import type { ChecklistItem } from './types';
 
 interface PlaybookChecklistProps {

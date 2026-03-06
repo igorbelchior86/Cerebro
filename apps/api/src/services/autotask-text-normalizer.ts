@@ -56,7 +56,7 @@ function markdownToText(input: string): string {
   text = text.replace(/^(\s*)(\d+)[.)]\s+/gm, '$1$2. ');
   text = text.replace(/\*\*([^*]+)\*\*/g, '$1');
   text = text.replace(/__([^_]+)__/g, '$1');
-  text = text.replace(/(^|[^\*])\*([^*\n]+)\*(?!\*)/g, '$1$2');
+  text = text.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1$2');
   text = text.replace(/(^|[^_])_([^_\n]+)_(?!_)/g, '$1$2');
   text = text.replace(/~~([^~]+)~~/g, '$1');
   return text;
@@ -89,4 +89,3 @@ export function normalizeTextForAutotask(input: unknown): AutotaskTextNormalizat
     had_markup: hadMarkup,
   };
 }
-

@@ -83,6 +83,7 @@ async function markSessionDeletedFromAutotask(
 export const __testables = {
   isMissingAutotaskTicketError,
   markSessionDeletedFromAutotask,
+  resolveOrCreateFullFlowSession,
 };
 
 type AuthoritativeFieldDiff = {
@@ -327,20 +328,33 @@ async function getAutotaskTicketNotesForFeed(ticketRef: string, tenantId?: strin
 
 async function resolveOrCreateFullFlowSession(ticketId: string, tenantId: string | null): Promise<{ id: string; created: boolean }> {
   return transaction(async (client) => {
+    const normalizedTenantId = String(tenantId || '').trim() || null;
+    const lockScope = normalizedTenantId ? `${normalizedTenantId}:${ticketId}` : ticketId;
     await client.query(
       'SELECT pg_advisory_xact_lock($1, hashtext($2))',
-      [FULL_FLOW_SESSION_CREATE_LOCK_NAMESPACE, ticketId]
+      [FULL_FLOW_SESSION_CREATE_LOCK_NAMESPACE, lockScope]
     );
 
-    const existing = await client.query<{ id: string }>(
-      `SELECT id
-       FROM triage_sessions
-       WHERE ticket_id = $1
-       ORDER BY created_at DESC
-       LIMIT 1
-       FOR UPDATE`,
-      [ticketId]
-    );
+    const existing = normalizedTenantId
+      ? await client.query<{ id: string }>(
+        `SELECT id
+         FROM triage_sessions
+         WHERE ticket_id = $1
+           AND tenant_id = $2
+         ORDER BY created_at DESC
+         LIMIT 1
+         FOR UPDATE`,
+        [ticketId, normalizedTenantId]
+      )
+      : await client.query<{ id: string }>(
+        `SELECT id
+         FROM triage_sessions
+         WHERE ticket_id = $1
+         ORDER BY created_at DESC
+         LIMIT 1
+         FOR UPDATE`,
+        [ticketId]
+      );
     const session = existing.rows[0];
     if (session) {
       return { id: session.id, created: false };
@@ -350,7 +364,7 @@ async function resolveOrCreateFullFlowSession(ticketId: string, tenantId: string
       `INSERT INTO triage_sessions (id, ticket_id, status, created_by, tenant_id, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
        RETURNING id`,
-      [uuidv4(), ticketId, 'pending', '00000000-0000-0000-0000-000000000000', tenantId]
+      [uuidv4(), ticketId, 'pending', '00000000-0000-0000-0000-000000000000', normalizedTenantId]
     );
     const newSession = inserted.rows[0];
     if (!newSession) {

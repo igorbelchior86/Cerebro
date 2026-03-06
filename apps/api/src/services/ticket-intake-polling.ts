@@ -31,6 +31,7 @@ export class TicketIntakePollingService {
         this.intervalId = setInterval(() => {
             this.poll().catch((err) => console.error('[TicketIntakePolling] Poll failed:', err));
         }, this.pollIntervalMs);
+        this.intervalId.unref?.();
     }
 
     stop() {

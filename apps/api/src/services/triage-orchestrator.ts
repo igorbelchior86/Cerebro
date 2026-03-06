@@ -42,6 +42,7 @@ export class TriageOrchestrator {
                 console.error('[Orchestrator] Pending sessions processing failed:', err)
             );
         }, 2 * 60 * 1000);
+        this.retryIntervalId.unref?.();
     }
 
     private async processPendingSessions() {

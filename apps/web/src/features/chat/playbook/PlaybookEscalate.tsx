@@ -1,6 +1,6 @@
 'use client';
 
-import { SectionLabel, StickyHeader } from './primitives';
+import { StickyHeader } from './primitives';
 import type { EscalateRow } from './types';
 
 interface PlaybookEscalateProps {

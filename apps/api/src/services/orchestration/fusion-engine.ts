@@ -61,7 +61,7 @@ export class FusionEngine {
             inferences,
         });
 
-        let appliedResolutionCount = 0;
+        const appliedResolutionCount = 0;
         let usedLlm = false;
         let resolutions: FusionFieldResolution[] = [];
 

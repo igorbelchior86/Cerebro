@@ -8,14 +8,7 @@ import {
   extractJsonObject,
   buildTicketNarrative,
   normalizeName,
-  itgAttr,
-  normalizeSimpleToken,
-  generateNameAliases,
   extractSoftwareHintsFromTicket,
-  flattenEnrichmentFields,
-  getEnrichmentFieldByPath,
-  setEnrichmentFieldByPath,
-  buildField,
   postProcessUiTicketText,
   guardTicketUiRoleAssignment,
   extractFirstEmail,
@@ -31,22 +24,16 @@ import {
   extractInfraMakeModel as extractInfraMakeModelHelper,
   normalizeTicketDeterministically,
 } from './prepare-context-helpers.js';
+import type { NinjaOneClient } from '../../clients/ninjaone.js';
 import { callLLM } from '../ai/llm-adapter.js';
 import type {
-  IterativeEnrichmentSections,
   TicketLike,
   Signal,
-  ScopeMeta,
-  TicketContextAppendix,
-  ItglueEnrichedPayload,
-  NinjaEnrichedPayload,
-  DeviceResolutionResult,
   Doc,
   ITGlueWanCandidate,
-  ITGlueInfraCandidate
 } from './prepare-context.types.js';
-// Quick local stub for NinjaOneClient if not otherwise imported
-type NinjaOneClient = any;
+
+type JsonRecord = Record<string, unknown>;
 
 export function mapAutotaskPriority(
   priority: number | undefined
@@ -65,14 +52,14 @@ export async function resolveNinjaOrg(
   return resolveNinjaOrgHelper(ninjaoneClient, companyName);
 }
 
-export function extractLoggedInUser(deviceDetails: any): string | null {
+export function extractLoggedInUser(deviceDetails: unknown): string | null {
   return extractLoggedInUserHelper(deviceDetails);
 }
 
 export function extractITGlueWanCandidate(input: {
   ticketNarrative: string;
-  itglueAssets: any[];
-  itglueConfigs: any[];
+  itglueAssets: JsonRecord[];
+  itglueConfigs: JsonRecord[];
   docs: Doc[];
 }): ITGlueWanCandidate | null {
   return extractITGlueWanCandidateHelper(input);
@@ -81,15 +68,15 @@ export function extractITGlueWanCandidate(input: {
 export function inferIspName(input: {
   ticketNarrative: string;
   docs: Doc[];
-  itglueConfigs: any[];
+  itglueConfigs: JsonRecord[];
 }): string {
   return inferIspNameHelper(input);
 }
 
 export function extractITGlueInfraCandidates(input: {
-  itgluePasswords: any[];
-  itglueConfigs: any[];
-  itglueAssets: any[];
+  itgluePasswords: JsonRecord[];
+  itglueConfigs: JsonRecord[];
+  itglueAssets: JsonRecord[];
   docs: Doc[];
 }) {
   return extractITGlueInfraCandidatesHelper(input);
@@ -97,7 +84,7 @@ export function extractITGlueInfraCandidates(input: {
 
 export function extractInfraMakeModel(
   kind: 'firewall' | 'wifi' | 'switch',
-  configs: any[],
+  configs: JsonRecord[],
   docs: Doc[]
 ) {
   return extractInfraMakeModelHelper(kind, configs, docs);
@@ -358,15 +345,15 @@ export function isDisplayMarkdownVerbatimEnough(sourceText: string, markdownText
 export function inferPhoneProvider(input: {
   ticketText: string;
   docs: Doc[];
-  itglueConfigs: any[];
-  itgluePasswords: any[];
+  itglueConfigs: JsonRecord[];
+  itgluePasswords: JsonRecord[];
   signals: Signal[];
 }): string | null {
   const sourceText = [
     input.ticketText,
     ...input.docs.map((d) => `${d.title} ${d.snippet}`),
-    ...input.itglueConfigs.map((c: any) => JSON.stringify(c?.attributes || {})),
-    ...input.itgluePasswords.map((p: any) => JSON.stringify(p?.attributes || {})),
+    ...input.itglueConfigs.map((config) => JSON.stringify(config.attributes || {})),
+    ...input.itgluePasswords.map((password) => JSON.stringify(password.attributes || {})),
     ...input.signals.map((s) => `${s.source} ${s.type} ${s.summary}`),
   ]
     .filter(Boolean)
@@ -396,21 +383,22 @@ export async function resolveLastLoggedInContext(
   if (directUser) return { userName: directUser, logonTime: directTime };
 
   const report = await ninjaoneClient.listLastLoggedOnUsers({ pageSize: 1000 }).catch(() => null);
-  const rows = Array.isArray(report?.results) ? report.results : [];
-  const match = rows.find((row: any) => String(row.deviceId) === String(deviceId));
+  const rows = Array.isArray(report?.results) ? (report.results as JsonRecord[]) : [];
+  const match = rows.find((row) => String(row.deviceId) === String(deviceId));
   const reportUser = String(match?.userName || '').trim();
-  const reportTime = match?.logonTime ? new Date(match.logonTime).toISOString() : '';
+  const reportTime = match?.logonTime ? new Date(String(match.logonTime)).toISOString() : '';
   if (reportUser) return { userName: reportUser, logonTime: reportTime };
 
   return { userName: '', logonTime: '' };
 }
 
-export function resolveDeviceOsLabel(device: any, details: any): string {
-  const name = String(device?.osName || details?.osName || details?.os?.name || '').trim();
+export function resolveDeviceOsLabel(device: JsonRecord, details: JsonRecord): string {
+  const detailsOs = details.os && typeof details.os === 'object' ? (details.os as JsonRecord) : null;
+  const name = String(device.osName || details.osName || detailsOs?.name || '').trim();
   const version = String(
-    device?.osVersion ||
-    details?.osVersion ||
-    [details?.os?.buildNumber, details?.os?.releaseId].filter(Boolean).join(' / ') ||
+    device.osVersion ||
+    details.osVersion ||
+    [detailsOs?.buildNumber, detailsOs?.releaseId].filter(Boolean).join(' / ') ||
     ''
   ).trim();
   const combined = [name, version].filter(Boolean).join(' ');
@@ -431,11 +419,11 @@ export async function buildNinjaContextSignals(input: {
     input.ninjaoneClient.querySoftware({ pageSize: 200, df: `deviceId = ${input.deviceId}` }).catch(() => []),
   ]);
 
-  (activities as any[]).forEach((act) => {
+  (activities as JsonRecord[]).forEach((act) => {
     signals.push({
-      id: `ninja-act-${act.id}`,
+      id: `ninja-act-${String(act.id || '')}`,
       source: 'ninja',
-      timestamp: act.activityTime,
+      timestamp: String(act.activityTime || new Date().toISOString()),
       type: 'device_activity',
       summary: `${act.activityType}: ${act.activityName}`,
       raw_ref: act,
@@ -445,14 +433,15 @@ export async function buildNinjaContextSignals(input: {
     });
   });
 
-  (interfaces as any[]).forEach((iface, idx) => {
-    if (iface.ipAddress && isPublicIPv4(iface.ipAddress)) {
+  (interfaces as JsonRecord[]).forEach((iface, idx) => {
+    const ipAddress = String(iface.ipAddress || '').trim();
+    if (ipAddress && isPublicIPv4(ipAddress)) {
       signals.push({
         id: `ninja-iface-${idx}`,
         source: 'ninja',
         timestamp: new Date().toISOString(),
         type: 'network_anchor',
-        summary: `Public Interface: ${iface.ipAddress} (${iface.adapterName || 'NIC'})`,
+        summary: `Public Interface: ${ipAddress} (${String(iface.adapterName || 'NIC')})`,
         raw_ref: iface,
         tenant_id: input.tenantId,
         org_id: input.orgId,
@@ -461,8 +450,8 @@ export async function buildNinjaContextSignals(input: {
     }
   });
 
-  const softwareHints = extractSoftwareHintsFromTicket(buildTicketNarrative({} as any)); // Mock ticket for hints
-  (softwareRows as any[]).forEach((sw) => {
+  const softwareHints = extractSoftwareHintsFromTicket(buildTicketNarrative({ title: '', description: '' }));
+  (softwareRows as JsonRecord[]).forEach((sw) => {
     const swName = String(sw.name || '').toLowerCase();
     if (softwareHints.some(hint => swName.includes(hint))) {
       signals.push({

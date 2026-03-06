@@ -1,3 +1,33 @@
+## Lesson: 2026-03-06 (pool-level BEGIN/COMMIT is not a real transaction boundary)
+**Mistake**: Tratar `query('BEGIN') -> query(...) -> query('COMMIT')` em código que usa `pg Pool` como se isso garantisse atomicidade.
+**Root cause**: `pool.query` pode usar conexões diferentes entre as chamadas, então parte do bloco pode escapar da transação ou confirmar separadamente sob concorrência.
+**Rule**: Sempre que um fluxo precisar de atomicidade em Postgres, usar um único `client` dentro de `transaction(async (client) => ...)`; nunca espalhar `BEGIN/COMMIT/ROLLBACK` via `pool.query`.
+**Pattern**: Se houver `BEGIN` textual fora do helper transacional do banco, assumir bug de concorrência até provar o contrário.
+
+## Lesson: 2026-03-06 (global identity uniqueness without DB constraint needs serialized locking)
+**Mistake**: Confiar em `SELECT email -> INSERT/INVITE` para garantir unicidade global de identidade quando o banco só impõe unicidade por tenant.
+**Root cause**: Duas requisições simultâneas podiam observar “email livre” e criar contas ou convites conflitantes em tenants diferentes, quebrando login e isolamento.
+**Rule**: Quando a regra de negócio exige unicidade global e o schema não impõe isso diretamente, serializar o fluxo com advisory lock transacional no identificador normalizado.
+**Pattern**: `read-before-write` em identificador global sem lock nem índice único = duplicata concorrente inevitável.
+
+## Lesson: 2026-03-06 (JSON lost updates should be solved in SQL, not with stale pre-read merges)
+**Mistake**: Ler um JSON atual, mesclar em memória e gravar o documento inteiro de volta num `upsert` concorrente.
+**Root cause**: Cada request monta o payload a partir de um snapshot potencialmente velho; a última gravação apaga campos adicionados pela outra.
+**Rule**: Para documentos compartilhados atualizados por múltiplas rotas/processos, fazer merge atômico em `jsonb` dentro do `INSERT ... ON CONFLICT DO UPDATE`.
+**Pattern**: Se o fluxo é `SELECT payload -> build object in JS -> payload = EXCLUDED.payload`, tratar como lost update até corrigir.
+
+## Lesson: 2026-03-06 (recursive concurrency hunts must keep looping until the next scan stops yielding low-risk reproducible races)
+**Mistake**: Tratar a rodada como “corrigir um bug e encerrar” quando o pedido explícito era repetir o ciclo de busca, correção e teste sobre concorrência.
+**Root cause**: Eu deixei a conveniência do fechamento da rodada vencer a instrução operacional do usuário, que exigia recursividade real.
+**Rule**: Em pedidos de `$bug-hunter` com ênfase em concorrência, a execução deve seguir o loop completo `procurar -> corrigir -> testar -> procurar o próximo` até a próxima varredura não produzir novo caso baixo-risco reproduzível.
+**Pattern**: Se a resposta final cita uma única correção depois de um pedido de sweep recursivo, a rodada está incompleta.
+
+## Lesson: 2026-03-06 (parallel legacy/current paths must share the same race fix or the repo stays half-broken)
+**Mistake**: Corrigir a implementação “nova” de persistência sem conferir se o caminho legado ainda exportava a lógica antiga.
+**Root cause**: O repo mantém versões paralelas de serviços (`services/...` e `services/context/...` / `services/adapters/...`), e uma delas ainda podia contornar a correção.
+**Rule**: Sempre que um bug de concorrência for corrigido em um caminho runtime, procurar imediatamente implementações paralelas/legadas e alinhar por delegação ou shared helper.
+**Pattern**: Se existe arquivo “novo” e arquivo “legado” com nomes quase idênticos, assumir que um race fix aplicado só em um deles está incompleto até prova contrária.
+
 ## Lesson: 2026-03-05 (queue snapshot replay must change event identity when canonical payload improves)
 **Mistake**: Assumi que bastava adicionar lookup de `company/contact` no `autotask_reconcile`, sem revisar a chave de deduplicação do sync.
 **Root cause**: O `event_id` era derivado apenas de `source + ticket + occurredAt`; quando o mesmo ticket era reingestido depois com `Org/Requester` preenchidos, o core tratava como duplicado e ignorava a correção.
@@ -1408,3 +1438,15 @@
 **Root cause**: O diff “row do inbox ausente do active set” já era evidência suficiente para buscar aquele ticket específico no PSA, mas o pipeline tratava isso como problema separado e mais lento.
 **Rule**: Se um queue snapshot cobre a fila e um row local some do active set, o sistema deve reconciliar esse ticket imediatamente: sync se existir, purge só se der `not found`.
 **Pattern**: Se um ticket terminal continua stale mesmo após fairness no purge, revisar se o diff entre active set e inbox está sendo ignorado em vez de materializado no mesmo run.
+
+## Lesson: 2026-03-06 (bug-hunter precisa continuar no loop recursivo até a próxima varredura ficar limpa)
+**Mistake**: Encerrar uma rodada de bug hunt depois de corrigir só um bug reproduzível.
+**Root cause**: Tratei a tarefa como correção pontual, quando o contrato pedido pelo usuário era um loop explícito de `procurar -> corrigir -> testar -> repetir`.
+**Rule**: Quando o usuário chamar `bug-hunter` para varredura do repositório, só encerrar depois de repetir o ciclo completo e confirmar que a próxima varredura não encontrou novo bug reproduzível, ou registrar um bloqueio real.
+**Pattern**: Se a resposta lista uma única correção sem mostrar a busca do próximo bug, a execução do skill ficou incompleta.
+
+## Lesson: 2026-03-06 (Promise.race com timeout precisa sempre limpar o timer vencedor-perdedor)
+**Mistake**: Usar `Promise.race()` para timeout de hidratação remota sem cancelar o `setTimeout()` quando a operação principal terminava antes.
+**Root cause**: O timeout era criado como “best effort” e não havia `clearTimeout()` no caminho de sucesso, deixando timers pendentes até expirarem.
+**Rule**: Todo wrapper de timeout com `Promise.race()` deve limpar explicitamente o timer em `finally`, mesmo quando a operação termina rápido.
+**Pattern**: Se Jest acusa que não consegue sair após testes que passam, revisar corridas `operação vs timeout` que deixam relógios vivos por alguns segundos.

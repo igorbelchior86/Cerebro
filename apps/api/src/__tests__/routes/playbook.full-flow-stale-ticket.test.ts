@@ -1,10 +1,12 @@
+const queryOneMock = jest.fn();
 const executeMock = jest.fn();
+const transactionMock = jest.fn();
 const removeInboxTicketMock = jest.fn();
 
 jest.mock('../../db/index.js', () => ({
-  queryOne: jest.fn(),
+  queryOne: (...args: unknown[]) => queryOneMock(...args),
   execute: (...args: unknown[]) => executeMock(...args),
-  transaction: jest.fn(),
+  transaction: (...args: unknown[]) => transactionMock(...args),
 }));
 
 jest.mock('../../services/orchestration/workflow-runtime.js', () => ({
@@ -15,8 +17,11 @@ jest.mock('../../services/orchestration/workflow-runtime.js', () => ({
 
 describe('playbook full-flow stale Autotask ticket handling', () => {
   beforeEach(() => {
+    queryOneMock.mockReset();
     executeMock.mockReset();
+    transactionMock.mockReset();
     removeInboxTicketMock.mockReset();
+    queryOneMock.mockResolvedValue(undefined);
     executeMock.mockResolvedValue(undefined);
     removeInboxTicketMock.mockResolvedValue(undefined);
   });
@@ -53,6 +58,47 @@ describe('playbook full-flow stale Autotask ticket handling', () => {
     expect(executeMock).toHaveBeenCalledWith(
       expect.stringContaining("SET status = 'failed'"),
       ['deleted in Autotask: Ticket T20260305.0031 not found in Autotask query', 'session-1'],
+    );
+  });
+
+  it('creates an isolated full-flow session per tenant for the same ticket id', async () => {
+    const clientQueryMock = jest.fn(async (sql: string, params?: unknown[]) => {
+      if (sql.includes('pg_advisory_xact_lock')) {
+        return { rows: [] };
+      }
+
+      if (sql.includes('FROM triage_sessions') && sql.includes('AND tenant_id = $2')) {
+        expect(params).toEqual(['T20260306.0001', 'tenant-b']);
+        return { rows: [] };
+      }
+
+      if (sql.includes('INSERT INTO triage_sessions')) {
+        expect(params?.[1]).toBe('T20260306.0001');
+        expect(params?.[4]).toBe('tenant-b');
+        return { rows: [{ id: 'session-tenant-b' }] };
+      }
+
+      throw new Error(`Unexpected SQL in test: ${sql}`);
+    });
+
+    transactionMock.mockImplementation(async (callback: (client: { query: typeof clientQueryMock }) => Promise<unknown>) =>
+      callback({ query: clientQueryMock }),
+    );
+
+    const { __testables } = await import('../../services/application/route-handlers/playbook-route-handlers.js');
+
+    await expect(__testables.resolveOrCreateFullFlowSession('T20260306.0001', 'tenant-b')).resolves.toEqual({
+      id: 'session-tenant-b',
+      created: true,
+    });
+
+    expect(clientQueryMock).toHaveBeenCalledWith(
+      'SELECT pg_advisory_xact_lock($1, hashtext($2))',
+      [41022, 'tenant-b:T20260306.0001'],
+    );
+    expect(clientQueryMock).toHaveBeenCalledWith(
+      expect.stringContaining('AND tenant_id = $2'),
+      ['T20260306.0001', 'tenant-b'],
     );
   });
 });

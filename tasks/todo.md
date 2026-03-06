@@ -1,3 +1,278 @@
+# Task: API lint warning reduction round 2
+**Status**: completed
+**Started**: 2026-03-06T15:05:00-05:00
+
+## Plan
+- [x] Step 1: Validar as limpezas pesadas já aplicadas em `enrichment-cache.ts` e `prepare-context.ts`.
+- [x] Step 2: Atacar os maiores hotspots restantes de baixo risco em `ticket-workflow-core.ts`, `autotask-polling.ts` e `autotask-polling.test.ts`.
+- [x] Step 3: Revalidar lint/typecheck/testes focados e registrar a nova baseline na wiki.
+
+## Progress Notes
+- Skills usados conforme contrato:
+  - `workflow-orchestrator`
+  - Sequential Thinking MCP
+  - Context7 MCP (TypeScript `unknown`/narrowing para substituir `any`)
+- Baseline reaberta desta rodada:
+  - `apps/api` tinha `1251` warnings no início da limpeza pesada
+  - `prepare-context.ts` já havia sido derrubado parcialmente para `101` warnings antes do fechamento desta rodada
+- Validação/fix 1:
+  - `apps/api/src/services/context/enrichment-cache.ts`
+  - limpeza pesada de parsing JSON com `JsonRecord` + `asJsonRecord()` + `asJsonRecordArray()`
+  - resultado: arquivo ficou sem warnings
+- Fix 2:
+  - `apps/api/src/services/orchestration/ticket-workflow-core.ts`
+  - substituição dos acessos `as any` por snapshots/records tipados, remoção de código morto e consolidação de leitura de payload/snapshot
+  - resultado: arquivo caiu de `124` warnings para `0`
+- Fix 3:
+  - `apps/api/src/services/adapters/autotask-polling.ts`
+  - aplicação do mesmo padrão de `JsonRecord`/helpers, tipagem explícita para cliente opcional do Autotask e remoção de `any` no payload de sync/picklists
+  - resultado: arquivo caiu de `94` warnings para `0`
+- Fix 4:
+  - `apps/api/src/__tests__/services/autotask-polling.test.ts`
+  - remoção de `any` em spies, mocks de cliente e arrays de inbox com helpers de teste (`asAutotaskClient`, `asPollingInternals`)
+  - resultado: arquivo caiu de `47` warnings para `0`
+- Medição final:
+  - `apps/api` caiu para `808` warnings
+  - top hotspots restantes:
+    - `101` `src/services/context/prepare-context.ts`
+    - `77` `src/services/application/route-handlers/playbook-route-handlers.ts`
+    - `63` `src/services/application/route-handlers/autotask-route-handlers.ts`
+    - `42` `src/services/context/prepare-context-helpers.ts`
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/api test -- src/__tests__/services/ticket-workflow-core.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- src/__tests__/services/autotask-polling.test.ts` ✅
+- `pnpm --filter @cerebro/api lint` ✅ (`0` errors / `808` warnings)
+- File-level lint:
+- `apps/api/src/services/context/enrichment-cache.ts` ✅ (`0` warnings)
+- `apps/api/src/services/orchestration/ticket-workflow-core.ts` ✅ (`0` warnings)
+- `apps/api/src/services/adapters/autotask-polling.ts` ✅ (`0` warnings)
+- `apps/api/src/__tests__/services/autotask-polling.test.ts` ✅ (`0` warnings)
+- Documentation:
+- `wiki/changelog/2026-03-06-lint-warning-reduction-round-2-heavy-api-hotspots.md`
+
+---
+
+# Task: Recursive concurrency hunt round 2
+**Status**: completed
+**Started**: 2026-03-06T14:20:00-05:00
+
+## Plan
+- [x] Step 1: Continuar a caça recursiva a partir do próximo hotspot de concorrência reproduzível.
+- [x] Step 2: Corrigir o isolamento tenant-scoped do full-flow de playbook.
+- [x] Step 3: Corrigir fronteiras falsas de transação em rotas de identidade e platform-admin.
+- [x] Step 4: Corrigir corridas de identidade global por e-mail e de alocação de slug de tenant.
+- [x] Step 5: Corrigir lost update no merge do `ticket_ssot` vindo do Autotask.
+- [x] Step 6: Revalidar a API inteira e documentar tudo na wiki.
+
+## Progress Notes
+- Skills usados conforme contrato:
+  - `bug-hunter`
+  - Sequential Thinking MCP
+  - Context7 MCP (PostgreSQL advisory locks / JSONB merge e node-postgres transactions)
+- Ciclo 1:
+  - `apps/api/src/services/application/route-handlers/playbook-route-handlers.ts`
+  - `resolveOrCreateFullFlowSession()` ignorava `tenantId` ao procurar sessão existente e no lock advisory
+  - correção aplicada com lock composto `tenantId:ticketId` + lookup tenant-scoped
+  - regressão adicionada em `apps/api/src/__tests__/routes/playbook.full-flow-stale-ticket.test.ts`
+- Ciclo 2:
+  - `apps/api/src/services/application/route-handlers/auth-route-handlers.ts`
+  - `apps/api/src/services/application/route-handlers/platform-admin-route-handlers.ts`
+  - `apps/api/src/db/seed-admin.ts`
+  - vários fluxos faziam `query('BEGIN') -> query(...) -> query('COMMIT')`, o que no `pg Pool` não garante a mesma conexão
+  - correção aplicada convertendo os blocos para `transaction(async (client) => ...)`
+  - regressão adicionada em `apps/api/src/__tests__/routes/identity-transaction-boundaries.test.ts`
+- Ciclo 3:
+  - `apps/api/src/services/identity/email-lock.ts`
+  - `auth-route-handlers.ts`, `platform-admin-route-handlers.ts`, `seed-admin.ts`
+  - criação/ativação de identidade dependia de `SELECT email -> INSERT`, sem trava global
+  - duas requisições simultâneas podiam criar o mesmo e-mail em tenants diferentes
+  - correção aplicada com `pg_advisory_xact_lock` por e-mail normalizado + checagem de disponibilidade dentro da transação
+  - regressão adicionada no mesmo `identity-transaction-boundaries.test.ts`
+- Ciclo 4:
+  - `apps/api/src/services/identity/tenant-slug.ts`
+  - `auth-route-handlers.ts`, `platform-admin-route-handlers.ts`, `seed-admin.ts`
+  - criação de tenant ainda fazia `SELECT slug disponível -> INSERT`, permitindo colisão concorrente em `tenants.slug`
+  - correção aplicada com retry automático do slug após `unique_violation`
+  - regressão adicionada no mesmo `identity-transaction-boundaries.test.ts`
+- Ciclo 5:
+  - `apps/api/src/services/application/route-handlers/autotask-route-handlers.ts`
+  - atualização de contexto do Autotask lia o `ticket_ssot` antigo, mesclava em memória e sobrescrevia o JSON inteiro
+  - duas atualizações simultâneas podiam apagar campos uma da outra
+  - correção aplicada com merge atômico em SQL (`jsonb`) para payload geral + `autotask_authoritative`
+  - regressão adicionada em `apps/api/src/__tests__/routes/autotask.ticket-ssot-merge.test.ts`
+- Varredura pós-correção:
+  - `query('BEGIN')` residual nas rotas críticas da API voltou a zero
+  - o próximo scan não revelou outro caso baixo-risco reproduzível tão claro quanto os cinco acima
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- src/__tests__/routes/playbook.full-flow-stale-ticket.test.ts` ✅
+- `pnpm --filter @cerebro/api exec jest --detectOpenHandles --silent src/__tests__/routes/playbook.full-flow-stale-ticket.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- src/__tests__/routes/identity-transaction-boundaries.test.ts src/__tests__/routes/auth.workspace-settings.test.ts src/__tests__/routes/playbook.full-flow-stale-ticket.test.ts` ✅
+- `pnpm --filter @cerebro/api exec jest --detectOpenHandles --silent src/__tests__/routes/identity-transaction-boundaries.test.ts src/__tests__/routes/auth.workspace-settings.test.ts src/__tests__/routes/playbook.full-flow-stale-ticket.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- src/__tests__/routes/autotask.ticket-ssot-merge.test.ts src/__tests__/routes/identity-transaction-boundaries.test.ts src/__tests__/routes/auth.workspace-settings.test.ts src/__tests__/routes/playbook.full-flow-stale-ticket.test.ts` ✅
+- `pnpm --filter @cerebro/api exec jest --detectOpenHandles --silent src/__tests__/routes/autotask.ticket-ssot-merge.test.ts src/__tests__/routes/identity-transaction-boundaries.test.ts src/__tests__/routes/auth.workspace-settings.test.ts src/__tests__/routes/playbook.full-flow-stale-ticket.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand` ✅ (`45` suítes / `216` testes)
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm --filter @cerebro/api lint` ✅ (`0` errors; warnings antigos continuam)
+- `pnpm -r typecheck` ✅
+- `pnpm -r lint` ✅ (`0` errors; warnings antigos continuam em `apps/web` e `apps/api`)
+- Documentation:
+- `wiki/changelog/2026-03-06-recursive-concurrency-hunt-identity-locks-and-ssot-merge.md`
+
+---
+
+# Task: Recursive concurrency hunt round 1
+**Status**: completed
+**Started**: 2026-03-06T12:05:00-05:00
+
+## Plan
+- [x] Step 1: Reabrir a caça com foco explícito em concorrência, timers e races de persistência.
+- [x] Step 2: Reproduzir um problema de concorrência por vez, corrigir e validar antes de seguir.
+- [x] Step 3: Repetir o ciclo em hotspots adicionais até a próxima varredura ampla não revelar novo caso baixo-risco reproduzível.
+- [x] Step 4: Atualizar `tasks/todo.md`, `tasks/lessons.md` e wiki com a trilha desta rodada.
+
+## Progress Notes
+- Skills usados conforme contrato:
+  - `bug-hunter`
+  - `cerebro-concurrency-race-auditor`
+  - Sequential Thinking MCP
+  - Context7 MCP (consulta do Jest para timers/fake timers)
+- Ciclo 1:
+  - `apps/api/src/services/application/route-handlers/integrations-route-handlers.ts`
+  - `withTimeout()` deixava o timer “perdedor” vivo quando a checagem terminava rápido
+  - correção aplicada com `clearTimeout()` em `finally`
+  - regressão adicionada em `apps/api/src/__tests__/routes/integrations.credentials.test.ts`
+- Ciclo 2:
+  - `apps/api/src/services/context/persistence.ts`
+  - `persistEvidencePack()` fazia `SELECT -> INSERT/UPDATE` sem serialização por `sessionId`
+  - duas gravações simultâneas podiam inserir duplicado
+  - correção aplicada com `pg_advisory_xact_lock` + `transaction`
+  - regressão adicionada em `apps/api/src/__tests__/services/context-persistence.test.ts`
+- Ciclo 3:
+  - `apps/api/src/services/context/persistence.ts`
+  - SSOT/text artifact/context appendix faziam `guard -> write`, permitindo que sessão antiga sobrescrevesse artefato novo do mesmo ticket
+  - correção aplicada com upsert atômico condicionado à sessão mais recente
+  - regressão adicionada no mesmo `context-persistence.test.ts`
+- Ciclo 4:
+  - `apps/api/src/services/prepare-context.ts`
+  - caminho legado ainda exportava implementações antigas de persistência, então parte do runtime podia escapar da correção nova
+  - correção aplicada delegando o caminho legado para `services/context/persistence.ts`
+  - regressão adicionada em `apps/api/src/__tests__/services/prepare-context-persistence-bridge.test.ts`
+- Ciclo 5:
+  - `apps/api/src/services/orchestration/triage-orchestrator.ts`
+  - `apps/api/src/services/adapters/autotask-polling.ts`
+  - intervalos de background eram criados sem `unref`, prendendo o processo mesmo após o trabalho útil terminar
+  - correção aplicada com `intervalId.unref?.()` / `retryIntervalId.unref?.()`
+  - regressões adicionadas em `apps/api/src/__tests__/services/triage-orchestrator-tenant.test.ts` e `apps/api/src/__tests__/services/autotask-polling.test.ts`
+- Varredura pós-correção:
+  - `pnpm --filter @cerebro/api test -- --runInBand` passou com `41` suítes / `208` testes
+  - `pnpm -r typecheck` passou
+  - `pnpm -r lint` passou sem erros (`warnings` preexistentes continuam)
+  - hotspot scan final ainda marca riscos em `auth-route-handlers.ts`, mas o caso restante é de classe alta (`read-modify-write` em rota de auth/settings) e cai na zona de autorização explícita do contrato
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- src/__tests__/routes/integrations.credentials.test.ts` ✅
+- `pnpm --filter @cerebro/api exec jest --detectOpenHandles --silent src/__tests__/routes/integrations.credentials.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- src/__tests__/services/context-persistence.test.ts` ✅
+- `pnpm --filter @cerebro/api exec jest --detectOpenHandles --silent src/__tests__/services/context-persistence.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- src/__tests__/services/prepare-context-persistence-bridge.test.ts` ✅
+- `pnpm --filter @cerebro/api exec jest --detectOpenHandles --silent src/__tests__/services/prepare-context-persistence-bridge.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- src/__tests__/services/autotask-polling.test.ts src/__tests__/services/triage-orchestrator-tenant.test.ts` ✅
+- `pnpm --filter @cerebro/api exec jest --detectOpenHandles --silent src/__tests__/services/autotask-polling.test.ts src/__tests__/services/triage-orchestrator-tenant.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- --runInBand` ✅ (`41` suítes / `208` testes)
+- `pnpm -r typecheck` ✅
+- `pnpm -r lint` ✅ (`0` errors; warnings preexistentes)
+- Documentation:
+- `wiki/changelog/2026-03-06-recursive-concurrency-hunt-persistence-guards-and-poller-unref.md`
+
+---
+
+# Task: Bug hunt full-repo round 2
+**Status**: completed
+**Started**: 2026-03-05T21:00:47-05:00
+
+## Plan
+- [x] Step 1: Reabrir a caça a bugs com baseline completo de `lint`, `typecheck`, `test` e sinais de concorrência.
+- [x] Step 2: Priorizar o próximo lote de bugs reproduzíveis no repositório inteiro.
+- [x] Step 3: Corrigir, testar e repetir o ciclo até estabilizar.
+- [x] Step 4: Atualizar `tasks/todo.md` e wiki com os resultados desta rodada.
+
+## Progress Notes
+- Rodada iniciada. A rodada anterior já limpou os erros de `lint` do `apps/web` e estabilizou o teste do poller.
+- Baseline desta rodada:
+  - `pnpm --filter @cerebro/api test -- --runInBand` reproduziu o warning: "Jest did not exit one second after the test run has completed"
+  - `pnpm --filter @cerebro/api test -- --detectOpenHandles` passou sem handle explícito
+- Investigação executada com `bug-hunter` + Sequential Thinking + Context7:
+  - leitura dirigida dos timers/singletons/pools da API
+  - consulta da documentação do Jest (`--detectOpenHandles`, teardown) e do `node-postgres` (`allowExitOnIdle`)
+  - instrumentação temporária para medir handles ativos ao final da suíte
+- Bug corrigido nesta rodada:
+  - `apps/api/src/__tests__/routes/integrations.credentials.test.ts` deixava um `Server` HTTP temporário sob responsabilidade implícita do `supertest`; o teste agora abre e fecha o servidor explicitamente em `finally`
+- Hardening aplicado:
+  - `apps/api/src/db/index.ts` e `apps/api/src/db/pool.ts` agora usam `allowExitOnIdle` somente em `NODE_ENV === 'test'`
+- Repetição pós-correção:
+  - teste de rota passou isolado
+  - `--detectOpenHandles` na suíte da API continuou limpo
+  - `lint` e `typecheck` da API passaram
+- Observação residual:
+  - o warning final do `--runInBand` continuou mesmo com `globalTeardown` temporário reportando `handles=[]` e `requests=[]`; não houve evidência suficiente para alterar código de runtime além do que foi corrigido/hardened
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- src/__tests__/routes/integrations.credentials.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- --detectOpenHandles` ✅ (`199` testes passando; sem handle reportado)
+- `pnpm --filter @cerebro/api lint` ✅ (`0` errors; warnings preexistentes)
+- `pnpm --filter @cerebro/api typecheck` ✅
+- Documentation:
+- `wiki/changelog/2026-03-05-bug-hunt-route-test-server-teardown-and-pg-test-exit-hardening.md`
+
+---
+
+# Task: Bug hunt no repositório Cerebro
+**Status**: completed
+**Started**: 2026-03-05T20:48:51-05:00
+
+## Plan
+- [x] Step 1: Inspecionar a stack do repositório, o skill `bug-hunter` e o contrato operacional do projeto.
+- [x] Step 2: Executar baseline de testes, lint e typecheck para montar a lista de bugs reproduzíveis.
+- [x] Step 3: Corrigir os bugs priorizados com mudanças mínimas e adicionar regressões quando necessário.
+- [x] Step 4: Reexecutar validações, revisar impacto e atualizar a wiki obrigatória.
+
+## Progress Notes
+- Baseline executado:
+  - `pnpm -r typecheck` passou
+  - `pnpm -r lint` falhou no `apps/web` com 12 erros objetivos de código morto/imports não usados
+  - `pnpm -r test` passou, mas o `autotask-polling.test.ts` deixava erro oculto de `tenant-1` inválido no catch-up e o Jest emitia aviso de worker aberto
+- Lista priorizada de bugs reproduzíveis:
+  - `apps/web`: código morto/imports/props não usados quebrando o gate de `lint`
+  - `apps/api/src/__tests__/services/autotask-polling.test.ts`: estado global de catch-up de backlog habilitado por padrão contaminando testes e causando flutuação de tempo
+- Correções aplicadas:
+  - remoção mínima de variáveis/imports/props mortos no `apps/web`
+  - isolamento explícito do env `AUTOTASK_POLLER_BACKLOG_IDENTITY_CATCHUP_ENABLED` no arquivo de teste do poller, com reativação só no teste que valida o catch-up
+- Resultado:
+  - `lint` do web voltou a zero erros
+  - teste sensível a latência do poller estabilizado (`435ms -> 206ms` no run validado)
+  - `--detectOpenHandles` no `autotask-polling.test.ts` ficou limpo
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/web lint` ✅ (`0` errors, `4` warnings preexistentes)
+- `pnpm --filter @cerebro/api test -- autotask-polling.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- --detectOpenHandles autotask-polling.test.ts` ✅
+- `pnpm -r typecheck` ✅
+- `pnpm -r lint` ✅ (`0` errors; warnings preexistentes no monorepo)
+- `pnpm -r test` ✅ (`199` testes passando em `apps/api`)
+- `pnpm --filter @cerebro/api test -- --detectOpenHandles` ✅ (`199` testes passando; sem handle pendente reportado)
+- Documentation:
+- `wiki/changelog/2026-03-05-bug-hunt-lint-recovery-and-poller-test-isolation.md`
+
+---
+
 # Task: Catch-up agressivo para backlog antigo sem Org/Requester
 **Status**: completed
 **Started**: 2026-03-05T16:55:00-05:00
@@ -1672,3 +1947,65 @@
 - `pnpm stack:status` ✅ (`api listener: running`, `web listener: running`, `api/web health: ok`)
 - Documentation:
 - `wiki/changelog/2026-03-05-web-stack-boot-fix-unused-sidebar-vars.md`
+
+# Task: Recursive bug hunt across the repo
+**Status**: completed
+**Started**: 2026-03-06T11:35:00-05:00
+
+## Plan
+- [x] Step 1: Re-scan the repo and reproduce the next concrete bug instead of stopping after the first fix.
+- [x] Step 2: Fix timer leakage in `autotask-polling.test.ts` and verify the focused suite.
+- [x] Step 3: Reproduce and fix concurrent `.tmp` collisions in runtime JSON persistence helpers.
+- [x] Step 4: Isolate the lingering Jest worker-exit warning to `ticket-workflow-core.test.ts` and remove the leaked timeout.
+- [x] Step 5: Re-run focused tests, full API tests, and full monorepo checks.
+- [x] Step 6: Document the round in the wiki.
+
+## Progress Notes
+- Bug 1: `autotask-polling.test.ts` still used real latency timers in “live-like” lookup tests. That left real timers alive long enough to contaminate worker shutdown.
+- Fix 1: switched those latency cases to fake timers, advanced the clock through the full sequential lookup path, and cleared timers in `afterEach`.
+- Bug 2: `writeJsonFileAtomic()` used a shared `${filePath}.tmp` name in two helper copies. Parallel writers could rename each other's temp file and trigger `ENOENT`.
+- Fix 2: changed both helpers to use a unique temp filename per write and added a regression test that spawns concurrent `tsx` writers against the same file.
+- Bug 3: `TicketWorkflowCoreService` used `Promise.race()` for inbox hydration without clearing the timeout when the remote snapshot returned first. That left pending timers and produced the recurring Jest worker-exit warning.
+- Fix 3: clear the hydration timeout in `ticket-workflow-core.ts` and added a regression test that asserts no timers remain after a successful remote hydration.
+- Final re-scan found no new reproducible test or typecheck failures. Monorepo test/typecheck/lint finished without errors, and the previous worker-exit warning disappeared.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- autotask-polling.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- --detectOpenHandles autotask-polling.test.ts` ✅
+- `pnpm --filter @cerebro/api test -- runtime-json-file.test.ts` ✅
+- `pnpm --filter @cerebro/api exec jest --silent src/__tests__/services/ticket-workflow-core.test.ts` ✅
+- `pnpm --filter @cerebro/api exec jest --detectOpenHandles --silent src/__tests__/services/ticket-workflow-core.test.ts` ✅
+- `pnpm --filter @cerebro/api exec jest --silent` ✅
+- `pnpm -r test` ✅
+- `pnpm -r typecheck` ✅
+- `pnpm -r lint` ✅ (warnings only; no errors)
+- Documentation:
+- `wiki/changelog/2026-03-06-recursive-bug-hunt-worker-exit-and-runtime-json-races.md`
+
+# Task: Repo-wide lint warning cleanup
+**Status**: in_progress
+**Started**: 2026-03-06T15:10:00-05:00
+
+## Plan
+- [x] Step 1: Measure current lint warnings by rule and file.
+- [x] Step 2: Apply safe mechanical fixes first across web/api.
+- [x] Step 3: Re-run lint/typecheck and keep reducing the next obvious clusters.
+- [ ] Step 4: Finish the remaining heavy warning clusters in the context pipeline and old tests.
+- [x] Step 5: Document this cleanup round in the wiki.
+
+## Progress Notes
+- Cleared the remaining warnings in `apps/web`, including the triage home page.
+- Cleaned recently touched API files such as `auth-route-handlers.ts`, `seed-admin.ts`, `platform-admin-route-handlers.ts`, and `tenant-slug.ts`.
+- Converted the legacy `apps/api/src/services/prepare-context.ts` into a thin compatibility facade over `services/context/*`, removing a large block of duplicated warnings without changing public imports.
+- Removed repeated `no-useless-escape`, `consistent-type-imports`, and dead-import/dead-constant warnings in context and adapter helpers.
+- Reduced API lint warnings from `1760` to `1251` in this round. The remaining warnings are still concentrated mostly in `@typescript-eslint/no-explicit-any` inside `services/context/*` and older tests.
+
+## Review
+- Verification:
+- `pnpm --filter @cerebro/api test -- src/__tests__/services/prepare-context-persistence-bridge.test.ts src/__tests__/services/prepare-context.test.ts src/__tests__/services/prepare-context-device-resolution.test.ts` ✅
+- `pnpm --filter @cerebro/api typecheck` ✅
+- `pnpm -r typecheck` ✅
+- `pnpm -r lint` ✅ (`apps/web` clean, `apps/api` still with `1251` warnings and `0` errors)
+- Documentation:
+- `wiki/changelog/2026-03-06-lint-warning-reduction-round-1.md`

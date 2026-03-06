@@ -1,4 +1,5 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export function readJsonFileSafe<T>(filePath: string): T | null {
@@ -16,8 +17,12 @@ export function readJsonFileSafe<T>(filePath: string): T | null {
 export function writeJsonFileAtomic(filePath: string, data: unknown): void {
   const dir = dirname(filePath);
   mkdirSync(dir, { recursive: true });
-  const tmpPath = `${filePath}.tmp`;
+  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
   const payload = JSON.stringify(data);
-  writeFileSync(tmpPath, payload, 'utf8');
-  renameSync(tmpPath, filePath);
+  try {
+    writeFileSync(tmpPath, payload, 'utf8');
+    renameSync(tmpPath, filePath);
+  } finally {
+    rmSync(tmpPath, { force: true });
+  }
 }

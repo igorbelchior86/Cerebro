@@ -72,6 +72,7 @@ export default function ChatSidebar(props: ChatSidebarProps) {
         hiddenStatusKeys,
         toggleStatusFilter,
         resetStatusFilter,
+        unselectStatusFilter,
         persistSidebarState,
     } = useSidebarState(props);
 
@@ -168,6 +169,7 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                             }}
                             onToggleStatusFilter={toggleStatusFilter}
                             onResetStatusFilter={resetStatusFilter}
+                            onUnselectStatusFilter={unselectStatusFilter}
                             labelQueueSelect={t('globalQueueLabel')}
                             labelQueueSelectAria={t('globalQueueSelectAria')}
                             labelGlobalStatusFilterAria={t('globalStatusFilterAria')}
@@ -183,7 +185,7 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                                 const nextTop = (e.currentTarget as HTMLDivElement).scrollTop;
                                 persistSidebarState(nextTop);
                             }}
-                            style={{ flex: 1, overflowY: 'auto', padding: '4px 10px 10px', display: 'flex', flexDirection: 'column', gap: '7px', position: 'relative', zIndex: 1 }}
+                            style={{ flex: 1, overflowY: 'auto', padding: '0px 10px 10px', display: 'flex', flexDirection: 'column', gap: '7px', position: 'relative', zIndex: 1 }}
                         >
                             {listLoading && visibleTickets.length === 0 ? (
                                 [1, 2].map((i) => <div key={i} style={{ height: '80px', borderRadius: '9px', background: 'var(--bg-card)', border: '1px solid var(--border)', opacity: 0.6 }} />)
@@ -191,20 +193,27 @@ export default function ChatSidebar(props: ChatSidebarProps) {
                                 <p style={{ marginTop: '20px', fontSize: '11px', color: 'var(--text-faint)', textAlign: 'center' }}>{t('noTickets')}</p>
                             ) : (() => {
                                 let runningIndex = 0;
-                                return groupedTickets.map((group) => (
+                                return groupedTickets.map((group, groupIndex) => (
                                     <div key={group.key} style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
                                         <div
                                             style={{
                                                 position: 'sticky',
-                                                top: 0,
+                                                top: '0px', // Snaps exactly to the top edge now that container paddingTop is 0
                                                 zIndex: 4,
-                                                background: 'var(--bg-bento-panel)',
-                                                color: 'var(--text-muted)',
-                                                fontSize: '10px',
-                                                fontWeight: 700,
-                                                letterSpacing: '0.02em',
-                                                padding: '6px 4px',
-                                                borderBottom: '1px solid var(--bento-outline)',
+                                                background: 'var(--bg-bento-shell)', // Theme-adaptive glass background
+                                                backdropFilter: 'blur(24px)', // Powerful blur to solidly hide text scrolling behind
+                                                WebkitBackdropFilter: 'blur(24px)',
+                                                color: 'var(--text-secondary)',
+                                                fontSize: '11px',
+                                                fontWeight: 600,
+                                                letterSpacing: '0.06em',
+                                                textTransform: 'uppercase',
+                                                padding: '6px 14px',
+                                                margin: groupIndex === 0 ? '0 -10px 8px -10px' : '8px -10px 8px -10px',
+                                                borderBottom: '1px solid var(--border)',
+                                                borderTop: groupIndex !== 0 ? '1px solid var(--border-subtle)' : 'none',
+                                                borderBottomLeftRadius: '10px',
+                                                borderBottomRightRadius: '10px',
                                             }}
                                         >
                                             {group.label}

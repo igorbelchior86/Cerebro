@@ -1,6 +1,6 @@
 'use client';
 
-import { PRIORITY_COLOR, STATUS_CONFIG, STATUS_LABEL, normalizeTicketTitle, normalizeText, formatCreatedAt } from './utils';
+import { PRIORITY_COLOR, STATUS_CONFIG, STATUS_LABEL, normalizeTicketTitle, normalizeText, formatCreatedAt, resolveSemanticStatus } from './utils';
 import type { ActiveTicket } from './types';
 
 function MetaIcon({ type }: { type: 'clock' | 'company' | 'user' }) {
@@ -75,6 +75,8 @@ export function SidebarTicketCard({
     const createdAtLabel = coreResolving
         ? (normalized.createdAt ? formatCreatedAt(normalized.createdAt, ticket.age, labelJustNow) : 'Resolving…')
         : formatCreatedAt(normalized.createdAt, ticket.age, labelJustNow);
+
+    const semanticCfg = resolveSemanticStatus(normalized.ticketStatus);
 
     return (
         <div
@@ -169,8 +171,13 @@ export function SidebarTicketCard({
                 </span>
                 {/* Status badge with inline edit button */}
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 8px', borderRadius: '999px', background: 'var(--bg-card-hover)', border: '1px solid var(--bento-outline)', color: 'var(--text-secondary)', fontSize: '9px', fontWeight: 700, letterSpacing: '0.04em' }}>
-                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+                    <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 8px', borderRadius: '999px',
+                        background: semanticCfg.bg,
+                        border: `1px solid ${semanticCfg.border}`,
+                        color: semanticCfg.color, fontSize: '9px', fontWeight: 700, letterSpacing: '0.04em'
+                    }}>
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: semanticCfg.dot, boxShadow: `0 0 6px ${semanticCfg.dot}`, flexShrink: 0 }} />
                         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '92px' }}>{normalized.ticketStatus}</span>
                         <button
                             type="button"

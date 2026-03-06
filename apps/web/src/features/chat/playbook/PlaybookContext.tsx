@@ -88,17 +88,15 @@ export function PlaybookContext({ items, onEditContextItem }: PlaybookContextPro
                 gridTemplateRows: isContextOpen ? '1fr' : '0fr',
                 transition: 'grid-template-rows 0.4s cubic-bezier(0.23, 1, 0.32, 1)',
             }}>
-                <div style={{ overflow: 'hidden' }}>
+                <div style={{ overflow: 'visible' }}>
                     <div style={{
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '12px',
+                        gap: '8px',
                         width: '100%',
                         position: 'relative',
                         padding: '0 14px',
                         paddingTop: '6px',
-                        paddingBottom: '24px',
-                        marginBottom: '-24px',
                         transition: 'opacity 0.4s cubic-bezier(0.23, 1, 0.32, 1), transform 0.4s cubic-bezier(0.23, 1, 0.32, 1), visibility 0.4s',
                         opacity: isContextOpen ? 1 : 0,
                         transform: isContextOpen ? 'translateY(0)' : 'translateY(-10px)',
@@ -114,7 +112,7 @@ export function PlaybookContext({ items, onEditContextItem }: PlaybookContextPro
                                 padding: '12px',
                                 borderRadius: '16px',
                                 border: '1px solid var(--bento-outline)',
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
                                 transition: 'all 0.25s cubic-bezier(0.23, 1, 0.32, 1)',
                             }}
                             onMouseEnter={(e) => {
@@ -125,7 +123,7 @@ export function PlaybookContext({ items, onEditContextItem }: PlaybookContextPro
                             }}
                             onMouseLeave={(e) => {
                                 e.currentTarget.style.borderColor = 'var(--bento-outline)';
-                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                                e.currentTarget.style.boxShadow = '0 2px 10px rgba(0,0,0,0.04)';
                                 e.currentTarget.style.transform = 'translateY(0)';
                                 e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
                             }}
@@ -137,7 +135,7 @@ export function PlaybookContext({ items, onEditContextItem }: PlaybookContextPro
                             ))}
 
                             {optionalTicketMetadataItems.length > 0 ? (
-                                <div style={{ gridColumn: '1 / -1', marginTop: '2px', position: 'relative', paddingBottom: '38px' }}>
+                                <div style={{ gridColumn: '1 / -1', position: 'relative' }}>
                                     <div style={{
                                         display: 'grid',
                                         gridTemplateRows: isTicketMetadataOpen ? '1fr' : '0fr',
@@ -160,24 +158,51 @@ export function PlaybookContext({ items, onEditContextItem }: PlaybookContextPro
                                             </div>
                                         </div>
                                     </div>
-                                    <div style={{ position: 'absolute', right: 0, bottom: 0 }}>
-                                        <CollapseToggleButton
-                                            isOpen={isTicketMetadataOpen}
-                                            expandedDirection="up"
-                                            onToggle={() => setIsTicketMetadataOpen((prev) => !prev)}
-                                        />
+                                    <div
+                                        onClick={() => setIsTicketMetadataOpen((prev) => !prev)}
+                                        style={{
+                                            gridColumn: '1 / -1',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            margin: isTicketMetadataOpen ? '12px -12px -12px' : '4px -12px -12px',
+                                            padding: '8px 0',
+                                            borderTop: isTicketMetadataOpen ? '1px solid var(--bento-outline)' : 'none',
+                                            background: 'rgba(255, 255, 255, 0.01)',
+                                            borderRadius: '0 0 16px 16px',
+                                            cursor: 'pointer',
+                                            transition: 'var(--transition)',
+                                            color: 'var(--text-muted)',
+                                        }}
+                                        onMouseEnter={(e) => {
+                                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)';
+                                            e.currentTarget.style.color = 'var(--text-primary)';
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.01)';
+                                            e.currentTarget.style.color = 'var(--text-muted)';
+                                        }}
+                                    >
+                                        <svg
+                                            width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                            style={{
+                                                transform: isTicketMetadataOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                                                transition: 'transform 0.3s cubic-bezier(0.23, 1, 0.32, 1)'
+                                            }}
+                                        >
+                                            <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
                                     </div>
                                 </div>
                             ) : null}
                         </div>
 
                         {/* Technical split: Network + Environment */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', paddingBottom: '20px', marginBottom: '-20px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                             <div
                                 style={{
                                     display: 'flex', flexDirection: 'column', gap: '6px',
                                     background: 'rgba(255, 255, 255, 0.015)',
                                     padding: '8px', borderRadius: '14px', border: '1px solid var(--bento-outline)',
+                                    boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
                                     transition: 'all 0.25s cubic-bezier(0.23, 1, 0.32, 1)',
                                 }}
                                 onMouseEnter={(e) => {
@@ -188,7 +213,7 @@ export function PlaybookContext({ items, onEditContextItem }: PlaybookContextPro
                                 }}
                                 onMouseLeave={(e) => {
                                     e.currentTarget.style.borderColor = 'var(--bento-outline)';
-                                    e.currentTarget.style.boxShadow = 'none';
+                                    e.currentTarget.style.boxShadow = '0 2px 10px rgba(0,0,0,0.04)';
                                     e.currentTarget.style.transform = 'translateY(0)';
                                     e.currentTarget.style.background = 'rgba(255, 255, 255, 0.015)';
                                 }}
@@ -207,6 +232,7 @@ export function PlaybookContext({ items, onEditContextItem }: PlaybookContextPro
                                     display: 'flex', flexDirection: 'column', gap: '6px',
                                     background: 'rgba(255, 255, 255, 0.015)',
                                     padding: '8px', borderRadius: '14px', border: '1px solid var(--bento-outline)',
+                                    boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
                                     transition: 'all 0.25s cubic-bezier(0.23, 1, 0.32, 1)',
                                 }}
                                 onMouseEnter={(e) => {
@@ -217,7 +243,7 @@ export function PlaybookContext({ items, onEditContextItem }: PlaybookContextPro
                                 }}
                                 onMouseLeave={(e) => {
                                     e.currentTarget.style.borderColor = 'var(--bento-outline)';
-                                    e.currentTarget.style.boxShadow = 'none';
+                                    e.currentTarget.style.boxShadow = '0 2px 10px rgba(0,0,0,0.04)';
                                     e.currentTarget.style.transform = 'translateY(0)';
                                     e.currentTarget.style.background = 'rgba(255, 255, 255, 0.015)';
                                 }}
@@ -234,6 +260,6 @@ export function PlaybookContext({ items, onEditContextItem }: PlaybookContextPro
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

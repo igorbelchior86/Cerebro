@@ -65,4 +65,5 @@ export interface QueueOption {
     id: string;
     label: string;
     queueId?: number;
+    count?: number;
 }

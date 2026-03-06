@@ -67,6 +67,7 @@ export interface SidebarState {
     hiddenStatusKeys: Record<string, true>;
     toggleStatusFilter: (key: string) => void;
     resetStatusFilter: () => void;
+    unselectStatusFilter: () => void;
     openStatusEditor: (ticket: ActiveTicket) => void;
     closeStatusEditor: () => void;
     handleSelectStatus: (option: AutotaskPicklistOption) => Promise<void>;
@@ -442,18 +443,42 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         Boolean(getTicketQueueLabelResolved(ticket)) || getTicketQueueId(ticket) !== null
     );
 
-    const baseQueueOptions: QueueOption[] = [
-        { id: 'all', label: 'All Queues' },
+    const queueCounts = useMemo(() => {
+        const counts = new Map<string, number>();
+        counts.set('all', baseScopedTickets.length);
+        for (const ticket of baseScopedTickets) {
+            if (hasQueueCatalog) {
+                const queueId = getTicketQueueId(ticket);
+                if (queueId !== null) {
+                    const key = `queue:${queueId}`;
+                    counts.set(key, (counts.get(key) || 0) + 1);
+                }
+            } else {
+                const queueLabel = getTicketQueueLabelResolved(ticket);
+                if (queueLabel) {
+                    const key = queueLabel.toLowerCase();
+                    counts.set(key, (counts.get(key) || 0) + 1);
+                }
+            }
+        }
+        return counts;
+    }, [baseScopedTickets, hasQueueCatalog, getTicketQueueLabelResolved]);
+
+    const baseQueueOptions: QueueOption[] = useMemo(() => [
+        { id: 'all', label: 'All Queues', count: queueCounts.get('all') || 0 },
         ...(hasQueueCatalog
             ? globalQueuesCatalog
                 .filter((q) => q.isActive !== false)
                 .sort((a, b) => a.label.localeCompare(b.label))
-                .map((q) => ({ id: `queue:${q.id}`, label: q.label, queueId: q.id }))
-            : (queueLabelsFromTickets.length > 0 ? queueLabelsFromTickets : GLOBAL_QUEUE_FALLBACKS).map((label) => ({
-                id: label.toLowerCase(),
-                label,
-            }))),
-    ];
+                .map((q) => {
+                    const id = `queue:${q.id}`;
+                    return { id, label: q.label, queueId: q.id, count: queueCounts.get(id) || 0 };
+                })
+            : (queueLabelsFromTickets.length > 0 ? queueLabelsFromTickets : GLOBAL_QUEUE_FALLBACKS).map((label) => {
+                const id = label.toLowerCase();
+                return { id, label, count: queueCounts.get(id) || 0 };
+            })),
+    ], [hasQueueCatalog, globalQueuesCatalog, queueLabelsFromTickets, queueCounts]);
     const queueOptions: QueueOption[] = useMemo(() => {
         if (baseQueueOptions.some((option) => option.id === selectedQueue)) return baseQueueOptions;
         if (!selectedQueue.startsWith('queue:')) return baseQueueOptions;
@@ -464,6 +489,7 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
             id: selectedQueue,
             label: queueCatalogById.get(queueId) || `Queue ${queueId}`,
             queueId,
+            count: queueCounts.get(selectedQueue) || 0,
         };
 
         const [allOption, ...restOptions] = baseQueueOptions;
@@ -515,6 +541,11 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
     });
 
     const visible = useMemo(() => scopedTickets.filter((t) => {
+        // Handle pseudo-key for assigned tickets
+        if (hiddenStatusKeys['__HIDE_ASSIGNED__'] && (t.assigned_resource_id || t.assigned_resource_name)) {
+            return false;
+        }
+
         const statusFilterKey = (() => {
             const rawValue = String(t.ticket_status_value ?? '').trim();
             const numeric = Number.parseInt(rawValue, 10);
@@ -601,8 +632,11 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
             const next: Record<string, true> = {};
             let changed = false;
             for (const key of Object.keys(prev)) {
-                if (valid.has(key)) next[key] = true;
-                else changed = true;
+                if (key === '__HIDE_ASSIGNED__' || valid.has(key)) {
+                    next[key] = true;
+                } else {
+                    changed = true;
+                }
             }
             if (!changed && Object.keys(next).length === Object.keys(prev).length) return prev;
             return next;
@@ -628,6 +662,24 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         }
         setGlobalHiddenStatusKeys({});
     }, [scope]);
+
+    const unselectStatusFilter = useCallback(() => {
+        const allKeys = statusFilterOptions.map(opt => opt.key);
+        const next: Record<string, true> = {};
+        for (const key of allKeys) {
+            next[key] = true;
+        }
+        // Preserve __HIDE_ASSIGNED__ if it exists in global
+        if (scope === 'global' && globalHiddenStatusKeys['__HIDE_ASSIGNED__']) {
+            next['__HIDE_ASSIGNED__'] = true;
+        }
+
+        if (scope === 'personal') {
+            setPersonalHiddenStatusKeys(next);
+            return;
+        }
+        setGlobalHiddenStatusKeys(next);
+    }, [scope, statusFilterOptions, globalHiddenStatusKeys]);
 
     const filteredStatusOptions = useMemo(() => {
         const needle = statusEditorQuery.trim().toLowerCase();
@@ -684,5 +736,6 @@ export function useSidebarState(props: ChatSidebarProps): SidebarState {
         visibleTickets,
         queueOptions,
         persistSidebarState,
+        unselectStatusFilter,
     };
 }

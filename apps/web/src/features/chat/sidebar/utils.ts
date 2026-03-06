@@ -21,6 +21,35 @@ export const STATUS_CONFIG = {
     failed: { color: 'var(--red)', bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.18)', dot: 'var(--red)', localeKey: 'statusFailed', pulse: false },
 };
 
+export const EXTENDED_STATUS_CONFIG: Record<'green' | 'blue' | 'yellow' | 'red' | 'gray', { color: string; bg: string; border: string; dot: string; pulse: boolean }> = {
+    green: { color: 'var(--green)', bg: 'var(--green-muted)', border: 'var(--green-border)', dot: 'var(--green)', pulse: false },
+    blue: { color: 'var(--accent)', bg: 'var(--accent-muted)', border: 'var(--border-accent)', dot: 'var(--accent)', pulse: true },
+    yellow: { color: 'var(--yellow)', bg: 'rgba(234,179,8,0.10)', border: 'rgba(234,179,8,0.22)', dot: 'var(--yellow)', pulse: true },
+    red: { color: 'var(--red)', bg: 'rgba(248,113,113,0.08)', border: 'rgba(248,113,113,0.18)', dot: 'var(--red)', pulse: true },
+    gray: { color: 'var(--text-secondary)', bg: 'rgba(255,255,255,0.05)', border: 'var(--bento-outline)', dot: 'var(--text-muted)', pulse: false },
+};
+
+export function resolveSemanticStatus(label: string): { color: string; bg: string; border: string; dot: string; pulse: boolean } {
+    const lowered = label.toLowerCase();
+
+    // Concluído (Verde)
+    if (/(done|resolv|complet|clos)/.test(lowered)) return EXTENDED_STATUS_CONFIG.green ?? EXTENDED_STATUS_CONFIG.gray;
+
+    // Ativo / Em Progresso (Azul)
+    if (/(progress|active|open|new|dispatch|check|review|ticket intake)/.test(lowered)) return EXTENDED_STATUS_CONFIG.blue ?? EXTENDED_STATUS_CONFIG.gray;
+
+    // Alerta / Ação Imediata (Vermelho)
+    if (/(fail|error|escalat|non-responsive)/.test(lowered)) return EXTENDED_STATUS_CONFIG.red ?? EXTENDED_STATUS_CONFIG.gray;
+
+    // Espera / Pendência (Amarelo)
+    if (/(wait|hold|pend|cust|vendor|schedul)/.test(lowered)) return EXTENDED_STATUS_CONFIG.yellow ?? EXTENDED_STATUS_CONFIG.gray;
+
+    // Administrativo / Outros / Fallback (Cinza/Neutro)
+    if (/(bill|change|rma|shelf|warranty|inactiv|note)/.test(lowered)) return EXTENDED_STATUS_CONFIG.gray ?? EXTENDED_STATUS_CONFIG.gray;
+
+    return EXTENDED_STATUS_CONFIG.gray ?? EXTENDED_STATUS_CONFIG.gray;
+}
+
 export const STATUS_LABEL: Record<ActiveTicket['status'], string> = {
     completed: 'DONE',
     processing: 'PROCESSING',
